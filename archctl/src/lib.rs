@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod doctor;
+pub mod graph;
 pub mod identity;
 pub mod project;
 pub mod render;
@@ -7,7 +8,8 @@ pub mod skills;
 pub mod telemetry;
 pub mod xdg;
 
-pub use cli::{run, Cli, Command, ProjectAction, RenderFormat, SkillsAction};
+pub use cli::{run, Cli, Command, GraphAction, ProjectAction, RenderFormat, SkillsAction};
+pub use graph::{database_path, init as graph_init, neighbours, query as graph_query, stat as graph_stat, GraphStat};
 pub use identity::{
     blake_like, identity_summary, normalize_remote, portable_project_id, resolve_source_identity,
     SourceIdentity,
