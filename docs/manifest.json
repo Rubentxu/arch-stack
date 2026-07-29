@@ -1,8 +1,8 @@
 {
   "name": "opencode-architecture-diagrams-v2",
-  "document_version": "2.1",
+  "document_version": "2.2",
   "created": "2026-07-29",
-  "updated": "2026-07-29T18:30:00+02:00",
+  "updated": "2026-07-29T20:00:00+02:00",
   "language": "es-ES",
   "persistence": "LadybugDB",
   "database_file": "architecture.lbdb",
@@ -23,6 +23,7 @@
     "adr/ADR-009-relaciones-semanticas-reificadas.md",
     "adr/ADR-010-concurrencia-ladybugdb.md",
     "adr/ADR-011-renderers-locales-y-bloqueo-de-publicos.md",
+    "adr/ADR-012-adopcion-incremental-crates-analisis.md",
     "manifest.json",
     "schema/001_initial_schema.cypher",
     "schema/README.md",
@@ -33,6 +34,7 @@
     "ADR-005 basado en SQLite",
     "docs/data-model.md (anterior propiedad JSON+SQLite)",
     "docs/adr/README.md plano de 7 ADRs",
-    "ROADMAP.md (root, 3 fases cortas)"
+    "ROADMAP.md (root, 3 fases cortas)",
+    "ROADMAP.md v2.1 (renumerado: M5-M8 desplazados a M9-M12; M5-M8 nuevos = gix, cargo_metadata, ast-grep-language, tree-sitter-graph)"
   ]
 }

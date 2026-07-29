@@ -22,6 +22,7 @@
 | [ADR-009](ADR-009-relaciones-semanticas-reificadas.md) | Relaciones semánticas reificadas y aristas derivadas | Aceptado |
 | [ADR-010](ADR-010-concurrencia-ladybugdb.md) | Concurrencia de LadybugDB y procesos `archctl` | Aceptado |
 | [ADR-011](ADR-011-renderers-locales-y-bloqueo-de-publicos.md) | Renderers locales y bloqueo de servicios públicos | Aceptado |
+| [ADR-012](ADR-012-adopcion-incremental-crates-analisis.md) | Adopción incremental de crates de análisis como librerías | Aceptado |
 
 ## Documentos relacionados
 
