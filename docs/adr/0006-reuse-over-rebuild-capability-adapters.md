@@ -1,8 +1,9 @@
 # ADR-0006: Reuse-over-Rebuild and Capability Adapter Contract
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: Whether to build custom analyzers, and the shape of the tool-integration seam.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29.
 
 ## Context
 

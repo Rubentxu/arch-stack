@@ -1,8 +1,9 @@
 # ADR-0001: Plugin-First / No-Rust-First with Conditional Rust Extraction Gate
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: Technology stack and investment timing for the architecture-intelligence-platform.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29 ("a tu criterio, busca máximo valor para el usuario, utilidad y facilidad").
 
 ## Context
 
@@ -35,6 +36,22 @@ Rust is **conditional and deferred**: it is activated only if **both** of the fo
 If the hypothesis is falsified, the skill-only baseline (Phase 0) remains a useful product.
 If the hypothesis holds but TS overhead is acceptable, the system lives indefinitely at the
 TypeScript level — that is a valid outcome, not a failure.
+
+**Decision rule for activating Rust (operationalised):** Rust is activated **only if both**
+conditions hold AND a measurable, repeatable threshold is met. Concretely:
+
+1. **Validation gate** — the Phase 2 kill-criteria all pass (`precision ≥ 0.85`,
+   `recall ≥ 0.80`, `cost < 50k tokens`, `lead-time < 10m`), AND
+2. **Performance gate** — a profiling artifact (`docs/perf/rust-decision.md`) shows **at least
+   one** of:
+   - worst-case fast-profile adapter overhead in TypeScript > 2× the same adapter hosted in a
+     pinned Rust binary; **OR**
+   - end-to-end normalisation time > 30s for the medium TS fixture; **OR**
+   - the per-evidence-record memory footprint > 2× the equivalent Rust implementation.
+
+If none of those thresholds is exceeded, **stay on TypeScript permanently**. The cost of a
+Rust binary, an IPC contract, and an extra build target is not repaid without a measurable
+benefit.
 
 ## Consequences
 

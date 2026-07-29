@@ -24,8 +24,10 @@ The project evaluates an evidence-first architecture recovery system for OpenCod
 ## Current decision
 
 - TypeScript-first for M0–M2; Rust is conditional and deferred.
-- Eight ADRs remain **Proposed**.
+- All eight ADRs are **Accepted** as of 2026-07-29, with operationalised decision rules.
 - The next step is a 3–4 day Gate Zero experiment, not platform implementation.
 - A high-confidence claim without evidence is a hard failure.
+- Initial OpenCode pin is **1.18.x**.
 
-No Git repository, branch, release, or product source code has been created as part of this planning cycle.
+This is the first commit of the planning repository (`main` branch). No product source code,
+no remote, no tags, no releases — only decision-grade planning artifacts.

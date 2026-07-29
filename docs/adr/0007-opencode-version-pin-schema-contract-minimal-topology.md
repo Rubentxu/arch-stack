@@ -1,8 +1,9 @@
 # ADR-0007: OpenCode Version Pin / Schema-Contract and Minimal Agent Topology
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: OpenCode integration discipline and the agent topology size.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29.
 
 ## Context
 
@@ -35,6 +36,21 @@ that front-loads complexity before the core hypothesis is validated.
 `config.json` for the pinned version and fails if any used key (`mcp`, `subagent_depth`,
 `plugin`, `skills.paths`, `references`, `permission`, agent `mode`) drifts. This converts an
 invisible version risk into a loud, build-time failure.
+
+**Pin policy (operationalised):** the platform's initial OpenCode pin is **`1.18.x`**,
+selected on 2026-07-29 because:
+
+- the live `opencode.ai/config.json` schema snapshot we verified is dated 2026-07-27 and
+  matches the 1.18.x release line;
+- v1.18.2 introduced the configurable `subagent_depth` default of 1, which we override to 2
+  for orchestrator→specialist delegation;
+- v1.18.3 is the current stable release line as of the planning date.
+
+The exact version is recorded in `.opencode-version` (and mirrored in `package.json` if the
+TS plugin is published); **the pin is updated only by the contract test** — bumping requires
+re-running Gate Zero and re-running the schema-contract test against the new vendored
+snapshot. A live drift check is **advisory only** (logged but never auto-updates the pin);
+manual operator confirmation is required to advance the pin.
 
 **Always use `mcp`, never `mcpServers`.** Compaction config is top-level `compaction`;
 session-compacting is a plugin hook, not config.

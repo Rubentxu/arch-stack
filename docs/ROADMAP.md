@@ -2,7 +2,7 @@
 
 > Outcome-oriented roadmap. Lead with the next action; everything else is context.
 > **Implementation language lock (ADR-0001):** TypeScript for M0–M2. No Go core, no Rust core. Runner (Node vs Bun) probed in 0.2, neither assumed. The drift-guard script is **TBD until task 2.16** — do not describe it as existing.
-> **ADRs are `Proposed`** (pending user acceptance). Confidence calibration is an open Phase-1 experiment, not a solved design.
+> **All eight ADRs are `Accepted`** as of 2026-07-29 (see [ADR index](adr/README.md)). Confidence calibration is an open Phase-1 experiment, not a solved design.
 
 ---
 
@@ -27,20 +27,20 @@
 
 ## Current planning state
 
-**Active change:** `architecture-intelligence-platform` · **planning verified** (ADR-0001..ADR-0008 canonical, OpenCode paths plural, drift guard TBD until task 2.16, Phase 0 restructured to 4 tasks, security/ops acceptance integrated into existing tasks).
+**Active change:** `architecture-intelligence-platform` · **planning approved and ADRs accepted** (ADR-0001..ADR-0008 all Accepted 2026-07-29, OpenCode paths plural, drift guard TBD until task 2.16, Phase 0 restructured to 4 tasks, security/ops acceptance integrated into existing tasks).
 **Artifacts approved:** proposal (C0, auto-grill resolved), spec (R1–R13, S1–S19), design (4-role topology, discriminated SourceIdentity, uniform Adapter seam), coherence gate **1.6 PASS (score 97)**.
-**Open Proposed ADRs (user acceptance pending):**
+**ADRs accepted on 2026-07-29:**
 
 | ADR | Title | One-line |
 |-----|-------|----------|
-| [ADR-0001](adr/0001-plugin-first-no-rust-first.md) | Plugin-First / No-Rust-First | TS for M0–M2; Rust only after M2 + measured overhead |
+| [ADR-0001](adr/0001-plugin-first-no-rust-first.md) | Plugin-First / No-Rust-First | TS for M0–M2; Rust only after M2 + measurable thresholds (>2× adapter overhead OR >30s normalisation OR >2× memory) |
 | [ADR-0002](adr/0002-neutral-ir-truth-structurizr-projection.md) | IR = truth, Structurizr = C4 projection | IR is the only source; diagrams are pure functions |
-| [ADR-0003](adr/0003-xdg-runtime-state-export-bundle.md) | XDG + export bundle | `~/.local/share/archctl/` default, explicit export; discriminated SourceIdentity (git OR directory); Git optional |
-| [ADR-0004](adr/0004-evidence-ontology-confidence-provenance.md) | Evidence ontology + provenance | `fact/inference/hypothesis/unknown/conflict` + discriminated `revision`; `unsupported_claims_high_confidence==0` is HARD FAIL |
-| [ADR-0005](adr/0005-renderer-routing-local-first.md) | Renderer routing / local-first | Structurizr `local` viewer + pinned headless command (NOT Lite EOL); PlantUML local; Mermaid preview only; no public servers |
+| [ADR-0003](adr/0003-xdg-runtime-state-export-bundle.md) | XDG + export bundle | `~/.local/share/archctl/` default; portable `projectId` (UUIDv4) + rebind default-reject; discriminated SourceIdentity (git OR directory); Git optional |
+| [ADR-0004](adr/0004-evidence-ontology-confidence-provenance.md) | Evidence ontology + provenance | `fact/inference/hypothesis/unknown/conflict` + mandatory `method` enum; `unsupported_claims_high_confidence==0` is HARD FAIL |
+| [ADR-0005](adr/0005-renderer-routing-local-first.md) | Renderer routing / local-first | Structurizr `local` viewer + pinned headless CLI; PlantUML local; Mermaid excluded by default; no public servers |
 | [ADR-0006](adr/0006-reuse-over-rebuild-capability-adapters.md) | Reuse + uniform Adapter | No custom parsers; OCP seam (Shape B + declarative ShellAdapter) |
-| [ADR-0007](adr/0007-opencode-version-pin-schema-contract-minimal-topology.md) | OpenCode pin + schema-contract + 4 roles | `mcp` (not `mcpServers`); version-pin + CI schema-test; max 4 agent roles |
-| [ADR-0008](adr/0008-supply-chain-pinning-sandbox.md) | Supply-chain pinning + sandbox | `skills.lock.json` (commit/SHA + license + write-guard) |
+| [ADR-0007](adr/0007-opencode-version-pin-schema-contract-minimal-topology.md) | OpenCode pin + schema-contract + 4 roles | `mcp` (not `mcpServers`); initial pin `1.18.x`; CI schema-test; max 4 agent roles |
+| [ADR-0008](adr/0008-supply-chain-pinning-sandbox.md) | Supply-chain pinning + sandbox | `skills.lock.json` pinning + SPDX allow-list + canonical-root write-guard + MCP/tool inventory |
 
 ---
 

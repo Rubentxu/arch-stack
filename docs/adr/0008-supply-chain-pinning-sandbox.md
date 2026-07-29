@@ -1,8 +1,9 @@
 # ADR-0008: Supply-Chain Pinning / Sandbox Policy
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: How untrusted external code (skills, CLIs) is admitted and confined.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29.
 
 ## Context
 
@@ -22,7 +23,7 @@ A layered supply-chain and confinement policy:
 | Control | Implementation |
 |---|---|
 | **Pinning** | `skills.lock.json` records a commit/SHA per external skill; `archctl skills verify` validates the upstream hash |
-| **License** | Explicit license check before activation (MIT/Apache preferred); no activation without a recorded decision |
+| **License** | Explicit license check before activation. **Allowed list (v1):** MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0 (with file-level exception acknowledgement), and Unicode-DFS-2016 (for fonts). Anything else is blocked at activation; the operator can explicitly allow a non-listed license via `archctl skills allow-license <SPDX>` and that decision is logged in the activity audit. |
 | **Sandboxing** | Wrapped skills cannot write outside XDG; enforced by the plugin write-guard (`tool.execute.before`) **and** config `permission` rules (belt-and-suspenders) |
 | **Snippet confidentiality** | `store-source-snippets: false` by default (per-project override); the ledger stores only path/lines/commit/hash, never the code text |
 | **Offline render** | Local renderers only; public Kroki/PlantUML servers blocked (ADR-0005) |

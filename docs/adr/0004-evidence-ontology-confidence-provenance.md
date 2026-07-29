@@ -1,8 +1,9 @@
 # ADR-0004: Evidence Ontology and Confidence Provenance
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: How observations are classified and how certainty is represented and gated.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29.
 
 ## Context
 
@@ -49,6 +50,20 @@ agents. This neutralizes the "malicious README sets `confidence=1.0`" class of a
 
 **Confidence calibration is explicitly unresolved.** v1 uses heuristic assignment with full
 provenance; the calibration *method* is an open Phase-1 experiment, not a solved design.
+
+**Mandatory `method` declaration on every confidence value (operationalised):** Every
+`confidence` field MUST also carry a `method` enum so downstream consumers never compare
+uncalibrated numbers blindly:
+
+- `method: "heuristic-v1"` — the v1 default; provenance recorded; not calibrated. Treated as a
+  secondary, provenance-bearing hint; `classification` is the trustworthy signal.
+- `method: "calibrated-v1"` — only enabled after a calibrated method is delivered by the
+  Phase-1 experiment; same numeric meaning across extractors.
+- `method: "human-overridden"` — an operator or `auto-grill-loop` review changed the value; the
+  audit trail preserves the previous value and the reason.
+
+Any confidence without a valid `method` is **rejected at write time** by the auditor — this
+prevents `confidence: 0.95` style untraceable numerics from polluting the model.
 
 ## Consequences
 

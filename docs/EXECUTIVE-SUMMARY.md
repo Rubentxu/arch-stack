@@ -54,13 +54,12 @@ Los papers y repositorios citados respaldan patrones multiagente y generación C
 
 ## Decisiones pendientes
 
-Los ocho ADRs están en estado **Proposed**. Antes de implementar corresponde decidir:
+Los ocho ADRs están **Aceptados** desde 2026-07-29 con reglas operativas concretas (ver índice).
+Quedan como experimentales, no bloqueantes, los siguientes puntos:
 
-1. Aceptar o enmendar [ADR-0001…ADR-0008](adr/README.md).
-2. Confirmar TypeScript para M0–M2.
-3. Mantener la calibración de confianza como experimento de M1.
-4. Dejar que Gate Zero elija Node o Bun.
-5. Mantener `store-source-snippets: false` como postura por defecto.
+1. Calibración de confianza — experimento abierto de M1.
+2. Elección de runtime TypeScript (Node o Bun) — decidida por Gate Zero.
+3. `store-source-snippets: false` es la postura por defecto; puede activarse explícitamente por proyecto.
 
 ## Siguiente acción
 

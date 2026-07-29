@@ -1,8 +1,9 @@
 # ADR-0002: Neutral Architecture IR as Truth; Structurizr as C4 Projection
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: Which artifact is the single source of truth and how diagrams relate to it.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29.
 
 ## Context
 

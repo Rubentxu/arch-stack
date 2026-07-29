@@ -1,8 +1,9 @@
 # ADR-0003: XDG Runtime State + Explicit Export Bundle
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-29
 - **Decides**: Where durable architecture state lives and how it is shared.
+- **Accepted by**: orchestrator, per user directive on 2026-07-29.
 
 ## Context
 
@@ -48,9 +49,23 @@ SourceIdentity =
 
 **Export / import (portability).** Because identity anchors are machine-specific
 (`realpath`) or remote-specific (`normalized_remote`), a bundle carries a **portable
-projectId** — a stable UUID assigned at first export, decoupled from the local anchor. On
-import, the importer recomputes the local `SourceIdentity` and **explicitly rebinds** it to
-the portable `projectId`. Import is never a silent identity match; the rebind is recorded.
+projectId** — a stable UUIDv4 assigned at first export (deterministic from
+`SHA256(SOURCE_IDENTITY_CONTENT + firstExportTimestamp)`), decoupled from the local anchor.
+On import, the importer recomputes the local `SourceIdentity` and **explicitly rebinds** it
+to the portable `projectId`. Import is never a silent identity match; the rebind is recorded.
+
+**Rebind collision policy:** if the recomputed local `SourceIdentity` already corresponds to
+a *different* portable `projectId` in the local store, the import is **rejected by default**
+and the user is asked to choose one of three explicit actions:
+
+1. **Replace** the existing local project with the imported one (destructive; requires
+   `--yes`); the previous project's `state/` and `share/` are archived under
+   `~/.local/state/archctl/_archive/<previousProjectId>/`.
+2. **Keep both**: the imported bundle is rebound to a *fresh* portable `projectId` so two
+   unrelated local projects coexist.
+3. **Abort** — neither project is modified.
+
+The default (no flag) is **reject + ask** — the operator decides explicitly, never silently.
 
 **Evidence source revision (discriminated).** Every evidence pins what it was observed
 against via `source.revision`:
