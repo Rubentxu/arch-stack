@@ -1,0 +1,38 @@
+{
+  "name": "opencode-architecture-diagrams-v2",
+  "document_version": "2.1",
+  "created": "2026-07-29",
+  "updated": "2026-07-29T18:30:00+02:00",
+  "language": "es-ES",
+  "persistence": "LadybugDB",
+  "database_file": "architecture.lbdb",
+  "documents": [
+    "DATA-MODEL-LADYBUGDB.md",
+    "README.md",
+    "ROADMAP.md",
+    "Skills-para-agentes-IA-v2.md",
+    "adr/ADR-000-reinicio-de-alcance.md",
+    "adr/ADR-001-opencode-first-archctl-sidecar.md",
+    "adr/ADR-002-topologia-de-agentes.md",
+    "adr/ADR-003-reutilizacion-y-adaptacion-de-skills.md",
+    "adr/ADR-004-persistencia-externa-xdg.md",
+    "adr/ADR-005-ladybugdb-grafo-canonico-y-evidencias.md",
+    "adr/ADR-006-adaptadores-de-herramientas-cli.md",
+    "adr/ADR-007-modelos-y-renderizadores-de-diagramas.md",
+    "adr/ADR-008-recuperacion-versionado-y-evolucion.md",
+    "adr/ADR-009-relaciones-semanticas-reificadas.md",
+    "adr/ADR-010-concurrencia-ladybugdb.md",
+    "adr/ADR-011-renderers-locales-y-bloqueo-de-publicos.md",
+    "manifest.json",
+    "schema/001_initial_schema.cypher",
+    "schema/README.md",
+    "schema/metamodel-core.json"
+  ],
+  "supersedes": [
+    "opencode-architecture-diagrams-v2 original",
+    "ADR-005 basado en SQLite",
+    "docs/data-model.md (anterior propiedad JSON+SQLite)",
+    "docs/adr/README.md plano de 7 ADRs",
+    "ROADMAP.md (root, 3 fases cortas)"
+  ]
+}

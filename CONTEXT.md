@@ -1,51 +1,58 @@
 # Contexto — `archctl`
 
-> Reconstruido desde `Skills-para-agentes-IA.md`. El pivote del
-> proyecto está descrito en detalle en `docs/adr/README.md` y en
-> `ROADMAP.md`.
+> Resumen breve. La especificación completa vive en
+> [`docs/README.md`](docs/README.md),
+> [`docs/Skills-para-agentes-IA-v2.md`](docs/Skills-para-agentes-IA-v2.md),
+> [`docs/DATA-MODEL-LADYBUGDB.md`](docs/DATA-MODEL-LADYBUGDB.md) y los
+> [ADRs](docs/adr/README.md). `CONTEXT.md` no contradice esa
+> documentación; si lo hace, gana la documentación detallada.
 
 ## Qué es
 
-Una mini-aplicación **CLI local** (`archctl`) que ayuda a un usuario
-— generalmente desde OpenCode con un orquestador + subagentes — a
-**diagramar la arquitectura de un repositorio** en C4 y UML,
-extrayendo los hechos con herramientas que ya existen.
+`archctl` es una **CLI sidecar local** que asiste a un agente OpenCode
+(`diagram-architect` orquestador + cuatro subagentes) a producir
+diagramas C4 y UML a partir de un repositorio. **Persiste, consulta,
+normaliza y proyecta.** No decide qué diagrama hace falta y no
+interpreta la arquitectura por su cuenta.
 
-## Cómo trabaja
+## Restricciones duras
 
-- **Wrapper de herramientas**, no parser propio. `archctl` envuelve
-  `ast-grep`, Universal Ctags, `cargo metadata`, `go list`,
-  `dependency-cruiser`, `terraform show -json`, `helm template`,
-  `kubectl get -o json`, etc. La herramienta extrae hechos;
-  `archctl` normaliza, conserva procedencia y construye el modelo.
-- **OpenCode como plano de control**: un agente orquestador + 8
-  subagentes especializados (ver ADR-0004) que consumen `archctl`
-  vía custom tools, no inspeccionan el repo a mano.
-- **Persistencia fuera del repositorio analizado** bajo rutas XDG
-  (`~/.config/archctl/`, `~/.local/share/archctl/`,
-  `~/.local/state/archctl/`, `~/.cache/archctl/`). El repositorio no
-  se contamina: ni `.opencode/`, ni `.architecture/`, ni
+- **Persistencia fuera del repositorio**, en XDG. Por defecto el repo
+  no contiene `.opencode/`, `.architecture/`, `.archctl.yaml` ni
   `sgconfig.yml`.
-- **Renderers intercambiables**. Structurizr DSL es la fuente
-  canónica C4; PlantUML es la fuente canónica UML; Mermaid y
-  draw.io son proyecciones. Por defecto todo renderizado es local
-  (`plantuml.jar`, `structurizr-cli`, kroki interno).
-- **Skills externas versionadas** (no copiadas) en un registro
-  propio con tres modos: `direct`, `wrapped`, `patched`.
+- **Renderers locales** por defecto (PlantUML jar, Structurizr CLI /
+  `structurizr/lite` local, Kroki interno). `plantuml.com` y `kroki.io`
+  bloqueados sin opt-in explícito por run. Ver ADR-011.
+- **Herramientas existentes envueltas, no reimplementadas.**
+  `archctl` orquesta adaptadores para `ast-grep`, ctags, `cargo
+  metadata`, `go list`, `dependency-cruiser`, `terraform show -json`,
+  `helm template`, `kubectl get -o json`, `jdeps`, Syft, etc. Ver
+  ADR-006.
+- **Skills upstream en tres modos** (`direct`, `wrapped`, `patched`)
+  sin copiarlas. `skills.lock.yaml` fija `source`, `commit`, `license`.
+  Ver ADR-003.
+
+## Pivote arquitectónico
+
+- **OpenCode es el plano cognitivo.** Un agente primario +
+  cuatro especialistas, todos consumiendo `archctl` vía custom tools.
+  Ver ADR-002.
+- **LadybugDB** es el grafo canónico de C4 y UML con versionado por
+  snapshot y relaciones reificadas. Ver ADR-005, ADR-008 y ADR-009.
+- **`archctl` no es un daemon en el MVP.** La concurrencia se resuelve
+  con lockfiles por proyecto. Ver ADR-010.
 
 ## Lo que produce
 
-- **C4**: Context, Container, Component, Deployment, Dynamic.
-- **UML**: sequence, class, use case, state, activity, component.
+- **C4**: Context, Container, Component, Dynamic, Deployment.
+- **UML**: casos de uso, clases, secuencia, actividad, estado,
+  componentes.
 
-Cada elemento del modelo lleva **evidencias** que apuntan a archivos
-y líneas del repo (HECHO / INFERENCIA / HIPÓTESIS / DESCONOCIDO /
-CONFLICTO). Nada se inventa.
+Diagramas son **proyecciones** del grafo. Structurizr DSL es la fuente
+canónica de C4; PlantUML es la canónica de UML; Mermaid y draw.io
+entran como proyecciones alternativas (Mermaid C4 no canónico por
+limitación oficial-experimental). Ver ADR-007.
 
-## Lo que NO hace
-
-- No dibuja diagramas directamente desde nombres de fichero.
-- No contamina el repositorio analizado.
-- No usa renderers públicos (PlantUML.com, kroki.io) por defecto.
-- No implementa parsers propios: reutiliza los del ecosistema.
-- No copia skills externas para modificarlas.
+Cada elemento y cada relación del grafo lleva evidencias que apuntan a
+archivos y líneas del repo. Una afirmación sin evidencia y con confianza
+alta se rechaza (regla de auditoría local por nodo/arista).

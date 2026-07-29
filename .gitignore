@@ -9,3 +9,6 @@ coverage/
 .idea/
 .vscode/
 *.tsbuildinfo
+
+# Local archived snapshots of older v2 docs (restore-only, not part of the source).
+/.zip
