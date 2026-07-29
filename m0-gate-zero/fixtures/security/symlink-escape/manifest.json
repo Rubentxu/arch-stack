@@ -1,7 +1,0 @@
-{
-  "comment": "Inert symlink fixture — the symlink target is a *path string*, not a real directory in this repo. The runner must reject any write into this fixture's tree that resolves outside the fixture root.",
-  "files": [
-    { "path": "inert-source.txt", "content": "harmless text inside the fixture root\n" },
-    { "path": "evil-link", "linkTo": "../../../../../../../etc/passwd" }
-  ]
-}
