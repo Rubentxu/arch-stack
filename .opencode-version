@@ -1,0 +1,8 @@
+opencode-version: 1.18.x
+opencode-pin-source: https://opencode.ai/config.json (live snapshot 2026-07-27, matching 1.18.x line)
+opencode-pin-bump-policy: bump only via Gate Zero + schema-contract test on the new vendored snapshot
+opencode-pin-reason: |
+  1.18.x is the live line as of the planning date; it introduced the configurable
+  `subagent_depth` default of 1 and v1.18.3 is the current stable. Pin advances
+  only when Gate Zero and the vendored schema-contract test both pass for the new
+  line. Live drift is advisory only (logged, never auto-bumps).

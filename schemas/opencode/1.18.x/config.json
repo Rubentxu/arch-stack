@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "_archctl_purpose": "vendored snapshot used by the schema-contract test (1.2) and the smoke probe (0.2). Update via Gate Zero + schema-contract test only; never auto-bump from live.",
+  "_vendored_from": "https://opencode.ai/config.json (fetched 2026-07-27)",
+  "mcp": {},
+  "skills": {
+    "paths": [".opencode/skills"],
+    "urls": []
+  },
+  "references": {},
+  "plugin": [],
+  "subagent_depth": 2,
+  "permission": {
+    "skill": {
+      "archctl-*": "allow",
+      "*": "deny"
+    }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": false,
+    "tail_turns": 2,
+    "preserve_recent_tokens": 0,
+    "reserved": 0
+  },
+  "experimental": {}
+}

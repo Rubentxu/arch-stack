@@ -1,6 +1,6 @@
 # Tasks: architecture-intelligence-platform
 
-> Dependency-ordered plan. **Gate Zero (Phase 0.4) is the kill-switch**: if the 1-skill end-to-end test on a tiny non-Git fixture fails, retain skill-only baseline and stop platform investment. **Phase 2 is conditional on Phase 1 kill-gate passing**. **Phase 3+ deferred** (Rust, temporal, observed graph). ADRs are **Proposed** until user accepts.
+> Dependency-ordered plan. **Gate Zero (Phase 0.4) is the kill-switch**: if the 1-skill end-to-end test on a tiny non-Git fixture fails, retain skill-only baseline and stop platform investment. **Phase 2 is conditional on Phase 1 kill-gate passing**. **Phase 3+ deferred** (Rust, temporal, observed graph). ADRs are **Accepted** as of 2026-07-29.
 > **Implementation language (ADR-0001):** TypeScript-only for M0–M2. Forbidden-extension policy prose is **TBD until task 2.16** creates `scripts/check-language-drift.ts` — do not describe the script as existing in earlier tasks. Node/Bun runner probed during 0.2, neither assumed.
 > Spec traceability: `S1`–`S20` from `spec.md`; design seams from `design.md` §2–§6.
 > ADR references: canonical four-digit (`ADR-0001`..`ADR-0008`).
