@@ -1,5 +1,42 @@
 # Changelog
 
+## [unreleased] — M0 scaffold: OpenCode profile + minimal `archctl`
+
+Per [`docs/ROADMAP.md`](docs/ROADMAP.md), M0 is "Validación de
+OpenCode". This commit ships the M0 deliverables:
+
+- **`profile/`** — OpenCode profile source.
+  - `opencode.jsonc`: sets `default_agent: diagram-architect`, lists
+    the four subagents, registers the `/diagram` command, restricts
+    `edit` to the XDG project dir, allow-lists `archctl *` and the
+    read-only git commands, denies `webfetch`.
+  - `agents/diagram-architect.md` (primary) and the four subagents
+    (`architecture-evidence`, `c4-modeler`, `uml-modeler`,
+    `diagram-reviewer`) lifted from the v2 §5.
+  - `commands/diagram.md`: the `/diagram <kind> [args]` dispatcher.
+  - `skills/c4-context.md` and `skills/plantuml-sequence.md`: M0
+    skeleton wrappers (full wrappers in M1).
+  - `plugins/archctl-env.ts`: `shell.env` injection of `ARCHCTL_*`.
+- **`archctl/`** — minimal TypeScript CLI for M0.
+  - `cli.ts`: dispatcher for `doctor`, `project resolve`, `render`.
+  - `doctor.ts`: XDG writability, Structurizr / PlantUML / Kroki
+    reachability, OpenCode / `archctl` on PATH.
+  - `render.ts`: HTTP POST to local Kroki on `:18000` and write the
+    SVG beside the source.
+  - `resolve.ts`: stub `project resolve` returning a default
+    `SourceIdentity`. M1+ replaces it with the XDG-aware resolver.
+- **`scripts/install.sh`** — copies `profile/` to
+  `$XDG_CONFIG_HOME/opencode-architecture/`, prints the launch
+  command.
+- **`README.md`** — entry point with the install + run flow.
+- **`.gitignore`** — also ignores `.archctl-rendered/`, the
+  `target/` (Rust M2), and `~/.local/share/archctl/`.
+
+Tests are deferred to M1: M0's exit criterion is end-to-end via
+`/diagram`, not a unit test. The `archctl` CLI is intentionally
+TypeScript here; M2 replaces it with the Rust binary per
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 ## [unreleased] — adopt `docs/` v2 spec as authoritative
 
 The previous single-document proposals in this repo (a flat list of 7
@@ -35,7 +72,7 @@ Discarded the first reset's framing and rewrote from
 - No "Temporal Architecture" / "Drift Detector" / "Coherence Gate" /
   "Spike Report" — those came from the planning agent's drift.
 
-## [0.1.0] — first reset (commit `f5e7f83` / `b7b57a6`)
+## [0.1.0] — first reset (commits `f5e7f83` / `b7b57a6`)
 
 Removed inflated planning artifacts and rewrote CONTEXT, ROADMAP,
 ADRs and CHANGELOG from `Skills-para-agentes-IA.md`. Replaced an

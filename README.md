@@ -1,33 +1,73 @@
-# archctl — Architecture Intelligence Planning Base
+# `archctl`
 
-`archctl` is currently a **decision-grade research and planning repository**, not an implemented product.
+OpenCode Architecture Diagrammer — C4 + UML diagrams by reverse-engineering
+a repository, with a `archctl` CLI sidecar that owns persistence,
+extraction and rendering.
 
-The project evaluates an evidence-first architecture recovery system for OpenCode: source-grounded evidence is normalized into a renderer-neutral Architecture IR and projected to C4/UML views. The platform remains conditional on small, falsifiable experiments.
+> The authoritative spec is under [`docs/`](docs/).
+> Start with [`docs/README.md`](docs/README.md) and
+> [`docs/ROADMAP.md`](docs/ROADMAP.md) (M0 → M11).
 
-## Start here
+## Status
 
-1. [Executive summary](docs/EXECUTIVE-SUMMARY.md)
-2. [Roadmap and kill gates](docs/ROADMAP.md)
-3. [Proposed ADRs](docs/adr/README.md)
-4. [Source design document](Skills-para-agentes-IA.md)
+- **M0 — Validación de OpenCode (in progress).** This scaffold ships the
+  OpenCode profile and a minimal `archctl` CLI (`doctor`, `project
+  resolve`, `render`). Persistent graph, full Rust binary, and the rest
+  of the milestones land in M1 → M11.
 
-## Detailed planning artifacts
+## Layout
 
-- [Exploration and feasibility review](sddk/architecture-intelligence-platform/explore-report.md)
-- [Proposal](sddk/architecture-intelligence-platform/proposal.md)
-- [Behavior specification](sddk/architecture-intelligence-platform/spec.md)
-- [Technical design](sddk/architecture-intelligence-platform/design.md)
-- [Implementation task plan](sddk/architecture-intelligence-platform/tasks.md)
-- [Final verification](sddk/architecture-intelligence-platform/verification-report.md)
-- [Domain glossary](CONTEXT.md)
+```
+.
+├── docs/                       v2 authoritative spec (README, ROADMAP M0–M11, ADRs, data model, schema)
+├── profile/                    OpenCode profile source (installed by scripts/install.sh)
+│   ├── opencode.jsonc
+│   ├── agents/                 diagram-architect + 4 subagents
+│   ├── commands/               /diagram dispatcher
+│   ├── skills/                 c4-context, plantuml-sequence (M0 skeleton)
+│   └── plugins/                archctl-env.ts (env injection)
+├── archctl/                    M0 minimal CLI (TypeScript; replaced by Rust in M2)
+│   ├── src/
+│   │   ├── cli.ts              dispatcher
+│   │   ├── doctor.ts           env check
+│   │   ├── render.ts           DSL/PUML → local Kroki
+│   │   └── resolve.ts          project resolve (SourceIdentity stub)
+│   └── package.json
+├── scripts/
+│   └── install.sh              copies profile/ to $XDG_CONFIG_HOME/opencode-architecture
+├── CHANGELOG.md
+├── CONTEXT.md
+├── ROADMAP.md                  redirect to docs/ROADMAP.md
+└── .opencode-version           OpenCode pin (1.18.x)
+```
 
-## Current decision
+## Install
 
-- TypeScript-first for M0–M2; Rust is conditional and deferred.
-- All eight ADRs are **Accepted** as of 2026-07-29, with operationalised decision rules.
-- The next step is a 3–4 day Gate Zero experiment, not platform implementation.
-- A high-confidence claim without evidence is a hard failure.
-- Initial OpenCode pin is **1.18.x**.
+```bash
+./scripts/install.sh             # installs profile/ to ~/.config/opencode-architecture/
+cd archctl && npm install        # archctl CLI dependencies
+```
 
-This is the first commit of the planning repository (`main` branch). No product source code,
-no remote, no tags, no releases — only decision-grade planning artifacts.
+## Run
+
+```bash
+export OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode-architecture"
+opencode
+```
+
+Inside OpenCode, `/diagram c4 context` and `/diagram sequence` reach the
+right subagent, which delegates to `archctl`.
+
+Outside OpenCode:
+
+```bash
+cd archctl
+npx tsx src/cli.ts doctor
+npx tsx src/cli.ts render ./docs/schema/001_initial_schema.cypher
+```
+
+## Milestones
+
+The complete milestone plan is in [`docs/ROADMAP.md`](docs/ROADMAP.md):
+M0 → M11. The first useful MVP per the v2 plan is `M0 → M1 → M2 → M3 →
+M4 → M5 → M6`.

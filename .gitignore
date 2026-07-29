@@ -12,3 +12,17 @@ coverage/
 
 # Local archived snapshots of older v2 docs (restore-only, not part of the source).
 /.zip
+
+# Local state — M0 creates ~/.local/share/archctl/, ~/.config/archctl/, etc.
+/.local/share/archctl/
+/.local/state/archctl/
+/.cache/archctl/
+
+# archctl scratch
+/.archctl-rendered/
+
+# Rust build artifacts (M2)
+target/
+
+# archctl Rust dev
+.archctl/
