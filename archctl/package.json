@@ -1,0 +1,19 @@
+{
+  "name": "archctl",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal CLI for M0: render and doctor. Replaced by Rust in M2 per docs/ROADMAP.md.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "archctl": "tsx src/cli.ts",
+    "test": "node --test --import tsx src/**/*.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.10.0"
+  }
+}

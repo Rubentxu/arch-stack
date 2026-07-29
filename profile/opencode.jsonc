@@ -1,0 +1,67 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "diagram-architect",
+
+  "instructions": [
+    "AGENTS.md",
+    "agents/*.md"
+  ],
+
+  "permission": {
+    "edit": {
+      "*": "deny",
+      "{env:ARCHCTL_PROJECT_DIR}/**": "allow",
+      "{env:ARCHCTL_PROJECT_DIR}/runs/**": "allow"
+    },
+    "bash": {
+      "*": "ask",
+      "archctl *": "allow",
+      "git status": "allow",
+      "git diff": "allow",
+      "git log": "allow"
+    },
+    "task": {
+      "architecture-evidence": "allow",
+      "c4-modeler": "allow",
+      "uml-modeler": "allow",
+      "diagram-reviewer": "allow"
+    },
+    "webfetch": "deny"
+  },
+
+  "agents": {
+    "diagram-architect": {
+      "path": "agents/diagram-architect.md",
+      "model": "default"
+    },
+    "architecture-evidence": {
+      "path": "agents/architecture-evidence.md",
+      "model": "default"
+    },
+    "c4-modeler": {
+      "path": "agents/c4-modeler.md",
+      "model": "default"
+    },
+    "uml-modeler": {
+      "path": "agents/uml-modeler.md",
+      "model": "default"
+    },
+    "diagram-reviewer": {
+      "path": "agents/diagram-reviewer.md",
+      "model": "default"
+    }
+  },
+
+  "commands": {
+    "diagram": {
+      "path": "commands/diagram.md",
+      "agent": "diagram-architect"
+    }
+  },
+
+  "skills": {
+    "paths": [
+      "skills"
+    ]
+  }
+}
