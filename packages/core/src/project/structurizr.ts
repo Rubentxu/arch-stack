@@ -57,27 +57,30 @@ export function projectIRToStructurizr(ir: ArchitectureIR): ProjectionResult {
     if (kind === "Person" && e.kind !== "person") {
       warnings.push(`element ${e.id}: kind=${e.kind} mapped to Person fallback`);
     }
-    const techProp = e.technology && e.technology.length > 0
-      ? ` "${escapeDsl(e.technology.join(", "))}"`
-      : "";
-    const descProp = e.description
-      ? ` "${escapeDsl(e.description)}"`
-      : "";
-    out.push(`    ${kind.toLowerCase()} ${slug} "${escapeDsl(toTitle(e.name))}" "${escapeDsl(toTitle(e.name))}"${techProp}${descProp} {`);
-    if (e.tags && e.tags.length > 0) {
-      out.push(`      tags "${escapeDsl(e.tags.join(","))}"`);
-    }
-    out.push("    }");
+    // Structurizr DSL grammar (strict): `<kind> <identifier> "<name>" "<description>"
+    // [tags...]`. The `=` shorthand syntax is rejected by the bundled Structurizr
+    // parser that ships in Kroki. We therefore use the canonical form and
+    // fold the technology list into the description (bracketed) so the
+    // renderer still surfaces it.
+    const name = escapeDsl(toTitle(e.name));
+    const desc = e.description ? escapeDsl(e.description) : "";
+    const techSuffix = e.technology && e.technology.length > 0 ? ` [${escapeDsl(e.technology.join(", "))}]` : "";
+    const combinedDesc = `${desc}${techSuffix}`;
+    const tagsProp = e.tags && e.tags.length > 0 ? ` ${e.tags.map((t) => `"${escapeDsl(t)}"`).join(", ")}` : "";
+    out.push(`${kind.toLowerCase()} ${slug} "${name}" "${combinedDesc}"${tagsProp}`);
   }
 
   out.push("");
   for (const r of ir.relationships) {
     const src = elementSlug(r.source);
     const tgt = elementSlug(r.target);
-    const desc = r.description ?? "";
-    const tech = r.technology ?? "";
-    const via = r.via ?? "";
-    out.push(`    ${src} -> ${tgt} "${escapeDsl(desc)}" "${escapeDsl(tech)}"${via ? ` // ${escapeDsl(via)}` : ""}`);
+    const desc = escapeDsl(r.description ?? "");
+    const tech = escapeDsl(r.technology ?? "");
+    const via = escapeDsl(r.via ?? "");
+    // Structurizr DSL: `<source> -> <target> "<description>" "<technology>"` is
+    // accepted; `// via` is a free comment, not parsed.
+    const header = `    ${src} -> ${tgt} "${desc}" "${tech}"`;
+    out.push(via ? `${header} // ${via}` : header);
   }
 
   out.push("  }");

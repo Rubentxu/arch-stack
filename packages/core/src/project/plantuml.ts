@@ -1,11 +1,14 @@
-// ADR-0002 + ADR-0005 — IR → PlantUML C4 projection.
+// ADR-0002 + ADR-0005 — IR → PlantUML projection (sequence diagram).
 //
-// Pure function. Symmetric to the Structurizr projection but emits PlantUML
-// using the C4-PlantUML macro library. Identifiers mirror the IR (kebab →
-// snake) so the two projections are diffable line-by-line.
+// Pure function. Symmetric to the Structurizr projection. We use sequence-
+// diagram semantics (participants + edge labels) because the bundled
+// PlantUML in the Kroki image most reliably classifies them — the C4 macros
+// from C4-PlantUML require a remote !include which the local renderer
+// cannot fetch. The C4 flavour is available via the Structurizr DSL
+// projection; this projection is the lightweight UML fallback.
 //
-// PlantUML is **optional** at Gate Zero; it is required for the M1 spike
-// report's UML arm but the C4 arm can ship without it.
+// Identifiers mirror the IR (kebab kept intact; ":" → "_" so the PUML parser
+// sees valid identifiers).
 import type { ArchitectureIR, IRElement, IRRelationship } from "../ir/ir.ts";
 
 const KIND_TO_PU: Record<IRElement["kind"], string> = {
@@ -13,7 +16,7 @@ const KIND_TO_PU: Record<IRElement["kind"], string> = {
   softwareSystem: "System",
   container: "Container",
   component: "Component",
-  codeElement: "Component",
+  codeElement: "Code",
 };
 
 function elementSlug(id: string): string {
@@ -27,22 +30,22 @@ function quote(s: string): string {
 export function projectIRToPlantUML(ir: ArchitectureIR): string {
   const out: string[] = [];
   out.push("@startuml");
-  out.push("!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml");
   out.push(`title archctl — Architecture IR v1 (${ir.sourceIdentitySummary})`);
   out.push("");
-  out.push("LAYOUT_WITH_LEGEND()");
-  out.push("");
 
+  // Sequence-diagram semantics — participants + edge labels. The bundled
+  // PlantUML in Kroki reliably parses this form; component/class diagrams
+  // require colon-bearing labels that the parser rejects inside rectangles.
+  // The participant's display label must be QUOTED; the alias follows `as`
+  // and is unquoted.
   for (const e of ir.elements) {
-    const kind = KIND_TO_PU[e.kind] ?? "Container";
-    const tech = e.technology && e.technology.length > 0 ? `, "${quote(e.technology.join(", "))}"` : "";
-    const desc = e.description ? `\\n\\n<size:10>${quote(e.description)}</size>` : "";
-    out.push(`${kind}(${elementSlug(e.id)}, "${quote(e.name)}"${tech}${desc})`);
+    const techSuffix = e.technology && e.technology.length > 0 ? ` [${quote(e.technology.join(", "))}]` : "";
+    out.push(`participant "${quote(e.name)}${techSuffix}" as ${elementSlug(e.id)}`);
   }
   out.push("");
   for (const r of ir.relationships) {
-    const via = r.via ? ` : ${quote(r.via)}` : "";
-    out.push(`Rel(${elementSlug(r.source)}, ${elementSlug(r.target)}, "${quote(r.description ?? "")}"${via})`);
+    const label = r.description ?? r.via ?? "";
+    out.push(`${elementSlug(r.source)} -> ${elementSlug(r.target)} : ${quote(label)}`);
   }
   out.push("");
   out.push("@enduml");
@@ -50,10 +53,10 @@ export function projectIRToPlantUML(ir: ArchitectureIR): string {
 }
 
 export function projectPUmlRelationship(r: IRRelationship): string {
-  return `Rel(${elementSlug(r.source)}, ${elementSlug(r.target)}, "${quote(r.description ?? "")}")`;
+  return `${elementSlug(r.source)} -> ${elementSlug(r.target)} : ${quote(r.description ?? "")}`;
 }
 
 export function projectPUmlElement(e: IRElement): string {
   const kind = KIND_TO_PU[e.kind] ?? "Container";
-  return `${kind}(${elementSlug(e.id)}, "${quote(e.name)}")`;
+  return `participant ${elementSlug(e.id)} as ${quote(e.name)} (${kind})`;
 }

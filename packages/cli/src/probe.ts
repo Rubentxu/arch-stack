@@ -36,6 +36,16 @@ function probeBinary(name: string): { ok: boolean; version: string | null } {
   return { ok: true, version: first };
 }
 
+function probeHttp(url: string): { ok: boolean; status: number | null } {
+  // curl is universally available; we treat 2xx and 3xx as "reachable".
+  // The renderer is healthy even when its index redirects (302) to a
+  // workspace dashboard, so we don't require 200 here.
+  const r = spawnSync("curl", ["-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url], { encoding: "utf8" });
+  if (r.status !== 0) return { ok: false, status: null };
+  const code = Number((r.stdout ?? "0").trim());
+  return { ok: code >= 200 && code < 400, status: code };
+}
+
 function probeOpenCodeCli(): { ok: boolean; version: string | null } {
   const r = spawnSync("opencode", ["--version"], { encoding: "utf8" });
   if (r.status !== 0) return { ok: false, version: null };
@@ -97,24 +107,43 @@ export function runProbe(opts: { cwd: string; pinnedOpenCode: string }): ProbeRe
   else findings.push({ id: "xdg.writability", title: "XDG writability", severity: "ok", detail: layout.data });
 
   // Renderers — Structurizr `local` and PlantUML are local-first only.
+  // Probe BOTH a CLI on PATH (legacy) AND a running local service over HTTP
+  // (the WU6 path: podman containers on 18080/18000). The HTTP probe is
+  // advisory; the CLI probe is still the canonical "installed binary" check.
   const structurizr = probeBinary("structurizr");
   const plantuml = probeBinary("plantuml");
-  if (!structurizr.ok) {
+  const structurizrHttp = probeHttp("http://localhost:18080/");
+  const krokiHttp = probeHttp("http://localhost:18000/");
+  if (!structurizr.ok && !structurizrHttp.ok) {
     findings.push({
       id: "renderer.structurizr",
-      title: "Structurizr CLI (headless)",
+      title: "Structurizr (local)",
       severity: "warn",
-      detail: "Structurizr CLI not on PATH. Gate Zero's render step will fail until a pinned CLI is installed (podman recommended; vNext tracked).",
+      detail: "Structurizr CLI not on PATH and local HTTP server not reachable on :18080. Run `podman run -d --rm --name archctl-structurizr -p 18080:8080 -v $(pwd)/.archctl-state/structurizr:/usr/local/structurizr structurizr/structurizr:latest local -w /usr/local/structurizr -p 8080` or install a pinned CLI.",
     });
-  } else findings.push({ id: "renderer.structurizr", title: "Structurizr CLI (headless)", severity: "ok", detail: structurizr.version ?? "" });
-  if (!plantuml.ok) {
+  } else {
+    findings.push({
+      id: "renderer.structurizr",
+      title: "Structurizr (local)",
+      severity: "ok",
+      detail: structurizrHttp.ok ? "local HTTP service on :18080" : `CLI: ${structurizr.version ?? "present"}`,
+    });
+  }
+  if (!plantuml.ok && !krokiHttp.ok) {
     findings.push({
       id: "renderer.plantuml",
       title: "PlantUML (local)",
       severity: "warn",
-      detail: "PlantUML not on PATH. Optional at Gate Zero (UML is not required for the 5-file fixture).",
+      detail: "PlantUML not on PATH and local Kroki not reachable on :18000. Run `podman run -d --rm --name archctl-kroki -p 18000:8000 yuzutech/kroki:latest` or install a local jar.",
     });
-  } else findings.push({ id: "renderer.plantuml", title: "PlantUML (local)", severity: "ok", detail: plantuml.version ?? "" });
+  } else {
+    findings.push({
+      id: "renderer.plantuml",
+      title: "PlantUML (local)",
+      severity: "ok",
+      detail: krokiHttp.ok ? "local Kroki on :18000" : `CLI: ${plantuml.version ?? "present"}`,
+    });
+  }
 
   // Static analyzer dependencies.
   const sg = probeBinary("ast-grep");

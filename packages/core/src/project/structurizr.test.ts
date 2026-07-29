@@ -49,11 +49,12 @@ test("projection emits a workspace DSL with the IR's elements and relationships"
   const { dsl, warnings } = projectIRToStructurizr(sampleIR);
   assert.equal(warnings.length, 0);
   assert.ok(dsl.includes('workspace "archctl"'));
-  assert.ok(dsl.includes("container container_orders-service"));
-  // DSL keyword is lowercase (`softwaresystem`) per the Structurizr DSL grammar;
-  // the human-readable title is the title-cased name.
-  assert.ok(dsl.includes('softwaresystem softwareSystem_checkout "Checkout" "Checkout"'));
-  assert.ok(dsl.includes('container_orders-service -> softwareSystem_checkout'));
+  // Canonical Structurizr DSL grammar: `<kind> <id> "<name>" "<desc>"`.
+  // Description carries the technology suffix in brackets so the rendered
+  // diagram still shows the technology without inventing a new DSL slot.
+  assert.ok(dsl.includes('container container_orders-service "Orders Service" "Orders HTTP service [Rust, Axum]"'));
+  assert.ok(dsl.includes('softwaresystem softwareSystem_checkout "Checkout" ""'));
+  assert.ok(dsl.includes('container_orders-service -> softwareSystem_checkout "orders calls checkout" "HTTP"'));
   // Stable identifier: re-projecting the same IR yields the same DSL.
   const again = projectIRToStructurizr(sampleIR);
   assert.equal(again.dsl, dsl);
@@ -79,7 +80,7 @@ test("projection handles empty IR gracefully", () => {
   assert.ok(!dsl.includes(" -> "));
 });
 
-test("projection emits tag block when tags are present", () => {
+test("projection emits tags after description when tags are present", () => {
   const ir: ArchitectureIR = {
     schemaVersion: 1,
     sourceIdentitySummary: "dir:/tmp/re",
@@ -99,7 +100,8 @@ test("projection emits tag block when tags are present", () => {
     generatedAt: "2026-07-29T12:00:00Z",
   };
   const { dsl } = projectIRToStructurizr(ir);
-  assert.match(dsl, /tags "api,v2"/);
+  // Tags are emitted as positional quoted strings after the description.
+  assert.match(dsl, /container container_tagged "Tagged" "" "api", "v2"/);
 });
 
 test("projectElement and projectRelationship are independently callable", () => {
