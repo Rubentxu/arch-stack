@@ -1,18 +1,18 @@
-# ADR-006 — Adaptadores de herramientas CLI existentes
+# ADR-006 — Política de integración de herramientas: preferir librerías, descartar CLIs
 
-**Estado:** Aceptado con excepción parcial (ver Status update)
+**Estado:** Sustituido por ADR-012 (ver Status update)
 **Fecha:** 29 de julio de 2026
-**Status update:** 29 de julio de 2026 — ast-grep movido a librería
+**Status update:** 29 de julio de 2026 — Política revisada
 
 ## Contexto
 
-Crear parsers, indexadores, resolvedores de símbolos y call graphs propios desviaría el proyecto.
+Crear parsers, indexadores, resolvedores de símbolos y call graphs propios desviaría el proyecto. La propuesta original era "adaptar CLIs externos", pero archctl no necesita reinventar capacidades que ya existen como librerías Rust mantenidas. Adaptar un CLI incurre en fork+exec, parsing de salida textual, y una capa de normalización que la librería ya hace internamente.
 
-## Decisión
+## Decisión original (29 de julio de 2026)
 
 `archctl` implementará adaptadores y normalizadores, no analizadores.
 
-### Núcleo
+### Núcleo (original)
 
 - Git.
 - ripgrep.
@@ -22,21 +22,11 @@ Crear parsers, indexadores, resolvedores de símbolos y call graphs propios desv
 - PlantUML.
 - Mermaid CLI cuando corresponda.
 
-### Opcionales
+### Opcionales (original)
 
-- LSP.
-- SCIP.
-- Universal Ctags.
-- dependency-cruiser.
-- `jdeps`.
-- Semgrep.
-- Joern.
-- Terraform.
-- Helm.
-- kubectl.
-- Syft.
+- LSP, SCIP, Universal Ctags, dependency-cruiser, `jdeps`, Semgrep, Joern, Terraform, Helm, kubectl, Syft.
 
-## Capabilities
+### Capabilities
 
 Los agentes solicitan:
 
@@ -54,7 +44,7 @@ diagram.validate
 
 El router selecciona el adaptador disponible.
 
-## Salida normalizada
+### Salida normalizada
 
 Todo adaptador produce:
 
@@ -68,46 +58,74 @@ Todo adaptador produce:
 
 `archctl` transforma el resultado y lo importa en LadybugDB.
 
-## Perfiles
+### Perfiles (originales)
 
-### `fast`
+- `fast`: Git, ripgrep, ast-grep, build metadata.
+- `semantic`: LSP, SCIP, herramientas del lenguaje.
+- `deep`: Joern, Semgrep avanzado u otras herramientas profundas.
 
-Git, ripgrep, ast-grep y build metadata.
+## Sustitución parcial (29 de julio de 2026)
 
-### `semantic`
+ADR-012 introduce una **política revisada y más estricta**: archctl descarta CLIs externos cuando existe una librería Rust mantenida activamente que cumple la misma función. Los CLIs se invocan solo cuando no hay alternativa razonable en Rust.
 
-LSP, SCIP y herramientas del lenguaje.
+### Tabla de sustituciones
 
-### `deep`
+| CLI original | Librería sustituta | Estado |
+|---|---|---|
+| `git <subcmd>` | `gix 0.86` | M5, ya planeado |
+| `ast-grep scan` | `ast-grep-core 0.45` + `ast-grep-language 0.45` | M4 + M7, ya integrado |
+| `cargo metadata` (parseo manual de TOML) | `cargo_metadata 0.23` | M6, ya planeado |
+| `ripgrep` (futuro) | `ignore 0.4` + `grep-regex` | ya parcialmente en uso; sin commit dedicado |
+| `tree-sitter` invocación ad-hoc | `tree-sitter-graph 0.12` (M8) | M8, ya planeado |
+| `ctags` (futuro) | `ctrs` u otro port Rust | sin plazo |
+| `scip` indexador externo (futuro) | `scip` crate | M14, ya planeado |
+| `semgrep` / `joern` (futuro) | sin alternativa Rust mantenida | mantener CLI si se introduce |
+| `dependency-cruiser` / `jdeps` (futuro) | sin alternativa Rust razonable | mantener CLI si se introduce |
 
-Joern, Semgrep avanzado u otras herramientas profundas.
+### CLIs que se mantienen explícitamente
+
+No son "adaptadores" en el sentido de este ADR. Son **fronteras del sistema** donde no hay alternativa en Rust mantenida o el coste de embedding supera el beneficio:
+
+- **Renderers** (PlantUML vía `plantuml.jar`, Structurizr CLI / Lite, Mermaid CLI). Ninguno tiene renderer equivalente en Rust razonablemente mantenido; no podemos "descartarlos" sin reescribir renderers. ADR-011 refuerza además el bloqueo de servicios públicos (plantuml.com, kroki.io).
+- **Build metadata no-Cargo** (`npm ls`, `go list`, `javac -XprintRounds`). No hay alternativa unificada en Rust; cada herramienta tiene su propio protocolo.
+- **Infraestructura como código** (Terraform, Helm, kubectl, Syft). Ninguno tiene parser Rust mantenido equivalente a la herramienta oficial.
+- **Análisis profundo opcional** (Semgrep, Joern) si se introducen en M14: mantener CLI hasta que aparezca port maduro.
+
+### Política operativa
+
+1. Antes de añadir una herramienta al Núcleo o a Opcionales, **evaluar primero si existe una librería Rust mantenida**. Si existe, preferir la librería. Documentar la sustitución en un ADR dedicado.
+2. Si no existe librería, adaptar el CLI con un envoltorio mínimo que produzca la salida normalizada del contrato de este ADR.
+3. Si en el futuro aparece una librería para una herramienta que era CLI, abrir un ADR de sustitución siguiendo el patrón de ADR-012.
+4. Renderers y herramientas sin alternativa Rust siguen siendo CLI. El ADR-011 (renderers locales y bloqueo de públicos) refuerza el aislamiento de los renderers.
+
+### Perfiles revisados
+
+- `fast`: librerías in-process (gix + ast-grep-core + tree-sitter-graph + cargo_metadata). Cero fork+exec.
+- `semantic`: SCIP + (futuro) tree-sitter-stack-graphs.
+- `deep`: cualquier análisis profundo que en el futuro tenga port Rust; hasta entonces, CLI con opt-in explícito.
 
 ## Consecuencias
+
+### Positivas (de la decisión original)
 
 - Incorporación progresiva de lenguajes.
 - Sustitución sencilla de tools.
 - Importación masiva mediante ficheros temporales.
 - Confianza distinta según la fuente.
 
----
+### Positivas (de la política revisada)
 
-## Status update — 29 de julio de 2026
+- Cero fork+exec en el path crítico de los agentes.
+- Latencia < 5 ms en operaciones de identidad y pattern matching.
+- Streaming de matches sin round-trip por JSONL.
+- Contratos tipados Rust entre módulos (no strings parseados).
 
-**Excepción parcial**: para `ast-grep` ya no aplica "adaptador de CLI". A partir de M4 (commit `ea47114`) y consolidado en M7 (ver [ADR-012](ADR-012-adopcion-incremental-crates-analisis.md)), archctl integra `ast-grep-core` como librería in-process. Las razones:
+### Negativas y riesgos (de la política revisada)
 
-- M4 ya ejecuta `ast_grep_core::Pattern::try_new(...)` directamente; no se invoca `ast-grep scan` como subproceso.
-- Elimina fork+exec del path de `archctl evidence extract`.
-- Permite streaming de matches sobre repos grandes sin overhead de serialización JSONL.
-- `ast-grep-language 0.45` (M7) reemplaza el boilerplate `impl Language for Lang` por gramática con un catálogo pre-cableado.
+- Mayor superficie de dependencias y de versiones a trackear.
+- Las librerías Rust a veces quedan atrás de las herramientas oficiales en cobertura (p. ej. tree-sitter-stack-graphs necesita reglas por framework, mientras SCIP las trae el indexador externo).
+- El policy "1 crate por commit" introduce churn en el lockfile que requiere disciplina de revisión.
 
-**Lo que sigue aplicando** (todas las demás herramientas del Núcleo y Opcionales):
+## Cómo revertir
 
-- Git → `gix` (M5), fork+exec eliminado, sigue siendo librería.
-- ripgrep → se mantiene como CLI hasta que aparezca demanda real de reemplazarlo.
-- Herramientas nativas del build (Cargo, npm, go, javac, scalac) → CLIs ejecutados, nunca reimplementados.
-- Structurizr CLI / Lite → CLIs externos.
-- PlantUML → `plantuml.jar` local.
-- Mermaid CLI → opcional.
-- SCIP, LSP, Universal Ctags, dependency-cruiser, `jdeps`, Semgrep, Joern, Terraform, Helm, kubectl, Syft → CLIs cuando se introduzcan en M14.
-
-**Política resultante**: por defecto adaptamos CLIs; cuando una librería Rust exista, sea mantenida activamente y aporte valor claro (latencia, parsing incremental, semántica), la integramos como librería con ADR dedicado que documente el cambio. Esta política queda codificada en ADR-012.
+Cada librería adoptada documenta su reversión en [ADR-012 § Cómo revertir](ADR-012-adopcion-incremental-crates-analisis.md). La política revisada misma se revierte cambiando este ADR de vuelta a "adaptadores CLI", pero no debería hacerse salvo que aparezca un caso donde una librería sustituta tenga bugs graves y el CLI sea claramente superior.
