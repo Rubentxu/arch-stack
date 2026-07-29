@@ -62,7 +62,12 @@ test("portableProjectId is UUIDv4-shaped and stable per identity", () => {
   assert.equal(pid, pid2);
 });
 
-test("two distinct repos produce distinct repositoryId and projectId", () => {
+test("two distinct repos produce distinct projectId", () => {
+  // Two *unnamed* repos initialised in temp dirs share the same `git` identity
+  // shape (no remote, no author distinction) → identical repositoryId by
+  // design (the algorithm is remote+commit anchored). What MUST differ is the
+  // worktreeId (different canonical realpaths) and the projectId (depends on
+  // worktreeId). This test verifies the parts that are guaranteed to differ.
   const a = makeFakeRepo();
   const b = makeFakeRepo();
   const ia = resolveSourceIdentity({ cwd: a });
@@ -70,6 +75,19 @@ test("two distinct repos produce distinct repositoryId and projectId", () => {
   assert.equal(ia.type, "git");
   assert.equal(ib.type, "git");
   if (ia.type !== "git" || ib.type !== "git") return;
-  assert.notEqual(ia.repositoryId, ib.repositoryId);
+  assert.notEqual(ia.worktreeId, ib.worktreeId);
   assert.notEqual(portableProjectId(ia), portableProjectId(ib));
+});
+
+test("setting a remote distinguishes two repos' repositoryId", () => {
+  const a = makeFakeRepo();
+  const b = makeFakeRepo();
+  spawnSync("git", ["remote", "add", "origin", "git@github.com:archctl/repo-a.git"], { cwd: a, encoding: "utf8" });
+  spawnSync("git", ["remote", "add", "origin", "git@github.com:archctl/repo-b.git"], { cwd: b, encoding: "utf8" });
+  const ia = resolveSourceIdentity({ cwd: a });
+  const ib = resolveSourceIdentity({ cwd: b });
+  assert.equal(ia.type, "git");
+  assert.equal(ib.type, "git");
+  if (ia.type !== "git" || ib.type !== "git") return;
+  assert.notEqual(ia.repositoryId, ib.repositoryId);
 });
