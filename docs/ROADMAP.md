@@ -4,6 +4,8 @@
 > **Implementation language lock (ADR-0001):** TypeScript for M0–M2. No Go core, no Rust core. Runner (Node vs Bun) probed in 0.2, neither assumed. The drift-guard script is **TBD until task 2.16** — do not describe it as existing.
 > **All eight ADRs are `Accepted`** as of 2026-07-29 (see [ADR index](adr/README.md)). Confidence calibration is an open Phase-1 experiment, not a solved design.
 > **Gate Zero (Phase 0 / WU1) PASSED on 2026-07-29** — see [`sddk/architecture-intelligence-platform/gate-zero-report.md`](../sddk/architecture-intelligence-platform/gate-zero-report.md). Jaccard 1.000 on the 5-file non-Git fixture; zero unsupported high-confidence; zero forbidden elements emitted; writes confined to XDG. The pipeline shape is proven; the reverse-engineering hypothesis remains unvalidated and is the explicit subject of M1.
+>
+> **WU2 (1.1 + 1.2 + 1.3) COMPLETED on 2026-07-29** — TS schema-contract test reads the vendored snapshot and enforces both OpenCode schema drift (mcp top-level, subagent_depth, skills/references/plugin/permission/compaction keys present; compaction top-level; experimental.session.compacting NOT a config key) and ADR-0001 implementation-language drift (no forbidden-language signatures under packages/). The SourceIdentity resolver discriminates git vs directory modes and produces a portable UUIDv4 projectId. 17/17 tests pass.
 
 ---
 
