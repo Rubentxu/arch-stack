@@ -1,11 +1,26 @@
 {
   "name": "opencode-architecture-diagrams-v2",
-  "document_version": "2.2",
+  "document_version": "2.3",
   "created": "2026-07-29",
-  "updated": "2026-07-29T20:00:00+02:00",
+  "updated": "2026-07-29T22:45:00+02:00",
   "language": "es-ES",
   "persistence": "LadybugDB",
   "database_file": "architecture.lbdb",
+  "projects": {
+    "archctl": {
+      "type": "sidecar-cli",
+      "language": "rust",
+      "repository": "archctl",
+      "documents_root": "docs/"
+    },
+    "archview": {
+      "type": "orthogonal-webapp",
+      "language": "typescript",
+      "repository": "archview (separado, no parte de archctl)",
+      "documents_root": "docs/",
+      "consumer_of": "DiagramProjection bundles (archctl diagram export)"
+    }
+  },
   "documents": [
     "DATA-MODEL-LADYBUGDB.md",
     "README.md",
@@ -17,24 +32,44 @@
     "adr/ADR-003-reutilizacion-y-adaptacion-de-skills.md",
     "adr/ADR-004-persistencia-externa-xdg.md",
     "adr/ADR-005-ladybugdb-grafo-canonico-y-evidencias.md",
-    "adr/ADR-006-adaptadores-de-herramientas-cli.md",
+    "adr/ADR-006-adaptadores-de-herramientas-cli.md (DEPRECADO)",
     "adr/ADR-007-modelos-y-renderizadores-de-diagramas.md",
     "adr/ADR-008-recuperacion-versionado-y-evolucion.md",
     "adr/ADR-009-relaciones-semanticas-reificadas.md",
     "adr/ADR-010-concurrencia-ladybugdb.md",
     "adr/ADR-011-renderers-locales-y-bloqueo-de-publicos.md",
     "adr/ADR-012-adopcion-incremental-crates-analisis.md",
+    "adr/ADR-013-viewer-ortogonal.md",
+    "adr/README.md",
     "manifest.json",
     "schema/001_initial_schema.cypher",
     "schema/README.md",
     "schema/metamodel-core.json"
   ],
+  "deprecations": {
+    "adr/ADR-006-adaptadores-de-herramientas-cli.md": {
+      "deprecated_at": "2026-07-29T22:45:00+02:00",
+      "reason": "Sustituido íntegramente por ADR-012 (política de librerías) y ADR-013 (separación del viewer)",
+      "supersedes_relationship": "ADR-012 absorbe la política; ADR-013 absorbe la decisión sobre renderers",
+      "retained": "Preservado como registro histórico. No tomar decisiones basándose en este documento."
+    }
+  },
   "supersedes": [
     "opencode-architecture-diagrams-v2 original",
     "ADR-005 basado en SQLite",
     "docs/data-model.md (anterior propiedad JSON+SQLite)",
     "docs/adr/README.md plano de 7 ADRs",
     "ROADMAP.md (root, 3 fases cortas)",
-    "ROADMAP.md v2.1 (renumerado: M5-M8 desplazados a M9-M12; M5-M8 nuevos = gix, cargo_metadata, ast-grep-language, tree-sitter-graph)"
-  ]
+    "ROADMAP.md v2.1 (renumerado M5-M8 → M9-M12)",
+    "ROADMAP.md v2.2 (introduce M5-M8 como ciclo de librerías)",
+    "ADR-006 (política de adaptadores CLI) — deprecado, sustituido por ADR-012 + ADR-013"
+  ],
+  "project_handoff": {
+    "archctl_to_archview": {
+      "artifact": "diagram-bundle/ directory (manifest.json, projection.json, evidence.json, styles.json, assets/)",
+      "command": "archctl diagram export <id> --format viewer-bundle --output <dir>",
+      "reverse_command": "archctl diagram apply --changes viewer-changes.json",
+      "contract_versioning": "DiagramaProjection schema es versionado independientemente del binario"
+    }
+  }
 }

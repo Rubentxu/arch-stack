@@ -1,9 +1,10 @@
-# ADR-012 — Política "descartar CLIs" + ciclo M5–M8 de adopción incremental
+# ADR-012 — Política "descartar CLIs" + ciclo M5–M8 de adopción incremental + renderers como librerías
 
 **Estado:** Aceptado
 **Fecha:** 29 de julio de 2026
-**Sustituye:** parte de [ADR-006](ADR-006-adaptadores-de-herramientas-cli.md) (política general de integración de herramientas)
-**Relacionado:** ADR-005 (LadybugDB), ADR-011 (renderers locales)
+**Sustituye:** ADR-006 (deprecado íntegramente — ver ADR-006 § Por qué se deprecó)
+**Complementado por:** [ADR-013](ADR-013-viewer-ortogonal.md) (separación del viewer interactivo)
+**Relacionado:** ADR-005 (LadybugDB), ADR-011 (renderers locales), ADR-007 (modos de render)
 
 ## Contexto
 
@@ -25,10 +26,13 @@ propuesta original listaba:
 - Workspace multi-crate de 18 paquetes con `archctl-analysis-*` y
   `archctl-language-*` separados por concern.
 
-Además, una segunda revisión del usuario endureció la postura:
+Además, una segunda revisión endureció la postura:
 "descartamos todo los cli" — archctl debe evitar invocar CLIs
 externos siempre que exista una librería Rust mantenida que cumpla
-la misma función.
+la misma función. Y una tercera iteración extendió la misma lógica a
+los **renderers**, motivando la separación entre `archctl` (sidecar
+CLI con rendering estático) y `archview` (proyecto separado para
+rendering interactivo, ver [ADR-013](ADR-013-viewer-ortogonal.md)).
 
 ## Decisión
 
@@ -36,10 +40,9 @@ Adoptamos **dos cosas** en este ADR:
 
 1. **Una política**: archctl descarta CLIs externos cuando existe una
    librería Rust mantenida activamente. Los CLIs se invocan solo
-   cuando no hay alternativa razonable en Rust. Detalle y excepciones
-   en [ADR-006 § Sustitución parcial](ADR-006-adaptadores-de-herramientas-cli.md#sustitución-parcial-29-de-julio-de-2026).
-2. **Un ciclo concreto de adopción**: M5–M8 introduce 4 crates ahora,
-   en commits separados, con default-features off cuando sea posible.
+   cuando no hay alternativa razonable en Rust.
+2. **Un ciclo concreto de adopción**: M5–M8 introduce 4 crates de
+   análisis ahora, y M9 introduce los renderers como librerías.
 
 ### Crates adoptados en este ciclo (M5–M8)
 
@@ -49,6 +52,20 @@ Adoptamos **dos cosas** en este ADR:
 | `cargo_metadata` | 0.23 | JSON estable de `cargo metadata` | Parseo manual de `Cargo.toml` |
 | `ast-grep-language` | 0.45 | Lenguajes pre-cableados (con `builtin-parser`) | Boilerplate `impl Language` por gramática |
 | `tree-sitter-graph` | 0.12 | DSL declarativo CST → grafo | Extracción ad-hoc en `evidence.rs` |
+
+### Renderers adoptados en M9 (renderers como librerías, dentro de `archctl`)
+
+| Renderer | Crate sustituto | Estado |
+|---|---|---|
+| PlantUML (`plantuml.jar`) | `plantuml-little 1.2026.2-4` — "byte-exact SVG parity with Java PlantUML", multi-licensado MIT-compatible | **M9, win claro** |
+| Mermaid (`mmdc`) | `merman 0.8.0-alpha.3` (parity-focused) o `mermaid-render 0.10.0` | **M9, win claro** |
+| Structurizr (CLI / Lite) | Renderer propio Rust con `petgraph` + `dagre-rs` + `svg` crate, alcance C4 Context/Container/Component, sin icons, sin paridad pixel-perfect con Lite | **M9, POC validado en `/tmp/structurizr_poc`** |
+
+### Rendering interactivo (NO en `archctl`, proyecto separado `archview`)
+
+El viewer interactivo (drill-down, pan/zoom, hover, comparación temporal, edición visual) **no es responsabilidad de `archctl`**. Es el proyecto separado `archview`, definido íntegramente en [ADR-013](ADR-013-viewer-ortogonal.md).
+
+`archview` consume bundles `DiagramProjection` JSON que `archctl` exporta vía `archctl diagram export`. La comunicación es por sistema de archivos. No hay servidor, no hay WebSocket, no hay daemon. ADR-001 y ADR-010 quedan intactos.
 
 ### Crates evaluados y diferidos (Fase 2 — M14 o posterior)
 
@@ -62,7 +79,7 @@ Adoptamos **dos cosas** en este ADR:
 | `swc_ecma_parser` | Oxc es preferible; swc solo se justifica si Oxc no cumple. |
 | `ctrs` (Universal Ctags port) | Sin demanda concreta todavía. |
 | `tree-sitter` gramática Kotlin | Diferido hasta que el ecosistema tree-sitter-kotlin actualice a binding ≥ 0.23. |
-| Workspace multi-crate | Sin presión de boundaries. |
+| Workspace multi-crate | Sin presión de boundaries (proyectos `archctl` y `archview` son los dos repositorios reales). |
 
 ### Política operativa
 
@@ -87,13 +104,14 @@ Para cada herramienta del Núcleo o Opcionales:
 4. Si en el futuro aparece la librería → ADR de sustitución.
 
 **Excepciones explícitas donde el CLI se mantiene** (ver tabla completa
-en ADR-006):
+en ADR-006, ahora deprecado pero preservado históricamente):
 
-- Renderers (PlantUML, Structurizr, Mermaid): no hay alternativa Rust
-  razonablemente mantenida.
-- Build metadata no-Cargo: cada herramienta tiene su protocolo.
-- Infraestructura como código (Terraform, Helm, kubectl, Syft): sin
-  parser Rust mantenido equivalente a la herramienta oficial.
+- **Build metadata no-Cargo**: cada herramienta tiene su propio protocolo.
+- **Infraestructura como código** (Terraform, Helm, kubectl, Syft):
+  sin parser Rust mantenido equivalente a la herramienta oficial.
+- **Análisis profundo opcional** (Semgrep, Joern) si se introducen en M14: mantener CLI hasta que aparezca port maduro.
+
+**Renderers**: la decisión de split entre `archctl` (estático, pure-Rust) y `archview` (interactivo, Sprotty+ELK.js) está consolidada en [ADR-013](ADR-013-viewer-ortogonal.md).
 
 ## Consecuencias
 
@@ -108,6 +126,12 @@ en ADR-006):
   versionados independientes del binario.
 - Política explícita "no CLIs" cierra la puerta a futuras
   justificaciones de fork+exec para análisis.
+- M9 cierra el último hueco de rendering en `archctl`:
+  `plantuml-little` + `merman` + el renderer Structurizr propio eliminan
+  también los renderers como CLI. ADR-011 (renderers locales) se
+  cumple sin requerir Java/Node.
+- ADR-013 consolida la separación viewer/sidecar sin romper ADR-001 ni
+  ADR-010.
 
 ### Negativas y riesgos
 
@@ -117,20 +141,28 @@ en ADR-006):
   rule packs mínimos por lenguaje no aporta valor.
 - `ast-grep-language` con `builtin-parser` arrastra ~25 gramáticas;
   tamaño del binario crece. Si molesta, desactivar `default-features`.
-- Renderers permanecen como CLI; archctl no es completamente
-  "no-CLI" sino "no-CLI para análisis y extracción".
+- `merman 0.8` es alpha; `mermaid-render 0.10` es más estable pero
+  menos completo. Adoptamos `merman` por parity-focused.
+- `plantuml-little` es versión `1.2026.2-4` (year.month.rev) siguiendo
+  la cadencia de PlantUML upstream; aceptar pin a esa versión o
+  seguir upstream.
+- El renderer Structurizr propio (M9) requiere 3-4 meses de trabajo
+  dedicado; alcance recortado a C4 Context/Container/Component, sin
+  icons, sin paridad pixel-perfect con Lite.
 
 ### Métrica de éxito
 
-Tras M8:
+Tras M9:
 
 - `archctl doctor` reporta el conjunto de crates integrado.
 - Ningún crate introducido está documentado como "planeado"; o se usa
   o se quita.
-- Binario ≤ 80 MB.
+- Binario ≤ 80 MB (sin `vizoxide`) o ≤ 90 MB (con `vizoxide`).
 - 0 invocaciones fork+exec en el path de operaciones declaradas en
   Núcleo (`archctl project resolve`, `archctl evidence extract`,
-  `archctl inventory`).
+  `archctl inventory`, `archctl render`).
+- `archview` (proyecto separado) abre un bundle generado por
+  `archctl diagram export` sin errores.
 
 ## Cómo revertir
 
@@ -143,8 +175,14 @@ Cualquier crate de este subset puede eliminarse sin tocar los demás:
   gramática que ya tenemos en `astgrep.rs`.
 - `tree-sitter-graph`: revertir a `evidence.rs` ad-hoc; el módulo se
   puede aislar en su propio archivo para borrarlo limpiamente.
+- `plantuml-little`: revertir a `plantuml.jar` (reintroduce dependencia
+  de JRE).
+- `merman`: revertir a `mmdc` (reintroduce dependencia de Node).
+- Renderer Structurizr propio: reemplazar por `vizoxide` (C lib linkeada
+  estáticamente, sin fork+exec) o aceptar dependencia de
+  Structurizr-Lite fuera de archctl.
 
-La política "descartar CLIs" misma se revierte cambiando ADR-006 de
+La política "descartar CLIs" misma se revierte cambiando ADR-012 de
 vuelta a "adaptadores CLI", pero no debería hacerse salvo que
 aparezca un caso donde una librería sustituta tenga bugs graves y el
 CLI sea claramente superior.
@@ -158,3 +196,5 @@ CLI sea claramente superior.
   explícitamente solo las nuestras.
 - `gix 0.86` requiere Rust ≥ 1.85 (ya cumplido, 1.96 disponible).
 - `cargo_metadata 0.23` requiere Rust ≥ 1.86 (ya cumplido).
+- `archview` es **proyecto separado** (ver ADR-013). No añadir nada
+  relacionado con viewer al crate de `archctl`.
