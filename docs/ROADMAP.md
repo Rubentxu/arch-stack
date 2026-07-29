@@ -21,7 +21,18 @@
 
 ## Next action
 
-**Run Phase 0 (3–4 days):** scaffold the minimal TS workspace, pin the current OpenCode release with a vendored `config.json` snapshot, run the smoke probe (0.2) to validate runner (Node vs Bun) + hook firing + write-confinement ordering + renderer prerequisites, author the evidence-discipline skill (0.3), then **Gate Zero (0.4)** — adapt exactly one external skill end-to-end and run it against a tiny 5-file non-Git fixture with a hand-labelled gold set; normalize the produced output (not hand-authored) to a minimal IR; project to `workspace.dsl`; validate/export with a pinned headless Structurizr command and inspect through the `local` viewer. **Stop on any of:** skill adaptation failure, write outside `$ARCHCTL_PROJECT_DIR`, unsupported high-confidence claim, render failure. Do not invest in Phase 1 until Gate Zero passes.
+> **Cycle 1 is CLOSED** (see [`CYCLE-CLOSE.md`](../CYCLE-CLOSE.md)). The plan
+> drawn up in this roadmap (Phases 0–2) has been executed end-to-end on
+> `main`; 60/60 tests are green; Gate Zero, the spike report, `archctl
+> doctor`, and the full language-drift guard all PASS / OK. The next
+> action for any future cycle is to pick one of the deferred follow-ups
+> in `CYCLE-CLOSE.md` and start a new cycle (M3 Rust with measured
+> thresholds, real fixtures, LLM-driven extraction, etc.).
+
+Run Phase 0 only if you are **restarting from scratch on a new
+machine**. Otherwise treat this repo as a closed decision-grade planning
+base with a working TypeScript MVP, and open the follow-up items in
+`CYCLE-CLOSE.md` when you resume.
 
 ---
 
