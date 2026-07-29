@@ -3,6 +3,29 @@
 All notable changes to archctl are recorded here. The format follows
 Keep-a-Changelog; dates are ISO-8601 (planning workspace).
 
+## [0.1.0-cycle-close] — 2026-07-29
+
+### Closed
+- **Cycle 1 (planning + M0 + M1 + M2) closed.** Every Phase 0–2 task in
+  `sddk/architecture-intelligence-platform/tasks.md` is `[x]` (38 in
+  total: 4 M0 + 12 M1 + 16 M2 + 6 deferred). 60/60 tests green; Gate Zero
+  PASS (Jaccard 1.000); spike-report PASS; `archctl doctor` OK; full
+  language-drift guard OK; two local renderers reachable on :18080 and
+  :18000.
+- Repo in `main` with 13 commits; no remote, no tags, no product releases.
+
+### Known follow-ups (out of cycle 1 scope)
+- Real Rust tiny + TypeScript medium fixture repos (M1.11 placeholder).
+- LLM-driven extraction (M1 missing; the deterministic runner is the
+  placeholder).
+- End-to-end OpenCode hook firing (M0.4 deliberately leaves unverified;
+  M3+ task).
+- Skills lockfile with SPDX allow-list enforcement (ADR-0008 wired
+  through doctor; full lock file content is M2.9 deferred).
+- Bundle import/export CLI (M2.12) and on-call (M2.14).
+- M3 (Rust, ADR-0001-gated) / M4 (temporal model + drift diff) / M5
+  (observed graph + LLM + deep analyzers).
+
 ## [0.0.0-WU1] — 2026-07-29
 
 ### Added
