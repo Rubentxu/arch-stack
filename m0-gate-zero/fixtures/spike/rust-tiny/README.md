@@ -1,14 +1,31 @@
-# Rust tiny fixture — planned for M1
+# rust-tiny-fixture
 
-This fixture is a *placeholder* for the M1 Rust tiny repo (≤5k LoC). It is
-not yet materialised because the Spike Report (1.12) operates on synthetic
-IRs against the gold set; the real Rust repo will land when M1 starts.
+In-tree Rust workspace used by archctl's M1 spike (task 1.11). It is
+intentionally tiny and self-contained so that:
 
-What the fixture will provide:
-- A small Rust workspace (`cargo metadata` ingestable) with at most 5k LoC.
-- Hand-labelled gold set (`gold.json`) covering the discovered workspace
-  members + their relationship graph.
-- SPDX license declaration in `LICENSE.spdx`.
+- The fast profile (`ast-grep` + `ctags` + `cargo metadata`) can ingest it
+  in seconds.
+- The IR produced from the deterministic runner matches a hand-labelled
+  gold set with Jaccard ≥ 0.95.
 
-The placeholder exists so the file path is reserved and the manifest of the
-spike suite is stable.
+## Layout
+
+```
+rust-tiny/
+  Cargo.toml              # MIT, edition 2021, ≤5 kLoC
+  LICENSE.spdx.json       # machine-readable SPDX license declaration
+  README.md               # this file
+  gold.json               # hand-labelled gold set (containers + relationships)
+  src/
+    lib.rs                # public API surface
+    service.rs            # Container candidate — exports Service type
+    repo.rs               # Container candidate — exports Repo type
+    store.rs              # Container candidate — exports Store type
+    main.rs               # entry point — wires the three together
+```
+
+## License
+
+This fixture is **MIT** — written in-tree specifically for archctl, so
+there is no third-party license ambiguity. See `LICENSE.spdx.json` for
+the SPDX-2.3 declaration.

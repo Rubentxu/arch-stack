@@ -1,0 +1,15 @@
+[package]
+name = "rust-tiny-fixture"
+version = "0.1.0"
+edition = "2021"
+description = "Real fixture repo for archctl spike (task 1.11) — MIT, written in-tree"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rust-tiny-fixture"
+path = "src/main.rs"
+
+[dependencies]
