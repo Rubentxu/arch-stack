@@ -1,0 +1,17 @@
+{
+  "capability": "extract.symbols",
+  "name": "ctags-symbols",
+  "version": "0.1.0",
+  "command": ["ctags", "--output-format=json", "--fields=+nKSE", "--extras=+q", "-R", "{repoRoot}"],
+  "requires": {
+    "binaries": ["ctags"],
+    "minVersions": { "ctags": "6.0.0" }
+  },
+  "output": {
+    "type": "ast",
+    "pattern": "\"path\":\"(?<path>[^\"]+)\".*\"line\":(?<line>\\d+).*\"name\":\"(?<name>[^\"]+)\"",
+    "classification": "fact",
+    "confidence": 0.9,
+    "method": "heuristic-v1"
+  }
+}
