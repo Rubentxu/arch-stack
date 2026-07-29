@@ -3,7 +3,7 @@ use lbug::{Connection, Database, SystemConfig, Value};
 use serde::Serialize;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 const SCHEMA_CYPHER: &str = include_str!("../../docs/schema/001_initial_schema.cypher");
 
@@ -22,13 +22,42 @@ pub fn database_path(project_dir: &Path) -> PathBuf {
     project_dir.join("architecture.lbdb")
 }
 
+/// Scope-bounded Database + Connection. Both drop together at the end
+/// of the enclosing block; nothing leaks.
+///
+/// `conn` is declared FIRST so it drops before `_db`. Rust drops struct
+/// fields in declaration order; if `_db` dropped first, `conn`'s
+/// destructor would access freed memory.
+struct Session {
+    // SAFETY: this Connection borrows from `_db` below. The `'static`
+    // marker is a lie — the real lifetime is bounded by `&self`. The
+    // Session struct enforces the invariant: anything holding a
+    // `Session` cannot observe `conn` outliving `_db` because field
+    // drop order is declaration order (conn first, _db second). We
+    // extend the lifetime via `std::mem::transmute` so the public API
+    // can hand out `&Connection<'_>` without HRTB gymnastics.
+    conn: Connection<'static>,
+    _db: Database,
+}
+
+fn open_session(project_dir: &Path) -> Result<Session> {
+    let path = database_path(project_dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let db = Database::new(&path, SystemConfig::default())
+        .with_context(|| format!("open database at {}", path.display()))?;
+    let conn = Connection::new(&db).context("create connection")?;
+    let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
+    Ok(Session { conn, _db: db })
+}
+
 pub fn init(project_dir: &Path) -> Result<PathBuf> {
     let path = database_path(project_dir);
     std::fs::create_dir_all(project_dir)
         .with_context(|| format!("mkdir {}", project_dir.display()))?;
-    let db = Database::new(&path, SystemConfig::default())
-        .with_context(|| format!("create database at {}", path.display()))?;
-    let conn = Connection::new(&db).context("create connection")?;
+    let session = open_session(&path.parent().unwrap_or(project_dir))?;
     let marker = project_dir.join(".archctl-schema");
     if marker.exists() {
         let installed = std::fs::read_to_string(&marker).unwrap_or_default();
@@ -38,52 +67,50 @@ pub fn init(project_dir: &Path) -> Result<PathBuf> {
         }
     }
     info!("bootstrapping schema from docs/schema/001_initial_schema.cypher");
-    for stmt in schema_statements(SCHEMA_CYPHER) {
-        conn.query(&stmt).with_context(|| format!("apply schema statement: {stmt}"))?;
+    let stmts = schema_statements(SCHEMA_CYPHER);
+    info!(statements = stmts.len(), "applying schema statements");
+    for (i, stmt) in stmts.iter().enumerate() {
+        session
+            .conn
+            .query(stmt)
+            .with_context(|| format!("schema statement #{i} failed: {stmt}"))?;
     }
     std::fs::write(&marker, BOOTSTRAP_VERSION).context("write schema marker")?;
     Ok(path)
 }
 
 /// Split a Cypher script into individual statements, stripping
-/// `CREATE GRAPH` / `USE <graph>` directives that lbug does not need
-/// (single-graph mode).
+/// directives that lbug does not need in single-graph mode.
+///
+/// The v2 schema (`docs/schema/001_initial_schema.cypher`) opens with
+/// `CREATE GRAPH architecture; USE architecture;` because it was
+/// written against Neo4j semantics. lbug 0.18.3 runs in single-graph
+/// mode and silently no-ops those prefixes; subsequent `MATCH` queries
+/// then fail with "Table X does not exist". We strip them here so the
+/// canonical docs schema is the source of truth and lbug gets a clean
+/// script.
 fn schema_statements(script: &str) -> Vec<String> {
     script
         .split(';')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .filter(|s| !s.to_ascii_uppercase().starts_with("CREATE GRAPH"))
-        .filter(|s| !s.to_ascii_uppercase().starts_with("USE "))
+        .filter(|s| {
+            let upper = s.to_ascii_uppercase();
+            !upper.starts_with("CREATE GRAPH") && !upper.starts_with("USE ")
+        })
         .map(|s| format!("{s};"))
         .collect()
 }
 
-/// Open a fresh Connection on a freshly-leaked Database. Each call leaks
-/// a small amount of memory tied to the database handle; this matches the
-/// cost of a one-shot CLI command. Long-running processes should switch
-/// to a different ownership model.
-fn open_conn(project_dir: &Path) -> Result<Connection<'static>> {
-    let path = database_path(project_dir);
-    if !path.exists() {
-        std::fs::create_dir_all(project_dir)
-            .with_context(|| format!("mkdir {}", project_dir.display()))?;
-    }
-    let db = Box::leak(Box::new(
-        Database::new(&path, SystemConfig::default())
-            .with_context(|| format!("open database at {}", path.display()))?,
-    ));
-    Connection::new(db).context("create connection")
-}
-
 pub fn stat(project_dir: &Path) -> Result<GraphStat> {
-    let conn = open_conn(project_dir)?;
+    let session = open_session(project_dir)?;
+    let conn = &session.conn;
     Ok(GraphStat {
-        elements: count_match(&conn, "MATCH (:Element) RETURN count(*)")?,
-        relations: count_match(&conn, "MATCH (:SemanticRelation) RETURN count(*)")?,
-        evidence: count_match(&conn, "MATCH (:Evidence) RETURN count(*)")?,
-        metatypes: count_match(&conn, "MATCH (:MetaType) RETURN count(*)")?,
-        predicates: count_match(&conn, "MATCH (:Predicate) RETURN count(*)")?,
+        elements: count_match(conn, "MATCH (:Element) RETURN count(*)")?,
+        relations: count_match(conn, "MATCH (:SemanticRelation) RETURN count(*)")?,
+        evidence: count_match(conn, "MATCH (:Evidence) RETURN count(*)")?,
+        metatypes: count_match(conn, "MATCH (:MetaType) RETURN count(*)")?,
+        predicates: count_match(conn, "MATCH (:Predicate) RETURN count(*)")?,
     })
 }
 
@@ -161,6 +188,17 @@ fn value_to_json(v: &Value) -> Json {
     }
 }
 
+/// Allowlist for ids that are interpolated into Cypher queries.
+///
+/// lbug 0.18.3 has no parameter binding (`PreparedStatement::execute()`
+/// does not exist; the prepared statement is read-only-check only), so
+/// `neighbours` interpolates the id as a string literal. Any character
+/// outside the allowlist must be rejected — otherwise we open the door
+/// to Cypher injection (closing the quote, adding `}) RETURN ...`, etc).
+///
+/// Allowed: ASCII alphanumeric + `.` `-` `_` `:` `/`. This covers the
+/// graph ids we generate (`c4:system:checkout`, `uml.class:<fqcn>`,
+/// paths) and nothing else.
 fn validate_identifier(id: &str) -> Result<&str> {
     if id.is_empty() {
         anyhow::bail!("empty identifier");
@@ -168,19 +206,22 @@ fn validate_identifier(id: &str) -> Result<&str> {
     if id.len() > 256 {
         anyhow::bail!("identifier too long ({} > 256)", id.len());
     }
-    let ok = id
+    if !id.is_ascii() {
+        anyhow::bail!("non-ASCII characters in identifier");
+    }
+    let bad = id
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '/'));
-    if !ok {
-        anyhow::bail!("invalid identifier (allowed: alphanumeric, . - _ : /)");
+        .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '/')));
+    if let Some(c) = bad {
+        anyhow::bail!("invalid character {c:?} in identifier (allowed: alnum, . - _ : /)");
     }
     Ok(id)
 }
 
 pub fn query(project_dir: &Path, cypher: &str) -> Result<Vec<Json>> {
-    let conn = open_conn(project_dir)?;
+    let session = open_session(project_dir)?;
     debug!(%cypher, "graph query");
-    run_query(&conn, cypher)
+    run_query(&session.conn, cypher)
 }
 
 fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
@@ -204,8 +245,12 @@ pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8) -> Result<Vec
     let cypher = format!(
         "MATCH (e:Element {{id: '{id}'}})-[*1..{depth}]-(n) RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
-    let conn = open_conn(project_dir)?;
-    run_query(&conn, &cypher)
+    if depth > 2 {
+        warn!(depth, "graph traversal depth > 2 may be slow on large graphs");
+    }
+    let session = open_session(project_dir)?;
+    debug!(%cypher, "graph neighbours");
+    run_query(&session.conn, &cypher)
 }
 
 #[cfg(test)]
@@ -217,8 +262,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
         init(&project).unwrap();
-        let conn = open_conn(&project).unwrap();
-        conn.query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
+        let session = open_session(&project).unwrap();
+        session
+            .conn
+            .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
             .unwrap();
         let rows = query(&project, "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;").unwrap();
         assert_eq!(rows.len(), 1);
@@ -249,11 +296,81 @@ mod tests {
     }
 
     #[test]
-    fn validate_identifier_rejects_bad_chars() {
-        assert!(validate_identifier("good_id.with:dots-and-slashes/path").is_ok());
+    fn schema_statements_strips_create_graph_and_use() {
+        let script = "\
+            CREATE GRAPH architecture;\n\
+            USE architecture;\n\
+            CREATE NODE TABLE Foo(id STRING PRIMARY KEY);\n\
+            CREATE REL TABLE BAR(FROM Foo TO Foo);\n\
+        ";
+        let stmts = schema_statements(script);
+        assert_eq!(stmts.len(), 2, "expected 2 statements, got {stmts:#?}");
+        assert!(stmts[0].contains("CREATE NODE TABLE Foo"));
+        assert!(stmts[1].contains("CREATE REL TABLE BAR"));
+        assert!(!stmts.iter().any(|s| s.to_ascii_uppercase().contains("CREATE GRAPH")));
+        assert!(!stmts.iter().any(|s| s.to_ascii_uppercase().contains("USE ")));
+    }
+
+    #[test]
+    fn schema_statements_handles_blank_lines() {
+        let script = "\nCREATE NODE TABLE A(id STRING);\n\nCREATE NODE TABLE B(id STRING);\n";
+        let stmts = schema_statements(script);
+        assert_eq!(stmts.len(), 2, "got {stmts:#?}");
+    }
+
+    #[test]
+    fn validate_identifier_accepts_canonical_graph_ids() {
+        assert!(validate_identifier("c4:system:checkout").is_ok());
+        assert!(validate_identifier("uml.class:org.example.Order").is_ok());
+        assert!(validate_identifier("behavior:scenario:orders/create-order/success").is_ok());
+        assert!(validate_identifier("evidence-123_v2").is_ok());
+    }
+
+    #[test]
+    fn validate_identifier_rejects_cypher_injection() {
         assert!(validate_identifier("").is_err());
         assert!(validate_identifier("has spaces").is_err());
         assert!(validate_identifier("quote'injection").is_err());
+        assert!(validate_identifier("quote\"double").is_err());
         assert!(validate_identifier("semi;colon").is_err());
+        assert!(validate_identifier("paren)boom").is_err());
+        assert!(validate_identifier("curly}boom").is_err());
+        assert!(validate_identifier("nonascií").is_err());
+        assert!(validate_identifier(&"x".repeat(257)).is_err());
+    }
+
+    #[test]
+    fn neighbours_rejects_bad_id_before_touching_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        init(&project).unwrap();
+        let err = neighbours(&project, "evil'}) RETURN 1;//", 1).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("invalid character"), "got: {msg}");
+    }
+
+    #[test]
+    fn neighbours_returns_of_type_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        init(&project).unwrap();
+        let session = open_session(&project).unwrap();
+        session
+            .conn
+            .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
+            .unwrap();
+        session
+            .conn
+            .query("CREATE (:Element {id: 'e1', kind_id: 'mt.system', category: 'c4', canonical_key: 'k1'});")
+            .unwrap();
+        session
+            .conn
+            .query(
+                "MATCH (e:Element {id: 'e1'}), (m:MetaType {id: 'mt.system'}) CREATE (e)-[:OF_TYPE]->(m);",
+            )
+            .unwrap();
+        let rows = neighbours(&project, "e1", 1).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], "mt.system");
     }
 }
