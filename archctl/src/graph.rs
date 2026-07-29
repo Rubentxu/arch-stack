@@ -28,7 +28,7 @@ pub fn database_path(project_dir: &Path) -> PathBuf {
 /// `conn` is declared FIRST so it drops before `_db`. Rust drops struct
 /// fields in declaration order; if `_db` dropped first, `conn`'s
 /// destructor would access freed memory.
-struct Session {
+pub struct Session {
     // SAFETY: this Connection borrows from `_db` below. The `'static`
     // marker is a lie — the real lifetime is bounded by `&self`. The
     // Session struct enforces the invariant: anything holding a
@@ -36,11 +36,11 @@ struct Session {
     // drop order is declaration order (conn first, _db second). We
     // extend the lifetime via `std::mem::transmute` so the public API
     // can hand out `&Connection<'_>` without HRTB gymnastics.
-    conn: Connection<'static>,
+    pub conn: Connection<'static>,
     _db: Database,
 }
 
-fn open_session(project_dir: &Path) -> Result<Session> {
+pub fn open_session(project_dir: &Path) -> Result<Session> {
     let path = database_path(project_dir);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -199,7 +199,7 @@ fn value_to_json(v: &Value) -> Json {
 /// Allowed: ASCII alphanumeric + `.` `-` `_` `:` `/`. This covers the
 /// graph ids we generate (`c4:system:checkout`, `uml.class:<fqcn>`,
 /// paths) and nothing else.
-fn validate_identifier(id: &str) -> Result<&str> {
+pub fn validate_identifier(id: &str) -> Result<&str> {
     if id.is_empty() {
         anyhow::bail!("empty identifier");
     }

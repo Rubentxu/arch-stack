@@ -2,9 +2,11 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+use crate::astgrep::Lang;
+use crate::evidence::{self, EvidenceKind};
 use crate::project::resolve_project;
 use crate::skills;
-use crate::{doctor, graph, render};
+use crate::{doctor, graph, inventory, render};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum RenderFormat {
@@ -29,6 +31,58 @@ pub enum SkillsAction {
     Sync,
     Verify,
     Activate { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum InventoryAction {
+    Tree {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        #[arg(long)]
+        max_depth: Option<usize>,
+        #[arg(long, default_value_t = 50_000)]
+        max_entries: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    Languages {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        #[arg(long)]
+        max_depth: Option<usize>,
+        #[arg(long, default_value_t = 50_000)]
+        max_entries: usize,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EvidenceAction {
+    Extract {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        #[arg(long, value_enum)]
+        lang: Lang,
+        #[arg(long)]
+        pattern: String,
+        #[arg(long, default_value = "ast-grep match")]
+        claim: String,
+        #[arg(long, value_enum, default_value_t = EvidenceKind::Structural)]
+        kind: EvidenceKind,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        put: bool,
+    },
+    List {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -64,7 +118,7 @@ pub enum GraphAction {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "archctl", version, about = "OpenCode Architecture Diagrammer sidecar CLI (M2)")]
+#[command(name = "archctl", version, about = "OpenCode Architecture Diagrammer sidecar CLI (M4)")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -80,6 +134,14 @@ pub enum Command {
     Graph {
         #[command(subcommand)]
         action: GraphAction,
+    },
+    Inventory {
+        #[command(subcommand)]
+        action: InventoryAction,
+    },
+    Evidence {
+        #[command(subcommand)]
+        action: EvidenceAction,
     },
     Render {
         source: PathBuf,
@@ -109,6 +171,20 @@ pub fn run(cli: Cli) -> Result<i32> {
             GraphAction::Neighbours { cwd, id, depth, json } => {
                 graph_neighbours_cmd(cwd, &id, depth, json)
             }
+        },
+        Command::Inventory { action } => match action {
+            InventoryAction::Tree { cwd, max_depth, max_entries, json } => {
+                inventory_tree_cmd(cwd, max_depth, max_entries, json)
+            }
+            InventoryAction::Languages { cwd, max_depth, max_entries, json } => {
+                inventory_languages_cmd(cwd, max_depth, max_entries, json)
+            }
+        },
+        Command::Evidence { action } => match action {
+            EvidenceAction::Extract { cwd, lang, pattern, claim, kind, json, put } => {
+                evidence_extract_cmd(cwd, lang, &pattern, &claim, kind, json, put)
+            }
+            EvidenceAction::List { cwd, path, json } => evidence_list_cmd(cwd, path, json),
         },
         Command::Render { source, format, out, kroki_url } => {
             render::run(source, format, out, &kroki_url).context("render failed")
@@ -198,4 +274,128 @@ fn graph_neighbours_cmd(cwd: Option<PathBuf>, id: &str, depth: u8, json: bool) -
 
 fn json_string(v: &serde_json::Value) -> Option<&str> {
     v.as_str()
+}
+
+fn inventory_tree_cmd(
+    cwd: Option<PathBuf>,
+    max_depth: Option<usize>,
+    max_entries: usize,
+    json: bool,
+) -> Result<i32> {
+    let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let entries = inventory::tree(&cwd, max_depth, max_entries)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+    } else {
+        for e in &entries {
+            let kind = match e.kind {
+                inventory::EntryKind::Dir => "d",
+                inventory::EntryKind::File => "f",
+            };
+            let size = e.size_bytes.map(|s| format!(" {s}B")).unwrap_or_default();
+            println!("{kind} {}{size}", e.path);
+        }
+    }
+    Ok(0)
+}
+
+fn inventory_languages_cmd(
+    cwd: Option<PathBuf>,
+    max_depth: Option<usize>,
+    max_entries: usize,
+    json: bool,
+) -> Result<i32> {
+    let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let summary = inventory::languages(&cwd, max_depth, max_entries)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        println!("files: {}  bytes: {}", summary.total_files, summary.total_bytes);
+        let mut v: Vec<_> = summary.languages.iter().collect();
+        v.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes));
+        for (lang, stat) in v {
+            println!("  {lang:<14} files={:<6} bytes={}", stat.files, stat.bytes);
+        }
+    }
+    Ok(0)
+}
+
+fn evidence_extract_cmd(
+    cwd: Option<PathBuf>,
+    lang: Lang,
+    pattern: &str,
+    claim: &str,
+    kind: EvidenceKind,
+    json: bool,
+    do_put: bool,
+) -> Result<i32> {
+    let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let result = evidence::extract(&cwd, lang, pattern, claim, kind)?;
+    let written = if do_put {
+        let info = resolve_project(&cwd.to_string_lossy());
+        evidence::put(&info.project_dir, &result.evidence).context("evidence put")?
+    } else {
+        0
+    };
+    if json {
+        let mut payload = serde_json::json!({
+            "language": result.language,
+            "pattern": result.pattern,
+            "files_scanned": result.files_scanned,
+            "matches_total": result.matches_total,
+            "evidence": result.evidence,
+            "persisted": written,
+        });
+        if !do_put {
+            payload.as_object_mut().unwrap().remove("persisted");
+        }
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("language:  {}", result.language);
+        println!("pattern:   {}", result.pattern);
+        println!("scanned:   {} files", result.files_scanned);
+        println!("matches:   {}", result.matches_total);
+        for ev in &result.evidence {
+            println!(
+                "  {path}:{sl}-{el}  {preview}",
+                path = ev.path,
+                sl = ev.start_line,
+                el = ev.end_line,
+                preview = ev.text_preview.as_deref().unwrap_or(""),
+            );
+        }
+        if do_put {
+            println!("persisted: {written} rows");
+        }
+    }
+    Ok(0)
+}
+
+fn evidence_list_cmd(cwd: Option<PathBuf>, path: Option<String>, json: bool) -> Result<i32> {
+    let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let info = resolve_project(&cwd.to_string_lossy());
+    let cypher = match path.as_deref() {
+        Some(p) => {
+            let safe = crate::graph::validate_identifier(p)?;
+            format!("MATCH (e:Evidence) WHERE e.path = '{safe}' RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path ORDER BY e.start_line;")
+        }
+        None => "MATCH (e:Evidence) RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path ORDER BY e.start_line LIMIT 100;".to_string(),
+    };
+    let rows = crate::graph::query(&info.project_dir, &cypher).context("evidence list")?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else {
+        for row in &rows {
+            println!(
+                "{id}\t{kind}\t{path}:{sl}-{el}\t{claim}",
+                id = row.get("e.id").and_then(json_string).unwrap_or("?"),
+                kind = row.get("e.kind").and_then(json_string).unwrap_or("?"),
+                path = row.get("e.path").and_then(json_string).unwrap_or("?"),
+                sl = row.get("e.start_line").map(|v| v.to_string()).unwrap_or_default(),
+                el = row.get("e.end_line").map(|v| v.to_string()).unwrap_or_default(),
+                claim = row.get("e.claim").and_then(json_string).unwrap_or(""),
+            );
+        }
+    }
+    Ok(0)
 }
