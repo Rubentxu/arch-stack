@@ -1,0 +1,53 @@
+# archctl skills lockfile (per ADR-003).
+# Modes: direct | wrapped | patched. <pin at first sync> auto-fills on first sync.
+# optional: true means the skill is allowed to be missing at runtime.
+schema-version: 1
+
+skills:
+  c4-codebase-architecture:
+    source: https://github.com/lmammino/c4-codebase-architecture-skill.git
+    commit: <pin at first sync>
+    mode: wrapped
+    wrapper: profile/skills/architecture-discovery
+    license: MIT
+    optional: false
+
+  c4-architecture:
+    source: https://github.com/bitsmuggler/c4-skill.git
+    commit: <pin at first sync>
+    mode: wrapped
+    wrapper: profile/skills/c4-from-graph
+    license: MIT
+    optional: false
+
+  c4-model:
+    source: https://github.com/cheriftj/c4-model-skill.git
+    commit: <pin at first sync>
+    mode: wrapped
+    wrapper: profile/skills/use-cases-from-graph
+    license: MIT
+    optional: false
+
+  plantuml-skill:
+    source: https://github.com/Agents365-ai/plantuml-skill.git
+    commit: <pin at first sync>
+    mode: wrapped
+    wrapper: profile/skills/sequence-from-scenario
+    license: MIT
+    optional: false
+
+  mermaid-skill:
+    source: <TBD — pin when upstream is chosen>
+    commit: <pin at first sync>
+    mode: direct
+    wrapper: profile/skills/class-view-from-graph
+    license: <TBD>
+    optional: true
+
+  drawio-skill:
+    source: <TBD — pin when upstream is chosen>
+    commit: <pin at first sync>
+    mode: direct
+    wrapper: profile/skills/diagram-review
+    license: <TBD>
+    optional: true

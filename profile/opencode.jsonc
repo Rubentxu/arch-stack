@@ -26,29 +26,76 @@
       "uml-modeler": "allow",
       "diagram-reviewer": "allow"
     },
-    "webfetch": "deny"
+    "webfetch": "deny",
+    "skill": {
+      "*": "deny",
+      "architecture-discovery": "allow",
+      "c4-from-graph": "allow",
+      "use-cases-from-graph": "allow",
+      "class-view-from-graph": "allow",
+      "sequence-from-scenario": "allow",
+      "diagram-review": "allow"
+    }
   },
 
   "agents": {
     "diagram-architect": {
       "path": "agents/diagram-architect.md",
-      "model": "default"
+      "model": "default",
+      "permission": {
+        "skill": {
+          "*": "deny",
+          "architecture-discovery": "allow",
+          "c4-from-graph": "allow",
+          "use-cases-from-graph": "allow",
+          "class-view-from-graph": "allow",
+          "sequence-from-scenario": "allow",
+          "diagram-review": "allow"
+        }
+      }
     },
     "architecture-evidence": {
       "path": "agents/architecture-evidence.md",
-      "model": "default"
+      "model": "default",
+      "permission": {
+        "skill": {
+          "*": "deny",
+          "architecture-discovery": "allow"
+        }
+      }
     },
     "c4-modeler": {
       "path": "agents/c4-modeler.md",
-      "model": "default"
+      "model": "default",
+      "permission": {
+        "skill": {
+          "*": "deny",
+          "c4-from-graph": "allow",
+          "use-cases-from-graph": "allow"
+        }
+      }
     },
     "uml-modeler": {
       "path": "agents/uml-modeler.md",
-      "model": "default"
+      "model": "default",
+      "permission": {
+        "skill": {
+          "*": "deny",
+          "use-cases-from-graph": "allow",
+          "class-view-from-graph": "allow",
+          "sequence-from-scenario": "allow"
+        }
+      }
     },
     "diagram-reviewer": {
       "path": "agents/diagram-reviewer.md",
-      "model": "default"
+      "model": "default",
+      "permission": {
+        "skill": {
+          "*": "deny",
+          "diagram-review": "allow"
+        }
+      }
     }
   },
 
