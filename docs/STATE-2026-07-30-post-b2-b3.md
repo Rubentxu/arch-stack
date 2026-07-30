@@ -22,9 +22,11 @@
 | Tests | **89 verde** (87 unit + 2 nuevos de SourceOrigin) |
 | Warnings | 0 |
 | Branch | `feat/m5-gix-identity` |
-| Commit HEAD | `8758fd1` |
-| Último release conceptual | M8 + Ola 1 ports hexagonales + **B2 (scope gates) + B3 (SourceOrigin)** |
+| Commit HEAD | `7800d07` (state) → `b7276ee` (workflow doc) → `6fa3920` (hook) |
+| Último release conceptual | M8 + Ola 1 ports hexagonales + **B2 (scope gates) + B3 (SourceOrigin)** + **trunk-base enforcement** |
 | Siguiente paso planeado | B1 (grafo canónico de evidencia) o Refactor 1b (Filesystem port) |
+
+> **Actualizado el workflow** en el mismo ciclo con `docs/git-trunk-base.md` + `commit-msg` hook. Ver § "Workflow codificado" abajo.
 
 ## Cambios en este ciclo
 
@@ -93,6 +95,50 @@ Cobertura ampliada del doctor:
 | Tests de `must_hold` y `editable_files` | Cubren alias TOML (`editable` ↔ `editable_files`) y el patrón flat (sin `[scope]` anidado) |
 
 ## Cómo se usa
+
+```bash
+cd /var/home/rubentxu/Proyectos/agentesIA/archctl/archctl
+cargo run --quiet -- doctor --check-scope
+```
+
+Output esperado (con manifests que pasen todas las gates):
+
+```
+[OK  ] scope evidence (0 findings)
+[OK  ] scope store (0 findings)
+[OK  ] scope tsg (0 findings)
+SCOPE: OK
+```
+
+Exit 0 si todo pasa, exit 1 si algún gate reporta FAIL. Cada
+finding se imprime a stderr con su severidad para que tools
+puedan parsear sin truncar la salida estructurada.
+
+## Workflow codificado
+
+Trunk-base workflow está formalizado en este repo:
+
+- **`docs/git-trunk-base.md`** — contrato completo: branch naming,
+  atomic commits, conventional commits format, anti-AI-attribution
+  policy, recovery tags, trunk sync, state handoff.
+- **`.githooks/commit-msg`** — hook ejecutable que enforce
+  conventional commits + rechaza cualquier forma de AI-attribution
+  fuera de inline code blocks. Bypass con `--no-verify` solo tras
+  revisión humana.
+- **`scripts/install-hooks.sh`** — wire-up idempotente de
+  `core.hooksPath = .githooks` (per-clone). Re-ejecutable. Imprime
+  un sanity check contra los últimos 50 commits al instalar.
+
+Para activar tras clonar el repo:
+
+```bash
+cd /var/home/rubentxu/Proyectos/agentesIA/archctl
+bash scripts/install-hooks.sh
+```
+
+11 tests cubren el hook (feat, chore, breaking, merge, fixup,
+revert, inline-code-mention pasan; subject too long, AI
+attribution real, trailing period, missing space fail).
 
 ```bash
 cd /var/home/rubentxu/Proyectos/agentesIA/archctl/archctl
