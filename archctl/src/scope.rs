@@ -26,6 +26,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::filesystem::Filesystem;
+
 /// Path of the manifests directory, relative to the project root.
 pub const MANIFESTS_DIR: &str = "manifests";
 
@@ -70,9 +72,10 @@ pub struct ScopeManifest {
 impl ScopeManifest {
     /// Load a single manifest by its scope id (without extension).
     /// Looks under `<project_root>/manifests/<id>.toml`.
-    pub fn load(project_root: &Path, scope_id: &str) -> Result<Self> {
+    pub fn load(project_root: &Path, scope_id: &str, fs: &dyn Filesystem) -> Result<Self> {
         let path = project_root.join(MANIFESTS_DIR).join(format!("{scope_id}.toml"));
-        let text = std::fs::read_to_string(&path)
+        let text = fs
+            .read_to_string(&path)
             .with_context(|| format!("read manifest {}", path.display()))?;
         let manifest: ScopeManifest = toml::from_str(&text)
             .with_context(|| format!("parse manifest {}", path.display()))?;
@@ -82,14 +85,14 @@ impl ScopeManifest {
     /// Load every `*.toml` file under `manifests/` and return the
     /// parsed manifests. Files that fail to parse are surfaced as
     /// errors (the doctor should report them, not silently skip).
-    pub fn load_all(project_root: &Path) -> Result<Vec<(String, Self)>> {
+    pub fn load_all(project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<(String, Self)>> {
         let dir = project_root.join(MANIFESTS_DIR);
-        let entries = std::fs::read_dir(&dir)
+        let entries = fs
+            .read_dir(&dir)
             .with_context(|| format!("read directory {}", dir.display()))?;
         let mut out = Vec::new();
         for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
+            let path = entry.path;
             if path.extension().and_then(|s| s.to_str()) != Some("toml") {
                 continue;
             }
@@ -98,7 +101,8 @@ impl ScopeManifest {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| anyhow::anyhow!("manifest without stem: {}", path.display()))?
                 .to_string();
-            let text = std::fs::read_to_string(&path)
+            let text = fs
+                .read_to_string(&path)
                 .with_context(|| format!("read manifest {}", path.display()))?;
             let manifest: ScopeManifest = toml::from_str(&text)
                 .with_context(|| format!("parse manifest {}", path.display()))?;
@@ -233,6 +237,7 @@ pub fn gate_editable_files_exist(
 pub fn gate_public_symbols_exist(
     project_root: &Path,
     manifest: &ScopeManifest,
+    fs: &dyn Filesystem,
 ) -> Vec<ScopeFinding> {
     let mut findings = Vec::new();
     let mut found_anywhere: std::collections::HashMap<&str, bool> = manifest
@@ -241,7 +246,7 @@ pub fn gate_public_symbols_exist(
         .map(|s| (s.as_str(), false))
         .collect();
     for path_str in &manifest.editable_files {
-        let Ok(text) = std::fs::read_to_string(project_root.join(path_str)) else {
+        let Ok(text) = fs.read_to_string(&project_root.join(path_str)) else {
             continue;
         };
         for symbol in manifest.public_symbols.iter().map(|s| s.as_str()) {
@@ -337,12 +342,13 @@ fn is_ident_cont(b: u8) -> bool {
 pub fn gate_must_hold_invariants(
     project_root: &Path,
     manifest: &ScopeManifest,
+    fs: &dyn Filesystem,
 ) -> Vec<ScopeFinding> {
     let mut findings = Vec::new();
     let all_text: String = manifest
         .editable_files
         .iter()
-        .filter_map(|p| std::fs::read_to_string(project_root.join(p)).ok())
+        .filter_map(|p| fs.read_to_string(&project_root.join(p)).ok())
         .collect::<Vec<_>>()
         .join("\n");
     for invariant in &manifest.must_hold {
@@ -362,16 +368,17 @@ pub fn gate_must_hold_invariants(
 /// Gate 3b: each `must_not_contain` string must NOT appear as a
 /// literal substring in any of the scope's editable files. This
 /// enforces negative invariants — for example, proving that a
-/// migrated port no longer contains direct `std::fs::` calls.
+/// migrated port no longer calls the std::fs module directly.
 pub fn gate_must_not_contain_invariants(
     project_root: &Path,
     manifest: &ScopeManifest,
+    fs: &dyn Filesystem,
 ) -> Vec<ScopeFinding> {
     let mut findings = Vec::new();
     let all_text: String = manifest
         .editable_files
         .iter()
-        .filter_map(|p| std::fs::read_to_string(project_root.join(p)).ok())
+        .filter_map(|p| fs.read_to_string(&project_root.join(p)).ok())
         .collect::<Vec<_>>()
         .join("\n");
     for forbidden in &manifest.must_not_contain {
@@ -543,13 +550,14 @@ pub fn check_scope(
     project_root: &Path,
     manifest: &ScopeManifest,
     include_test_count: bool,
+    fs: &dyn Filesystem,
 ) -> ScopeCheckReport {
     let scope_id = manifest.id.clone();
     let mut findings = Vec::new();
     findings.extend(gate_editable_files_exist(project_root, manifest));
-    findings.extend(gate_public_symbols_exist(project_root, manifest));
-    findings.extend(gate_must_hold_invariants(project_root, manifest));
-    findings.extend(gate_must_not_contain_invariants(project_root, manifest));
+    findings.extend(gate_public_symbols_exist(project_root, manifest, fs));
+    findings.extend(gate_must_hold_invariants(project_root, manifest, fs));
+    findings.extend(gate_must_not_contain_invariants(project_root, manifest, fs));
     if include_test_count {
         findings.extend(gate_test_count_meets_minimum(project_root, manifest));
     }
@@ -561,11 +569,11 @@ pub fn check_scope(
 }
 
 /// Run the gates against every scope under `manifests/`.
-pub fn check_all_scopes(project_root: &Path) -> Result<Vec<ScopeCheckReport>> {
-    let manifests = ScopeManifest::load_all(project_root)?;
+pub fn check_all_scopes(project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ScopeCheckReport>> {
+    let manifests = ScopeManifest::load_all(project_root, fs)?;
     let mut reports = Vec::new();
     for (_id, manifest) in &manifests {
-        reports.push(check_scope(project_root, manifest, true));
+        reports.push(check_scope(project_root, manifest, true, fs));
     }
     Ok(reports)
 }
@@ -615,9 +623,14 @@ mod tests {
         path
     }
 
+    fn system_fs() -> crate::filesystem::SystemFilesystem {
+        crate::filesystem::SystemFilesystem
+    }
+
     #[test]
     fn load_parses_minimal_manifest() {
         let tmp = fixture();
+        let fs = system_fs();
         write_manifest(
             tmp.path(),
             "demo",
@@ -627,7 +640,7 @@ version = "0.1.0"
 description = "for tests"
 "#,
         );
-        let m = ScopeManifest::load(tmp.path(), "demo").unwrap();
+        let m = ScopeManifest::load(tmp.path(), "demo", &fs).unwrap();
         assert_eq!(m.id, "demo");
         assert_eq!(m.version, "0.1.0");
         assert!(m.editable_files.is_empty());
@@ -639,6 +652,7 @@ description = "for tests"
     #[test]
     fn load_full_manifest_round_trips() {
         let tmp = fixture();
+        let fs = system_fs();
         let body = r#"
 id = "M3"
 version = "0.1.0"
@@ -651,7 +665,7 @@ minimum_tests = 60
         write_manifest(tmp.path(), "M3", body);
         let raw = std::fs::read_to_string(tmp.path().join("manifests/M3.toml")).unwrap();
         eprintln!("DEBUG raw=\n{raw}");
-        let m = ScopeManifest::load(tmp.path(), "M3").unwrap();
+        let m = ScopeManifest::load(tmp.path(), "M3", &fs).unwrap();
         eprintln!("DEBUG m={:#?}", m);
         assert_eq!(m.editable_files.len(), 2);
         assert_eq!(m.public_symbols, vec!["Evidence", "GraphStore"]);
@@ -667,10 +681,11 @@ minimum_tests = 60
     #[test]
     fn load_all_returns_every_manifest_sorted() {
         let tmp = fixture();
+        let fs = system_fs();
         write_manifest(tmp.path(), "zeta", "id=\"zeta\"\nversion=\"0.1.0\"\ndescription=\"z\"\n");
         write_manifest(tmp.path(), "alpha", "id=\"alpha\"\nversion=\"0.1.0\"\ndescription=\"a\"\n");
         write_manifest(tmp.path(), "mid", "id=\"mid\"\nversion=\"0.1.0\"\ndescription=\"m\"\n");
-        let all = ScopeManifest::load_all(tmp.path()).unwrap();
+        let all = ScopeManifest::load_all(tmp.path(), &fs).unwrap();
         let ids: Vec<&str> = all.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, vec!["alpha", "mid", "zeta"]);
     }
@@ -710,6 +725,7 @@ minimum_tests = 60
     #[test]
     fn gate_public_symbols_passes_when_all_found() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(
             tmp.path(),
             "lib.rs",
@@ -723,12 +739,13 @@ minimum_tests = 60
             public_symbols: vec!["Evidence".into(), "GraphStore".into()],
             ..Default::default()
         };
-        assert!(gate_public_symbols_exist(tmp.path(), &m).is_empty());
+        assert!(gate_public_symbols_exist(tmp.path(), &m, &fs).is_empty());
     }
 
     #[test]
     fn gate_public_symbols_fails_when_missing() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(tmp.path(), "lib.rs", "pub struct Evidence;\n");
         let m = ScopeManifest {
             id: "demo".into(),
@@ -738,7 +755,7 @@ minimum_tests = 60
             public_symbols: vec!["Evidence".into(), "NonExistent".into()],
             ..Default::default()
         };
-        let f = gate_public_symbols_exist(tmp.path(), &m);
+        let f = gate_public_symbols_exist(tmp.path(), &m, &fs);
         assert_eq!(f.len(), 1);
         assert!(f[0].message.contains("NonExistent"));
     }
@@ -746,6 +763,7 @@ minimum_tests = 60
     #[test]
     fn gate_must_hold_passes_when_text_present() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(
             tmp.path(),
             "lib.rs",
@@ -759,12 +777,13 @@ minimum_tests = 60
             must_hold: vec!["does not call std::fs directly".into()],
             ..Default::default()
         };
-        assert!(gate_must_hold_invariants(tmp.path(), &m).is_empty());
+        assert!(gate_must_hold_invariants(tmp.path(), &m, &fs).is_empty());
     }
 
     #[test]
     fn gate_must_hold_fails_when_text_missing() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(tmp.path(), "lib.rs", "pub fn x() {}");
         let m = ScopeManifest {
             id: "demo".into(),
@@ -774,7 +793,7 @@ minimum_tests = 60
             must_hold: vec!["does not call std::fs directly".into()],
             ..Default::default()
         };
-        let f = gate_must_hold_invariants(tmp.path(), &m);
+        let f = gate_must_hold_invariants(tmp.path(), &m, &fs);
         assert_eq!(f.len(), 1);
         assert!(f[0].message.contains("does not call std::fs directly"));
     }
@@ -782,6 +801,7 @@ minimum_tests = 60
     #[test]
     fn gate_must_not_contain_passes_when_text_absent() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(tmp.path(), "lib.rs", "pub fn x() {}\n");
         let m = ScopeManifest {
             id: "demo".into(),
@@ -791,12 +811,13 @@ minimum_tests = 60
             must_not_contain: vec!["use std::fs::".into()],
             ..Default::default()
         };
-        assert!(gate_must_not_contain_invariants(tmp.path(), &m).is_empty());
+        assert!(gate_must_not_contain_invariants(tmp.path(), &m, &fs).is_empty());
     }
 
     #[test]
     fn gate_must_not_contain_fails_when_text_present() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(tmp.path(), "lib.rs", "use std::fs::{self};\npub fn x() {}\n");
         let m = ScopeManifest {
             id: "demo".into(),
@@ -806,7 +827,7 @@ minimum_tests = 60
             must_not_contain: vec!["use std::fs::".into()],
             ..Default::default()
         };
-        let f = gate_must_not_contain_invariants(tmp.path(), &m);
+        let f = gate_must_not_contain_invariants(tmp.path(), &m, &fs);
         assert_eq!(f.len(), 1);
         assert!(f[0].message.contains("use std::fs::"));
     }
@@ -834,6 +855,7 @@ test result: ok. 10 passed; 0 failed
     #[test]
     fn check_scope_returns_ok_when_all_gates_pass() {
         let tmp = fixture();
+        let fs = system_fs();
         make_source_file(tmp.path(), "a.rs", "pub fn x() {}\n");
         let body = format!(
             r#"
@@ -847,15 +869,16 @@ minimum_tests = 0
 "#
         );
         write_manifest(tmp.path(), "demo", &body);
-        let m = ScopeManifest::load(tmp.path(), "demo").unwrap();
+        let m = ScopeManifest::load(tmp.path(), "demo", &fs).unwrap();
         // skip test-count gate to avoid recursing into `cargo test`
-        let r = check_scope(tmp.path(), &m, false);
+        let r = check_scope(tmp.path(), &m, false, &fs);
         assert!(r.passed(), "expected pass, got findings: {:#?}", r.findings);
     }
 
     #[test]
     fn check_scope_aggregates_findings_across_gates() {
         let tmp = fixture();
+        let fs = system_fs();
         let body = r#"
 id = "demo"
 version = "0.1.0"
@@ -866,8 +889,8 @@ must_hold = ["nonexistent invariant text"]
 minimum_tests = 0
 "#;
         write_manifest(tmp.path(), "demo", body);
-        let m = ScopeManifest::load(tmp.path(), "demo").unwrap();
-        let r = check_scope(tmp.path(), &m, false);
+        let m = ScopeManifest::load(tmp.path(), "demo", &fs).unwrap();
+        let r = check_scope(tmp.path(), &m, false, &fs);
         assert!(!r.passed());
         // 3 gates fire: editable_files, public_symbols, must_hold.
         assert_eq!(r.findings.len(), 3);
@@ -896,8 +919,9 @@ minimum_tests = 0
     #[test]
     fn check_all_scopes_handles_empty_dir() {
         let tmp = fixture();
+        let fs = system_fs();
         std::fs::create_dir_all(tmp.path().join(MANIFESTS_DIR)).unwrap();
-        let reports = check_all_scopes(tmp.path()).unwrap();
+        let reports = check_all_scopes(tmp.path(), &fs).unwrap();
         assert!(reports.is_empty());
     }
 
@@ -922,8 +946,9 @@ description = "y"
     #[test]
     fn parse_error_surfaces_clearly() {
         let tmp = fixture();
+        let fs = system_fs();
         write_manifest(tmp.path(), "broken", "this is not valid toml\n");
-        let err = ScopeManifest::load(tmp.path(), "broken").unwrap_err();
+        let err = ScopeManifest::load(tmp.path(), "broken", &fs).unwrap_err();
         let msg = format!("{err:#}");
         assert!(
             msg.contains("parse manifest") || msg.contains("broken"),

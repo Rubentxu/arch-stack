@@ -1,5 +1,6 @@
 use crate::cli::CliContext;
 use crate::environment::Environment;
+use crate::filesystem::Filesystem;
 use crate::identity::{identity_summary, resolve_source_identity};
 use crate::scope::{check_all_scopes, render_report_line, ScopeCheckReport};
 use crate::xdg::{resolve_xdg, user_home};
@@ -114,14 +115,14 @@ fn binary_finding(id: &str, name: &str) -> Finding {
 /// Designed to be called from `archctl doctor --check-scope` but is
 /// Run scope gates for specific scope IDs, or all scopes if `scope_ids`
 /// is empty.  If a scope ID is not found, it is silently skipped.
-pub fn check_scope(cwd: &std::path::Path, scope_ids: Vec<String>) -> Result<i32, anyhow::Error> {
+pub fn check_scope(cwd: &std::path::Path, scope_ids: Vec<String>, fs: &dyn Filesystem) -> Result<i32, anyhow::Error> {
     let manifests_dir = cwd.join("manifests");
     if !manifests_dir.exists() {
         println!("(no manifests/ directory at {})", cwd.display());
         println!("SCOPE: OK (no scopes declared)");
         return Ok(0);
     }
-    let all_reports = check_all_scopes(cwd)?;
+    let all_reports = check_all_scopes(cwd, fs)?;
     // If specific IDs given, filter; otherwise check all.
     let reports: Vec<_> = if scope_ids.is_empty() {
         all_reports

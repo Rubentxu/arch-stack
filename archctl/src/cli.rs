@@ -252,7 +252,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 // on cwd but takes one for consistency with the rest of
                 // the CLI's `cwd` flag contract.
                 let cwd = ctx.resolve_cwd(cwd.as_ref());
-                doctor::check_scope(&cwd, scope_ids).context("scope gates")
+                doctor::check_scope(&cwd, scope_ids, &*ctx.fs).context("scope gates")
             } else {
                 doctor::run(ctx)
             }
