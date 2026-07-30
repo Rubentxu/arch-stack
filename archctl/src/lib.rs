@@ -4,6 +4,7 @@ pub mod clock;
 pub mod doctor;
 pub mod environment;
 pub mod evidence;
+pub mod evaluation;
 pub mod filesystem;
 pub mod graph;
 pub mod identity;
@@ -33,6 +34,7 @@ pub use identity::{
 pub use project::{resolve_project, ProjectInfo};
 pub use scope::{check_all_scopes, check_scope, ScopeCheckReport, ScopeFinding, ScopeGate, ScopeManifest, ScopeSeverity};
 pub use source::SourceArtifact;
+pub use evaluation::Evaluation;
 pub use skills::{
     activate_skill, load_lock, sync_skill, sync_skills, verify_skills, SkillLockEntry, SkillMode,
     SkillsLock, SyncReport, VerifyReport,

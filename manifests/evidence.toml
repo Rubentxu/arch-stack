@@ -27,12 +27,15 @@ public_symbols = [
   "EvidenceKind",
   "ExtractionResult",
   "SourceArtifact",
+  "Evaluation",
   "extract",
   "extract_with_system_clock",
   "from_tsg_node",
   "put",
   "put_with_clock",
   "put_with_source",
+  "accept",
+  "reject",
   "TOOL_NAME",
   "TOOL_VERSION",
 ]
@@ -56,5 +59,5 @@ must_hold = [
 ] 
 
 # Minimum number of `#[test]` items in evidence.rs. We currently
-# have 7; the gate allows growth but refuses deletion.
-minimum_tests = 7
+# have 9; the gate allows growth but refuses deletion.
+minimum_tests = 9
