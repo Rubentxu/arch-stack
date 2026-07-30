@@ -1,3 +1,4 @@
+use crate::environment::Environment;
 use crate::identity::{identity_summary, resolve_source_identity};
 use crate::xdg::{resolve_xdg, user_home};
 use std::process::Command;
@@ -20,7 +21,10 @@ pub enum Severity {
 pub fn run() -> Result<i32, anyhow::Error> {
     let layout = resolve_xdg();
     let mut findings: Vec<Finding> = Vec::new();
-    let cwd = std::env::current_dir().ok();
+    // The Environment port is the boundary. doctor.rs is an internal
+    // entry point — it uses SystemEnvironment directly. Tests can
+    // inject a context via a future `run_with_env` if needed.
+    let cwd = crate::environment::SystemEnvironment.current_dir().ok();
     let cwd_str = cwd
         .as_ref()
         .map(|p| p.to_string_lossy().to_string())

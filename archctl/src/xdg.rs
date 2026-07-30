@@ -22,19 +22,19 @@ impl XdgLayout {
     }
 }
 
+/// Resolve the user's home directory via the `Environment` port, with
+/// `/tmp` as a defensive fallback when the OS reports no home at all
+/// (very rare; can happen in minimal containers).
+///
+/// This is the production call: uses [`crate::environment::SystemEnvironment`]
+/// under the hood. Callers that need a different home — e.g. tests
+/// — should use [`crate::environment::FixedEnvironment::with_home`]
+/// and the [`crate::cli::run_inner`] entry point, not this function.
 pub fn user_home() -> PathBuf {
-    if let Some(p) = std::env::var_os("HOME") {
-        return PathBuf::from(p);
-    }
-    if let Some(p) = std::env::var_os("USERPROFILE") {
-        return PathBuf::from(p);
-    }
-    if let (Some(drive), Some(path)) = (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
-        let mut s = std::ffi::OsString::from(drive);
-        s.push(path);
-        return PathBuf::from(s);
-    }
-    PathBuf::from("/tmp")
+    use crate::environment::Environment;
+    crate::environment::SystemEnvironment
+        .home_dir()
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
 }
 
 pub fn resolve_xdg() -> XdgLayout {

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::cli::SkillsAction;
+use crate::environment::Environment;
 use crate::xdg::{ensure_xdg, resolve_xdg};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,7 +186,8 @@ pub fn run(action: SkillsAction) -> Result<i32> {
             if !src.join("SKILL.md").exists() {
                 anyhow::bail!("source not synced: {}", src.display());
             }
-            let profile_dir = std::env::var("OPENCODE_CONFIG_DIR")
+            let profile_dir = crate::environment::SystemEnvironment
+                .var("OPENCODE_CONFIG_DIR")
                 .context("OPENCODE_CONFIG_DIR not set")?;
             let target_dir = PathBuf::from(profile_dir).join("skills/upstream");
             let target = activate_skill(&name, &src, &target_dir)?;
