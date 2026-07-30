@@ -26,3 +26,6 @@ target/
 
 # archctl Rust dev
 .archctl/
+
+# gentle-ai skill registry — auto-generated local index
+.atl/

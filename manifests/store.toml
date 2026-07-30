@@ -1,0 +1,37 @@
+# scope: store
+#
+# store is the hexagonal adapter that owns Cypher generation and
+# graph persistence. Breaking its public surface makes every
+# adapter (LbugStore today, SparrowStore tomorrow, dead-store
+# when persistence is off) silently fall out of the graph.
+
+id = "store"
+version = "0.1.0"
+description = "GraphStore hexagonal port + LbugStore adapter (B1 persistence)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/store.rs"]
+
+# Public surface area. If any of these disappear, `archctl graph`
+# subcommands and adapters break.
+public_symbols = [
+  "GraphStore",
+  "LbugStore",
+  "open_default",
+]
+
+# What `store` must keep doing, proved by a literal line in source.
+# Each invariant is a contract assertion in code that has to
+# remain present.
+must_hold = [
+  "pub trait GraphStore",
+  "pub struct LbugStore",
+  "fn put_evidence",
+  "fn query(",
+  "open_default",
+  "Box<dyn GraphStore>",
+] 
+
+# Minimum tests for store.rs. We currently have 5.
+minimum_tests = 3

@@ -1,0 +1,54 @@
+# scope: evidence
+#
+# evidence::extract + evidence::put is the heart of the system.
+# Every source-language adapter (ast-grep, TSG, future jdeps/Syft)
+# produces rows that must satisfy this contract or consumers break.
+#
+# This manifest declares what MUST hold for the evidence scope
+# to be considered sane by `archctl doctor --check-scope`.
+
+id = "evidence"
+version = "0.1.0"
+description = "Evidence record extraction + persistence (B1 evidence graph)"
+
+# Cargo crate root for the test-count gate. Monorepo convention:
+# `manifests/` lives at the workspace root, the crate at `archctl/`.
+cargo_dir = "archctl"
+
+# Files that may be edited freely within this scope. Other files in
+# archctl/src/ are out of scope; touching them requires either a new
+# scope manifest or removing this one.
+editable = ["archctl/src/evidence.rs"]
+
+# Public symbols that consumers depend on. If any of these disappear
+# the CLI subcommands `archctl evidence extract|put|list` break.
+public_symbols = [
+  "Evidence",
+  "EvidenceKind",
+  "ExtractionResult",
+  "extract",
+  "extract_with_system_clock",
+  "from_tsg_node",
+  "put",
+  "put_with_clock",
+  "TOOL_NAME",
+  "TOOL_VERSION",
+]
+
+# Textual invariants that prove the module does what its scope
+# declares. Each line is searched for inside the editable files.
+# Plain strings (not regex) so a doctype tweak can't quietly
+# satisfy a stale contract.
+must_hold = [
+  "pub fn extract(",
+  "pub fn put(",
+  "pub struct Evidence",
+  "pub enum EvidenceKind",
+  "Evidence {",
+  "observed_at:",
+  "kind: EvidenceKind",
+] 
+
+# Minimum number of `#[test]` items in evidence.rs. We currently
+# have 7; the gate allows growth but refuses deletion.
+minimum_tests = 5

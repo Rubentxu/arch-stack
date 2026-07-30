@@ -174,7 +174,19 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    Doctor,
+    Doctor {
+        /// Run the scope gates from `manifests/<id>.toml`. This
+        /// is the static-check pass that enforces the contract each
+        /// scope declares: editable files exist, public symbols
+        /// are exported, must_hold invariants are present in source,
+        /// minimum test count is met.
+        #[arg(long)]
+        check_scope: bool,
+        /// Project directory to read manifests from. Defaults to
+        /// the current working directory.
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+    },
     Project {
         #[command(subcommand)]
         action: ProjectAction,
@@ -220,7 +232,17 @@ pub fn run(cli: Cli) -> Result<i32> {
 /// a `FixedEnvironment`.
 pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
     match cli.command {
-        Command::Doctor => doctor::run(),
+        Command::Doctor { check_scope, cwd } => {
+            if check_scope {
+                // --check-scope is the scope-gates pass; it does not
+                // depend on cwd but takes one for consistency with the
+                // rest of the CLI's `cwd` flag contract.
+                let cwd = ctx.resolve_cwd(cwd.as_ref());
+                doctor::check_scope(&cwd).context("scope gates")
+            } else {
+                doctor::run()
+            }
+        }
         Command::Project { action } => match action {
             ProjectAction::Resolve { cwd, json } => resolve_project_cmd(cwd, json, ctx),
         },

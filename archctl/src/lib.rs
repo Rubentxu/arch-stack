@@ -10,6 +10,7 @@ pub mod inventory;
 pub mod project;
 pub mod render;
 pub mod row;
+pub mod scope;
 pub mod skills;
 pub mod store;
 pub mod telemetry;
@@ -26,6 +27,7 @@ pub use identity::{
     SourceIdentity,
 };
 pub use project::{resolve_project, ProjectInfo};
+pub use scope::{check_all_scopes, check_scope, ScopeCheckReport, ScopeFinding, ScopeGate, ScopeManifest, ScopeSeverity};
 pub use skills::{
     activate_skill, load_lock, sync_skill, sync_skills, verify_skills, SkillLockEntry, SkillMode,
     SkillsLock, SyncReport, VerifyReport,
