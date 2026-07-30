@@ -5,6 +5,8 @@ use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
+use crate::filesystem::Filesystem;
+
 const SCHEMA_CYPHER: &str = include_str!("../../docs/schema/001_initial_schema.cypher");
 
 const BOOTSTRAP_VERSION: &str = "v1-initial";
@@ -40,10 +42,10 @@ pub struct Session {
     _db: Database,
 }
 
-pub fn open_session(project_dir: &Path) -> Result<Session> {
+pub fn open_session(project_dir: &Path, fs: &dyn Filesystem) -> Result<Session> {
     let path = database_path(project_dir);
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
+        fs.create_dir_all(parent)
             .with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let db = Database::new(&path, SystemConfig::default())
@@ -53,14 +55,14 @@ pub fn open_session(project_dir: &Path) -> Result<Session> {
     Ok(Session { conn, _db: db })
 }
 
-pub fn init(project_dir: &Path) -> Result<PathBuf> {
+pub fn init(project_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
     let path = database_path(project_dir);
-    std::fs::create_dir_all(project_dir)
+    fs.create_dir_all(project_dir)
         .with_context(|| format!("mkdir {}", project_dir.display()))?;
-    let session = open_session(&path.parent().unwrap_or(project_dir))?;
+    let session = open_session(&path.parent().unwrap_or(project_dir), fs)?;
     let marker = project_dir.join(".archctl-schema");
-    if marker.exists() {
-        let installed = std::fs::read_to_string(&marker).unwrap_or_default();
+    if fs.exists(&marker) {
+        let installed = fs.read_to_string(&marker).unwrap_or_default();
         if installed.trim() == BOOTSTRAP_VERSION {
             info!(version = %installed, "schema already bootstrapped");
             return Ok(path);
@@ -75,7 +77,8 @@ pub fn init(project_dir: &Path) -> Result<PathBuf> {
             .query(stmt)
             .with_context(|| format!("schema statement #{i} failed: {stmt}"))?;
     }
-    std::fs::write(&marker, BOOTSTRAP_VERSION).context("write schema marker")?;
+    fs.write(&marker, BOOTSTRAP_VERSION.as_bytes())
+        .context("write schema marker")?;
     Ok(path)
 }
 
@@ -102,8 +105,8 @@ fn schema_statements(script: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn stat(project_dir: &Path) -> Result<GraphStat> {
-    let session = open_session(project_dir)?;
+pub fn stat(project_dir: &Path, fs: &dyn Filesystem) -> Result<GraphStat> {
+    let session = open_session(project_dir, fs)?;
     let conn = &session.conn;
     Ok(GraphStat {
         elements: count_match(conn, "MATCH (:Element) RETURN count(*)")?,
@@ -218,8 +221,8 @@ pub fn validate_identifier(id: &str) -> Result<&str> {
     Ok(id)
 }
 
-pub fn query(project_dir: &Path, cypher: &str) -> Result<Vec<Json>> {
-    let session = open_session(project_dir)?;
+pub fn query(project_dir: &Path, cypher: &str, fs: &dyn Filesystem) -> Result<Vec<Json>> {
+    let session = open_session(project_dir, fs)?;
     debug!(%cypher, "graph query");
     run_query(&session.conn, cypher)
 }
@@ -239,7 +242,7 @@ fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
     Ok(rows)
 }
 
-pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8) -> Result<Vec<Json>> {
+pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8, fs: &dyn Filesystem) -> Result<Vec<Json>> {
     let id = validate_identifier(element_id)?;
     let depth = depth.clamp(1, 4) as i64;
     let cypher = format!(
@@ -248,7 +251,7 @@ pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8) -> Result<Vec
     if depth > 2 {
         warn!(depth, "graph traversal depth > 2 may be slow on large graphs");
     }
-    let session = open_session(project_dir)?;
+    let session = open_session(project_dir, fs)?;
     debug!(%cypher, "graph neighbours");
     run_query(&session.conn, &cypher)
 }
@@ -257,17 +260,22 @@ pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8) -> Result<Vec
 mod tests {
     use super::*;
 
+    fn system_fs() -> crate::filesystem::SystemFilesystem {
+        crate::filesystem::SystemFilesystem
+    }
+
     #[test]
     fn init_then_query_round_trips() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
-        init(&project).unwrap();
-        let session = open_session(&project).unwrap();
+        let fs = system_fs();
+        init(&project, &fs).unwrap();
+        let session = open_session(&project, &fs).unwrap();
         session
             .conn
             .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
             .unwrap();
-        let rows = query(&project, "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;").unwrap();
+        let rows = query(&project, "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;", &fs).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["m.id"], "mt.system");
         assert_eq!(rows[0]["m.name"], "system");
@@ -277,9 +285,10 @@ mod tests {
     fn init_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
-        init(&project).unwrap();
-        init(&project).unwrap();
-        let stat = stat(&project).unwrap();
+        let fs = system_fs();
+        init(&project, &fs).unwrap();
+        init(&project, &fs).unwrap();
+        let stat = stat(&project, &fs).unwrap();
         assert_eq!(stat.elements, 0);
         assert_eq!(stat.metatypes, 0);
     }
@@ -288,7 +297,8 @@ mod tests {
     fn schema_marker_present_after_init() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
-        init(&project).unwrap();
+        let fs = system_fs();
+        init(&project, &fs).unwrap();
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
@@ -343,8 +353,9 @@ mod tests {
     fn neighbours_rejects_bad_id_before_touching_db() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
-        init(&project).unwrap();
-        let err = neighbours(&project, "evil'}) RETURN 1;//", 1).unwrap_err();
+        let fs = system_fs();
+        init(&project, &fs).unwrap();
+        let err = neighbours(&project, "evil'}) RETURN 1;//", 1, &fs).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("invalid character"), "got: {msg}");
     }
@@ -353,8 +364,9 @@ mod tests {
     fn neighbours_returns_of_type_target() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
-        init(&project).unwrap();
-        let session = open_session(&project).unwrap();
+        let fs = system_fs();
+        init(&project, &fs).unwrap();
+        let session = open_session(&project, &fs).unwrap();
         session
             .conn
             .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
@@ -369,7 +381,7 @@ mod tests {
                 "MATCH (e:Element {id: 'e1'}), (m:MetaType {id: 'mt.system'}) CREATE (e)-[:OF_TYPE]->(m);",
             )
             .unwrap();
-        let rows = neighbours(&project, "e1", 1).unwrap();
+        let rows = neighbours(&project, "e1", 1, &fs).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["id"], "mt.system");
     }

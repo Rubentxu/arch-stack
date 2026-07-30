@@ -502,6 +502,10 @@ mod tests {
     use super::*;
     use crate::astgrep::Lang;
 
+    fn system_fs() -> crate::filesystem::SystemFilesystem {
+        crate::filesystem::SystemFilesystem
+    }
+
     /// The `SourceOrigin::as_str` mapping is the contract that the
     /// evidence-scope manifest probes. If these strings change, the
     /// TOML files in `manifests/` need a doc update.
@@ -665,7 +669,8 @@ mod tests {
         // Bootstrap a graph, extract evidence, put twice, count rows.
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
-        crate::graph::init(&project).unwrap();
+        let fs = system_fs();
+        crate::graph::init(&project, &fs).unwrap();
         let evidence = vec![Evidence {
             id: "ev:test:1".to_string(),
             kind: EvidenceKind::Structural,
@@ -690,7 +695,7 @@ mod tests {
         let n2 = put_with_clock(&project, &evidence, clock).unwrap();
         assert_eq!(n1, 1);
         assert_eq!(n2, 1, "MERGE must not duplicate rows");
-        let count = crate::graph::query(&project, "MATCH (e:Evidence) RETURN count(e) AS n;")
+        let count = crate::graph::query(&project, "MATCH (e:Evidence) RETURN count(e) AS n;", &fs)
             .unwrap();
         assert_eq!(count[0]["n"], 1);
     }
