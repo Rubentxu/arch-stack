@@ -1,0 +1,39 @@
+# scope: evaluation
+#
+# evaluation::Evaluation is the domain type representing one evaluation of
+# one evidence row against a criterion. Evaluation is optional in B1 (D3).
+# Maps to the Evaluation node table in 002_source_evaluation.cypher.
+#
+# This manifest declares what MUST hold for the evaluation scope to be
+# considered sane by `archctl doctor --check-scope evaluation`.
+
+id = "evaluation"
+version = "0.1.0"
+description = "Evaluation domain type — one evidence evaluation against a criterion (B1)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/evaluation.rs"]
+
+# Public symbols that consumers depend on. If any of these disappear,
+# the evaluation module breaks.
+public_symbols = [
+  "Evaluation",
+  "accept",
+  "reject",
+  "id_for",
+]
+
+# Textual invariants that prove the module does what its scope declares.
+must_hold = [
+  "pub struct Evaluation",
+  "pub fn accept(",
+  "pub fn reject(",
+  "pub fn id_for(",
+  "target_evidence_id",
+  "criterion",
+  "passed",
+]
+
+# Minimum number of #[test] items in evaluation.rs.
+minimum_tests = 3

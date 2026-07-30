@@ -117,6 +117,15 @@ pub trait GraphStore: Send + Sync {
         evidence_id: &str,
         source_id: &str,
     ) -> Result<()>;
+
+    /// Create the EVALUATES edge linking `evaluation_id` to
+    /// `evidence_id`. Idempotent: MERGE on the (evaluation_id, evidence_id)
+    /// pair so re-runs are a no-op.
+    fn link_evaluates(
+        &mut self,
+        evaluation_id: &str,
+        evidence_id: &str,
+    ) -> Result<()>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -409,6 +418,30 @@ impl GraphStore for LbugStore {
             );
             session.conn.query(&fallback).with_context(|| {
                 format!("link_extracted_from fallback for ({eid}, {sid})")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let evid = crate::graph::validate_identifier(evaluation_id)
+            .context("link_evaluates: evaluation_id failed validation")?;
+        let eid = crate::graph::validate_identifier(evidence_id)
+            .context("link_evaluates: evidence_id failed validation")?;
+
+        // Try MERGE on the REL TABLE first; fall back to MATCH + CREATE if needed.
+        let primary = format!(
+            "MERGE (ev:Evaluation {{id: '{evid}'}})-[:EVALUATES]->(e:Evidence {{id: '{eid}'}});"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (ev:Evaluation {{id: '{evid}'}}), (e:Evidence {{id: '{eid}'}}) \
+                 CREATE (ev)-[:EVALUATES]->(e);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_evaluates fallback for ({evid}, {eid})")
             })?;
         }
         Ok(())

@@ -1,0 +1,37 @@
+# scope: source
+#
+# source::SourceArtifact is the domain type representing one analyzed
+# file-version at the point it was extracted. Identity = relative_path +
+# content_hash (D2). Maps 1:1 to the SourceArtifact node table.
+#
+# This manifest declares what MUST hold for the source scope to be
+# considered sane by `archctl doctor --check-scope source`.
+
+id = "source"
+version = "0.1.0"
+description = "SourceArtifact domain type — one analyzed file-version (B1 source graph)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/source.rs"]
+
+# Public symbols that consumers depend on. If any of these disappear,
+# the source module breaks and evidence persistence may fail.
+public_symbols = [
+  "SourceArtifact",
+  "from_content",
+  "id_for",
+]
+
+# Textual invariants that prove the module does what its scope declares.
+must_hold = [
+  "pub struct SourceArtifact",
+  "pub fn from_content(",
+  "pub fn id_for(",
+  "blake3",
+  "relative_path",
+  "content_hash",
+]
+
+# Minimum number of #[test] items in source.rs.
+minimum_tests = 3

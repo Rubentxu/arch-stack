@@ -29,6 +29,7 @@ use tree_sitter_graph::graph::{Graph as TsgGraph, GraphNode, Value as TsgValue};
 use crate::clock::Clock;
 
 use crate::astgrep::{compile_pattern, find_all, parse, Lang};
+use crate::evaluation::Evaluation;
 use crate::inventory::supported_files;
 use crate::source::SourceArtifact;
 
@@ -495,18 +496,23 @@ pub fn put_with_clock(
     store.put_evidence(evidence)
 }
 
-/// High-level use-case: persist evidence along with optional source artifacts.
+/// High-level use-case: persist evidence along with optional source artifacts
+/// and optional evaluation.
 ///
 /// This composes the granular [`GraphStore::put_source`],
-/// [`GraphStore::put_evidence`], and
-/// [`GraphStore::link_extracted_from`] port methods into a single
-/// call. Deduplicates sources by `id` so callers can pass all
+/// [`GraphStore::put_evidence`], [`GraphStore::link_extracted_from`],
+/// and [`GraphStore::put_evaluation`] port methods into a single call.
+/// Deduplicates sources by `id` so callers can pass all
 /// `(evidence, source)` pairs without deduplicating first.
 ///
 /// Step order (per spec §GraphStore):
 ///   1. put_source (if sources.is_some())
 ///   2. put_evidence
 ///   3. link_extracted_from for each (evidence, source) pair
+///   4. put_evaluation + link_evaluates (if evaluation.is_some())
+///
+/// The Evaluation is created LAST (step 4) so its EVALUATES edge can find
+/// the evidence row. A failure in step 4 does NOT roll back steps 1-3 (D3).
 ///
 /// The `clock` parameter is forwarded to the store for any future
 /// time-sensitive operations; today evidence timestamps are set at
@@ -515,6 +521,7 @@ pub fn put_with_source(
     project_dir: &Path,
     evidence: &[Evidence],
     sources: Option<&[SourceArtifact]>,
+    evaluation: Option<&Evaluation>,
     _clock: &dyn Clock,
 ) -> Result<usize> {
     if evidence.is_empty() {
@@ -542,6 +549,14 @@ pub fn put_with_source(
                 store.link_extracted_from(&ev.id, &src.id)?;
             }
         }
+    }
+
+    // Step 4: create Evaluation and link to evidence (D3: optional, step 4 failure does NOT rollback 1-3)
+    if let Some(eval) = evaluation {
+        // The evaluation targets the first evidence row in the batch.
+        let target_ev = evidence.first().context("evidence is empty")?;
+        store.put_evaluation(eval)?;
+        store.link_evaluates(&eval.id, &target_ev.id)?;
     }
 
     Ok(written)
@@ -860,7 +875,7 @@ mod tests {
             props: Default::default(),
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
-        put_with_source(&project, &ev, Some(&[sa]), clock).unwrap();
+        put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
 
         // Verify source node exists
         let sources = crate::graph::query(
@@ -914,7 +929,7 @@ mod tests {
             props: Default::default(),
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
-        put_with_source(&project, &ev, None, clock).unwrap();
+        put_with_source(&project, &ev, None, None, clock).unwrap();
 
         // Verify evidence was written but no source node was created
         let evidence_count = crate::graph::query(
@@ -980,9 +995,9 @@ mod tests {
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
 
         // Run once
-        put_with_source(&project, &ev, Some(&[sa.clone()]), clock).unwrap();
+        put_with_source(&project, &ev, Some(&[sa.clone()]), None, clock).unwrap();
         // Run again with same source
-        put_with_source(&project, &ev, Some(&[sa]), clock).unwrap();
+        put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
 
         let source_count = crate::graph::query(
             &project,
@@ -1007,6 +1022,112 @@ mod tests {
             edge_count[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
             1,
             "Edge must also be idempotent"
+        );
+    }
+
+    /// put_with_source with evaluation creates eval node and EVALUATES edge.
+    #[test]
+    fn put_with_source_with_evaluation_creates_eval_node_and_edge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = system_fs();
+        crate::graph::init(&project, &fs).unwrap();
+
+        let ev = vec![Evidence {
+            id: "ev:test:pws_eval".to_string(),
+            kind: EvidenceKind::Structural,
+            claim: "test claim".to_string(),
+            path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: Some(0),
+            end_byte: Some(4),
+            tool_name: "archctl".to_string(),
+            tool_version: "test".to_string(),
+            rule_id: "test:rule".to_string(),
+            language: "rust".to_string(),
+            observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
+            content_hash: Some("sha256:abc123def456".to_string()),
+            text_preview: Some("fn a".to_string()),
+            props: Default::default(),
+        }];
+        let fixed: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
+        let eval = Evaluation::accept(
+            "ev:test:pws_eval",
+            "min_occurrence",
+            "archctl:threshold_v1",
+            fixed,
+        );
+
+        put_with_source(&project, &ev, None, Some(&eval), fixed).unwrap();
+
+        // Verify Evaluation node was created
+        let eval_rows = crate::graph::query(
+            &project,
+            "MATCH (ev:Evaluation) RETURN ev.id AS id, ev.criterion AS c;",
+            &fs,
+        )
+        .unwrap();
+        assert_eq!(eval_rows.len(), 1);
+        assert_eq!(
+            eval_rows[0].get("c").and_then(|c| c.as_str()),
+            Some("min_occurrence")
+        );
+
+        // Verify EVALUATES edge exists
+        let edge_rows = crate::graph::query(
+            &project,
+            "MATCH (ev:Evaluation)-[:EVALUATES]->(e:Evidence {id: 'ev:test:pws_eval'}) \
+             RETURN ev.id AS evid;",
+            &fs,
+        )
+        .unwrap();
+        assert_eq!(edge_rows.len(), 1, "EVALUATES edge must be created");
+    }
+
+    /// put_with_source without evaluation does NOT create an Evaluation node.
+    #[test]
+    fn put_with_source_without_evaluation_does_not_create_eval() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = system_fs();
+        crate::graph::init(&project, &fs).unwrap();
+
+        let ev = vec![Evidence {
+            id: "ev:test:pws_no_eval".to_string(),
+            kind: EvidenceKind::Structural,
+            claim: "test claim".to_string(),
+            path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: Some(0),
+            end_byte: Some(4),
+            tool_name: "archctl".to_string(),
+            tool_version: "test".to_string(),
+            rule_id: "test:rule".to_string(),
+            language: "rust".to_string(),
+            observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
+            content_hash: Some("sha256:abc123def456".to_string()),
+            text_preview: Some("fn a".to_string()),
+            props: Default::default(),
+        }];
+        let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
+        put_with_source(&project, &ev, None, None, clock).unwrap();
+
+        // Verify no Evaluation node was created
+        let eval_rows = crate::graph::query(
+            &project,
+            "MATCH (ev:Evaluation) RETURN count(ev) AS n;",
+            &fs,
+        )
+        .unwrap();
+        assert_eq!(
+            eval_rows[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
+            0,
+            "No Evaluation node should be created when evaluation=None"
         );
     }
 }
