@@ -45,6 +45,7 @@ use anyhow::Result;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 
+use crate::clock::Clock;
 use crate::evidence::{Evidence, EvidenceStatus};
 use crate::evaluation::Evaluation;
 use crate::graph::GraphStat;
@@ -126,6 +127,41 @@ pub trait GraphStore: Send + Sync {
         evaluation_id: &str,
         evidence_id: &str,
     ) -> Result<()>;
+
+    /// Promote Evidence from `Drafted` to `Accepted`.
+    ///
+    /// Idempotent on already-`Accepted` (returns Ok, no new Evaluation).
+    /// Errors if the evidence does not exist.
+    /// Errors if the evidence is `Superseded` (must reinstate first).
+    /// Side effect (D4): creates Evaluation node + EVALUATES edge
+    /// (best-effort audit; Evaluation write failure does NOT roll back
+    /// the status flip).
+    fn accept_evidence(
+        &mut self,
+        evidence_id: &str,
+        clock: &dyn Clock,
+    ) -> Result<()>;
+
+    /// Mark Evidence as `Superseded`. Idempotent on already-`Superseded`.
+    ///
+    /// Errors if the evidence does not exist.
+    /// The caller is responsible for creating the replacement via
+    /// `put_evidence` BEFORE invoking this. No Evaluation node is created.
+    fn supersede_evidence(&mut self, old_evidence_id: &str) -> Result<()>;
+
+    /// List evidence rows filtered by lifecycle status (D5).
+    ///
+    /// Returns the same column set as `list_evidence`:
+    /// `e.id, e.kind, e.claim, e.start_line, e.end_line, e.path`.
+    /// The `e.props` column is fetched for filtering but dropped from
+    /// returned rows. Filters in Rust (D6 — no native JSON WHERE in lbug).
+    /// When `path` is `Some(p)`, only rows with `e.path = p` are returned.
+    /// When `path` is `None`, caps at 100 rows (consistent with `list_evidence`).
+    fn list_evidence_by_status(
+        &self,
+        status: EvidenceStatus,
+        path: Option<&str>,
+    ) -> Result<Vec<Row>>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -445,6 +481,247 @@ impl GraphStore for LbugStore {
             })?;
         }
         Ok(())
+    }
+
+    fn accept_evidence(
+        &mut self,
+        evidence_id: &str,
+        clock: &dyn Clock,
+    ) -> Result<()> {
+        let session = self.session_mut()?;
+
+        // Step 1: read current props
+        let eid = crate::graph::validate_identifier(evidence_id)
+            .context("accept_evidence: evidence_id failed validation")?;
+        let read_cypher = format!(
+            "MATCH (e:Evidence {{id: '{eid}'}}) RETURN e.props;"
+        );
+        let rows = run_query(&session.conn, &read_cypher)
+            .with_context(|| format!("accept_evidence: failed to read {eid}"))?;
+        if rows.is_empty() {
+            anyhow::bail!("evidence not found: {eid}");
+        }
+        // e.props can be stored as a JSON string (Cell::String) or as a
+        // parsed JSON object (Cell::Object) depending on the engine.
+        let props_json: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("e.props"))
+            .and_then(|c| match c {
+                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
+                crate::row::Cell::Object(fields) => {
+                    let mut m = serde_json::Map::new();
+                    for (k, v) in fields {
+                        let json_val = match v {
+                            crate::row::Cell::String(s) => {
+                                serde_json::Value::String(s.clone())
+                            }
+                            crate::row::Cell::Int(n) => {
+                                serde_json::Value::Number(serde_json::Number::from(*n))
+                            }
+                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
+                            crate::row::Cell::Float(f) => {
+                                serde_json::Number::from_f64(*f)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(serde_json::Value::Null)
+                            }
+                            _ => serde_json::Value::Null,
+                        };
+                        m.insert(k.clone(), json_val);
+                    }
+                    Some(serde_json::Map::from(m))
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        // Step 2: check current status
+        let current = EvidenceStatus::from_props(&props_json);
+        if current == EvidenceStatus::Accepted {
+            // Idempotent: already accepted
+            return Ok(());
+        }
+        if current == EvidenceStatus::Superseded {
+            anyhow::bail!(
+                "cannot accept superseded evidence: {eid} — reinstate first"
+            );
+        }
+        // current == Drafted: proceed
+
+        // Step 3: flip status in props
+        let mut new_props = props_json;
+        new_props.insert(
+            "status".to_string(),
+            serde_json::Value::String(EvidenceStatus::Accepted.as_str().to_string()),
+        );
+        let safe_props =
+            serde_json::to_string(&new_props).context("serialize updated props")?;
+        let safe_props_escaped = safe_props.replace('\'', "\\'");
+
+        // Step 4: write updated props back
+        let write_cypher = format!(
+            "MATCH (e:Evidence {{id: '{eid}'}}) SET e.props = '{safe_props_escaped}';"
+        );
+        session
+            .conn
+            .query(&write_cypher)
+            .with_context(|| format!("accept_evidence: failed to update props for {eid}"))?;
+
+        // Step 5: create Evaluation node + EVALUATES edge (best-effort)
+        let eval = Evaluation::accept(
+            evidence_id,
+            "user_accepted",
+            "archctl:lifecycle_v1",
+            clock,
+        );
+        // Best-effort: failure here does NOT roll back the status flip
+        if let Err(e) = self.put_evaluation(&eval) {
+            tracing::warn!(err = %e, eval_id = %eval.id, "accept_evidence: put_evaluation failed, continuing");
+        } else if let Err(e) = self.link_evaluates(&eval.id, evidence_id) {
+            tracing::warn!(err = %e, eval_id = %eval.id, "accept_evidence: link_evaluates failed, continuing");
+        }
+
+        Ok(())
+    }
+
+    fn supersede_evidence(&mut self, old_evidence_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+
+        // Step 1: read current props
+        let eid = crate::graph::validate_identifier(old_evidence_id)
+            .context("supersede_evidence: old_evidence_id failed validation")?;
+        let read_cypher = format!(
+            "MATCH (e:Evidence {{id: '{eid}'}}) RETURN e.props;"
+        );
+        let rows = run_query(&session.conn, &read_cypher)
+            .with_context(|| format!("supersede_evidence: failed to read {eid}"))?;
+        if rows.is_empty() {
+            anyhow::bail!("evidence not found: {eid}");
+        }
+        let props_json: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("e.props"))
+            .and_then(|c| match c {
+                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
+                crate::row::Cell::Object(fields) => {
+                    let mut m = serde_json::Map::new();
+                    for (k, v) in fields {
+                        let json_val = match v {
+                            crate::row::Cell::String(s) => {
+                                serde_json::Value::String(s.clone())
+                            }
+                            crate::row::Cell::Int(n) => {
+                                serde_json::Value::Number(serde_json::Number::from(*n))
+                            }
+                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
+                            crate::row::Cell::Float(f) => {
+                                serde_json::Number::from_f64(*f)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(serde_json::Value::Null)
+                            }
+                            _ => serde_json::Value::Null,
+                        };
+                        m.insert(k.clone(), json_val);
+                    }
+                    Some(serde_json::Map::from(m))
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        // Step 2: check current status
+        let current = EvidenceStatus::from_props(&props_json);
+        if current == EvidenceStatus::Superseded {
+            // Idempotent: already superseded
+            return Ok(());
+        }
+
+        // Step 3: flip status to superseded
+        let mut new_props = props_json;
+        new_props.insert(
+            "status".to_string(),
+            serde_json::Value::String(EvidenceStatus::Superseded.as_str().to_string()),
+        );
+        let safe_props =
+            serde_json::to_string(&new_props).context("serialize updated props")?;
+        let safe_props_escaped = safe_props.replace('\'', "\\'");
+
+        // Step 4: write updated props back
+        let write_cypher = format!(
+            "MATCH (e:Evidence {{id: '{eid}'}}) SET e.props = '{safe_props_escaped}';"
+        );
+        session
+            .conn
+            .query(&write_cypher)
+            .with_context(|| format!("supersede_evidence: failed to update props for {eid}"))?;
+
+        Ok(())
+    }
+
+    fn list_evidence_by_status(
+        &self,
+        status: EvidenceStatus,
+        path: Option<&str>,
+    ) -> Result<Vec<Row>> {
+        // Build the Cypher query — fetch e.props for filtering, plus the 6 canonical columns
+        let cypher = match path {
+            Some(p) => {
+                let safe = crate::graph::validate_identifier(p)?;
+                format!(
+                    "MATCH (e:Evidence) WHERE e.path = '{safe}' \
+                     RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path, e.props \
+                     ORDER BY e.start_line;"
+                )
+            }
+            None => "MATCH (e:Evidence) \
+                     RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path, e.props \
+                     ORDER BY e.start_line LIMIT 100;"
+                .to_string(),
+        };
+        let rows = self.query(&cypher)?;
+
+        // Filter in Rust: keep rows where EvidenceStatus::from_props matches requested status
+        let filtered: Vec<Row> = rows
+            .into_iter()
+            .filter(|r| {
+                let props_map: serde_json::Map<String, serde_json::Value> = r
+                    .get("e.props")
+                    .and_then(|c| match c {
+                        crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
+                        crate::row::Cell::Object(fields) => {
+                            let mut m = serde_json::Map::new();
+                            for (k, v) in fields {
+                                let json_val = match v {
+                                    crate::row::Cell::String(s) => {
+                                        serde_json::Value::String(s.clone())
+                                    }
+                                    crate::row::Cell::Int(n) => {
+                                        serde_json::Value::Number(serde_json::Number::from(*n))
+                                    }
+                                    crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
+                                    crate::row::Cell::Float(f) => {
+                                        serde_json::Number::from_f64(*f)
+                                            .map(serde_json::Value::Number)
+                                            .unwrap_or(serde_json::Value::Null)
+                                    }
+                                    _ => serde_json::Value::Null,
+                                };
+                                m.insert(k.clone(), json_val);
+                            }
+                            Some(serde_json::Map::from(m))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                EvidenceStatus::from_props(&props_map) == status
+            })
+            .map(|mut r| {
+                // Drop the e.props column so returned shape matches list_evidence
+                r.remove("e.props");
+                r
+            })
+            .collect();
+
+        Ok(filtered)
     }
 }
 
@@ -768,5 +1045,377 @@ mod tests {
             rows[0].get("source_id").and_then(|c| c.as_str()),
             Some(sa.id.as_str())
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Lifecycle tests (commit 3 of b1-lifecycle-drafted-accepted)
+    // -------------------------------------------------------------------------
+
+    fn make_evidence(id: &str, status: EvidenceStatus) -> Evidence {
+        Evidence {
+            id: id.to_string(),
+            kind: EvidenceKind::Structural,
+            claim: "test claim".to_string(),
+            path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: Some(0),
+            end_byte: Some(4),
+            tool_name: TOOL_NAME.to_string(),
+            tool_version: TOOL_VERSION.to_string(),
+            rule_id: "test:rule".to_string(),
+            language: "rust".to_string(),
+            observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
+            content_hash: Some("sha256:abc123".to_string()),
+            text_preview: Some("fn a".to_string()),
+            props: {
+                let mut m = serde_json::Map::new();
+                m.insert(
+                    "status".to_string(),
+                    serde_json::Value::String(status.as_str().to_string()),
+                );
+                m
+            },
+            status,
+        }
+    }
+
+    #[test]
+    fn accept_evidence_promotes_drafted_to_accepted() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = make_evidence("ev:accept:1", EvidenceStatus::Drafted);
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        let clock: &dyn Clock = &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
+        store.accept_evidence("ev:accept:1", clock).unwrap();
+
+        // Verify status is now accepted
+        let rows = store
+            .query("MATCH (e:Evidence {id: 'ev:accept:1'}) RETURN e.props;")
+            .unwrap();
+        let props: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("e.props"))
+            .and_then(|c| match c {
+                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
+                crate::row::Cell::Object(fields) => {
+                    let mut m = serde_json::Map::new();
+                    for (k, v) in fields {
+                        let json_val = match v {
+                            crate::row::Cell::String(s) => {
+                                serde_json::Value::String(s.clone())
+                            }
+                            crate::row::Cell::Int(n) => {
+                                serde_json::Value::Number(serde_json::Number::from(*n))
+                            }
+                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
+                            crate::row::Cell::Float(f) => {
+                                serde_json::Number::from_f64(*f)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(serde_json::Value::Null)
+                            }
+                            _ => serde_json::Value::Null,
+                        };
+                        m.insert(k.clone(), json_val);
+                    }
+                    Some(serde_json::Map::from(m))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            EvidenceStatus::from_props(&props),
+            EvidenceStatus::Accepted
+        );
+    }
+
+    #[test]
+    fn accept_evidence_creates_evaluation_with_user_accepted_criterion() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = make_evidence("ev:accept:eval", EvidenceStatus::Drafted);
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        let clock: &dyn Clock = &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
+        store.accept_evidence("ev:accept:eval", clock).unwrap();
+
+        // Verify Evaluation node was created
+        let eval_rows = store
+            .query("MATCH (ev:Evaluation) RETURN ev.criterion AS c, ev.passed AS p;")
+            .unwrap();
+        assert_eq!(eval_rows.len(), 1);
+        assert_eq!(
+            eval_rows[0].get("c").and_then(|c| c.as_str()),
+            Some("user_accepted")
+        );
+        assert_eq!(
+            eval_rows[0].get("p").and_then(|c| c.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn accept_evidence_is_idempotent_on_already_accepted() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Start with status = Accepted (already accepted)
+        let ev = make_evidence("ev:accept:idemp", EvidenceStatus::Accepted);
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        let clock: &dyn Clock = &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
+        // Both calls should be idempotent (early return, no Evaluation created)
+        store.accept_evidence("ev:accept:idemp", clock).unwrap();
+        store.accept_evidence("ev:accept:idemp", clock).unwrap();
+
+        // Zero Evaluations: accept on already-accepted returns early without creating one
+        let eval_rows = store
+            .query("MATCH (ev:Evaluation) RETURN count(ev) AS n;")
+            .unwrap();
+        assert_eq!(
+            eval_rows[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
+            0,
+            "accept on already-accepted must not create any Evaluation"
+        );
+    }
+
+    #[test]
+    fn accept_rejects_superseded() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = make_evidence("ev:accept:superseded", EvidenceStatus::Superseded);
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        let clock: &dyn Clock = &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
+        let result = store.accept_evidence("ev:accept:superseded", clock);
+        assert!(result.is_err(), "accept on superseded must return error");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("cannot accept superseded evidence"),
+            "error message must mention supersession: {err}"
+        );
+    }
+
+    #[test]
+    fn accept_unknown_id_returns_err() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let clock: &dyn Clock = &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
+        let result = store.accept_evidence("ev:nonexistent", clock);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("evidence not found"),
+            "error must say not found: {err}"
+        );
+    }
+
+    #[test]
+    fn supersede_marks_status_superseded() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = make_evidence("ev:supersede:1", EvidenceStatus::Accepted);
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        store.supersede_evidence("ev:supersede:1").unwrap();
+
+        // Verify status is now superseded
+        let rows = store
+            .query("MATCH (e:Evidence {id: 'ev:supersede:1'}) RETURN e.props;")
+            .unwrap();
+        let props: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("e.props"))
+            .and_then(|c| match c {
+                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
+                crate::row::Cell::Object(fields) => {
+                    let mut m = serde_json::Map::new();
+                    for (k, v) in fields {
+                        let json_val = match v {
+                            crate::row::Cell::String(s) => {
+                                serde_json::Value::String(s.clone())
+                            }
+                            crate::row::Cell::Int(n) => {
+                                serde_json::Value::Number(serde_json::Number::from(*n))
+                            }
+                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
+                            crate::row::Cell::Float(f) => {
+                                serde_json::Number::from_f64(*f)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(serde_json::Value::Null)
+                            }
+                            _ => serde_json::Value::Null,
+                        };
+                        m.insert(k.clone(), json_val);
+                    }
+                    Some(serde_json::Map::from(m))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            EvidenceStatus::from_props(&props),
+            EvidenceStatus::Superseded
+        );
+    }
+
+    #[test]
+    fn supersede_is_idempotent() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = make_evidence("ev:supersede:idemp", EvidenceStatus::Superseded);
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        store.supersede_evidence("ev:supersede:idemp").unwrap();
+        store.supersede_evidence("ev:supersede:idemp").unwrap(); // second call
+
+        // Should succeed both times (idempotent)
+        let rows = store
+            .query("MATCH (e:Evidence {id: 'ev:supersede:idemp'}) RETURN e.props;")
+            .unwrap();
+        let props: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("e.props"))
+            .and_then(|c| match c {
+                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
+                crate::row::Cell::Object(fields) => {
+                    let mut m = serde_json::Map::new();
+                    for (k, v) in fields {
+                        let json_val = match v {
+                            crate::row::Cell::String(s) => {
+                                serde_json::Value::String(s.clone())
+                            }
+                            crate::row::Cell::Int(n) => {
+                                serde_json::Value::Number(serde_json::Number::from(*n))
+                            }
+                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
+                            crate::row::Cell::Float(f) => {
+                                serde_json::Number::from_f64(*f)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(serde_json::Value::Null)
+                            }
+                            _ => serde_json::Value::Null,
+                        };
+                        m.insert(k.clone(), json_val);
+                    }
+                    Some(serde_json::Map::from(m))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            EvidenceStatus::from_props(&props),
+            EvidenceStatus::Superseded
+        );
+    }
+
+    #[test]
+    fn list_by_status_filters_correctly_and_includes_legacy_rows_as_accepted() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Insert mixed-status rows
+        store
+            .put_evidence(std::slice::from_ref(&make_evidence(
+                "ev:status:accepted",
+                EvidenceStatus::Accepted,
+            )))
+            .unwrap();
+        store
+            .put_evidence(std::slice::from_ref(&make_evidence(
+                "ev:status:drafted",
+                EvidenceStatus::Drafted,
+            )))
+            .unwrap();
+        store
+            .put_evidence(std::slice::from_ref(&make_evidence(
+                "ev:status:superseded",
+                EvidenceStatus::Superseded,
+            )))
+            .unwrap();
+
+        // Legacy row: no status key in props — should read as Accepted
+        let legacy: Evidence = {
+            let mut ev = make_evidence("ev:status:legacy", EvidenceStatus::Accepted);
+            ev.props.remove("status");
+            ev.status = EvidenceStatus::Accepted;
+            ev
+        };
+        store
+            .put_evidence(std::slice::from_ref(&legacy))
+            .unwrap();
+
+        // list_evidence_by_status(Accepted) — should return accepted + legacy
+        let accepted = store
+            .list_evidence_by_status(EvidenceStatus::Accepted, None)
+            .unwrap();
+        let accepted_ids: Vec<_> = accepted
+            .iter()
+            .filter_map(|r| r.get("e.id").and_then(|c| c.as_str()))
+            .collect();
+        assert!(
+            accepted_ids.contains(&"ev:status:accepted"),
+            "must include accepted row"
+        );
+        assert!(
+            accepted_ids.contains(&"ev:status:legacy"),
+            "must include legacy row (read-time default)"
+        );
+        assert!(
+            !accepted_ids.contains(&"ev:status:drafted"),
+            "must NOT include drafted row"
+        );
+
+        // list_evidence_by_status(Drafted)
+        let drafted = store
+            .list_evidence_by_status(EvidenceStatus::Drafted, None)
+            .unwrap();
+        let drafted_ids: Vec<_> = drafted
+            .iter()
+            .filter_map(|r| r.get("e.id").and_then(|c| c.as_str()))
+            .collect();
+        assert!(
+            drafted_ids.contains(&"ev:status:drafted"),
+            "must include drafted row"
+        );
+        assert_eq!(drafted_ids.len(), 1);
+
+        // list_evidence_by_status(Superseded)
+        let superseded = store
+            .list_evidence_by_status(EvidenceStatus::Superseded, None)
+            .unwrap();
+        let superseded_ids: Vec<_> = superseded
+            .iter()
+            .filter_map(|r| r.get("e.id").and_then(|c| c.as_str()))
+            .collect();
+        assert!(
+            superseded_ids.contains(&"ev:status:superseded"),
+            "must include superseded row"
+        );
+        assert_eq!(superseded_ids.len(), 1);
     }
 }

@@ -165,6 +165,12 @@ impl Row {
             .find_map(|(k, v)| if k == key { Some(v) } else { None })
     }
 
+    /// Remove a column by name. Returns the removed cell, or None if not found.
+    pub fn remove(&mut self, key: &str) -> Option<Cell> {
+        let idx = self.columns.iter().position(|(k, _)| k == key)?;
+        Some(self.columns.remove(idx).1)
+    }
+
     /// Lookup by 0-based column index (position in the RETURN clause).
     pub fn column(&self, idx: usize) -> Option<(&str, &Cell)> {
         self.columns.get(idx).map(|(k, v)| (k.as_str(), v))
