@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Closing Report — b1-lifecycle-drafted-accepted · v0.3.0</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 860px; margin: 40px auto; padding: 0 20px; color: #1a1a2e; background: #fafafa; }
+    h1 { color: #2d2d44; border-bottom: 3px solid #4a4a8a; padding-bottom: 10px; }
+    h2 { color: #3d3d6b; margin-top: 2em; }
+    h3 { color: #4d4d8a; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 600; }
+    .badge-pass { background: #d4edda; color: #155724; }
+    .badge-warn { background: #fff3cd; color: #856404; }
+    .badge-feat { background: #d1ecf1; color: #0c5460; }
+    .badge-minor { background: #cce5ff; color: #004085; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f0f0f8; }
+    tr:nth-child(even) { background: #f9f9fb; }
+    .meta { background: #f0f4ff; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+    .meta p { margin: 4px 0; }
+    .meta strong { color: #3d3d6b; }
+    code { background: #f4f4f8; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    pre { background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.88em; }
+    pre .kw { color: #cba6f7; }
+    pre .str { color: #a6e3a1; }
+    pre .comment { color: #6c7086; }
+    footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 0.85em; }
+  </style>
+</head>
+<body>
+
+<h1>Closing Report — Cycle <code>b1-lifecycle-drafted-accepted</code></h1>
+
+<div class="meta">
+  <p><strong>Tag:</strong> <span class="badge badge-minor">v0.3.0</span> <strong>Bump:</strong> <span class="badge badge-feat">minor</span></p>
+  <p><strong>Branch:</strong> <code>feat/b1-lifecycle-drafted-accepted</code></p>
+  <p><strong>HEAD:</strong> <code>7845141</code> · <strong>Base:</strong> <code>43ae3df</code></p>
+  <p><strong>Commits:</strong> 7 · <strong>Files changed:</strong> 8 · <strong>Net:</strong> +1087 / −11</p>
+  <p><strong>Mode:</strong> A-full · <strong>Verify:</strong> <span class="badge badge-warn">PASS_WITH_WARNINGS</span> · <strong>Debt:</strong> <span class="badge badge-warn">PASS_WITH_WARNINGS</span></p>
+  <p><strong>Test baseline:</strong> 137 passing (+12 from baseline 125)</p>
+</div>
+
+<h2>Executive Summary</h2>
+<p>Cycle <code>b1-lifecycle-drafted-accepted</code> closes ADR-016 &sect;3.2 with a clean 7-commit
+implementation: <code>EvidenceStatus</code> enum (Drafted / Accepted / Superseded),
+<code>Evidence.props["status"]</code> persistence with read-merge-write, three new GraphStore port
+methods (<code>accept_evidence</code>, <code>supersede_evidence</code>, <code>list_evidence_by_status</code>),
+CLI surface (<code>evidence accept</code>, <code>evidence supersede</code>, <code>evidence list --status</code>),
+manifest gates, and spec delta. 137 tests pass (+12). All 10 spec scenarios compliant.
+7 debt warnings (all non-blocking mechanical refactors).</p>
+
+<h2>Verdicts</h2>
+<table>
+  <tr><th>Phase</th><th>Verdict</th><th>Notes</th></tr>
+  <tr>
+    <td>Verify</td>
+    <td><span class="badge badge-warn">PASS_WITH_WARNINGS</span></td>
+    <td>1 warning: <code>DATA-MODEL-LADYBUGDB.md</code> not listed in tasks.md (post-audit fix at commit 7)</td>
+  </tr>
+  <tr>
+    <td>Debt</td>
+    <td><span class="badge badge-warn">PASS_WITH_WARNINGS</span></td>
+    <td>7 warnings (non-blocking): DUP-1/SMELL-1 Cell&rarr;Map triplication; DUP-3/OVENG-1 dead <code>from_str</code>; ARCH-1 trait ISP friction; ARCH-2 hardcoded literals; OVENG-2 unused <code>UserInput</code> variant; COUP-1 <code>&amp;dyn Clock</code> precedent</td>
+  </tr>
+  <tr>
+    <td>Archive</td>
+    <td><span class="badge badge-pass">PASS_WITH_WARNINGS</span></td>
+    <td>Delta spec synced; DATA-MODEL-LADYBUGDB.md patched in commit 7</td>
+  </tr>
+</table>
+
+<h2>What Was Built</h2>
+
+<h3>Domain</h3>
+<ul>
+  <li><code>EvidenceStatus</code> enum with three variants: <code>Drafted</code>, <code>Accepted</code>, <code>Superseded</code></li>
+  <li><code>Evidence.status</code> field (last position) + <code>props["status"]</code> JSON injection at construction</li>
+  <li>Provenance-based defaults: <code>UserWorkspace &rarr; Accepted</code>, <code>ToolOutput &rarr; Drafted</code></li>
+  <li><code>from_props</code> with legacy-read default (missing key &rarr; <code>Accepted</code>)</li>
+</ul>
+
+<h3>Port (GraphStore trait)</h3>
+<ul>
+  <li><code>accept_evidence(&amp;mut self, id, &amp;dyn Clock)</code> — flips Drafted&rarr;Accepted, creates <code>Evaluation</code> node</li>
+  <li><code>supersede_evidence(&amp;mut self, id)</code> — flips Accepted&rarr;Superseded (no eval, manual replacement)</li>
+  <li><code>list_evidence_by_status(&amp;self, path, status)</code> — filter by status, includes legacy rows as Accepted</li>
+</ul>
+
+<h3>CLI</h3>
+<ul>
+  <li><code>archctl evidence accept --id &lt;id&gt;</code></li>
+  <li><code>archctl evidence supersede --old-id &lt;id&gt;</code></li>
+  <li><code>archctl evidence list --status &lt;drafted|accepted|superseded&gt;</code></li>
+</ul>
+
+<h3>Spec Delta</h3>
+<ul>
+  <li><code>docs/specs/source-evaluation-types.md</code>: lifecycle section appended (lines 314–415, 103 lines)</li>
+  <li><code>docs/DATA-MODEL-LADYBUGDB.md</code>: <code>status</code> field + Lifecycle subsection (commit 7 post-audit fix)</li>
+</ul>
+
+<h2>Spec Compliance — 10/10 Scenarios</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Status</th></tr>
+  <tr><td>1</td><td><code>extract</code> produces <code>Accepted</code> status (UserWorkspace)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>2</td><td><code>from_tsg_node</code> produces <code>Drafted</code> status (ToolOutput)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>3</td><td><code>accept</code> flips status + creates Evaluation</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>4</td><td><code>supersede</code> flips old status only</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>5</td><td><code>list --status=accepted</code> filters correctly</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>6</td><td><code>list --status=drafted</code> filters correctly</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>7</td><td><code>list</code> (no flag) returns all</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>8</td><td>Idempotency: accept twice &rarr; single Evaluation</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>9</td><td>Legacy rows (no <code>props.status</code>) default to Accepted</td><td><span class="badge badge-pass">PASS</span></td></tr>
+  <tr><td>10</td><td>Accept-on-Superseded rejected with error</td><td><span class="badge badge-pass">PASS</span></td></tr>
+</table>
+
+<h2>Debt Warnings (Non-blocking)</h2>
+<table>
+  <tr><th>ID</th><th>Finding</th><th>Location</th><th>Recommendation</th></tr>
+  <tr>
+    <td>DUP-1 / SMELL-1</td>
+    <td>Cell&rarr;Map JSON parsing block triplicated</td>
+    <td><code>store.rs:506-535, 600-629, 686-714</code></td>
+    <td>Extract <code>fn cell_to_json_map</code> helper (&minus;84 LOC)</td>
+  </tr>
+  <tr>
+    <td>DUP-3 / OVENG-1</td>
+    <td><code>EvidenceStatus::from_str</code> dead code</td>
+    <td><code>evidence.rs:135-142</code></td>
+    <td>Delete (ValueEnum derive handles parsing; <code>from_props</code> handles reads)</td>
+  </tr>
+  <tr>
+    <td>ARCH-1</td>
+    <td>GraphStore trait approaching ISP friction (16 methods)</td>
+    <td><code>store.rs:139-164</code></td>
+    <td>Future cycle: <code>LifecycleStore</code> super-trait split</td>
+  </tr>
+  <tr>
+    <td>ARCH-2</td>
+    <td>Adapter hardcodes <code>"user_accepted"</code>, <code>"archctl:lifecycle_v1"</code></td>
+    <td><code>store.rs:570-575</code></td>
+    <td>Promote to <code>pub const LIFECYCLE_ACCEPT_CRITERION</code> in <code>evidence.rs</code></td>
+  </tr>
+  <tr>
+    <td>OVENG-2</td>
+    <td><code>default_for_origin(UserInput)</code> unused in production</td>
+    <td><code>evidence.rs:148</code></td>
+    <td>Keep as future-proofing + add doc comment, or add unit test</td>
+  </tr>
+  <tr>
+    <td>COUP-1</td>
+    <td>First <code>&amp;dyn Clock</code> parameter on GraphStore port</td>
+    <td><code>store.rs:139-143</code></td>
+    <td>Document "use-case-flavored methods may inject ports" rule on trait</td>
+  </tr>
+  <tr>
+    <td>SMELL-2 / DUP-2</td>
+    <td>Long method + read-merge-write near-clone in accept/supersede</td>
+    <td><code>store.rs:486-658</code></td>
+    <td>Extract <code>read_props</code>, <code>write_props</code>, <code>record_acceptance_audit</code> helpers</td>
+  </tr>
+</table>
+
+<h2>Follow-up Candidates (Next Cycle)</h2>
+<ol>
+  <li><strong>W2-class cleanup</strong>: Extract <code>cell_to_json_map</code> helper from <code>store.rs</code> &mdash; recurring DUP-1 across 3 cycles. Eliminates ~84 LOC.</li>
+  <li><strong>Bulk manifest registration</strong>: 12 modules still lack manifests (<code>astgrep</code>, <code>cli</code>, <code>doctor</code>, <code>graph</code>, <code>inventory</code>, <code>project</code>, <code>render</code>, <code>row</code>, <code>skills</code>, <code>telemetry</code>, <code>tsg</code>, <code>xdg</code>).</li>
+  <li><strong>Auto-supersede</strong> (<code>--supersede-stale</code>): deferred from D3. Manual-only in this cycle.</li>
+  <li><strong>Magic string constants</strong>: Promote <code>"user_accepted"</code> / <code>"archctl:lifecycle_v1"</code> to <code>pub const</code> in <code>evidence.rs</code>.</li>
+  <li><strong>EvidenceStatus::from_str deletion</strong>: Dead code; <code>ValueEnum</code> derive generates its own parser.</li>
+</ol>
+
+<h2>Commit History</h2>
+<table>
+  <tr><th>SHA</th><th>Subject</th></tr>
+  <tr><td><code>807f481</code></td><td>feat(evidence): add EvidenceStatus enum</td></tr>
+  <tr><td><code>7ee0ccc</code></td><td>feat(evidence): add status field and provenance-based default</td></tr>
+  <tr><td><code>ef93168</code></td><td>feat(store): accept/supersede/list_by_status to GraphStore port</td></tr>
+  <tr><td><code>5f88db5</code></td><td>feat(cli): evidence accept|supersede subcommands + --status flag</td></tr>
+  <tr><td><code>0cff1d6</code></td><td>chore(manifests): register lifecycle symbols</td></tr>
+  <tr><td><code>01a121d</code></td><td>docs(spec): append lifecycle section to source-evaluation-types.md</td></tr>
+  <tr><td><code>7845141</code></td><td>docs(data-model): document Evidence.status lifecycle (post-audit fix)</td></tr>
+</table>
+
+<footer>
+  <p><strong>Cycle:</strong> <code>b1-lifecycle-drafted-accepted</code> &nbsp;|&nbsp; <strong>Released:</strong> 2026-07-30 &nbsp;|&nbsp; <strong>Skill resolution:</strong> injected (sddk-archive) &rarr; local-bare merge</p>
+  <p><strong>Artifact path:</strong> <code>sddk/b1-lifecycle-drafted-accepted/release-report.md</code></p>
+</footer>
+
+</body>
+</html>

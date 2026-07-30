@@ -276,3 +276,14 @@ Incluye:
 - **Tests**: 124 verde (sin regresión)
 - **Output**: 3 scope manifests (`clock.toml`, `environment.toml`, `identity.toml`) con `must_hold` + `must_not_contain = ["use std::fs::"]` + `minimum_tests`. Coverage: 10/23 manifests.
 - **Próximo candidato**: Más manifests (astgrep, cli, doctor, graph, inventory, project, render, row, skills, telemetry, xdg ~13 módulos restantes) o B1 lifecycle (drafted → accepted).
+
+## Cycle cerrado — `b1-lifecycle-drafted-accepted`
+
+- **Fecha**: 2026-07-30
+- **Branch**: `feat/b1-lifecycle-drafted-accepted` (merged a main via FF)
+- **Tag**: v0.3.0 (minor — new lifecycle feature)
+- **Verdict**: verify PASS_WITH_WARNINGS · debt PASS_WITH_WARNINGS (7 warnings non-blocking)
+- **Commits**: 7 (6 cycle + 1 post-audit doc fix)
+- **Tests**: 137 verde (sin regresión desde v0.2.2)
+- **Output**: EvidenceStatus enum (Drafted/Accepted/Superseded), persistido en Evidence.props (zero migration), 3 nuevos port methods (accept/supersede/list_by_status), 2 nuevos CLI subcommands + --status flag, Evaluation::accept creado en audit. ADR-016 §3.2 cerrado.
+- **Próximo candidato**: W2-class cleanup (extraer cell_to_json_map helper de store.rs) o bulk more manifests.
