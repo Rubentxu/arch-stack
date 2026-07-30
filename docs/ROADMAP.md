@@ -212,6 +212,7 @@ Incluye:
 | Cambio | Rama | Commit tip | Estado |
 |---|---|---|---|
 | `refactor-1b-filesystem-port` | `feat/filesystem-port` (mergeado a main via FF) | `607ee64` | **Cerrado** ✅ · tag `v0.1.0` |
+| `b1-source-evaluation-types` | `feat/b1-source-evaluation-types` (merged a main via FF) | `1264f9e` | **Cerrado** ✅ · tag `v0.2.0` |
 | `refactor-1c-scope-port` | `feat/refactor-1c-scope-port` (mergeado a main via FF) | `87a2149` | **Cerrado** ✅ · tag `v0.1.1` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
@@ -239,3 +240,14 @@ Incluye:
 - **Próximo candidato**: B1 (Source + Evaluation en el grafo) o más manifests (clock/environment/identity).
 
 > `refactor-1c-scope-port`: scope.rs migrado al Filesystem port (6 sitios `std::fs::*` → port-routed). `manifests/scope.toml` con gate `must_not_contain` que skipea `#[cfg(test)]` blocks via `strip_cfg_test_blocks`. 111 tests passing. Archivado en `sddk/refactor-1c-scope-port/archive-report.md`.
+
+## Cycle cerrado — `b1-source-evaluation-types`
+
+- **Fecha**: 2026-07-30
+- **Branch**: `feat/b1-source-evaluation-types` (merged a main via FF)
+- **Tag**: v0.2.0 (minor — new schema + migration)
+- **Verdict**: verify PASS_WITH_WARNINGS · debt PASS_WITH_WARNINGS (4 warnings non-blocking)
+- **Commits**: 11 (9 cycle + 2 post-audit fixes)
+- **Tests**: 124 verde (sin regresión desde v0.1.1)
+- **Output**: SourceArtifact + Evaluation node types, EXTRACTED_FROM + EVALUATES edges, migration runner (v1 → v2), 4 nuevos port methods (put_source/put_evaluation/link_extracted_from/link_evaluates), put_with_source wrapper, source_origin en Evidence.props. ADR-017 documenta decisiones.
+- **Próximo candidato**: memory_candidate lifecycle (`drafted → accepted`) o W1 (reducir Cypher-builder duplication en store.rs).
