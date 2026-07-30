@@ -6,7 +6,7 @@ use crate::astgrep::Lang;
 use crate::evidence::{self, EvidenceKind};
 use crate::project::resolve_project;
 use crate::skills;
-use crate::{doctor, graph, inventory, render};
+use crate::{doctor, graph, inventory, render, store};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum RenderFormat {
@@ -224,7 +224,9 @@ fn resolve_project_cmd(cwd: Option<PathBuf>, json: bool) -> Result<i32> {
 fn graph_init_cmd(cwd: Option<PathBuf>, json: bool) -> Result<i32> {
     let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let info = resolve_project(&cwd.to_string_lossy());
-    let path = graph::init(&info.project_dir).context("graph init")?;
+    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
+    store.init().context("graph init")?;
+    let path = graph::database_path(&info.project_dir);
     if json {
         println!("{}", serde_json::json!({"database": path.display().to_string(), "project_id": info.project_id}));
     } else {
@@ -237,7 +239,11 @@ fn graph_init_cmd(cwd: Option<PathBuf>, json: bool) -> Result<i32> {
 fn graph_stat_cmd(cwd: Option<PathBuf>, json: bool) -> Result<i32> {
     let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let info = resolve_project(&cwd.to_string_lossy());
-    let stat = graph::stat(&info.project_dir).context("graph stat")?;
+    // stat requires a session — open with init so the schema is in
+    // place if this is the first run after `git clone`.
+    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
+    store.init().context("graph init (stat prerequisite)")?;
+    let stat = store.stat().context("graph stat")?;
     if json {
         println!("{}", serde_json::to_string_pretty(&stat)?);
     } else {
@@ -253,7 +259,9 @@ fn graph_stat_cmd(cwd: Option<PathBuf>, json: bool) -> Result<i32> {
 fn graph_query_cmd(cwd: Option<PathBuf>, cypher: &str, json: bool) -> Result<i32> {
     let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let info = resolve_project(&cwd.to_string_lossy());
-    let rows = graph::query(&info.project_dir, cypher).context("graph query")?;
+    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
+    store.init().context("graph init (query prerequisite)")?;
+    let rows = store.query(cypher).context("graph query")?;
     if json || rows.is_empty() {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
@@ -265,9 +273,24 @@ fn graph_query_cmd(cwd: Option<PathBuf>, cypher: &str, json: bool) -> Result<i32
 }
 
 fn graph_neighbours_cmd(cwd: Option<PathBuf>, id: &str, depth: u8, json: bool) -> Result<i32> {
+    use tracing::warn;
     let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let info = resolve_project(&cwd.to_string_lossy());
-    let rows = graph::neighbours(&info.project_dir, id, depth).context("graph neighbours")?;
+    // Identifier validation belongs to the domain — never trust user
+    // input to a Cypher interpolation, even with the port abstracting
+    // the engine.
+    let safe_id = graph::validate_identifier(id).context("invalid element id")?;
+    let clamped_depth = depth.clamp(1, 4);
+    if depth > 2 {
+        warn!(depth, "graph traversal depth > 2 may be slow on large graphs");
+    }
+    let cypher = format!(
+        "MATCH (e:Element {{id: '{safe_id}'}})-[*1..{clamped_depth}]-(n) \
+         RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
+    );
+    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
+    store.init().context("graph init (neighbours prerequisite)")?;
+    let rows = store.query(&cypher).context("graph neighbours")?;
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
@@ -415,14 +438,15 @@ fn evidence_extract_cmd(
 fn evidence_list_cmd(cwd: Option<PathBuf>, path: Option<String>, json: bool) -> Result<i32> {
     let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let info = resolve_project(&cwd.to_string_lossy());
-    let cypher = match path.as_deref() {
-        Some(p) => {
-            let safe = crate::graph::validate_identifier(p)?;
-            format!("MATCH (e:Evidence) WHERE e.path = '{safe}' RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path ORDER BY e.start_line;")
-        }
-        None => "MATCH (e:Evidence) RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path ORDER BY e.start_line LIMIT 100;".to_string(),
-    };
-    let rows = crate::graph::query(&info.project_dir, &cypher).context("evidence list")?;
+    let safe_path = path
+        .as_deref()
+        .map(crate::graph::validate_identifier)
+        .transpose()?;
+    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
+    store.init().context("graph init (evidence list prerequisite)")?;
+    let rows = store
+        .list_evidence(safe_path)
+        .context("evidence list")?;
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {

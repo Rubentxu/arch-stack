@@ -8,6 +8,7 @@ pub mod inventory;
 pub mod project;
 pub mod render;
 pub mod skills;
+pub mod store;
 pub mod telemetry;
 pub mod tsg;
 pub mod xdg;

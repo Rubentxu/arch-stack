@@ -370,69 +370,18 @@ pub fn from_tsg_node(
 /// archctl prefers for idempotent writes). We do not yet link the
 /// Evidence to any ElementVersion — that is the agent's job once it
 /// has decided what the evidence supports.
+///
+/// This function is a thin shim over the persistence port
+/// (`crate::store::GraphStore`). The actual Cypher, validation, and
+/// driver plumbing live in the adapter. Adding a new graph backend
+/// (e.g. SparrowDB) means writing a new `GraphStore` impl — this
+/// function does not change.
 pub fn put(project_dir: &Path, evidence: &[Evidence]) -> Result<usize> {
     if evidence.is_empty() {
         return Ok(0);
     }
-    let session = crate::graph::open_session(project_dir)?;
-    let mut written = 0usize;
-    for ev in evidence {
-        let id = crate::graph::validate_identifier(&ev.id)
-            .context("evidence id failed validation")?;
-        let path = crate::graph::validate_identifier(&ev.path)
-            .context("evidence path failed validation")?;
-        let kind = crate::graph::validate_identifier(ev.kind.as_str())?;
-        let tool = crate::graph::validate_identifier(&ev.tool_name)?;
-        let rule = crate::graph::validate_identifier(&ev.rule_id)?;
-        let props_json =
-            serde_json::to_string(&ev.props).context("serialize evidence props")?;
-        let hash_json = serde_json::to_string(ev.content_hash.as_deref().unwrap_or(""))
-            .context("serialize content_hash")?;
-
-        // lbug 0.18.3 has no parameter binding; we interpolate after
-        // escaping single quotes. The id/path/kind/tool/rule/lang are
-        // allowlist-validated; the user-supplied claim is escaped.
-        // The Evidence table columns in `docs/schema/` are
-        //   id, kind, classification, claim, confidence, path,
-        //   start_line, end_line, commit_hash, content_hash,
-        //   tool_name, tool_version, rule_id, props, observed_at
-        // We mirror extra fields (language, start_byte, end_byte,
-        // text_preview) into `props`.
-        let safe_claim = ev.claim.replace('\'', "\\'");
-        let safe_tv = ev.tool_version.replace('\'', "\\'");
-        let safe_oa = ev.observed_at.replace('\'', "\\'");
-        // lbug TIMESTAMP column requires `timestamp(<string>)`, not a
-        // bare string literal. We wrap the allowlist-validated ISO-8601
-        // timestamp at query time. (validated above by ensure_ascii
-        // path; we still cap length defensively.)
-        let oa_cypher = if safe_oa.is_empty() || safe_oa.len() > 64 {
-            "timestamp('1970-01-01T00:00:00Z')".to_string()
-        } else {
-            format!("timestamp('{safe_oa}')")
-        };
-        let safe_ch = hash_json.replace('\'', "\\'");
-        let safe_props = props_json.replace('\'', "\\'");
-
-        let cypher = format!(
-            "MERGE (e:Evidence {{id: '{id}'}}) SET \
-             e.kind = '{kind}', \
-             e.claim = '{safe_claim}', \
-             e.path = '{path}', \
-             e.start_line = {sl}, \
-             e.end_line = {el}, \
-             e.tool_name = '{tool}', \
-             e.tool_version = '{safe_tv}', \
-             e.rule_id = '{rule}', \
-             e.content_hash = '{safe_ch}', \
-             e.observed_at = {oa_cypher}, \
-             e.props = '{safe_props}' RETURN e;",
-            sl = ev.start_line,
-            el = ev.end_line,
-        );
-        session.conn.query(&cypher).with_context(|| format!("persist evidence {id}"))?;
-        written += 1;
-    }
-    Ok(written)
+    let mut store = crate::store::open_default(project_dir).context("open graph store")?;
+    store.put_evidence(evidence)
 }
 
 #[cfg(test)]

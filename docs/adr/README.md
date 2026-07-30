@@ -24,6 +24,7 @@
 | [ADR-011](ADR-011-renderers-locales-y-bloqueo-de-publicos.md) | Renderers locales y bloqueo de servicios públicos (alcance = `archctl` solamente) | Aceptado (alcance reducido por ADR-013) |
 | [ADR-012](ADR-012-adopcion-incremental-crates-analisis.md) | Política "descartar CLIs" + ciclo M5–M8 + renderers como librerías | Aceptado (complementado por ADR-013) |
 | [ADR-013](ADR-013-viewer-ortogonal.md) | Viewer ortogonal basado en DiagramProjection (proyecto `archview` separado) | Aceptado |
+| [ADR-014](ADR-014-puerto-persistencia-sparrowdb.md) | Puerto de persistencia hexagonal + SparrowDB como adapter alternativo (Ola 1 implementada, Ola 2 pendiente) | Aceptado |
 
 ## Cómo se relacionan
 
