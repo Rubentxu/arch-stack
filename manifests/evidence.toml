@@ -30,6 +30,7 @@ editable = ["archctl/src/evidence.rs"]
 public_symbols = [
   "Evidence",
   "EvidenceKind",
+  "EvidenceStatus",
   "ExtractionResult",
   "extract",
   "extract_with_system_clock",
@@ -37,6 +38,10 @@ public_symbols = [
   "put",
   "put_with_clock",
   "put_with_source",
+  "default_for_origin",
+  "from_props",
+  "as_str",
+  "from_str",
   "TOOL_NAME",
   "TOOL_VERSION",
 ]
@@ -50,6 +55,7 @@ must_hold = [
   "pub fn put(",
   "pub struct Evidence",
   "pub enum EvidenceKind",
+  "pub enum EvidenceStatus",
   "pub enum SourceOrigin",
   "source_origin:",
   "SourceOrigin::UserWorkspace",
@@ -57,8 +63,12 @@ must_hold = [
   "Evidence {",
   "observed_at:",
   "kind: EvidenceKind",
-] 
+  "EvidenceStatus::Drafted",
+  "EvidenceStatus::Accepted",
+  "EvidenceStatus::Superseded",
+  "default_for_origin(",
+]
 
 # Minimum number of `#[test]` items in evidence.rs. We currently
 # have 9; the gate allows growth but refuses deletion.
-minimum_tests = 9
+minimum_tests = 13

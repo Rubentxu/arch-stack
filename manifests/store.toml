@@ -37,10 +37,13 @@ must_hold = [
   "fn put_source",
   "fn put_evaluation",
   "fn link_extracted_from",
+  "fn accept_evidence",
+  "fn supersede_evidence",
+  "fn list_evidence_by_status",
   "fn query(",
   "open_default",
   "Box<dyn GraphStore>",
 ]
 
 # Minimum tests for store.rs. We currently have 7.
-minimum_tests = 5
+minimum_tests = 13
