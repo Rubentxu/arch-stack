@@ -19,6 +19,11 @@ public_symbols = [
   "GraphStore",
   "LbugStore",
   "open_default",
+  "put_source",
+  "put_evaluation",
+  "link_extracted_from",
+  "SourceArtifact",
+  "Evaluation",
 ]
 
 # What `store` must keep doing, proved by a literal line in source.
@@ -28,10 +33,13 @@ must_hold = [
   "pub trait GraphStore",
   "pub struct LbugStore",
   "fn put_evidence",
+  "fn put_source",
+  "fn put_evaluation",
+  "fn link_extracted_from",
   "fn query(",
   "open_default",
   "Box<dyn GraphStore>",
-] 
+]
 
-# Minimum tests for store.rs. We currently have 5.
-minimum_tests = 3
+# Minimum tests for store.rs. We currently have 7.
+minimum_tests = 5

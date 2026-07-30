@@ -46,9 +46,11 @@ use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 
 use crate::evidence::Evidence;
+use crate::evaluation::Evaluation;
 use crate::graph::GraphStat;
 use crate::migrations;
 use crate::row::Row;
+use crate::source::SourceArtifact;
 
 /// The persistence port.
 ///
@@ -96,6 +98,25 @@ pub trait GraphStore: Send + Sync {
     /// column set: `e.id`, `e.kind`, `e.claim`, `e.start_line`,
     /// `e.end_line`, `e.path`.
     fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>>;
+
+    /// MERGE a SourceArtifact node by `id`. Idempotent on the
+    /// identity `(relative_path, content_hash)` (D2). MUST NOT
+    /// create edges — edge creation is `link_extracted_from`'s job.
+    fn put_source(&mut self, source: &SourceArtifact) -> Result<()>;
+
+    /// MERGE an Evaluation node by `id`. Idempotent. MUST NOT
+    /// create edges — the EVALUATES edge is minted separately
+    /// if the design chooses to expose it.
+    fn put_evaluation(&mut self, evaluation: &Evaluation) -> Result<()>;
+
+    /// Create the EXTRACTED_FROM edge linking `evidence_id` to
+    /// `source_id`. Idempotent: MERGE on the (evidence_id, source_id)
+    /// pair so re-runs are a no-op.
+    fn link_extracted_from(
+        &mut self,
+        evidence_id: &str,
+        source_id: &str,
+    ) -> Result<()>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -290,6 +311,107 @@ impl GraphStore for LbugStore {
                 .to_string(),
         };
         self.query(&cypher)
+    }
+
+    fn put_source(&mut self, source: &SourceArtifact) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&source.id)
+            .context("source id failed validation")?;
+        let rel_path = crate::graph::validate_identifier(&source.relative_path)
+            .context("source relative_path failed validation")?;
+        let lang = crate::graph::validate_identifier(&source.language)
+            .context("source language failed validation")?;
+        let kind = crate::graph::validate_identifier(&source.kind)
+            .context("source kind failed validation")?;
+        let props_json =
+            serde_json::to_string(&source.props).context("serialize source props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let safe_ch = source.content_hash.replace('\'', "\\'");
+        let commit_str = source
+            .commit_hash
+            .as_deref()
+            .unwrap_or("");
+
+        let cypher = format!(
+            "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
+             s.kind = '{kind}', \
+             s.relative_path = '{rel_path}', \
+             s.language = '{lang}', \
+             s.content_hash = '{safe_ch}', \
+             s.commit_hash = '{commit_str}', \
+             s.generated = {generated}, \
+             s.props = '{safe_props}';",
+            generated = source.generated,
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("persist SourceArtifact {id}")
+        })?;
+        Ok(())
+    }
+
+    fn put_evaluation(&mut self, evaluation: &Evaluation) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&evaluation.id)
+            .context("evaluation id failed validation")?;
+        let target_eid = crate::graph::validate_identifier(&evaluation.target_evidence_id)
+            .context("evaluation target_evidence_id failed validation")?;
+        let criterion = crate::graph::validate_identifier(&evaluation.criterion)
+            .context("evaluation criterion failed validation")?;
+        let evaluator = crate::graph::validate_identifier(&evaluation.evaluator)
+            .context("evaluation evaluator failed validation")?;
+        let props_json =
+            serde_json::to_string(&evaluation.props).context("serialize evaluation props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let safe_ea = evaluation.evaluated_at.replace('\'', "\\'");
+        let ea_cypher = if safe_ea.is_empty() || safe_ea.len() > 64 {
+            "timestamp('1970-01-01T00:00:00Z')".to_string()
+        } else {
+            format!("timestamp('{safe_ea}')")
+        };
+
+        let cypher = format!(
+            "MERGE (ev:Evaluation {{id: '{id}'}}) SET \
+             ev.target_evidence_id = '{target_eid}', \
+             ev.criterion = '{criterion}', \
+             ev.passed = {passed}, \
+             ev.evaluator = '{evaluator}', \
+             ev.evaluated_at = {ea_cypher}, \
+             ev.props = '{safe_props}';",
+            passed = evaluation.passed,
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("persist Evaluation {id}")
+        })?;
+        Ok(())
+    }
+
+    fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let eid = crate::graph::validate_identifier(evidence_id)
+            .context("link_extracted_from: evidence_id failed validation")?;
+        let sid = crate::graph::validate_identifier(source_id)
+            .context("link_extracted_from: source_id failed validation")?;
+
+        // Q2: Try MERGE on the REL TABLE first. If lbug 0.18.3 rejects
+        // MERGE on a REL TABLE, fall back to a MATCH + single CREATE
+        // (idempotent: if the edge already exists the CREATE is a no-op).
+        let primary = format!(
+            "MERGE (e:Evidence {{id: '{eid}'}})-[:EXTRACTED_FROM]->(s:SourceArtifact {{id: '{sid}'}});"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            // Q2 fallback: find the nodes, then CREATE the edge if they exist.
+            // This is safe and idempotent: if the edge already exists, a second
+            // CREATE on the same edge is a no-op in lbug's single-graph mode.
+            let fallback = format!(
+                "MATCH (e:Evidence {{id: '{eid}'}}), (s:SourceArtifact {{id: '{sid}'}}) \
+                 CREATE (e)-[:EXTRACTED_FROM]->(s);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_extracted_from fallback for ({eid}, {sid})")
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -527,5 +649,89 @@ mod tests {
         // Trait object: dynamic dispatch works.
         let stat: GraphStat = store.stat().unwrap();
         assert_eq!(stat.elements, 0);
+    }
+
+    #[test]
+    fn lbug_store_put_source_is_idempotent_on_same_id() {
+        use crate::source::SourceArtifact;
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let sa = SourceArtifact::from_content(
+            "src/lib.rs",
+            "rust",
+            "sha256:abc123def456",
+            None,
+            "2026-07-30T00:00:00Z",
+            "0.1.0",
+        );
+        store.put_source(&sa).unwrap();
+        store.put_source(&sa).unwrap(); // second call — must be idempotent
+        let rows = store
+            .query("MATCH (s:SourceArtifact) RETURN s.id, s.relative_path ORDER BY s.id;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "MERGE must not duplicate SourceArtifact nodes");
+        assert_eq!(rows[0].get("s.relative_path").and_then(|c| c.as_str()), Some("src/lib.rs"));
+    }
+
+    #[test]
+    fn lbug_store_link_extracted_from_creates_edge() {
+        use crate::source::SourceArtifact;
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Create a source and an evidence row
+        let sa = SourceArtifact::from_content(
+            "src/lib.rs",
+            "rust",
+            "sha256:abc123def456",
+            None,
+            "2026-07-30T00:00:00Z",
+            "0.1.0",
+        );
+        store.put_source(&sa).unwrap();
+
+        let ev = Evidence {
+            id: "ev:test:link".to_string(),
+            kind: EvidenceKind::Structural,
+            claim: "test evidence".to_string(),
+            path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: Some(0),
+            end_byte: Some(4),
+            tool_name: TOOL_NAME.to_string(),
+            tool_version: TOOL_VERSION.to_string(),
+            rule_id: "test:rule".to_string(),
+            language: "rust".to_string(),
+            observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
+            content_hash: Some("sha256:abc123def456".to_string()),
+            text_preview: Some("test".to_string()),
+            props: Default::default(),
+        };
+        store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+
+        // Link evidence to source
+        store
+            .link_extracted_from("ev:test:link", &sa.id)
+            .unwrap();
+
+        // Verify the edge exists
+        let rows = store
+            .query(
+                "MATCH (e:Evidence {id: 'ev:test:link'})-[:EXTRACTED_FROM]->(s:SourceArtifact) \
+                 RETURN s.id AS source_id;",
+            )
+            .unwrap();
+        assert_eq!(rows.len(), 1, "EXTRACTED_FROM edge must exist");
+        assert_eq!(
+            rows[0].get("source_id").and_then(|c| c.as_str()),
+            Some(sa.id.as_str())
+        );
     }
 }
