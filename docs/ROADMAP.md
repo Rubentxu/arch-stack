@@ -214,6 +214,7 @@ Incluye:
 | `refactor-1b-filesystem-port` | `feat/filesystem-port` (mergeado a main via FF) | `607ee64` | **Cerrado** ✅ · tag `v0.1.0` |
 | `b1-source-evaluation-types` | `feat/b1-source-evaluation-types` (merged a main via FF) | `1264f9e` | **Cerrado** ✅ · tag `v0.2.0` |
 | `refactor-1c-scope-port` | `feat/refactor-1c-scope-port` (mergeado a main via FF) | `87a2149` | **Cerrado** ✅ · tag `v0.1.1` |
+| `fix-parallel-lbug-test-races` | `fix/parallel-lbug-test-races` (merged a main via FF) | `4b8ac47` | **Cerrado** ✅ · tag `v0.2.2` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -251,6 +252,19 @@ Incluye:
 - **Tests**: 124 verde (sin regresión desde v0.1.1)
 - **Output**: SourceArtifact + Evaluation node types, EXTRACTED_FROM + EVALUATES edges, migration runner (v1 → v2), 4 nuevos port methods (put_source/put_evaluation/link_extracted_from/link_evaluates), put_with_source wrapper, source_origin en Evidence.props. ADR-017 documenta decisiones.
 - **Próximo candidato**: memory_candidate lifecycle (`drafted → accepted`) o W1 (reducir Cypher-builder duplication en store.rs).
+
+## Cycle cerrado — `fix-parallel-lbug-test-races`
+
+- **Fecha**: 2026-07-30
+- **Branch**: `fix/parallel-lbug-test-races` (merged a main via FF)
+- **Tag**: v0.2.2 (patch — parallel-test race fix)
+- **Verdict**: verify PASS_WITH_WARNINGS · debt PASS · archive PASS
+- **Commits**: 2 (bound lbug buffer pool to 256 MB + remove --test-threads=1 workaround)
+- **Tests**: 125 verde serial (3.63s) + 125 verde parallel (1.78s) · 0 regresión
+- **Output**: `BUFFER_POOL_SIZE = 256 * 1024 * 1024` en `graph.rs`, aplicado a ambos `buffer_pool_size` y `max_db_size` en cada apertura de DB. Workaround `--test-threads=1` eliminado de scope.rs. Doctor per-scope ~10s (era ~2 min via serial).
+- **Root cause**: lbug 0.18.3 `SystemConfig::default()` → UINT64_MAX (~8 TB mmap). Con 64 cores × 8 TB = 512 TB virtuales requeridos, el kernel no puede satisfacerlo. 256 MiB per DB = 16 GiB total con 64 cores, perfectamente servible.
+- **Apply deviation**: apply agent extendió el fix más allá del spec (boundó también `max_db_size` además de `buffer_pool_size`). Verificado correcto por verify phase.
+- **Próximo candidato**: B1 lifecycle (drafted → accepted) o más manifests (~13 módulos restantes).
 
 ## Cycle cerrado — `more-manifests-clock-env-identity`
 
