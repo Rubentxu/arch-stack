@@ -394,10 +394,15 @@ fn evidence_extract_cmd(
     do_put: bool,
 ) -> Result<i32> {
     let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let result = evidence::extract(&cwd, lang, pattern, claim, kind)?;
+    // CLI is the production entry point — always uses SystemClock.
+    // The Clock port lets tests inject deterministic timestamps via
+    // FixedClock; the CLI does not need that.
+    let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
+    let result = evidence::extract(&cwd, lang, pattern, claim, kind, clock)?;
     let written = if do_put {
         let info = resolve_project(&cwd.to_string_lossy());
-        evidence::put(&info.project_dir, &result.evidence).context("evidence put")?
+        evidence::put_with_clock(&info.project_dir, &result.evidence, clock)
+            .context("evidence put")?
     } else {
         0
     };

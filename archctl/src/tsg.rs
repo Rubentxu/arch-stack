@@ -55,6 +55,7 @@ pub fn execute(
     source: &str,
     claim: &str,
     kind: crate::evidence::EvidenceKind,
+    clock: &dyn crate::clock::Clock,
 ) -> Result<TsgOutput> {
     let ts_lang = lang.get_ts_language();
     let mut parser = TsParser::new();
@@ -83,7 +84,7 @@ pub fn execute(
     for node_ref in graph.iter_nodes() {
         let node = &graph[node_ref];
         let Some(ev) =
-            crate::evidence::from_tsg_node(node, &graph, rel_path, source, claim, kind)
+            crate::evidence::from_tsg_node(node, &graph, rel_path, source, claim, kind, clock)
         else {
             continue;
         };
@@ -102,6 +103,7 @@ pub fn extract_with_rules(
     rules: &TsgFile,
     claim: &str,
     kind: crate::evidence::EvidenceKind,
+    clock: &dyn crate::clock::Clock,
 ) -> Result<TsgOutput> {
     let files = crate::inventory::supported_files(root, 50_000)?;
     let mut combined = TsgOutput::default();
@@ -127,7 +129,7 @@ pub fn extract_with_rules(
                 continue;
             }
         };
-        let out = execute(rules, lang, rel_path.to_str().unwrap_or("<bad-path>"), &source, claim, kind)?;
+        let out = execute(rules, lang, rel_path.to_str().unwrap_or("<bad-path>"), &source, claim, kind, clock)?;
         combined.graph_node_count += out.graph_node_count;
         combined.graph_edge_count += out.graph_edge_count;
         combined.evidence.extend(out.evidence);
@@ -156,6 +158,7 @@ mod tests {
     fn load_and_execute_rust_function_rule() {
         let rules = load_rules(SupportLang::Rust, RUST_FN_RULES).expect("parse TSG");
         let src = "fn alpha() {}\nfn beta(x: i32) -> i32 { x }\n";
+        let clock: &dyn crate::clock::Clock = &crate::clock::FixedClock::new("2026-07-30T00:00:00Z");
         let out = execute(
             &rules,
             SupportLang::Rust,
@@ -163,6 +166,7 @@ mod tests {
             src,
             "Rust function definition",
             EvidenceKind::Structural,
+            clock,
         )
         .expect("execute TSG");
 
@@ -186,6 +190,12 @@ mod tests {
         // Default tool/version stamped by Evidence::from_tsg_node.
         assert!(out.evidence.iter().all(|e| e.tool_name == TOOL_NAME));
         assert!(out.evidence.iter().all(|e| e.tool_version == TOOL_VERSION));
+        // Injected Clock port: deterministic timestamp, no SystemClock
+        // races against the test runner.
+        assert!(out
+            .evidence
+            .iter()
+            .all(|e| e.observed_at == "2026-07-30T00:00:00Z"));
         // Byte ranges should be non-zero and within source.
         let src_len = src.len() as u64;
         assert!(out

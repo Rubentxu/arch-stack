@@ -18,13 +18,14 @@
 use anyhow::{Context, Result};
 use ast_grep_core::source::Doc;
 use blake3::Hasher;
-use chrono::Utc;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use tracing::debug;
 use tree_sitter_graph::graph::{Graph as TsgGraph, GraphNode, Value as TsgValue};
+
+use crate::clock::Clock;
 
 use crate::astgrep::{compile_pattern, find_all, parse, Lang};
 use crate::inventory::supported_files;
@@ -107,12 +108,17 @@ pub struct ExtractionResult {
 /// Walk every file of `language` under `root` and run the pattern.
 /// `claim_template` can reference `$NAME`, `$TYPE`, etc. from the
 /// match — for now we just use the match's text + a fixed claim.
+///
+/// `clock` supplies the timestamp for each generated evidence row. Pass
+/// [`crate::clock::system_clock()`] in production; tests inject a
+/// [`crate::clock::FixedClock`] to keep `observed_at` deterministic.
 pub fn extract(
     root: &Path,
     lang: Lang,
     pattern_src: &str,
     claim: &str,
     kind: EvidenceKind,
+    clock: &dyn Clock,
 ) -> Result<ExtractionResult> {
     let files = supported_files(root, 50_000)?;
     let pattern = compile_pattern(lang, pattern_src)?;
@@ -137,7 +143,13 @@ pub fn extract(
         debug!(path = %rel_path.display(), matches = matches.len(), "scanned");
         for m in matches {
             all_evidence.push(evidence_from_match(
-                lang, rel_path.to_str().unwrap_or("<bad-path>"), &source, claim, kind, &m,
+                lang,
+                rel_path.to_str().unwrap_or("<bad-path>"),
+                &source,
+                claim,
+                kind,
+                &m,
+                clock,
             )?);
         }
     }
@@ -151,73 +163,93 @@ pub fn extract(
     })
 }
 
-    fn evidence_from_match<D: Doc>(
-        lang: Lang,
-        rel_path: &str,
-        source: &str,
-        claim: &str,
-        kind: EvidenceKind,
-        m: &ast_grep_core::matcher::NodeMatch<'_, D>,
-    ) -> Result<Evidence> {
-        let range = m.range();
-        let text = m.text().to_string();
-        let start_line = line_at_byte(source, range.start) as u64 + 1;
-        let end_line = line_at_byte(source, range.end.saturating_sub(1).max(range.start)) as u64 + 1;
-        let content_hash = Some(content_hash_of(source));
-        let text_preview = Some(truncate(&text, 200));
-        let id = evidence_id(rel_path, range.start, range.end, &text);
+/// Backwards-compatible shim that uses the production `SystemClock`.
+///
+/// New call sites should use [`extract_with_clock`] and inject a
+/// clock — that is the only path that lets tests assert on the
+/// `observed_at` field without `chrono::Utc::now()` race conditions.
+#[deprecated(
+    since = "0.2.0",
+    note = "use `extract(..., clock)` and inject a Clock; this shim uses SystemClock"
+)]
+pub fn extract_with_system_clock(
+    root: &Path,
+    lang: Lang,
+    pattern_src: &str,
+    claim: &str,
+    kind: EvidenceKind,
+) -> Result<ExtractionResult> {
+    extract(root, lang, pattern_src, claim, kind, &crate::clock::SystemClock)
+}
 
-        let mut props = serde_json::Map::new();
-        props.insert(
-            "node_kind".to_string(),
-            serde_json::Value::String(m.kind().to_string()),
-        );
-        props.insert(
-            "byte_range".to_string(),
-            serde_json::json!([range.start, range.end]),
-        );
-        // Schema columns (`Evidence` table in docs/schema/) do not have
-        // `language`, `start_byte`, `end_byte`, `text_preview`. We
-        // mirror them into `props` so consumers can read everything via
-        // the same JSON field without a schema migration.
-        props.insert(
-            "language".to_string(),
-            serde_json::Value::String(lang.label().to_string()),
-        );
-        props.insert(
-            "start_byte".to_string(),
-            serde_json::json!(range.start),
-        );
-        props.insert(
-            "end_byte".to_string(),
-            serde_json::json!(range.end),
-        );
-        if let Some(ref p) = text_preview {
-            props.insert(
-                "text_preview".to_string(),
-                serde_json::Value::String(p.clone()),
-            );
-        }
+fn evidence_from_match<D: Doc>(
+    lang: Lang,
+    rel_path: &str,
+    source: &str,
+    claim: &str,
+    kind: EvidenceKind,
+    m: &ast_grep_core::matcher::NodeMatch<'_, D>,
+    clock: &dyn Clock,
+) -> Result<Evidence> {
+    let range = m.range();
+    let text = m.text().to_string();
+    let start_line = line_at_byte(source, range.start) as u64 + 1;
+    let end_line = line_at_byte(source, range.end.saturating_sub(1).max(range.start)) as u64 + 1;
+    let content_hash = Some(content_hash_of(source));
+    let text_preview = Some(truncate(&text, 200));
+    let id = evidence_id(rel_path, range.start, range.end, &text);
 
-        Ok(Evidence {
-            id,
-            kind,
-            claim: claim.to_string(),
-            path: rel_path.to_string(),
-            start_line,
-            end_line,
-            start_byte: Some(range.start as u64),
-            end_byte: Some(range.end as u64),
-            tool_name: TOOL_NAME.to_string(),
-            tool_version: TOOL_VERSION.to_string(),
-            rule_id: format!("astgrep:{}:{}", lang.label(), m.kind()),
-            language: lang.label().to_string(),
-            observed_at: Utc::now().to_rfc3339(),
-            content_hash,
-            text_preview,
-            props,
-        })
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "node_kind".to_string(),
+        serde_json::Value::String(m.kind().to_string()),
+    );
+    props.insert(
+        "byte_range".to_string(),
+        serde_json::json!([range.start, range.end]),
+    );
+    // Schema columns (`Evidence` table in docs/schema/) do not have
+    // `language`, `start_byte`, `end_byte`, `text_preview`. We
+    // mirror them into `props` so consumers can read everything via
+    // the same JSON field without a schema migration.
+    props.insert(
+        "language".to_string(),
+        serde_json::Value::String(lang.label().to_string()),
+    );
+    props.insert(
+        "start_byte".to_string(),
+        serde_json::json!(range.start),
+    );
+    props.insert(
+        "end_byte".to_string(),
+        serde_json::json!(range.end),
+    );
+    if let Some(ref p) = text_preview {
+        props.insert(
+            "text_preview".to_string(),
+            serde_json::Value::String(p.clone()),
+        );
     }
+
+    Ok(Evidence {
+        id,
+        kind,
+        claim: claim.to_string(),
+        path: rel_path.to_string(),
+        start_line,
+        end_line,
+        start_byte: Some(range.start as u64),
+        end_byte: Some(range.end as u64),
+        tool_name: TOOL_NAME.to_string(),
+        tool_version: TOOL_VERSION.to_string(),
+        rule_id: format!("astgrep:{}:{}", lang.label(), m.kind()),
+        language: lang.label().to_string(),
+        observed_at: clock.now_rfc3339(),
+        content_hash,
+        text_preview,
+        props,
+    })
+}
 
 fn line_at_byte(source: &str, byte: usize) -> usize {
     source[..byte.min(source.len())]
@@ -267,6 +299,7 @@ pub fn from_tsg_node(
     source: &str,
     claim: &str,
     kind: EvidenceKind,
+    clock: &dyn Clock,
 ) -> Option<Evidence> {
     // Walk attributes and capture any string values into props.
     let mut props = serde_json::Map::new();
@@ -351,7 +384,7 @@ pub fn from_tsg_node(
         tool_version: TOOL_VERSION.to_string(),
         rule_id,
         language: String::new(),
-        observed_at: Utc::now().to_rfc3339(),
+        observed_at: clock.now_rfc3339(),
         content_hash,
         text_preview: text_preview.clone(),
         props,
@@ -376,6 +409,36 @@ pub fn from_tsg_node(
 /// driver plumbing live in the adapter. Adding a new graph backend
 /// (e.g. SparrowDB) means writing a new `GraphStore` impl — this
 /// function does not change.
+///
+/// The `clock` is not used by this function — the `observed_at`
+/// timestamp is set when the Evidence is built (in
+/// [`evidence_from_match`] or [`from_tsg_node`]), not when it is
+/// persisted. The parameter exists so the use-case layer can route
+/// a single Clock through the entire evidence pipeline.
+pub fn put_with_clock(
+    project_dir: &Path,
+    evidence: &[Evidence],
+    _clock: &dyn Clock,
+) -> Result<usize> {
+    if evidence.is_empty() {
+        return Ok(0);
+    }
+    let mut store = crate::store::open_default(project_dir).context("open graph store")?;
+    store.put_evidence(evidence)
+}
+
+/// Backwards-compatible shim that omits the `clock` parameter.
+///
+/// New code should use [`put_with_clock`] for symmetry with
+/// [`extract`]. Today the shim and the canonical function are
+/// behaviourally identical — the clock only matters at extraction
+/// time, not at persistence time — but keeping the parameter in the
+/// signature prevents callers from accidentally bypassing the
+/// hexagonal clock port in the future.
+#[deprecated(
+    since = "0.2.0",
+    note = "use `put_with_clock(..., clock)` for consistency with the Clock port"
+)]
 pub fn put(project_dir: &Path, evidence: &[Evidence]) -> Result<usize> {
     if evidence.is_empty() {
         return Ok(0);
@@ -388,7 +451,6 @@ pub fn put(project_dir: &Path, evidence: &[Evidence]) -> Result<usize> {
 mod tests {
     use super::*;
     use crate::astgrep::Lang;
-    use std::fs;
 
     fn fixture() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -409,12 +471,14 @@ mod tests {
     #[test]
     fn extract_finds_two_rust_functions() {
         let tmp = fixture();
+        let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         let result = extract(
             tmp.path(),
             Lang::Rust,
             "fn $NAME",
             "Rust function definition",
             EvidenceKind::Structural,
+            clock,
         )
         .unwrap();
         assert_eq!(result.language, "rust");
@@ -432,12 +496,14 @@ mod tests {
     #[test]
     fn extract_evidence_id_is_stable() {
         let tmp = fixture();
+        let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         let a = extract(
             tmp.path(),
             Lang::Rust,
             "fn $NAME",
             "claim",
             EvidenceKind::Structural,
+            clock,
         )
         .unwrap();
         let b = extract(
@@ -446,6 +512,7 @@ mod tests {
             "fn $NAME",
             "claim",
             EvidenceKind::Structural,
+            clock,
         )
         .unwrap();
         let ids_a: Vec<_> = a.evidence.iter().map(|e| &e.id).collect();
@@ -456,18 +523,44 @@ mod tests {
     #[test]
     fn evidence_row_captures_line_range() {
         let tmp = fixture();
+        let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         let result = extract(
             tmp.path(),
             Lang::Rust,
             "fn $NAME",
             "claim",
             EvidenceKind::Structural,
+            clock,
         )
         .unwrap();
         let ev = &result.evidence[0];
         assert_eq!(ev.start_line, 1);
         assert!(ev.end_line >= ev.start_line);
         assert!(ev.start_byte.unwrap() < ev.end_byte.unwrap());
+    }
+
+    #[test]
+    fn extract_stamps_observed_at_from_clock() {
+        // The Clock port makes observed_at deterministic. This is the
+        // test that justifies the whole refactor — before, observed_at
+        // was `Utc::now()` and two consecutive calls produced different
+        // strings, making golden-file tests on evidence impossible.
+        let tmp = fixture();
+        let fixed: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2030-01-01T00:00:00Z");
+        let result = extract(
+            tmp.path(),
+            Lang::Rust,
+            "fn $NAME",
+            "claim",
+            EvidenceKind::Structural,
+            fixed,
+        )
+        .unwrap();
+        assert!(result
+            .evidence
+            .iter()
+            .all(|e| e.observed_at == "2030-01-01T00:00:00Z"));
     }
 
     #[test]
@@ -514,8 +607,9 @@ mod tests {
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
         }];
-        let n1 = put(&project, &evidence).unwrap();
-        let n2 = put(&project, &evidence).unwrap();
+        let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
+        let n1 = put_with_clock(&project, &evidence, clock).unwrap();
+        let n2 = put_with_clock(&project, &evidence, clock).unwrap();
         assert_eq!(n1, 1);
         assert_eq!(n2, 1, "MERGE must not duplicate rows");
         let count = crate::graph::query(&project, "MATCH (e:Evidence) RETURN count(e) AS n;")
