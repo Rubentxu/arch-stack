@@ -1,0 +1,26 @@
+# Environment hexagonal port — abstraction over std::env.
+# Production adapter: SystemEnvironment. Test adapter: FixedEnvironment.
+id = "environment"
+version = "0.1.0"
+description = "Environment hexagonal port (SystemEnvironment + FixedEnvironment) — abstraction over std::env."
+cargo_dir = "archctl"
+editable = ["archctl/src/environment.rs"]
+public_symbols = [
+  "Environment",
+  "SystemEnvironment",
+  "FixedEnvironment",
+  "system_environment",
+  "fixed_environment",
+]
+must_hold = [
+  "pub trait Environment",
+  "pub struct SystemEnvironment",
+  "pub struct FixedEnvironment",
+  "pub fn system_environment",
+  "pub fn fixed_environment",
+  "with_cwd",
+  "with_home",
+  "with_var",
+]
+minimum_tests = 6
+must_not_contain = ["use std::fs::"]

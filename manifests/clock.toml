@@ -1,0 +1,25 @@
+# Clock hexagonal port — RFC3339 wall-clock abstraction.
+# Production adapter: SystemClock (chrono::Utc::now()).
+# Test adapter: FixedClock (constant timestamp).
+id = "clock"
+version = "0.1.0"
+description = "Clock hexagonal port (SystemClock + FixedClock) — deterministic wall-clock for tests."
+cargo_dir = "archctl"
+editable = ["archctl/src/clock.rs"]
+public_symbols = [
+  "Clock",
+  "SystemClock",
+  "FixedClock",
+  "system_clock",
+  "fixed_clock",
+]
+must_hold = [
+  "pub trait Clock",
+  "pub struct SystemClock",
+  "pub struct FixedClock",
+  "pub fn system_clock",
+  "pub fn fixed_clock",
+  "now_rfc3339",
+]
+minimum_tests = 4
+must_not_contain = ["use std::fs::"]

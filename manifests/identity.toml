@@ -1,0 +1,28 @@
+# Source identity domain module — derives a stable project id from
+# either a git repo (gix query of HEAD + remote) or a bare directory
+# (canonicalised through the Filesystem port). Not a hex port: it
+# consumes Filesystem and gix. The `must_not_contain` gate pins the
+# post-Refactor-1b invariant that no std::fs call leaks in.
+id = "identity"
+version = "0.1.0"
+description = "Source identity domain module (SourceIdentity + canonical realpath + UUIDv4-shaped project id)."
+cargo_dir = "archctl"
+editable = ["archctl/src/identity.rs"]
+public_symbols = [
+  "SourceIdentity",
+  "normalize_remote",
+  "blake_like",
+  "resolve_source_identity",
+  "portable_project_id",
+  "identity_summary",
+]
+must_hold = [
+  "pub enum SourceIdentity",
+  "pub fn normalize_remote",
+  "pub fn blake_like",
+  "pub fn resolve_source_identity",
+  "pub fn portable_project_id",
+  "pub fn identity_summary",
+]
+minimum_tests = 4
+must_not_contain = ["use std::fs::"]
