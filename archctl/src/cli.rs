@@ -55,6 +55,14 @@ pub enum InventoryAction {
         #[arg(long)]
         json: bool,
     },
+    Depends {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -178,6 +186,9 @@ pub fn run(cli: Cli) -> Result<i32> {
             }
             InventoryAction::Languages { cwd, max_depth, max_entries, json } => {
                 inventory_languages_cmd(cwd, max_depth, max_entries, json)
+            }
+            InventoryAction::Depends { cwd, manifest, json } => {
+                inventory_depends_cmd(cwd, manifest, json)
             }
         },
         Command::Evidence { action } => match action {
@@ -316,6 +327,36 @@ fn inventory_languages_cmd(
         for (lang, stat) in v {
             println!("  {lang:<14} files={:<6} bytes={}", stat.files, stat.bytes);
         }
+    }
+    Ok(0)
+}
+
+fn inventory_depends_cmd(
+    cwd: Option<PathBuf>,
+    manifest: Option<PathBuf>,
+    json: bool,
+) -> Result<i32> {
+    let manifest_path = manifest.map(|p| {
+        if p.is_relative() {
+            let base = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            base.join(p)
+        } else {
+            p
+        }
+    });
+    let deps = inventory::depends_summary(manifest_path.as_deref())?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&deps)?);
+    } else {
+        for dep in &deps {
+            let kind = match dep.kind {
+                inventory::DepKind::Normal => "",
+                inventory::DepKind::Dev => " [dev]",
+                inventory::DepKind::Build => " [build]",
+            };
+            println!("{:<40} {:>20}{}", dep.name, dep.version, kind);
+        }
+        println!("\n{} dependencies total", deps.len());
     }
     Ok(0)
 }

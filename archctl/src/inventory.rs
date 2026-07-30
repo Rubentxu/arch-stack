@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use cargo_metadata::{Metadata, MetadataCommand};
 use ignore::{DirEntry, WalkBuilder};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -201,6 +202,63 @@ pub fn walk_to_paths(entries: Vec<Entry>) -> Vec<PathBuf> {
         .filter(|e| matches!(e.kind, EntryKind::File))
         .map(|e| PathBuf::from(e.path))
         .collect()
+}
+
+/// Resolve Cargo dependencies for a workspace member via cargo_metadata.
+/// Returns metadata for all packages in the workspace; use `package_filter`
+/// to select a specific member.
+pub fn depends(manifest_path: Option<&Path>) -> Result<Metadata> {
+    let mut cmd = MetadataCommand::new();
+    if let Some(p) = manifest_path {
+        cmd.manifest_path(p);
+    }
+    let metadata = cmd.exec().context("cargo_metadata exec failed — is this a Cargo project?")?;
+    Ok(metadata)
+}
+
+/// Dependency summary for a single package: name, version, and whether it is a dev/build dependency.
+#[derive(Debug, Serialize)]
+pub struct DepInfo {
+    pub name: String,
+    pub version: String,
+    pub kind: DepKind,
+}
+
+/// Kind of dependency as declared in Cargo.toml.
+#[derive(Debug, Serialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum DepKind {
+    Normal,
+    Dev,
+    Build,
+}
+
+impl From<cargo_metadata::DependencyKind> for DepKind {
+    fn from(kind: cargo_metadata::DependencyKind) -> Self {
+        match kind {
+            cargo_metadata::DependencyKind::Development => DepKind::Dev,
+            cargo_metadata::DependencyKind::Build => DepKind::Build,
+            _ => DepKind::Normal,
+        }
+    }
+}
+
+/// Collect all dependencies (normal + dev + build) for every package in the workspace.
+pub fn depends_summary(manifest_path: Option<&Path>) -> Result<Vec<DepInfo>> {
+    let metadata = depends(manifest_path)?;
+    let mut out = Vec::new();
+    for package in &metadata.packages {
+        for dep in &package.dependencies {
+            out.push(DepInfo {
+                name: dep.name.clone(),
+                version: dep.req.to_string(),
+                kind: dep.kind.into(),
+            });
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.dedup_by(|a, b| a.name == b.name && a.kind == b.kind);
+    Ok(out)
 }
 
 #[cfg(test)]
