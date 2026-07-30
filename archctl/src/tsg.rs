@@ -27,6 +27,7 @@ use tree_sitter::Parser as TsParser;
 use tree_sitter_graph::ast::File as TsgFile;
 use tree_sitter_graph::functions::Functions;
 use tree_sitter_graph::{ExecutionConfig, NoCancellation, Variables};
+use crate::Filesystem;
 
 /// Outcome of executing a TSG file against a single source document.
 /// Each `Evidence` row maps 1:1 to a `(node, ...)` block in the TSG.
@@ -104,6 +105,7 @@ pub fn extract_with_rules(
     claim: &str,
     kind: crate::evidence::EvidenceKind,
     clock: &dyn crate::clock::Clock,
+    fs: &dyn Filesystem,
 ) -> Result<TsgOutput> {
     let files = crate::inventory::supported_files(root, 50_000)?;
     let mut combined = TsgOutput::default();
@@ -122,7 +124,7 @@ pub fn extract_with_rules(
             continue;
         }
         let abs = root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs) {
+        let source = match fs.read_to_string(&abs) {
             Ok(s) => s,
             Err(e) => {
                 tracing::debug!(path = %rel_path.display(), error = %e, "skip (not UTF-8)");
