@@ -370,6 +370,15 @@ confirmed
 contradicted
 ```
 
+**Nota sobre `props`:** los siguientes campos viven en `Evidence.props` (no como columnas del schema) para evitar `ALTER TABLE`:
+- `language` — string, etiqueta del lenguaje
+- `start_byte` — número, inicio del rango en bytes
+- `end_byte` — número, fin del rango en bytes
+- `text_preview` — string, previsualización del texto
+- `node_kind` — string, kind del nodo TSG
+- `byte_range` — array[2], `[start_byte, end_byte]`
+- `source_origin` — string, provenance tag (`"user_workspace"` | `"user_input"` | `"tool_output"`)
+
 ### 4.9 `SourceArtifact`
 
 Representa una fuente analizada:
@@ -397,7 +406,28 @@ documentation
 manifest
 ```
 
-### 4.10 `ToolRun`
+### 4.10 `Evaluation`
+
+Evaluación de una fila de evidencia contra un criterio. Opcional en B1 (D3) — `put_evidence` no requiere una.
+
+```text
+id
+target_evidence_id
+criterion
+passed
+evaluator
+evaluated_at
+props
+```
+
+- `id`: `"eval:" + blake3(criterion + target_evidence_id + evaluated_at)[..16]`
+- `criterion`: nombre del criterio evaluado (`"min_occurrence"` | `"user_accepted"` | ...)
+- `passed`: `true` = accept, `false` = reject
+- `evaluator`: `"archctl:threshold_v1"` | `"human:<id>"` | ...
+- `evaluated_at`: RFC3339 timestamp
+- `props`: JSON con `criterion_params`, `observed_value`, `notes` (opcionales)
+
+### 4.11 `ToolRun`
 
 ```text
 id
@@ -499,6 +529,7 @@ Artifact        -[:SUPPORTED_BY]-> Evidence
 Evidence -[:EXTRACTED_FROM]-> SourceArtifact
 Evidence -[:PRODUCED_BY]-> ToolRun
 Evidence -[:DERIVED_FROM_EVIDENCE]-> Evidence
+Evaluation -[:EVALUATES]-> Evidence
 ```
 
 ### Artefactos y ejecuciones
