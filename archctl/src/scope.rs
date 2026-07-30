@@ -52,6 +52,8 @@ pub struct ScopeManifest {
     pub public_symbols: Vec<String>,
     #[serde(default)]
     pub must_hold: Vec<String>,
+    #[serde(default, alias = "must_not_hold")]
+    pub must_not_contain: Vec<String>,
     #[serde(default, alias = "minimum_count")]
     pub minimum_tests: u32,
     /// Optional sub-directory containing the cargo crate, relative
@@ -163,6 +165,9 @@ pub enum ScopeGate {
     /// `must_hold` invariants must appear as literal substrings
     /// somewhere in the scope's editable files.
     MustHoldInvariantsHold,
+    /// `must_not_contain` strings must NOT appear as literal substrings
+    /// in any of the scope's editable files.
+    MustNotContainAbsent,
     /// The workspace must report at least `minimum_count` passing
     /// tests when `cargo test` runs.
     TestCountMeetsMinimum,
@@ -174,6 +179,7 @@ impl ScopeGate {
             ScopeGate::EditableFilesExist => "editable_files_exist",
             ScopeGate::PublicSymbolsExist => "public_symbols_exist",
             ScopeGate::MustHoldInvariantsHold => "must_hold_invariants",
+            ScopeGate::MustNotContainAbsent => "must_not_contain",
             ScopeGate::TestCountMeetsMinimum => "test_count",
         }
     }
@@ -353,6 +359,35 @@ pub fn gate_must_hold_invariants(
     findings
 }
 
+/// Gate 3b: each `must_not_contain` string must NOT appear as a
+/// literal substring in any of the scope's editable files. This
+/// enforces negative invariants — for example, proving that a
+/// migrated port no longer contains direct `std::fs::` calls.
+pub fn gate_must_not_contain_invariants(
+    project_root: &Path,
+    manifest: &ScopeManifest,
+) -> Vec<ScopeFinding> {
+    let mut findings = Vec::new();
+    let all_text: String = manifest
+        .editable_files
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(project_root.join(p)).ok())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for forbidden in &manifest.must_not_contain {
+        if all_text.contains(forbidden) {
+            findings.push(ScopeFinding {
+                gate: ScopeGate::MustNotContainAbsent,
+                message: format!(
+                    "forbidden string found in scope source: {forbidden:?}"
+                ),
+                severity: ScopeSeverity::Fail,
+            });
+        }
+    }
+    findings
+}
+
 /// Gate 4: the workspace's `cargo test` output must report at least
 /// `minimum_count` passing tests. The gate shells out to `cargo
 /// test` (no in-process test runner — that would re-implement
@@ -514,6 +549,7 @@ pub fn check_scope(
     findings.extend(gate_editable_files_exist(project_root, manifest));
     findings.extend(gate_public_symbols_exist(project_root, manifest));
     findings.extend(gate_must_hold_invariants(project_root, manifest));
+    findings.extend(gate_must_not_contain_invariants(project_root, manifest));
     if include_test_count {
         findings.extend(gate_test_count_meets_minimum(project_root, manifest));
     }
@@ -741,6 +777,38 @@ minimum_tests = 60
         let f = gate_must_hold_invariants(tmp.path(), &m);
         assert_eq!(f.len(), 1);
         assert!(f[0].message.contains("does not call std::fs directly"));
+    }
+
+    #[test]
+    fn gate_must_not_contain_passes_when_text_absent() {
+        let tmp = fixture();
+        make_source_file(tmp.path(), "lib.rs", "pub fn x() {}\n");
+        let m = ScopeManifest {
+            id: "demo".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            editable_files: vec!["lib.rs".into()],
+            must_not_contain: vec!["use std::fs::".into()],
+            ..Default::default()
+        };
+        assert!(gate_must_not_contain_invariants(tmp.path(), &m).is_empty());
+    }
+
+    #[test]
+    fn gate_must_not_contain_fails_when_text_present() {
+        let tmp = fixture();
+        make_source_file(tmp.path(), "lib.rs", "use std::fs::{self};\npub fn x() {}\n");
+        let m = ScopeManifest {
+            id: "demo".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            editable_files: vec!["lib.rs".into()],
+            must_not_contain: vec!["use std::fs::".into()],
+            ..Default::default()
+        };
+        let f = gate_must_not_contain_invariants(tmp.path(), &m);
+        assert_eq!(f.len(), 1);
+        assert!(f[0].message.contains("use std::fs::"));
     }
 
     #[test]

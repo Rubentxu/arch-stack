@@ -43,3 +43,8 @@ must_hold = [
 
 # Minimum number of `#[test]` items in filesystem.rs.
 minimum_tests = 3
+
+# Negative invariant: the port itself must not import std::fs.
+# This proves the port truly abstracts the filesystem and does not
+# leak std::fs calls into its own implementation.
+must_not_contain = ["use std::fs::"]
