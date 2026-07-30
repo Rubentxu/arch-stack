@@ -251,3 +251,14 @@ Incluye:
 - **Tests**: 124 verde (sin regresión desde v0.1.1)
 - **Output**: SourceArtifact + Evaluation node types, EXTRACTED_FROM + EVALUATES edges, migration runner (v1 → v2), 4 nuevos port methods (put_source/put_evaluation/link_extracted_from/link_evaluates), put_with_source wrapper, source_origin en Evidence.props. ADR-017 documenta decisiones.
 - **Próximo candidato**: memory_candidate lifecycle (`drafted → accepted`) o W1 (reducir Cypher-builder duplication en store.rs).
+
+## Cycle cerrado — `more-manifests-clock-env-identity`
+
+- **Fecha**: 2026-07-30
+- **Branch**: `feat/more-manifests-clock-env-identity` (merged a main via FF)
+- **Tag**: v0.2.1 (patch — additive gate coverage only)
+- **Verdict**: verify PASS · debt PASS · archive PASS
+- **Commits**: 1 (3 manifests: clock, environment, identity)
+- **Tests**: 124 verde (sin regresión)
+- **Output**: 3 scope manifests (`clock.toml`, `environment.toml`, `identity.toml`) con `must_hold` + `must_not_contain = ["use std::fs::"]` + `minimum_tests`. Coverage: 10/23 manifests.
+- **Próximo candidato**: Más manifests (astgrep, cli, doctor, graph, inventory, project, render, row, skills, telemetry, xdg ~13 módulos restantes) o B1 lifecycle (drafted → accepted).
