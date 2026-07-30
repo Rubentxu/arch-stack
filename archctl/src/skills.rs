@@ -77,7 +77,7 @@ pub fn sync_skills(lock: &SkillsLock, into: &Path, fs: &dyn Filesystem) -> SyncR
     fs.create_dir_all(into).ok();
     for (name, entry) in &lock.skills {
         let dest = into.join(name.replace(['/', '\\'], "_"));
-        if dest.join("SKILL.md").exists() {
+        if fs.exists(&dest.join("SKILL.md")) {
             debug!(skill = %name, "already synced, skipping");
             report.skipped.push(name.clone());
             continue;
@@ -184,7 +184,7 @@ pub fn run(action: SkillsAction, fs: &dyn Filesystem) -> Result<i32> {
             let src = layout
                 .sources_root()
                 .join(name.replace(['/', '\\'], "_"));
-            if !src.join("SKILL.md").exists() {
+            if !fs.exists(&src.join("SKILL.md")) {
                 anyhow::bail!("source not synced: {}", src.display());
             }
             let profile_dir = crate::environment::SystemEnvironment

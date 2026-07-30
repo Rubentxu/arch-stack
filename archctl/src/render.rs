@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_url: &str, fs: &dyn Filesystem) -> Result<i32> {
-    if !source.exists() {
+    if !fs.exists(&source) {
         anyhow::bail!("source not found: {}", source.display());
     }
     let fmt = match format {
