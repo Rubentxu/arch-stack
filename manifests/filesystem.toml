@@ -1,0 +1,45 @@
+# scope: filesystem
+#
+# filesystem is the hexagonal port that abstracts all filesystem
+# I/O in the domain. The production adapter is SystemFilesystem
+# (std::fs wrapper); the test adapter is MemoryFilesystem
+# (HashMap-backed, no real I/O).
+#
+# This manifest declares what MUST hold for the filesystem scope
+# to be considered sane by `archctl doctor --check-scope`.
+
+id = "filesystem"
+version = "0.1.0"
+description = "Filesystem hexagonal port (SystemFilesystem + MemoryFilesystem)"
+
+# Cargo crate root for the test-count gate.
+cargo_dir = "archctl"
+
+# Files that may be edited freely within this scope.
+editable = ["archctl/src/filesystem.rs", "archctl/src/lib.rs"]
+
+# Public symbols that consumers depend on.
+public_symbols = [
+  "Filesystem",
+  "DirEntry",
+  "EntryKind",
+  "SystemFilesystem",
+  "MemoryFilesystem",
+  "system_filesystem",
+  "memory_filesystem",
+]
+
+# Textual invariants that prove the module does what its scope
+# declares. Each line is searched for as a literal substring in
+# the editable files.
+must_hold = [
+  "pub trait Filesystem",
+  "pub struct SystemFilesystem",
+  "pub struct MemoryFilesystem",
+  "pub fn system_filesystem",
+  "pub fn memory_filesystem",
+  "with_context",
+]
+
+# Minimum number of `#[test]` items in filesystem.rs.
+minimum_tests = 3

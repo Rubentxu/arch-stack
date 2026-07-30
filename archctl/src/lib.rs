@@ -4,6 +4,7 @@ pub mod clock;
 pub mod doctor;
 pub mod environment;
 pub mod evidence;
+pub mod filesystem;
 pub mod graph;
 pub mod identity;
 pub mod inventory;
@@ -20,6 +21,7 @@ pub mod xdg;
 pub use cli::{run, Cli, Command, EvidenceAction, GraphAction, InventoryAction, ProjectAction, RenderFormat, SkillsAction};
 pub use clock::{fixed_clock, system_clock, Clock, FixedClock, SystemClock};
 pub use environment::{fixed_environment, system_environment, Environment, FixedEnvironment, SystemEnvironment};
+pub use filesystem::{system_filesystem, memory_filesystem, DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem};
 pub use graph::{database_path, init as graph_init, neighbours, open_session, query as graph_query, stat as graph_stat, validate_identifier, GraphStat};
 pub use row::{Cell, Row};
 pub use identity::{
