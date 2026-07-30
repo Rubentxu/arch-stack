@@ -1,7 +1,6 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceIdentity {
@@ -40,13 +39,7 @@ pub fn normalize_remote(url: &str) -> String {
     s.trim_end_matches('/').to_string()
 }
 
-fn git_output(args: &[&str], cwd: &str) -> Option<String> {
-    let output = Command::new("git").args(args).current_dir(cwd).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
+
 
 fn norm_dir(p: &str) -> String {
     p.trim_end_matches('/').trim_end_matches('\\').to_string()
@@ -67,29 +60,60 @@ pub fn blake_like(input: &str) -> String {
 }
 
 pub fn resolve_source_identity(cwd: &str) -> SourceIdentity {
-    let toplevel = git_output(&["rev-parse", "--show-toplevel"], cwd);
+    // Try to open as git repo via gix
+    match gix::open(cwd) {
+        Ok(repo) => {
+            // Get worktree path via gix Worktree::base()
+            let toplevel = repo.worktree()
+                .map(|p| p.base().to_string_lossy().into_owned())
+                .unwrap_or_else(|| cwd.to_string());
+            let canonical_top = norm_dir(&safe_realpath(&toplevel));
 
-    if let Some(tl) = toplevel {
-        let remote = normalize_remote(
-            &git_output(&["config", "--get", "remote.origin.url"], &tl).unwrap_or_default(),
-        );
-        let root_commit = git_output(&["rev-parse", "HEAD"], &tl).unwrap_or_default();
-        let canonical_top = norm_dir(&safe_realpath(&tl));
-        let repository_id = blake_like(&format!("git|{remote}|{root_commit}"));
-        let worktree_id = blake_like(&format!("worktree|{canonical_top}"));
-        return SourceIdentity::Git {
-            repository_id,
-            worktree_id,
-            root_commit,
-            toplevel: canonical_top,
-            remote,
-        };
-    }
+            // Get remote.origin.url via config snapshot
+            let remote = repo.config_snapshot()
+                .string("remote.origin.url")
+                .map(|r| r.to_string())
+                .unwrap_or_default();
+            let remote = normalize_remote(&remote);
 
-    let canonical = norm_dir(&safe_realpath(cwd));
-    SourceIdentity::Directory {
-        directory_id: blake_like(&format!("dir|{canonical}")),
-        canonical_realpath: canonical,
+            // Get HEAD commit: peel Head to Id, then use Display to get hex string
+            let mut head: gix::Head = match repo.head() {
+                Ok(h) => h,
+                Err(_) => {
+                    return SourceIdentity::Directory {
+                        directory_id: blake_like(&format!("dir|{}", safe_realpath(cwd))),
+                        canonical_realpath: norm_dir(&safe_realpath(cwd)),
+                    };
+                }
+            };
+            let commit_id: gix::Id<'_> = match head.try_peel_to_id() {
+                Ok(Some(id)) => id,
+                Ok(None) | Err(_) => {
+                    return SourceIdentity::Directory {
+                        directory_id: blake_like(&format!("dir|{}", safe_realpath(cwd))),
+                        canonical_realpath: norm_dir(&safe_realpath(cwd)),
+                    };
+                }
+            };
+            let root_commit = format!("{commit_id}");
+
+            let repository_id = blake_like(&format!("git|{remote}|{root_commit}"));
+            let worktree_id = blake_like(&format!("worktree|{canonical_top}"));
+            return SourceIdentity::Git {
+                repository_id,
+                worktree_id,
+                root_commit,
+                toplevel: canonical_top,
+                remote,
+            };
+        }
+        Err(_) => {
+            let canonical = norm_dir(&safe_realpath(cwd));
+            return SourceIdentity::Directory {
+                directory_id: blake_like(&format!("dir|{canonical}")),
+                canonical_realpath: canonical,
+            };
+        }
     }
 }
 
