@@ -50,7 +50,7 @@ use crate::evidence::{Evidence, EvidenceStatus};
 use crate::evaluation::Evaluation;
 use crate::graph::GraphStat;
 use crate::migrations;
-use crate::row::Row;
+use crate::row::{Cell, Row};
 use crate::source::SourceArtifact;
 
 /// The persistence port.
@@ -506,32 +506,7 @@ impl GraphStore for LbugStore {
         let props_json: serde_json::Map<String, serde_json::Value> = rows
             .first()
             .and_then(|r| r.get("e.props"))
-            .and_then(|c| match c {
-                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
-                crate::row::Cell::Object(fields) => {
-                    let mut m = serde_json::Map::new();
-                    for (k, v) in fields {
-                        let json_val = match v {
-                            crate::row::Cell::String(s) => {
-                                serde_json::Value::String(s.clone())
-                            }
-                            crate::row::Cell::Int(n) => {
-                                serde_json::Value::Number(serde_json::Number::from(*n))
-                            }
-                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
-                            crate::row::Cell::Float(f) => {
-                                serde_json::Number::from_f64(*f)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            }
-                            _ => serde_json::Value::Null,
-                        };
-                        m.insert(k.clone(), json_val);
-                    }
-                    Some(serde_json::Map::from(m))
-                }
-                _ => None,
-            })
+            .map(cell_to_json_map)
             .unwrap_or_default();
 
         // Step 2: check current status
@@ -600,32 +575,7 @@ impl GraphStore for LbugStore {
         let props_json: serde_json::Map<String, serde_json::Value> = rows
             .first()
             .and_then(|r| r.get("e.props"))
-            .and_then(|c| match c {
-                crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
-                crate::row::Cell::Object(fields) => {
-                    let mut m = serde_json::Map::new();
-                    for (k, v) in fields {
-                        let json_val = match v {
-                            crate::row::Cell::String(s) => {
-                                serde_json::Value::String(s.clone())
-                            }
-                            crate::row::Cell::Int(n) => {
-                                serde_json::Value::Number(serde_json::Number::from(*n))
-                            }
-                            crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
-                            crate::row::Cell::Float(f) => {
-                                serde_json::Number::from_f64(*f)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            }
-                            _ => serde_json::Value::Null,
-                        };
-                        m.insert(k.clone(), json_val);
-                    }
-                    Some(serde_json::Map::from(m))
-                }
-                _ => None,
-            })
+            .map(cell_to_json_map)
             .unwrap_or_default();
 
         // Step 2: check current status
@@ -685,32 +635,7 @@ impl GraphStore for LbugStore {
             .filter(|r| {
                 let props_map: serde_json::Map<String, serde_json::Value> = r
                     .get("e.props")
-                    .and_then(|c| match c {
-                        crate::row::Cell::String(s) => serde_json::from_str(s).ok(),
-                        crate::row::Cell::Object(fields) => {
-                            let mut m = serde_json::Map::new();
-                            for (k, v) in fields {
-                                let json_val = match v {
-                                    crate::row::Cell::String(s) => {
-                                        serde_json::Value::String(s.clone())
-                                    }
-                                    crate::row::Cell::Int(n) => {
-                                        serde_json::Value::Number(serde_json::Number::from(*n))
-                                    }
-                                    crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
-                                    crate::row::Cell::Float(f) => {
-                                        serde_json::Number::from_f64(*f)
-                                            .map(serde_json::Value::Number)
-                                            .unwrap_or(serde_json::Value::Null)
-                                    }
-                                    _ => serde_json::Value::Null,
-                                };
-                                m.insert(k.clone(), json_val);
-                            }
-                            Some(serde_json::Map::from(m))
-                        }
-                        _ => None,
-                    })
+                    .map(cell_to_json_map)
                     .unwrap_or_default();
                 EvidenceStatus::from_props(&props_map) == status
             })
@@ -728,6 +653,40 @@ impl GraphStore for LbugStore {
 // ---------------------------------------------------------------------------
 // Internal helpers — formerly in `graph.rs`, now private to the adapter
 // ---------------------------------------------------------------------------
+
+/// Convert a `Cell` value (typically `e.props` from a Cypher result)
+/// into a `serde_json::Map<String, serde_json::Value>`. Handles
+/// `Cell::Object` (preserve string key-value pairs), `Cell::String`
+/// (parse as JSON if valid), and `Cell::Null` (return empty map).
+///
+/// Only `Object` entries whose value is `Cell::String` are inserted;
+/// non-string object values are intentionally skipped because
+/// `e.props` payloads today arrive either as parseable JSON strings
+/// or as `Object`s with string-typed values. Expansion to `Int`,
+/// `Bool`, `Float` is a one-liner inside the inner match when needed.
+fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    match cell {
+        Cell::Object(kvs) => {
+            for (k, v) in kvs {
+                if let Cell::String(s) = v {
+                    m.insert(k.clone(), serde_json::Value::String(s.clone()));
+                }
+                // Future: handle Cell::Int, Cell::Bool, etc.
+            }
+        }
+        Cell::String(s) => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                if let Some(obj) = parsed.as_object() {
+                    return obj.clone();
+                }
+            }
+        }
+        Cell::Null => {}
+        _ => {}
+    }
+    m
+}
 
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
     use anyhow::Context;
