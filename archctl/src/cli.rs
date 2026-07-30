@@ -262,10 +262,11 @@ fn graph_query_cmd(cwd: Option<PathBuf>, cypher: &str, json: bool) -> Result<i32
     let mut store = store::open_default(&info.project_dir).context("open graph store")?;
     store.init().context("graph init (query prerequisite)")?;
     let rows = store.query(cypher).context("graph query")?;
-    if json || rows.is_empty() {
-        println!("{}", serde_json::to_string_pretty(&rows)?);
+    let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
+    if json || json_rows.is_empty() {
+        println!("{}", serde_json::to_string_pretty(&json_rows)?);
     } else {
-        for row in &rows {
+        for row in &json_rows {
             println!("{}", serde_json::to_string(row)?);
         }
     }
@@ -292,13 +293,16 @@ fn graph_neighbours_cmd(cwd: Option<PathBuf>, id: &str, depth: u8, json: bool) -
     store.init().context("graph init (neighbours prerequisite)")?;
     let rows = store.query(&cypher).context("graph neighbours")?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&rows)?);
+        let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
+        println!("{}", serde_json::to_string_pretty(&json_rows)?);
     } else {
         for row in &rows {
-            let id = row.get("id").and_then(json_string).unwrap_or("?");
+            // Typed access — the `Row` API gives us `&str` directly
+            // without a detour through `serde_json::Value`.
+            let id = row.get("id").and_then(|c| c.as_str()).unwrap_or("?");
             let kinds = row
                 .get("kinds")
-                .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "<>".into()))
+                .map(|c| c.to_string())
                 .unwrap_or_else(|| "<>".into());
             println!("{id}\t{kinds}");
         }
@@ -306,8 +310,16 @@ fn graph_neighbours_cmd(cwd: Option<PathBuf>, id: &str, depth: u8, json: bool) -
     Ok(0)
 }
 
-fn json_string(v: &serde_json::Value) -> Option<&str> {
-    v.as_str()
+/// Convert one `Row` to a `serde_json::Value` object keyed by column
+/// name. This is the **only** place in `archctl` that turns a `Row`
+/// into JSON for CLI output — keeping the conversion local means the
+/// domain stays free of `serde_json`.
+fn row_to_json(row: &crate::row::Row) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    for (k, cell) in row.iter() {
+        obj.insert(k.to_string(), cell.to_json());
+    }
+    serde_json::Value::Object(obj)
 }
 
 fn inventory_tree_cmd(
@@ -453,17 +465,20 @@ fn evidence_list_cmd(cwd: Option<PathBuf>, path: Option<String>, json: bool) -> 
         .list_evidence(safe_path)
         .context("evidence list")?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&rows)?);
+        let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
+        println!("{}", serde_json::to_string_pretty(&json_rows)?);
     } else {
         for row in &rows {
+            // Typed accessors — the domain `Row` carries `Cell`
+            // values; `as_str` and `as_i64` extract them directly.
             println!(
                 "{id}\t{kind}\t{path}:{sl}-{el}\t{claim}",
-                id = row.get("e.id").and_then(json_string).unwrap_or("?"),
-                kind = row.get("e.kind").and_then(json_string).unwrap_or("?"),
-                path = row.get("e.path").and_then(json_string).unwrap_or("?"),
-                sl = row.get("e.start_line").map(|v| v.to_string()).unwrap_or_default(),
-                el = row.get("e.end_line").map(|v| v.to_string()).unwrap_or_default(),
-                claim = row.get("e.claim").and_then(json_string).unwrap_or(""),
+                id = row.get("e.id").and_then(|c| c.as_str()).unwrap_or("?"),
+                kind = row.get("e.kind").and_then(|c| c.as_str()).unwrap_or("?"),
+                path = row.get("e.path").and_then(|c| c.as_str()).unwrap_or("?"),
+                sl = row.get("e.start_line").and_then(|c| c.as_i64()).unwrap_or(0),
+                el = row.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0),
+                claim = row.get("e.claim").and_then(|c| c.as_str()).unwrap_or(""),
             );
         }
     }

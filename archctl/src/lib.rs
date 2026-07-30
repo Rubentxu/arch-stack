@@ -8,6 +8,7 @@ pub mod identity;
 pub mod inventory;
 pub mod project;
 pub mod render;
+pub mod row;
 pub mod skills;
 pub mod store;
 pub mod telemetry;
@@ -17,6 +18,7 @@ pub mod xdg;
 pub use cli::{run, Cli, Command, EvidenceAction, GraphAction, InventoryAction, ProjectAction, RenderFormat, SkillsAction};
 pub use clock::{fixed_clock, system_clock, Clock, FixedClock, SystemClock};
 pub use graph::{database_path, init as graph_init, neighbours, open_session, query as graph_query, stat as graph_stat, validate_identifier, GraphStat};
+pub use row::{Cell, Row};
 pub use identity::{
     blake_like, identity_summary, normalize_remote, portable_project_id, resolve_source_identity,
     SourceIdentity,

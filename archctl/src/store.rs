@@ -47,6 +47,7 @@ use std::path::{Path, PathBuf};
 
 use crate::evidence::Evidence;
 use crate::graph::GraphStat;
+use crate::row::Row;
 
 /// The persistence port.
 ///
@@ -75,9 +76,13 @@ pub trait GraphStore: Send + Sync {
     /// schema details.
     fn stat(&self) -> Result<GraphStat>;
 
-    /// Execute a Cypher read query and return rows as
-    /// `serde_json::Value` objects keyed by column name.
-    fn query(&self, cypher: &str) -> Result<Vec<Json>>;
+    /// Execute a Cypher read query and return rows as typed
+    /// [`Row`] values. Columns preserve the engine's RETURN order.
+    /// The adapter is responsible for translating driver-specific
+    /// value types into [`Cell`] — the domain never sees
+    /// `serde_json::Value` (use [`Cell::to_json`] at the formatter
+    /// edge if JSON output is needed).
+    fn query(&self, cypher: &str) -> Result<Vec<Row>>;
 
     /// Persist a batch of evidence rows. Each row is MERGEd by `id`,
     /// so repeat calls are idempotent (no duplicate rows).
@@ -86,8 +91,10 @@ pub trait GraphStore: Send + Sync {
 
     /// List evidence rows. When `path` is `Some(p)`, only rows whose
     /// `e.path` equals `p` are returned. When `None`, the most
-    /// recent 100 rows are returned.
-    fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Json>>;
+    /// recent 100 rows are returned. Returned rows carry the canonical
+    /// column set: `e.id`, `e.kind`, `e.claim`, `e.start_line`,
+    /// `e.end_line`, `e.path`.
+    fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -185,7 +192,7 @@ impl GraphStore for LbugStore {
         })
     }
 
-    fn query(&self, cypher: &str) -> Result<Vec<Json>> {
+    fn query(&self, cypher: &str) -> Result<Vec<Row>> {
         let session = self
             .session
             .as_ref()
@@ -271,7 +278,7 @@ impl GraphStore for LbugStore {
         Ok(written)
     }
 
-    fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Json>> {
+    fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>> {
         let cypher = match path {
             Some(p) => {
                 let safe = crate::graph::validate_identifier(p)?;
@@ -346,18 +353,26 @@ fn value_to_i64(v: &lbug::Value) -> i64 {
     }
 }
 
-fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
+fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
     use anyhow::Context;
+    use crate::row::{Cell, Row};
     let mut result = conn.query(cypher).context("execute query")?;
     let columns = result.get_column_names();
     let mut rows = Vec::new();
     while let Some(row) = result.next() {
-        let mut obj = serde_json::Map::new();
+        let mut r = Row::new();
         for (i, col) in columns.iter().enumerate() {
-            let value = row.get(i).map(value_to_json).unwrap_or(Json::Null);
-            obj.insert(col.clone(), value);
+            // Translate driver value -> Cell. The `from_serde_json`
+            // bridge on Cell lets us reuse the JSON-level conversion
+            // (already battle-tested in `value_to_json`) without
+            // re-implementing variant mapping twice.
+            let cell: Cell = row
+                .get(i)
+                .map(|v| Cell::from(value_to_json(v)))
+                .unwrap_or(Cell::Null);
+            r.push(col.clone(), cell);
         }
-        rows.push(Json::Object(obj));
+        rows.push(r);
     }
     Ok(rows)
 }
@@ -486,7 +501,10 @@ mod tests {
 
         let all = store.list_evidence(None).unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0]["e.id"], "ev:port:1");
+        assert_eq!(
+            all[0].get("e.id").and_then(|c| c.as_str()),
+            Some("ev:port:1")
+        );
 
         let filtered = store.list_evidence(Some("src/lib.rs")).unwrap();
         assert_eq!(filtered.len(), 1);
@@ -496,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn query_returns_rows_as_json_objects() {
+    fn query_returns_rows_as_typed_cells() {
         let tmp = fixture();
         let project = tmp.path().join("proj");
         let mut store = LbugStore::open(&project).unwrap();
@@ -508,8 +526,17 @@ mod tests {
             .query("MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;")
             .unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["m.id"], "mt.port");
-        assert_eq!(rows[0]["m.name"], "port");
+        // Typed access — the row carries the values as `Cell`, not as
+        // serde_json::Value. The contract is the same: column-name
+        // lookup, typed value extraction.
+        assert_eq!(
+            rows[0].get("m.id").and_then(|c| c.as_str()),
+            Some("mt.port")
+        );
+        assert_eq!(
+            rows[0].get("m.name").and_then(|c| c.as_str()),
+            Some("port")
+        );
     }
 
     #[test]
