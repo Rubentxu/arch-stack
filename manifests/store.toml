@@ -15,15 +15,16 @@ editable = ["archctl/src/store.rs"]
 
 # Public surface area. If any of these disappear, `archctl graph`
 # subcommands and adapters break.
+# Note: `put_source`, `put_evaluation`, `link_extracted_from` are
+# GraphStore trait methods (declared as `fn <name>` without `pub`
+# prefix per Rust idiom); they are tracked in `must_hold` below
+# because the public_symbols regex requires the `pub` prefix.
+# `SourceArtifact` and `Evaluation` live in `source.rs`/`evaluation.rs`
+# with their own manifests.
 public_symbols = [
   "GraphStore",
   "LbugStore",
   "open_default",
-  "put_source",
-  "put_evaluation",
-  "link_extracted_from",
-  "SourceArtifact",
-  "Evaluation",
 ]
 
 # What `store` must keep doing, proved by a literal line in source.
