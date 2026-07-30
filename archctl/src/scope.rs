@@ -369,6 +369,13 @@ pub fn gate_must_hold_invariants(
 /// literal substring in any of the scope's editable files. This
 /// enforces negative invariants — for example, proving that a
 /// migrated port no longer calls the std::fs module directly.
+///
+/// Test code (anything inside a `#[cfg(test)]` or `#[cfg_attr(..., test, ...)]`
+/// item) is stripped before the substring search, because legitimate test
+/// fixtures routinely contain the forbidden strings as test data (e.g.,
+/// assertions that *exercise* this gate). Without the strip, the gate
+/// becomes self-defeating: any test that verifies the gate works would
+/// trigger the gate.
 pub fn gate_must_not_contain_invariants(
     project_root: &Path,
     manifest: &ScopeManifest,
@@ -379,6 +386,7 @@ pub fn gate_must_not_contain_invariants(
         .editable_files
         .iter()
         .filter_map(|p| fs.read_to_string(&project_root.join(p)).ok())
+        .map(|t| strip_cfg_test_blocks(&t))
         .collect::<Vec<_>>()
         .join("\n");
     for forbidden in &manifest.must_not_contain {
@@ -393,6 +401,75 @@ pub fn gate_must_not_contain_invariants(
         }
     }
     findings
+}
+
+/// Strip `#[cfg(test)]` and `#[cfg_attr(..., test, ...)]` items from
+/// source text so that test-only code (which legitimately contains
+/// forbidden strings as test data) does not trigger
+/// `must_not_contain` gates.
+///
+/// Implementation: a per-line state machine. When we encounter a
+/// `#[cfg(test)]` attribute, the *next* non-attribute line starts the
+/// test-only item; we skip until the brace depth returns to the
+/// pre-item level. Items without bodies (single-line struct/enum/type
+/// declarations without `{`) are dropped in their entirety. Inline
+/// `#[cfg(test)]` attributes on the same line as the item are also
+/// handled.
+fn strip_cfg_test_blocks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut depth: i32 = 0;
+    let mut skip_target: i32 = -1; // depth at which we exit skip mode
+    let lines: Vec<&str> = text.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        if skip_target < 0 {
+            let begins_cfg_test = trimmed.starts_with("#[cfg(test)]")
+                || (trimmed.starts_with("#[cfg_attr(") && trimmed.contains("test"));
+            if begins_cfg_test {
+                if line.matches('{').count() > 0 {
+                    // Inline: `#[cfg(test)] fn foo() { ... }`
+                    let opens = line.matches('{').count() as i32;
+                    let closes = line.matches('}').count() as i32;
+                    if opens > closes {
+                        skip_target = depth;
+                    }
+                    depth += opens - closes;
+                    i += 1;
+                    continue;
+                }
+                // Standalone attribute: next line starts the item
+                if i + 1 < lines.len() {
+                    let next = lines[i + 1];
+                    let opens = next.matches('{').count() as i32;
+                    let closes = next.matches('}').count() as i32;
+                    if opens > closes {
+                        skip_target = depth;
+                    }
+                    depth += opens - closes;
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+            depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+            i += 1;
+        } else {
+            // Inside a cfg(test) item. Track braces; emit nothing.
+            let opens = line.matches('{').count() as i32;
+            let closes = line.matches('}').count() as i32;
+            depth += opens - closes;
+            if depth <= skip_target {
+                skip_target = -1;
+            }
+            i += 1;
+        }
+    }
+    out
 }
 
 /// Gate 4: the workspace's `cargo test` output must report at least
