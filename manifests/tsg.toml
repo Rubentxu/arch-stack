@@ -29,6 +29,7 @@ must_hold = [
   "fn load_rules(",
   "SupportLang::",
   "TsgFile",
-]
+  "from_tsg_node",
+] 
 
 minimum_tests = 1

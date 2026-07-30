@@ -438,7 +438,7 @@ use anyhow::Context;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evidence::{Evidence, EvidenceKind, TOOL_NAME, TOOL_VERSION};
+    use crate::evidence::{Evidence, EvidenceKind, SourceOrigin, TOOL_NAME, TOOL_VERSION};
 
     fn fixture() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -490,6 +490,7 @@ mod tests {
             rule_id: "astgrep:rust:function_item".to_string(),
             language: "rust".to_string(),
             observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
             content_hash: Some("sha256:0".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),

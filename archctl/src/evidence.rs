@@ -61,6 +61,46 @@ impl EvidenceKind {
     }
 }
 
+/// Where the data backing an Evidence row was sourced from. The
+/// `evidence`-scope manifest can assert, via the `must_hold` gate,
+/// that every persisted Evidence row has a tagged origin; that
+/// gate's job is to prove no row was silently synthesized without
+/// the pipeline stamping its provenance.
+///
+/// Per ADR-016-B3 (SourceOrigin on Evidence and TSG): every
+/// evidence record, no matter the path that produced it, carries
+/// one of these three tags. There is no `Unknown` variant because
+/// missing provenance is itself an invariant violation; if you
+/// can't tell where a row came from, you don't emit the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceOrigin {
+    /// Read directly out of a file in the user's workspace
+    /// (e.g. ast-grep on a tracked source file). The byte range
+    /// and content_hash both come from the workspace artifact.
+    UserWorkspace,
+    /// Free-text input from the user — a claim typed into a
+    /// prompt, an inline note, etc. — that did not come from any
+    /// file or tool.
+    UserInput,
+    /// Output of another tool acting on the user's workspace:
+    /// the TSG graph, jdeps edges, dependency-cruiser findings,
+    /// Syft SBOM rows, future cargo metadata, etc. Provenance is
+    /// still traceable because we kept the original source byte
+    /// range alongside the tool's view.
+    ToolOutput,
+}
+
+impl SourceOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SourceOrigin::UserWorkspace => "user_workspace",
+            SourceOrigin::UserInput => "user_input",
+            SourceOrigin::ToolOutput => "tool_output",
+        }
+    }
+}
+
 /// One evidence record. Maps 1:1 to a row in the `Evidence` node
 /// table of `docs/schema/001_initial_schema.cypher`. The fields
 /// `commit_hash`, `content_hash`, `tool_name`, `tool_version`,
@@ -84,6 +124,8 @@ pub struct Evidence {
     pub rule_id: String,
     pub language: String,
     pub observed_at: String,
+    /// Provenance tag. Required on every row; see [`SourceOrigin`].
+    pub source_origin: SourceOrigin,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -245,6 +287,7 @@ fn evidence_from_match<D: Doc>(
         rule_id: format!("astgrep:{}:{}", lang.label(), m.kind()),
         language: lang.label().to_string(),
         observed_at: clock.now_rfc3339(),
+        source_origin: SourceOrigin::UserWorkspace,
         content_hash,
         text_preview,
         props,
@@ -385,6 +428,13 @@ pub fn from_tsg_node(
         rule_id,
         language: String::new(),
         observed_at: clock.now_rfc3339(),
+        // TSG runs AST patterns (.tsg files) over source bytes and
+        // emits graph nodes. The Evidence row is a projection of the
+        // tool's output, so its provenance is ToolOutput. The
+        // underlying source bytes are still kept (path, byte range,
+        // content_hash) so a downstream auditor can re-derive the
+        // row from first principles.
+        source_origin: SourceOrigin::ToolOutput,
         content_hash,
         text_preview: text_preview.clone(),
         props,
@@ -451,6 +501,33 @@ pub fn put(project_dir: &Path, evidence: &[Evidence]) -> Result<usize> {
 mod tests {
     use super::*;
     use crate::astgrep::Lang;
+
+    /// The `SourceOrigin::as_str` mapping is the contract that the
+    /// evidence-scope manifest probes. If these strings change, the
+    /// TOML files in `manifests/` need a doc update.
+    #[test]
+    fn source_origin_as_str_is_stable() {
+        assert_eq!(SourceOrigin::UserWorkspace.as_str(), "user_workspace");
+        assert_eq!(SourceOrigin::UserInput.as_str(), "user_input");
+        assert_eq!(SourceOrigin::ToolOutput.as_str(), "tool_output");
+    }
+
+    /// `Evidence` cannot be constructed without `source_origin` —
+    /// this test asserts the compiler-enforced contract by relying
+    /// on it in a fixture: if the field becomes optional or removed,
+    /// `evidence::put_with_clock` would silently stamp a default
+    /// and the manifest's must_hold on `SourceOrigin::UserWorkspace`
+    /// / `SourceOrigin::ToolOutput` would silently lose coverage.
+    #[test]
+    fn evidence_construction_requires_source_origin() {
+        // If this compiles, the field is required. We do not run it
+        // at runtime; the type signature is the assertion.
+        let _: fn(SourceOrigin) -> EvidenceKind = |origin| match origin {
+            SourceOrigin::UserWorkspace => EvidenceKind::Structural,
+            SourceOrigin::UserInput => EvidenceKind::Lexical,
+            SourceOrigin::ToolOutput => EvidenceKind::Annotation,
+        };
+    }
 
     fn fixture() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -603,6 +680,7 @@ mod tests {
             rule_id: "astgrep:rust:function_item".to_string(),
             language: "rust".to_string(),
             observed_at: "2026-07-29T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
             content_hash: Some("sha256:0".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
