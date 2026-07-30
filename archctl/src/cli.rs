@@ -1,12 +1,14 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::astgrep::Lang;
 use crate::evidence::{self, EvidenceKind};
+use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
 use crate::skills;
-use crate::{doctor, environment, graph, inventory, render, store};
+use crate::{doctor, environment, filesystem, graph, inventory, render, store};
 
 /// Container for the ports a CLI handler needs.
 ///
@@ -16,21 +18,35 @@ use crate::{doctor, environment, graph, inventory, render, store};
 /// process environment.
 #[derive(Clone)]
 pub struct CliContext {
-    pub env: std::sync::Arc<dyn environment::Environment>,
+    pub env: Arc<dyn environment::Environment>,
+    pub fs: Arc<dyn Filesystem>,
 }
 
 impl CliContext {
-    /// Production context: real `std::env::*` adapter.
+    /// Production context: real `std::env::*` and `std::fs` adapters.
     pub fn production() -> Self {
         Self {
             env: environment::system_environment(),
+            fs: filesystem::system_filesystem(),
         }
     }
 
-    /// Test context: empty `FixedEnvironment`. Call
+    /// Test context: `FixedEnvironment` + empty `MemoryFilesystem`. Call
     /// `with_env(...)` to pre-load answers.
-    pub fn for_test(env: std::sync::Arc<dyn environment::Environment>) -> Self {
-        Self { env }
+    pub fn for_test(env: Arc<dyn environment::Environment>) -> Self {
+        Self {
+            env,
+            fs: filesystem::memory_filesystem(),
+        }
+    }
+
+    /// Test context with explicit filesystem adapter. Use this when a test
+    /// needs to pre-load files via `MemoryFilesystem::with_file`.
+    pub fn for_test_with_fs(
+        env: Arc<dyn environment::Environment>,
+        fs: Arc<dyn Filesystem>,
+    ) -> Self {
+        Self { env, fs }
     }
 
     /// Resolve the user's working directory.
@@ -175,13 +191,11 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Doctor {
-        /// Run the scope gates from `manifests/<id>.toml`. This
-        /// is the static-check pass that enforces the contract each
-        /// scope declares: editable files exist, public symbols
-        /// are exported, must_hold invariants are present in source,
-        /// minimum test count is met.
-        #[arg(long)]
-        check_scope: bool,
+        /// Run scope gates from `manifests/<id>.toml`. If scope IDs are
+        /// given (comma-separated), check only those; otherwise check all.
+        /// Example: `doctor --scopes evidence,store,tsg`
+        #[arg(long, value_delimiter = ',', value_name = "scope-id")]
+        scopes: Option<Vec<String>>,
         /// Project directory to read manifests from. Defaults to
         /// the current working directory.
         #[arg(long)]
@@ -232,15 +246,15 @@ pub fn run(cli: Cli) -> Result<i32> {
 /// a `FixedEnvironment`.
 pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
     match cli.command {
-        Command::Doctor { check_scope, cwd } => {
-            if check_scope {
-                // --check-scope is the scope-gates pass; it does not
-                // depend on cwd but takes one for consistency with the
-                // rest of the CLI's `cwd` flag contract.
+        Command::Doctor { scopes, cwd } => {
+            if let Some(scope_ids) = scopes {
+                // --scopes is the scope-gates pass; it does not depend
+                // on cwd but takes one for consistency with the rest of
+                // the CLI's `cwd` flag contract.
                 let cwd = ctx.resolve_cwd(cwd.as_ref());
-                doctor::check_scope(&cwd).context("scope gates")
+                doctor::check_scope(&cwd, scope_ids).context("scope gates")
             } else {
-                doctor::run()
+                doctor::run(ctx)
             }
         }
         Command::Project { action } => match action {

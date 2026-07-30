@@ -1,3 +1,4 @@
+use crate::cli::CliContext;
 use crate::environment::Environment;
 use crate::identity::{identity_summary, resolve_source_identity};
 use crate::scope::{check_all_scopes, render_report_line, ScopeCheckReport};
@@ -19,7 +20,7 @@ pub enum Severity {
     Fail,
 }
 
-pub fn run() -> Result<i32, anyhow::Error> {
+pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
     let layout = resolve_xdg();
     let mut findings: Vec<Finding> = Vec::new();
     // The Environment port is the boundary. doctor.rs is an internal
@@ -37,7 +38,7 @@ pub fn run() -> Result<i32, anyhow::Error> {
         ("xdg.state", &layout.state),
         ("xdg.cache", &layout.cache),
     ] {
-        let ok = path.exists() || std::fs::create_dir_all(path).is_ok();
+        let ok = ctx.fs.create_dir_all(path).is_ok();
         findings.push(Finding {
             id: id.to_string(),
             detail: path.display().to_string(),
@@ -111,23 +112,33 @@ fn binary_finding(id: &str, name: &str) -> Finding {
 /// Returns the exit code (0 if all gates pass or no manifests
 /// exist; 1 if any gate fails).
 /// Designed to be called from `archctl doctor --check-scope` but is
-/// also useful from tests.
-pub fn check_scope(cwd: &std::path::Path) -> Result<i32, anyhow::Error> {
+/// Run scope gates for specific scope IDs, or all scopes if `scope_ids`
+/// is empty.  If a scope ID is not found, it is silently skipped.
+pub fn check_scope(cwd: &std::path::Path, scope_ids: Vec<String>) -> Result<i32, anyhow::Error> {
     let manifests_dir = cwd.join("manifests");
     if !manifests_dir.exists() {
         println!("(no manifests/ directory at {})", cwd.display());
         println!("SCOPE: OK (no scopes declared)");
         return Ok(0);
     }
-    let reports = check_all_scopes(cwd)?;
+    let all_reports = check_all_scopes(cwd)?;
+    // If specific IDs given, filter; otherwise check all.
+    let reports: Vec<_> = if scope_ids.is_empty() {
+        all_reports
+    } else {
+        all_reports
+            .into_iter()
+            .filter(|r| scope_ids.contains(&r.scope_id))
+            .collect()
+    };
     print_scope_reports(&reports);
     let failed = reports.iter().filter(|r| !r.passed()).count();
     if failed > 0 {
         println!("SCOPE: FAIL");
         Ok(1)
     } else if reports.is_empty() {
-        println!("(no manifests under manifests/)");
-        println!("SCOPE: OK (no scopes declared)");
+        println!("(no matching scopes)");
+        println!("SCOPE: OK");
         Ok(0)
     } else {
         println!("SCOPE: OK");
