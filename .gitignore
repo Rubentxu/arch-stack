@@ -29,3 +29,14 @@ target/
 
 # gentle-ai skill registry — auto-generated local index
 .atl/
+
+# SDDK working artifacts (per orchestrator v3.3 local-only policy).
+# Working surface for SDD Kernel cycles — never commits, never reaches remote.
+# Each cycle writes its own `sddk/{change}/` subdirectory with spec, design,
+# tasks, apply-checkpoint, verify-report, debt-report, archive-report.
+# Persisted to Engram under topic_key `sddk/{change}/*` for cross-machine recovery.
+sddk/
+
+# Also gitignore the companion read-overrides that make sddk/ visible to
+# opencode tools despite the gitignore (v3.3 contract: locally readable).
+.ignore
