@@ -6,10 +6,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::filesystem::Filesystem;
-
-const SCHEMA_CYPHER: &str = include_str!("../../docs/schema/001_initial_schema.cypher");
-
-const BOOTSTRAP_VERSION: &str = "v1-initial";
+use crate::migrations::{self, SCHEMA_MARKER_FILENAME};
 
 #[derive(Debug, Serialize)]
 pub struct GraphStat {
@@ -60,49 +57,14 @@ pub fn init(project_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
     fs.create_dir_all(project_dir)
         .with_context(|| format!("mkdir {}", project_dir.display()))?;
     let session = open_session(&path.parent().unwrap_or(project_dir), fs)?;
-    let marker = project_dir.join(".archctl-schema");
-    if fs.exists(&marker) {
-        let installed = fs.read_to_string(&marker).unwrap_or_default();
-        if installed.trim() == BOOTSTRAP_VERSION {
-            info!(version = %installed, "schema already bootstrapped");
-            return Ok(path);
-        }
+    let marker = project_dir.join(SCHEMA_MARKER_FILENAME);
+    let applied = migrations::apply_pending(&session, fs, &marker)?;
+    if applied.is_empty() {
+        info!("schema already up-to-date");
+    } else {
+        info!(versions = ?applied, "migrations applied");
     }
-    info!("bootstrapping schema from docs/schema/001_initial_schema.cypher");
-    let stmts = schema_statements(SCHEMA_CYPHER);
-    info!(statements = stmts.len(), "applying schema statements");
-    for (i, stmt) in stmts.iter().enumerate() {
-        session
-            .conn
-            .query(stmt)
-            .with_context(|| format!("schema statement #{i} failed: {stmt}"))?;
-    }
-    fs.write(&marker, BOOTSTRAP_VERSION.as_bytes())
-        .context("write schema marker")?;
     Ok(path)
-}
-
-/// Split a Cypher script into individual statements, stripping
-/// directives that lbug does not need in single-graph mode.
-///
-/// The v2 schema (`docs/schema/001_initial_schema.cypher`) opens with
-/// `CREATE GRAPH architecture; USE architecture;` because it was
-/// written against Neo4j semantics. lbug 0.18.3 runs in single-graph
-/// mode and silently no-ops those prefixes; subsequent `MATCH` queries
-/// then fail with "Table X does not exist". We strip them here so the
-/// canonical docs schema is the source of truth and lbug gets a clean
-/// script.
-fn schema_statements(script: &str) -> Vec<String> {
-    script
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .filter(|s| {
-            let upper = s.to_ascii_uppercase();
-            !upper.starts_with("CREATE GRAPH") && !upper.starts_with("USE ")
-        })
-        .map(|s| format!("{s};"))
-        .collect()
 }
 
 pub fn stat(project_dir: &Path, fs: &dyn Filesystem) -> Result<GraphStat> {
@@ -302,30 +264,7 @@ mod tests {
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
-        assert_eq!(text.trim(), BOOTSTRAP_VERSION);
-    }
-
-    #[test]
-    fn schema_statements_strips_create_graph_and_use() {
-        let script = "\
-            CREATE GRAPH architecture;\n\
-            USE architecture;\n\
-            CREATE NODE TABLE Foo(id STRING PRIMARY KEY);\n\
-            CREATE REL TABLE BAR(FROM Foo TO Foo);\n\
-        ";
-        let stmts = schema_statements(script);
-        assert_eq!(stmts.len(), 2, "expected 2 statements, got {stmts:#?}");
-        assert!(stmts[0].contains("CREATE NODE TABLE Foo"));
-        assert!(stmts[1].contains("CREATE REL TABLE BAR"));
-        assert!(!stmts.iter().any(|s| s.to_ascii_uppercase().contains("CREATE GRAPH")));
-        assert!(!stmts.iter().any(|s| s.to_ascii_uppercase().contains("USE ")));
-    }
-
-    #[test]
-    fn schema_statements_handles_blank_lines() {
-        let script = "\nCREATE NODE TABLE A(id STRING);\n\nCREATE NODE TABLE B(id STRING);\n";
-        let stmts = schema_statements(script);
-        assert_eq!(stmts.len(), 2, "got {stmts:#?}");
+        assert_eq!(text.trim(), "v2-source-evaluation");
     }
 
     #[test]

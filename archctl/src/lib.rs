@@ -8,6 +8,7 @@ pub mod filesystem;
 pub mod graph;
 pub mod identity;
 pub mod inventory;
+pub mod migrations;
 pub mod project;
 pub mod render;
 pub mod row;

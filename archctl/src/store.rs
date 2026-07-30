@@ -47,6 +47,7 @@ use std::path::{Path, PathBuf};
 
 use crate::evidence::Evidence;
 use crate::graph::GraphStat;
+use crate::migrations;
 use crate::row::Row;
 
 /// The persistence port.
@@ -152,29 +153,24 @@ impl GraphStore for LbugStore {
 
     fn init(&mut self) -> Result<()> {
         use tracing::info;
+        use crate::filesystem::SystemFilesystem;
 
-        // Compute the marker path BEFORE borrowing the session —
-        // otherwise `self.project_dir` is held both mutably (via
-        // session_mut) and immutably in the same statement.
-        let marker = self.project_dir.join(".archctl-schema");
-        let session = self.session_mut()?;
-        if marker.exists() {
-            let installed = std::fs::read_to_string(&marker).unwrap_or_default();
-            if installed.trim() == BOOTSTRAP_VERSION {
-                info!(version = %installed, "schema already bootstrapped");
-                return Ok(());
-            }
+        // Run migrations using a separate session. The store's own
+        // session is opened lazily by session_mut(); running migrations
+        // on a fresh session first ensures the schema exists before the
+        // store touches the DB.
+        let marker = self.project_dir.join(migrations::SCHEMA_MARKER_FILENAME);
+        let fs = SystemFilesystem;
+        let session = crate::graph::open_session(&self.project_dir, &fs)?;
+        let applied = migrations::apply_pending(&session, &fs, &marker)?;
+        if applied.is_empty() {
+            info!("schema already up-to-date");
+        } else {
+            info!(versions = ?applied, "migrations applied");
         }
-        info!("bootstrapping schema from docs/schema/001_initial_schema.cypher");
-        let stmts = schema_statements(SCHEMA_CYPHER);
-        info!(statements = stmts.len(), "applying schema statements");
-        for (i, stmt) in stmts.iter().enumerate() {
-            session
-                .conn
-                .query(stmt)
-                .with_context(|| format!("schema statement #{i} failed: {stmt}"))?;
-        }
-        std::fs::write(&marker, BOOTSTRAP_VERSION).context("write schema marker")?;
+        // Also open the store's own session so subsequent operations
+        // (stat, put_evidence, query) don't fail with "not initialized".
+        let _ = self.session_mut()?;
         Ok(())
     }
 
@@ -301,9 +297,6 @@ impl GraphStore for LbugStore {
 // Internal helpers — formerly in `graph.rs`, now private to the adapter
 // ---------------------------------------------------------------------------
 
-const SCHEMA_CYPHER: &str = include_str!("../../docs/schema/001_initial_schema.cypher");
-const BOOTSTRAP_VERSION: &str = "v1-initial";
-
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
     use anyhow::Context;
     let path = crate::graph::database_path(project_dir);
@@ -318,21 +311,6 @@ fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
     Ok(LbugSession { conn, _db: db })
 }
 
-/// Strip Neo4j-only directives that lbug does not need in single-graph
-/// mode. See the original `graph.rs::schema_statements` doc-comment for
-/// the full rationale.
-fn schema_statements(script: &str) -> Vec<String> {
-    script
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .filter(|s| {
-            let upper = s.to_ascii_uppercase();
-            !upper.starts_with("CREATE GRAPH") && !upper.starts_with("USE ")
-        })
-        .map(|s| format!("{s};"))
-        .collect()
-}
 
 fn count_match(conn: &lbug::Connection<'_>, cypher: &str) -> Result<i64> {
     use anyhow::Context;
