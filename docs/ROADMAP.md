@@ -204,3 +204,24 @@ Incluye:
 - Salida: diagramas C4 + UML como proyecciones del grafo, en SVG estático o en HTML interactivo.
 
 **Estado actual (post-v2.3)**: M0–M4 cerrados. M5–M9 pendientes de implementación, aunque la mayoría del código de M4 ya cubre la integración de evidence::extract y graph::put que serán reutilizados.
+
+---
+
+## Cambios SDD completados
+
+| Cambio | Rama | Commit tip | Estado |
+|---|---|---|---|
+| `refactor-1b-filesystem-port` | `feat/filesystem-port` (mergeado a main via FF) | `607ee64` | **Cerrado** ✅ · tag `v0.1.0` |
+
+## Cycle cerrado — `refactor-1b-filesystem-port`
+
+- **Fecha**: 2026-07-30
+- **Branch**: `feat/filesystem-port` (merged a main via FF)
+- **Tag**: `v0.1.0` (patch bump — primer tag del repo)
+- **Verdict**: verify PASS · debt PASS_WITH_WARNINGS (C-W1 fixed post-audit at `607ee64`)
+- **Commits**: 12 (10 ciclo + 1 chore + 1 post-audit fix)
+- **Tests**: 107 unit + 4 doctests = 111 passing (vs 89 baseline, +22)
+- **Output**: introduce `Filesystem` hexagonal port (`SystemFilesystem` + `MemoryFilesystem`), plumbed through `CliContext`, migrate 8 domain call sites, register `manifests/filesystem.toml` with `must_not_contain` gate.
+- **Próximo candidato**: B1 (Source + Evaluation en el grafo, ADR-016) o Refactor 1c (scope.rs → Filesystem port, chicken-and-egg postergado).
+
+> `refactor-1b-filesystem-port`: Puerto hexagonal Filesystem (7 métodos, SystemFilesystem + MemoryFilesystem), plumbed a través de CliContext, 8 módulos migrados, manifiesto `manifests/filesystem.toml` con gate `must_not_contain`. 111 tests passing. Archivado en `sddk/refactor-1b-filesystem-port/archive-report.md`.
