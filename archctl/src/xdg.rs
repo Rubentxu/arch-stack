@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use crate::Filesystem;
 
 pub struct XdgLayout {
     pub data: PathBuf,
@@ -96,7 +97,7 @@ fn xdg_default(kind: &str, home: &str) -> String {
     }
 }
 
-pub fn ensure_xdg(layout: &XdgLayout) -> std::io::Result<()> {
+pub fn ensure_xdg(layout: &XdgLayout, fs: &dyn Filesystem) -> anyhow::Result<()> {
     for dir in [
         layout.data.clone(),
         layout.state.clone(),
@@ -107,7 +108,7 @@ pub fn ensure_xdg(layout: &XdgLayout) -> std::io::Result<()> {
         layout.projects_root(),
         layout.sources_root(),
     ] {
-        std::fs::create_dir_all(&dir)?;
+        fs.create_dir_all(&dir)?;
     }
     Ok(())
 }

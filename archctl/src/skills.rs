@@ -164,7 +164,7 @@ pub fn run(action: SkillsAction, fs: &dyn Filesystem) -> Result<i32> {
             Ok(if r.ok { 0 } else { 1 })
         }
         SkillsAction::Sync => {
-            ensure_xdg(&layout)?;
+            ensure_xdg(&layout, fs)?;
             let r = sync_skills(&lock, &layout.sources_root(), fs);
             for name in &r.synced {
                 println!("[SYNC] {name}");
