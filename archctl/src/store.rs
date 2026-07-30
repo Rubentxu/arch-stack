@@ -45,7 +45,7 @@ use anyhow::Result;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 
-use crate::evidence::Evidence;
+use crate::evidence::{Evidence, EvidenceStatus};
 use crate::evaluation::Evaluation;
 use crate::graph::GraphStat;
 use crate::migrations;
@@ -571,7 +571,7 @@ use anyhow::Context;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evidence::{Evidence, EvidenceKind, SourceOrigin, TOOL_NAME, TOOL_VERSION};
+    use crate::evidence::{Evidence, EvidenceKind, EvidenceStatus, SourceOrigin, TOOL_NAME, TOOL_VERSION};
 
     fn fixture() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -627,6 +627,7 @@ mod tests {
             content_hash: Some("sha256:0".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         };
         let n1 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         let n2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
@@ -746,6 +747,7 @@ mod tests {
             content_hash: Some("sha256:abc123def456".to_string()),
             text_preview: Some("test".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         };
         store.put_evidence(std::slice::from_ref(&ev)).unwrap();
 

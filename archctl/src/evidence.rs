@@ -193,6 +193,8 @@ pub struct Evidence {
     pub text_preview: Option<String>,
     #[serde(skip_serializing_if = "serde_json::Map::is_empty")]
     pub props: serde_json::Map<String, serde_json::Value>,
+    /// Lifecycle state of this evidence row (D1).
+    pub status: EvidenceStatus,
 }
 
 pub const TOOL_NAME: &str = "archctl";
@@ -343,6 +345,12 @@ fn evidence_from_match<D: Doc>(
         "source_origin".to_string(),
         serde_json::Value::String(SourceOrigin::UserWorkspace.as_str().to_string()),
     );
+    // D2: persist status using provenance-based default.
+    let status = EvidenceStatus::default_for_origin(SourceOrigin::UserWorkspace);
+    props.insert(
+        "status".to_string(),
+        serde_json::Value::String(status.as_str().to_string()),
+    );
 
     Ok(Evidence {
         id,
@@ -362,6 +370,7 @@ fn evidence_from_match<D: Doc>(
         content_hash,
         text_preview,
         props,
+        status,
     })
 }
 
@@ -490,6 +499,12 @@ pub fn from_tsg_node(
         "source_origin".to_string(),
         serde_json::Value::String(SourceOrigin::ToolOutput.as_str().to_string()),
     );
+    // D2: persist status using provenance-based default.
+    let status = EvidenceStatus::default_for_origin(SourceOrigin::ToolOutput);
+    props.insert(
+        "status".to_string(),
+        serde_json::Value::String(status.as_str().to_string()),
+    );
 
     let mut ev = Evidence {
         id,
@@ -515,6 +530,7 @@ pub fn from_tsg_node(
         content_hash,
         text_preview: text_preview.clone(),
         props,
+        status,
     };
     if let Some(ref p) = text_preview {
         ev.props.insert(
@@ -838,6 +854,7 @@ mod tests {
             content_hash: Some("sha256:0".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         let n1 = put_with_clock(&project, &evidence, clock).unwrap();
@@ -875,6 +892,7 @@ mod tests {
             content_hash: Some("sha256:abc123".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         put_with_clock(&project, &evidence, clock).unwrap();
@@ -933,6 +951,7 @@ mod tests {
             content_hash: Some("sha256:abc123def456".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
@@ -987,6 +1006,7 @@ mod tests {
             content_hash: Some("sha256:abc123def456".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         put_with_source(&project, &ev, None, None, clock).unwrap();
@@ -1051,6 +1071,7 @@ mod tests {
             content_hash: Some("sha256:abc123def456".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
 
@@ -1111,6 +1132,7 @@ mod tests {
             content_hash: Some("sha256:abc123def456".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let fixed: &dyn crate::clock::Clock =
             &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
@@ -1173,6 +1195,7 @@ mod tests {
             content_hash: Some("sha256:abc123def456".to_string()),
             text_preview: Some("fn a".to_string()),
             props: Default::default(),
+            status: EvidenceStatus::Accepted,
         }];
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
         put_with_source(&project, &ev, None, None, clock).unwrap();
