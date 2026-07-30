@@ -505,6 +505,12 @@ pub fn gate_test_count_meets_minimum(
         .arg("test")
         .arg("--quiet")
         .arg("--no-fail-fast")
+        // Run tests serially to avoid pre-existing lbug 0.18.3 mmap race
+        // conditions (see debt OE-1 in scope-port cycle). The gate
+        // measures *what passes*, not *how fast*; serial is the
+        // correct mode for an audit gate.
+        .arg("--")
+        .arg("--test-threads=1")
         .current_dir(cargo_dir)
         .output()
     {
