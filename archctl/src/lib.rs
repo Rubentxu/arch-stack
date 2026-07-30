@@ -14,6 +14,7 @@ pub mod render;
 pub mod row;
 pub mod scope;
 pub mod skills;
+pub mod source;
 pub mod store;
 pub mod telemetry;
 pub mod tsg;
@@ -31,6 +32,7 @@ pub use identity::{
 };
 pub use project::{resolve_project, ProjectInfo};
 pub use scope::{check_all_scopes, check_scope, ScopeCheckReport, ScopeFinding, ScopeGate, ScopeManifest, ScopeSeverity};
+pub use source::SourceArtifact;
 pub use skills::{
     activate_skill, load_lock, sync_skill, sync_skills, verify_skills, SkillLockEntry, SkillMode,
     SkillsLock, SyncReport, VerifyReport,
