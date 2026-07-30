@@ -1,31 +1,24 @@
-//! ast-grep adapter. Wraps `ast-grep-core` (which is a library, not a
-//! CLI) behind a single `Lang` enum so callers don't have to repeat
-//! the `impl Language` boilerplate per grammar.
+//! ast-grep adapter using `ast-grep-language` with builtin-parser.
+//! `SupportLang` provides pre-wired implementations of the `Language`
+//! and `LanguageExt` traits for all supported languages (including
+//! Kotlin), eliminating the manual `impl Language` boilerplate.
 //!
-//! Per ADR-006 ("envolver sin reimplementar") we ship tree-sitter
-//! grammars as compile-time deps instead of shelling out to the
-//! `ast-grep` binary. Tradeoff: each new language adds 30-50M to the
-//! build tree (C++ grammar compiled in).
-//!
-//! **Currently 6 languages supported**: Rust, TypeScript, JavaScript,
-//! Python, Go, Java.
-//!
-//! **Not yet**: Kotlin. `tree-sitter-kotlin 0.3.5` still binds to the
-//! legacy `tree-sitter 0.20` API (`language()` returns `Language`,
-//! not `LanguageFn`), so it can't be converted to the
-//! `ast-grep-core 0.45`-expected `TSLanguage`. We revisit when the
-//! crate updates to a tree-sitter ≥ 0.23 binding.
+//! **Supported languages**: Rust, TypeScript, JavaScript, Python, Go,
+//! Java, Kotlin (+ 20 more via builtin-parser).
 
 use anyhow::{Context, Result};
 use ast_grep_core::language::Language;
 use ast_grep_core::matcher::{NodeMatch, Pattern, PatternError};
 use ast_grep_core::tree_sitter::{LanguageExt, StrDoc};
 use ast_grep_core::{AstGrep, Node};
+use ast_grep_language::SupportLang;
 use clap::ValueEnum;
 use std::fmt;
 use std::path::Path;
 use tracing::debug;
 
+/// Public language enum — thin wrapper over `SupportLang`.
+/// The backing enum provides all trait implementations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, ValueEnum)]
 pub enum Lang {
     Rust,
@@ -34,11 +27,11 @@ pub enum Lang {
     Python,
     Go,
     Java,
+    Kotlin,
 }
 
 impl Lang {
-    /// All supported languages. Used by the inventory + evidence loops
-    /// to iterate without repeating the array.
+    /// All supported languages.
     pub const ALL: &'static [Lang] = &[
         Lang::Rust,
         Lang::TypeScript,
@@ -46,11 +39,10 @@ impl Lang {
         Lang::Python,
         Lang::Go,
         Lang::Java,
+        Lang::Kotlin,
     ];
 
-    /// Canonical lowercase label used in evidence records, inventory
-    /// reports, and the Graph node `kind`. Stable contract — do not
-    /// rename without updating v2 docs.
+    /// Canonical lowercase label for evidence records, inventory, and graph nodes.
     pub fn label(self) -> &'static str {
         match self {
             Lang::Rust => "rust",
@@ -59,6 +51,7 @@ impl Lang {
             Lang::Python => "python",
             Lang::Go => "go",
             Lang::Java => "java",
+            Lang::Kotlin => "kotlin",
         }
     }
 
@@ -70,12 +63,12 @@ impl Lang {
             "python" => Some(Self::Python),
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
+            "kotlin" => Some(Self::Kotlin),
             _ => None,
         }
     }
 
-    /// Map a file path to its language by extension. Returns `None` for
-    /// extensions we don't parse.
+    /// Map a file path to its language by extension.
     pub fn from_path(path: &Path) -> Option<Self> {
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         let lang = match ext.as_str() {
@@ -85,9 +78,23 @@ impl Lang {
             "py" | "pyi" => Self::Python,
             "go" => Self::Go,
             "java" => Self::Java,
+            "kt" | "kts" => Self::Kotlin,
             _ => return None,
         };
         Some(lang)
+    }
+
+    /// Convert to the backing `SupportLang` enum.
+    fn to_support(self) -> SupportLang {
+        match self {
+            Lang::Rust => SupportLang::Rust,
+            Lang::TypeScript => SupportLang::TypeScript,
+            Lang::JavaScript => SupportLang::JavaScript,
+            Lang::Python => SupportLang::Python,
+            Lang::Go => SupportLang::Go,
+            Lang::Java => SupportLang::Java,
+            Lang::Kotlin => SupportLang::Kotlin,
+        }
     }
 }
 
@@ -97,200 +104,32 @@ impl fmt::Display for Lang {
     }
 }
 
-// ---- per-language unit structs ----
-//
-// ast-grep-core requires a unit struct that implements `Language` and
-// `LanguageExt` for each grammar. Each grammar crate exposes a
-// `LANGUAGE` constant that we wrap. The boilerplate is repetitive by
-// design — this is the standard pattern ast-grep itself uses.
-
-#[derive(Clone)]
-struct RustLang;
-impl Language for RustLang {
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        let ts: ast_grep_core::tree_sitter::TSLanguage = tree_sitter_rust::LANGUAGE.into();
-        ts.id_for_node_kind(kind, true)
-    }
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.get_ts_language().field_id_for_name(field).map(|f| f.get())
-    }
-    fn build_pattern(
-        &self,
-        builder: &ast_grep_core::matcher::PatternBuilder,
-    ) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-impl LanguageExt for RustLang {
-    fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        tree_sitter_rust::LANGUAGE.into()
-    }
-}
-
-#[derive(Clone)]
-struct TsLang;
-impl Language for TsLang {
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        let ts: ast_grep_core::tree_sitter::TSLanguage =
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-        ts.id_for_node_kind(kind, true)
-    }
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.get_ts_language().field_id_for_name(field).map(|f| f.get())
-    }
-    fn build_pattern(
-        &self,
-        builder: &ast_grep_core::matcher::PatternBuilder,
-    ) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-impl LanguageExt for TsLang {
-    fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
-    }
-}
-
-#[derive(Clone)]
-struct JsLang;
-impl Language for JsLang {
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        let ts: ast_grep_core::tree_sitter::TSLanguage = tree_sitter_javascript::LANGUAGE.into();
-        ts.id_for_node_kind(kind, true)
-    }
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.get_ts_language().field_id_for_name(field).map(|f| f.get())
-    }
-    fn build_pattern(
-        &self,
-        builder: &ast_grep_core::matcher::PatternBuilder,
-    ) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-impl LanguageExt for JsLang {
-    fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        tree_sitter_javascript::LANGUAGE.into()
-    }
-}
-
-#[derive(Clone)]
-struct PyLang;
-impl Language for PyLang {
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        let ts: ast_grep_core::tree_sitter::TSLanguage = tree_sitter_python::LANGUAGE.into();
-        ts.id_for_node_kind(kind, true)
-    }
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.get_ts_language().field_id_for_name(field).map(|f| f.get())
-    }
-    fn build_pattern(
-        &self,
-        builder: &ast_grep_core::matcher::PatternBuilder,
-    ) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-impl LanguageExt for PyLang {
-    fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        tree_sitter_python::LANGUAGE.into()
-    }
-}
-
-#[derive(Clone)]
-struct GoLang;
-impl Language for GoLang {
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        let ts: ast_grep_core::tree_sitter::TSLanguage = tree_sitter_go::LANGUAGE.into();
-        ts.id_for_node_kind(kind, true)
-    }
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.get_ts_language().field_id_for_name(field).map(|f| f.get())
-    }
-    fn build_pattern(
-        &self,
-        builder: &ast_grep_core::matcher::PatternBuilder,
-    ) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-impl LanguageExt for GoLang {
-    fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        tree_sitter_go::LANGUAGE.into()
-    }
-}
-
-#[derive(Clone)]
-struct JavaLang;
-impl Language for JavaLang {
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        let ts: ast_grep_core::tree_sitter::TSLanguage = tree_sitter_java::LANGUAGE.into();
-        ts.id_for_node_kind(kind, true)
-    }
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.get_ts_language().field_id_for_name(field).map(|f| f.get())
-    }
-    fn build_pattern(
-        &self,
-        builder: &ast_grep_core::matcher::PatternBuilder,
-    ) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-impl LanguageExt for JavaLang {
-    fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        tree_sitter_java::LANGUAGE.into()
-    }
-}
-
-// ---- dispatch on the public enum ----
+// ---- delegate trait impls to SupportLang ----
 
 impl Language for Lang {
     fn kind_to_id(&self, kind: &str) -> u16 {
-        match self {
-            Lang::Rust => RustLang.kind_to_id(kind),
-            Lang::TypeScript => TsLang.kind_to_id(kind),
-            Lang::JavaScript => JsLang.kind_to_id(kind),
-            Lang::Python => PyLang.kind_to_id(kind),
-            Lang::Go => GoLang.kind_to_id(kind),
-            Lang::Java => JavaLang.kind_to_id(kind),
-        }
+        self.to_support().kind_to_id(kind)
     }
     fn field_to_id(&self, field: &str) -> Option<u16> {
-        match self {
-            Lang::Rust => RustLang.field_to_id(field),
-            Lang::TypeScript => TsLang.field_to_id(field),
-            Lang::JavaScript => JsLang.field_to_id(field),
-            Lang::Python => PyLang.field_to_id(field),
-            Lang::Go => GoLang.field_to_id(field),
-            Lang::Java => JavaLang.field_to_id(field),
-        }
+        self.to_support().field_to_id(field)
     }
     fn build_pattern(
         &self,
         builder: &ast_grep_core::matcher::PatternBuilder,
     ) -> Result<Pattern, PatternError> {
-        match self {
-            Lang::Rust => RustLang.build_pattern(builder),
-            Lang::TypeScript => TsLang.build_pattern(builder),
-            Lang::JavaScript => JsLang.build_pattern(builder),
-            Lang::Python => PyLang.build_pattern(builder),
-            Lang::Go => GoLang.build_pattern(builder),
-            Lang::Java => JavaLang.build_pattern(builder),
-        }
+        self.to_support().build_pattern(builder)
+    }
+    fn pre_process_pattern<'q>(&self, query: &'q str) -> std::borrow::Cow<'q, str> {
+        self.to_support().pre_process_pattern(query)
+    }
+    fn expando_char(&self) -> char {
+        self.to_support().expando_char()
     }
 }
 
 impl LanguageExt for Lang {
     fn get_ts_language(&self) -> ast_grep_core::tree_sitter::TSLanguage {
-        match self {
-            Lang::Rust => RustLang.get_ts_language(),
-            Lang::TypeScript => TsLang.get_ts_language(),
-            Lang::JavaScript => JsLang.get_ts_language(),
-            Lang::Python => PyLang.get_ts_language(),
-            Lang::Go => GoLang.get_ts_language(),
-            Lang::Java => JavaLang.get_ts_language(),
-        }
+        self.to_support().get_ts_language()
     }
 }
 
@@ -454,16 +293,30 @@ mod tests {
     }
 
     #[test]
-    fn match_carries_byte_range_and_line() {
-        let src = "fn alpha() {}\nfn beta() {}\n";
-        let ast = parse(Lang::Rust, src);
-        let pattern = compile_pattern(Lang::Rust, "fn $NAME").unwrap();
+    fn parse_kotlin_finds_functions() {
+        // Kotlin uses `fun` for functions. Pattern must use the Kotlin expando
+        // char (µ) because $ is not valid in Kotlin identifiers.
+        let src = "fun add(a: Int, b: Int): Int = a + b\nfun mul(x: Int) = x * 2\n";
+        let ast = parse(Lang::Kotlin, src);
+        // Kotlin uses µ as meta-var prefix (expando_char)
+        let pattern = compile_pattern(Lang::Kotlin, "fun µNAME").unwrap();
         let matches = find_all(&ast, &pattern);
         assert_eq!(matches.len(), 2);
-        // alpha is on line 0, beta is on line 1.
-        assert_eq!(matches[0].start_pos().line(), 0);
-        assert_eq!(matches[1].start_pos().line(), 1);
-        assert_eq!(matches[0].range().start, 0);
-        assert!(matches[1].range().start > matches[0].range().start);
+        assert!(matches[0].text().starts_with("fun add"));
+        assert!(matches[1].text().starts_with("fun mul"));
     }
+
+     #[test]
+     fn match_carries_byte_range_and_line() {
+         let src = "fn alpha() {}\nfn beta() {}\n";
+         let ast = parse(Lang::Rust, src);
+         let pattern = compile_pattern(Lang::Rust, "fn $NAME").unwrap();
+         let matches = find_all(&ast, &pattern);
+         assert_eq!(matches.len(), 2);
+         // alpha is on line 0, beta is on line 1.
+         assert_eq!(matches[0].start_pos().line(), 0);
+         assert_eq!(matches[1].start_pos().line(), 1);
+         assert_eq!(matches[0].range().start, 0);
+         assert!(matches[1].range().start > matches[0].range().start);
+     }
 }
