@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 use crate::cli::SkillsAction;
 use crate::environment::Environment;
 use crate::xdg::{ensure_xdg, resolve_xdg};
+use crate::Filesystem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -35,13 +36,13 @@ pub struct SkillsLock {
     pub skills: HashMap<String, SkillLockEntry>,
 }
 
-pub fn load_lock(path: &Path) -> Result<SkillsLock> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+pub fn load_lock(path: &Path, fs: &dyn Filesystem) -> Result<SkillsLock> {
+    let text = fs.read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     serde_yaml::from_str(&text).with_context(|| format!("parse {}", path.display()))
 }
 
-pub fn sync_skill(name: &str, entry: &SkillLockEntry, dest: &Path) -> Result<()> {
-    std::fs::create_dir_all(dest).with_context(|| format!("mkdir {}", dest.display()))?;
+pub fn sync_skill(name: &str, entry: &SkillLockEntry, dest: &Path, fs: &dyn Filesystem) -> Result<()> {
+    fs.create_dir_all(dest).with_context(|| format!("mkdir {}", dest.display()))?;
     info!(skill = name, source = %entry.source, dest = %dest.display(), "cloning");
     let status = std::process::Command::new("git")
         .args(["clone", "--depth", "1", &entry.source, "."])
@@ -71,9 +72,9 @@ pub struct SyncReport {
     pub failures: Vec<(String, String)>,
 }
 
-pub fn sync_skills(lock: &SkillsLock, into: &Path) -> SyncReport {
+pub fn sync_skills(lock: &SkillsLock, into: &Path, fs: &dyn Filesystem) -> SyncReport {
     let mut report = SyncReport { synced: Vec::new(), skipped: Vec::new(), failures: Vec::new() };
-    let _ = std::fs::create_dir_all(into);
+    fs.create_dir_all(into).ok();
     for (name, entry) in &lock.skills {
         let dest = into.join(name.replace(['/', '\\'], "_"));
         if dest.join("SKILL.md").exists() {
@@ -81,7 +82,7 @@ pub fn sync_skills(lock: &SkillsLock, into: &Path) -> SyncReport {
             report.skipped.push(name.clone());
             continue;
         }
-        match sync_skill(name, entry, &dest) {
+        match sync_skill(name, entry, &dest, fs) {
             Ok(()) => report.synced.push(name.clone()),
             Err(err) => {
                 warn!(skill = %name, error = %err, "sync failed");
@@ -99,14 +100,14 @@ pub struct VerifyReport {
     pub missing: Vec<String>,
 }
 
-pub fn verify_skills(lock: &SkillsLock, source_root: &Path) -> VerifyReport {
+pub fn verify_skills(lock: &SkillsLock, source_root: &Path, fs: &dyn Filesystem) -> VerifyReport {
     let mut present = Vec::new();
     let mut missing = Vec::new();
     for name in lock.skills.keys() {
         let path = source_root
             .join(name.replace(['/', '\\'], "_"))
             .join("SKILL.md");
-        if path.exists() {
+        if fs.exists(&path) {
             present.push(name.clone());
         } else {
             missing.push(name.clone());
@@ -115,11 +116,11 @@ pub fn verify_skills(lock: &SkillsLock, source_root: &Path) -> VerifyReport {
     VerifyReport { ok: missing.is_empty(), present, missing }
 }
 
-pub fn activate_skill(name: &str, source: &Path, profile_skills_dir: &Path) -> Result<PathBuf> {
-    std::fs::create_dir_all(profile_skills_dir)
+pub fn activate_skill(name: &str, source: &Path, profile_skills_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
+    fs.create_dir_all(profile_skills_dir)
         .with_context(|| format!("mkdir {}", profile_skills_dir.display()))?;
     let target = profile_skills_dir.join(name);
-    let _ = std::fs::remove_file(&target);
+    let _ = fs.remove_file(&target);
     create_symlink(source, &target)
         .with_context(|| format!("symlink {} -> {}", source.display(), target.display()))?;
     Ok(target)
@@ -135,11 +136,11 @@ fn create_symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_dir(src, dst)
 }
 
-pub fn run(action: SkillsAction) -> Result<i32> {
+pub fn run(action: SkillsAction, fs: &dyn Filesystem) -> Result<i32> {
     let layout = resolve_xdg();
     let lock_path = layout.config.join("skills.lock.yaml");
     debug!(lock = %lock_path.display(), "loading skills lockfile");
-    let lock = match load_lock(&lock_path) {
+    let lock = match load_lock(&lock_path, fs) {
         Ok(l) => l,
         Err(err) if matches!(action, SkillsAction::List) => {
             anyhow::bail!("could not load {}: {err}", lock_path.display());
@@ -153,7 +154,7 @@ pub fn run(action: SkillsAction) -> Result<i32> {
             Ok(0)
         }
         SkillsAction::Verify => {
-            let r = verify_skills(&lock, &layout.sources_root());
+            let r = verify_skills(&lock, &layout.sources_root(), fs);
             for name in &r.present {
                 println!("[OK]   {name}");
             }
@@ -164,7 +165,7 @@ pub fn run(action: SkillsAction) -> Result<i32> {
         }
         SkillsAction::Sync => {
             ensure_xdg(&layout)?;
-            let r = sync_skills(&lock, &layout.sources_root());
+            let r = sync_skills(&lock, &layout.sources_root(), fs);
             for name in &r.synced {
                 println!("[SYNC] {name}");
             }
@@ -190,7 +191,7 @@ pub fn run(action: SkillsAction) -> Result<i32> {
                 .var("OPENCODE_CONFIG_DIR")
                 .context("OPENCODE_CONFIG_DIR not set")?;
             let target_dir = PathBuf::from(profile_dir).join("skills/upstream");
-            let target = activate_skill(&name, &src, &target_dir)?;
+            let target = activate_skill(&name, &src, &target_dir, fs)?;
             println!("[OK] activated {} -> {}", name, target.display());
             Ok(0)
         }

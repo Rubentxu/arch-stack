@@ -288,7 +288,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
         Command::Render { source, format, out, kroki_url } => {
             render::run(source, format, out, &kroki_url).context("render failed")
         }
-        Command::Skills { action } => skills::run(action).context("skills failed"),
+        Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
     }
 }
 
