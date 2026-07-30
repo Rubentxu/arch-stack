@@ -104,6 +104,64 @@ impl SourceOrigin {
     }
 }
 
+/// Lifecycle state of an Evidence row.
+/// Follows ADR-016 §3.2: `drafted → accepted → superseded`.
+/// Lives in `Evidence.props["status"]` (D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+#[value(rename_all = "snake_case")]
+pub enum EvidenceStatus {
+    /// Evidence exists but not approved for the canonical graph.
+    /// Default for `UserInput` and `ToolOutput` provenance.
+    Drafted,
+    /// Evidence is canonical; contributes to projections.
+    /// Default for `UserWorkspace` provenance, or promoted from
+    /// `Drafted` via `archctl evidence accept`.
+    Accepted,
+    /// Evidence has been replaced. Retained for audit, excluded
+    /// from projections.
+    Superseded,
+}
+
+impl EvidenceStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EvidenceStatus::Drafted => "drafted",
+            EvidenceStatus::Accepted => "accepted",
+            EvidenceStatus::Superseded => "superseded",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "drafted" => Some(Self::Drafted),
+            "accepted" => Some(Self::Accepted),
+            "superseded" => Some(Self::Superseded),
+            _ => None,
+        }
+    }
+
+    /// Provenance-based default at construction time (D2).
+    pub fn default_for_origin(origin: SourceOrigin) -> Self {
+        match origin {
+            SourceOrigin::UserWorkspace => Self::Accepted,
+            SourceOrigin::UserInput | SourceOrigin::ToolOutput => Self::Drafted,
+        }
+    }
+
+    /// Read from a props map. Returns `Accepted` when the key is
+    /// absent (D2 read-time default for legacy rows).
+    pub fn from_props(
+        props: &serde_json::Map<String, serde_json::Value>,
+    ) -> Self {
+        match props.get("status").and_then(|v| v.as_str()) {
+            Some("drafted") => Self::Drafted,
+            Some("superseded") => Self::Superseded,
+            _ => Self::Accepted,
+        }
+    }
+}
+
 /// One evidence record. Maps 1:1 to a row in the `Evidence` node
 /// table of `docs/schema/001_initial_schema.cypher`. The fields
 /// `commit_hash`, `content_hash`, `tool_name`, `tool_version`,
