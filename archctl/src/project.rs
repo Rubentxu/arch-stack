@@ -1,5 +1,6 @@
 use crate::identity::{identity_summary, portable_project_id, resolve_source_identity};
 use crate::xdg::resolve_xdg;
+use crate::filesystem::system_filesystem;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -14,7 +15,7 @@ pub struct ProjectInfo {
 }
 
 pub fn resolve_project(cwd: &str) -> ProjectInfo {
-    let identity = resolve_source_identity(cwd);
+    let identity = resolve_source_identity(cwd, &*system_filesystem()).expect("resolve_source_identity failed");
     let project_id = portable_project_id(&identity);
     let layout = resolve_xdg();
     let project_dir = layout.projects_root().join(&project_id);

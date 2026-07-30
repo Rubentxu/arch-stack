@@ -52,7 +52,7 @@ pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
     findings.push(binary_finding("archctl.cli", "archctl"));
 
     println!("archctl doctor");
-    let identity = resolve_source_identity(&cwd_str);
+    let identity = resolve_source_identity(&cwd_str, &*ctx.fs)?;
     info!(home = %user_home().display(), "doctor starting");
     for f in &findings {
         let tag = match f.severity {

@@ -1,6 +1,9 @@
+use anyhow::Result;
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
+use crate::Filesystem;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceIdentity {
@@ -45,11 +48,8 @@ fn norm_dir(p: &str) -> String {
     p.trim_end_matches('/').trim_end_matches('\\').to_string()
 }
 
-fn safe_realpath(p: &str) -> String {
-    std::fs::canonicalize(p)
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| p.to_string())
+fn safe_realpath(p: &str, fs: &dyn Filesystem) -> Result<PathBuf> {
+    fs.canonicalize(Path::new(p))
 }
 
 pub fn blake_like(input: &str) -> String {
@@ -59,7 +59,7 @@ pub fn blake_like(input: &str) -> String {
     format!("blake3:{digest}")
 }
 
-pub fn resolve_source_identity(cwd: &str) -> SourceIdentity {
+pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceIdentity> {
     // Try to open as git repo via gix
     match gix::open(cwd) {
         Ok(repo) => {
@@ -67,7 +67,9 @@ pub fn resolve_source_identity(cwd: &str) -> SourceIdentity {
             let toplevel = repo.worktree()
                 .map(|p| p.base().to_string_lossy().into_owned())
                 .unwrap_or_else(|| cwd.to_string());
-            let canonical_top = norm_dir(&safe_realpath(&toplevel));
+            let canonical_top = safe_realpath(&toplevel, fs)
+                .map(|p| norm_dir(&p.to_string_lossy()))
+                .unwrap_or_else(|_| norm_dir(&toplevel));
 
             // Get remote.origin.url via config snapshot
             let remote = repo.config_snapshot()
@@ -80,39 +82,47 @@ pub fn resolve_source_identity(cwd: &str) -> SourceIdentity {
             let mut head: gix::Head = match repo.head() {
                 Ok(h) => h,
                 Err(_) => {
-                    return SourceIdentity::Directory {
-                        directory_id: blake_like(&format!("dir|{}", safe_realpath(cwd))),
-                        canonical_realpath: norm_dir(&safe_realpath(cwd)),
-                    };
+                    let canonical = safe_realpath(cwd, fs)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| cwd.to_string());
+                    return Ok(SourceIdentity::Directory {
+                        directory_id: blake_like(&format!("dir|{}", canonical)),
+                        canonical_realpath: norm_dir(&canonical),
+                    });
                 }
             };
             let commit_id: gix::Id<'_> = match head.try_peel_to_id() {
                 Ok(Some(id)) => id,
                 Ok(None) | Err(_) => {
-                    return SourceIdentity::Directory {
-                        directory_id: blake_like(&format!("dir|{}", safe_realpath(cwd))),
-                        canonical_realpath: norm_dir(&safe_realpath(cwd)),
-                    };
+                    let canonical = safe_realpath(cwd, fs)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| cwd.to_string());
+                    return Ok(SourceIdentity::Directory {
+                        directory_id: blake_like(&format!("dir|{}", canonical)),
+                        canonical_realpath: norm_dir(&canonical),
+                    });
                 }
             };
             let root_commit = format!("{commit_id}");
 
             let repository_id = blake_like(&format!("git|{remote}|{root_commit}"));
             let worktree_id = blake_like(&format!("worktree|{canonical_top}"));
-            return SourceIdentity::Git {
+            return Ok(SourceIdentity::Git {
                 repository_id,
                 worktree_id,
                 root_commit,
                 toplevel: canonical_top,
                 remote,
-            };
+            });
         }
         Err(_) => {
-            let canonical = norm_dir(&safe_realpath(cwd));
-            return SourceIdentity::Directory {
+            let canonical = safe_realpath(cwd, fs)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| cwd.to_string());
+            return Ok(SourceIdentity::Directory {
                 directory_id: blake_like(&format!("dir|{canonical}")),
-                canonical_realpath: canonical,
-            };
+                canonical_realpath: norm_dir(&canonical),
+            });
         }
     }
 }
