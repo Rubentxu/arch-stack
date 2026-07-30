@@ -378,6 +378,19 @@ contradicted
 - `node_kind` — string, kind del nodo TSG
 - `byte_range` — array[2], `[start_byte, end_byte]`
 - `source_origin` — string, provenance tag (`"user_workspace"` | `"user_input"` | `"tool_output"`)
+- `status` — string, lifecycle state (`"drafted"` | `"accepted"` | `"superseded"`) — added in v0.3.0 (b1-lifecycle)
+
+**Lifecycle (v0.3.0):** Cada `Evidence` tiene un `status` que sigue el modelo Core de ActiveGraph (`ADR-016 §3.2`):
+- `drafted` — recién creado; no es todavía canónico
+- `accepted` — revisado/validado; contribuye a los diagramas (default para `source_origin: "user_workspace"`)
+- `superseded` — reemplazado por un nuevo evidence row
+
+Transiciones:
+- `drafted → accepted` se hace con `archctl evidence accept <id>`; crea un nodo `Evaluation` (`reason: "user_accepted"`) para audit
+- `<estado> → superseded` se hace con `archctl evidence supersede <old_id>`; el caller crea el nuevo evidence por separado
+- `accepted → superseded` está permitida (un evidence revisado puede ser reemplazado)
+- `superseded → accepted` está **rechazada** (transición estricta; usar `reinstate` en ciclo futuro)
+- Default de creación: `UserWorkspace` → `accepted`; `ToolOutput` / `UserInput` → `drafted` (D2 del cycle b1-lifecycle)
 
 ### 4.9 `SourceArtifact`
 
