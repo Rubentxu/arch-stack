@@ -8,6 +8,15 @@ use tracing::{debug, info, warn};
 use crate::filesystem::Filesystem;
 use crate::migrations::{self, SCHEMA_MARKER_FILENAME};
 
+/// Bounded buffer pool size: 256 MiB per database.
+///
+/// lbug 0.18.3's `SystemConfig::default()` resolves to `UINT64_MAX`
+/// (~8 TB). With many parallel test fixtures each trying to mmap that
+/// much virtual address space, the kernel runs out before the DB opens.
+/// 256 MiB is ~10× headroom over the worst observed production graph
+/// while keeping the per-fixture footprint bounded.
+pub const BUFFER_POOL_SIZE: u64 = 256 * 1024 * 1024;
+
 #[derive(Debug, Serialize)]
 pub struct GraphStat {
     pub elements: i64,
@@ -45,7 +54,7 @@ pub fn open_session(project_dir: &Path, fs: &dyn Filesystem) -> Result<Session> 
         fs.create_dir_all(parent)
             .with_context(|| format!("mkdir {}", parent.display()))?;
     }
-    let db = Database::new(&path, SystemConfig::default())
+    let db = Database::new(&path, SystemConfig::default().buffer_pool_size(BUFFER_POOL_SIZE).max_db_size(BUFFER_POOL_SIZE))
         .with_context(|| format!("open database at {}", path.display()))?;
     let conn = Connection::new(&db).context("create connection")?;
     let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
@@ -297,6 +306,13 @@ mod tests {
         let err = neighbours(&project, "evil'}) RETURN 1;//", 1, &fs).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("invalid character"), "got: {msg}");
+    }
+
+    #[test]
+    fn buffer_pool_size_is_256_mib() {
+        // Gate 6: pin the constant so accidental changes are caught.
+        assert_eq!(BUFFER_POOL_SIZE, 256 * 1024 * 1024);
+        assert_eq!(BUFFER_POOL_SIZE, 268_435_456);
     }
 
     #[test]
