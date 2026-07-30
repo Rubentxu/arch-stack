@@ -1,0 +1,22 @@
+# Scope gate engine + manifest loader. Migration to Filesystem port
+# verified by `must_not_contain = ["use std::fs::"]` below.
+id = "scope"
+version = "0.1.0"
+description = "Scope gate engine + manifest loader (migrated to Filesystem port)"
+cargo_dir = "archctl"
+editable = ["archctl/src/scope.rs", "archctl/src/doctor.rs"]
+public_symbols = [
+  "ScopeManifest", "ScopeCheckReport", "ScopeFinding", "ScopeSeverity",
+  "ScopeGate", "check_scope", "check_all_scopes",
+  "gate_editable_files_exist", "gate_public_symbols_exist",
+  "gate_must_hold_invariants", "gate_must_not_contain_invariants",
+  "gate_test_count_meets_minimum", "render_report_line",
+]
+must_hold = [
+  "pub fn check_scope",
+  "pub fn check_all_scopes",
+  "pub fn gate_must_hold_invariants",
+  "pub fn gate_must_not_contain_invariants",
+]
+minimum_tests = 8
+must_not_contain = ["use std::fs::"]
