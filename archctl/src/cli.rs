@@ -502,7 +502,7 @@ fn evidence_extract_cmd(
     // The Clock port lets tests inject deterministic timestamps via
     // FixedClock; the CLI does not need that.
     let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
-    let result = evidence::extract(&cwd, lang, pattern, claim, kind, clock)?;
+    let result = evidence::extract(&cwd, lang, pattern, claim, kind, clock, &*ctx.fs)?;
     let written = if do_put {
         let info = resolve_project(&cwd.to_string_lossy());
         evidence::put_with_clock(&info.project_dir, &result.evidence, clock)

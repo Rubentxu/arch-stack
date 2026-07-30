@@ -15,6 +15,7 @@
 //! `derived` / `inferred` / `confirmed`) — that classification is the
 //! role of the agent that requested the evidence.
 
+use crate::Filesystem;
 use anyhow::{Context, Result};
 use ast_grep_core::source::Doc;
 use blake3::Hasher;
@@ -161,6 +162,7 @@ pub fn extract(
     claim: &str,
     kind: EvidenceKind,
     clock: &dyn Clock,
+    fs: &dyn Filesystem,
 ) -> Result<ExtractionResult> {
     let files = supported_files(root, 50_000)?;
     let pattern = compile_pattern(lang, pattern_src)?;
@@ -173,7 +175,7 @@ pub fn extract(
         }
         scanned += 1;
         let abs = root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs) {
+        let source = match fs.read_to_string(&abs) {
             Ok(s) => s,
             Err(e) => {
                 debug!(path = %rel_path.display(), error = %e, "skip (not UTF-8)");
@@ -220,8 +222,9 @@ pub fn extract_with_system_clock(
     pattern_src: &str,
     claim: &str,
     kind: EvidenceKind,
+    fs: &dyn Filesystem,
 ) -> Result<ExtractionResult> {
-    extract(root, lang, pattern_src, claim, kind, &crate::clock::SystemClock)
+    extract(root, lang, pattern_src, claim, kind, &crate::clock::SystemClock, fs)
 }
 
 fn evidence_from_match<D: Doc>(
@@ -560,6 +563,7 @@ mod tests {
             "Rust function definition",
             EvidenceKind::Structural,
             clock,
+            &*crate::filesystem::system_filesystem(),
         )
         .unwrap();
         assert_eq!(result.language, "rust");
@@ -578,6 +582,7 @@ mod tests {
     fn extract_evidence_id_is_stable() {
         let tmp = fixture();
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
+        let fs = &*crate::filesystem::system_filesystem();
         let a = extract(
             tmp.path(),
             Lang::Rust,
@@ -585,6 +590,7 @@ mod tests {
             "claim",
             EvidenceKind::Structural,
             clock,
+            fs,
         )
         .unwrap();
         let b = extract(
@@ -594,6 +600,7 @@ mod tests {
             "claim",
             EvidenceKind::Structural,
             clock,
+            fs,
         )
         .unwrap();
         let ids_a: Vec<_> = a.evidence.iter().map(|e| &e.id).collect();
@@ -612,6 +619,7 @@ mod tests {
             "claim",
             EvidenceKind::Structural,
             clock,
+            &*crate::filesystem::system_filesystem(),
         )
         .unwrap();
         let ev = &result.evidence[0];
@@ -636,6 +644,7 @@ mod tests {
             "claim",
             EvidenceKind::Structural,
             fixed,
+            &*crate::filesystem::system_filesystem(),
         )
         .unwrap();
         assert!(result
