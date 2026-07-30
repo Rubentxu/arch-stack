@@ -311,4 +311,109 @@ All 124 tests pass under `--test-threads=1`. 10 pre-existing parallel failures
 
 ---
 
+## Lifecycle (B1 — evidence lifecycle v1)
+
+> Change: `b1-lifecycle-drafted-accepted` · Cycle: `b1-lifecycle-drafted-accepted`
+> Branch: `feat/b1-lifecycle-drafted-accepted`
+
+### States
+
+`EvidenceStatus` enum with three variants:
+
+| Variant | Meaning | Default for |
+|---------|---------|-------------|
+| `Drafted` | Evidence exists but not approved for the canonical graph | `UserInput`, `ToolOutput` provenance |
+| `Accepted` | Evidence is canonical; contributes to projections | `UserWorkspace` provenance |
+| `Superseded` | Evidence has been replaced. Retained for audit, excluded from projections | — |
+
+### Provenance-based defaults at construction time (D2)
+
+```rust
+impl EvidenceStatus {
+    pub fn default_for_origin(origin: SourceOrigin) -> Self {
+        match origin {
+            SourceOrigin::UserWorkspace => Self::Accepted,
+            SourceOrigin::UserInput | SourceOrigin::ToolOutput => Self::Drafted,
+        }
+    }
+}
+```
+
+### Transitions
+
+| From | To | Trigger | Side effect |
+|------|----|---------|-------------|
+| `Drafted` | `Accepted` | `GraphStore::accept_evidence(id, clock)` | Creates `Evaluation` node with `criterion = "user_accepted"` |
+| `*` | `Superseded` | `GraphStore::supersede_evidence(old_id)` | Updates `status` in `Evidence.props`; no `Evaluation` created |
+| `Accepted` | `Accepted` | `accept_evidence` on already-accepted | Early return; no new `Evaluation` (idempotent) |
+| `Superseded` | `Accepted` | `accept_evidence` on superseded | Returns error — reinstate first |
+| `Superseded` | `Superseded` | `supersede_evidence` on already-superseded | Early return (idempotent) |
+
+### Persistence
+
+`status` is stored in `Evidence.props["status"]` as a string (`"drafted"`, `"accepted"`, `"superseded"`) — not a schema column. Consistent with how `source_origin` is stored.
+
+### Read-time legacy default (D2)
+
+```rust
+impl EvidenceStatus {
+    pub fn from_props(props: &serde_json::Map<String, serde_json::Value>) -> Self {
+        match props.get("status").and_then(|v| v.as_str()) {
+            Some("drafted") => Self::Drafted,
+            Some("superseded") => Self::Superseded,
+            _ => Self::Accepted, // absent key → treat as Accepted (legacy rows)
+        }
+    }
+}
+```
+
+### Audit-trail composition
+
+When `accept_evidence` creates an `Evaluation` node:
+- `Evaluation.id = "eval:" + blake3("user_accepted" + evidence_id + evaluated_at)`
+- `Evaluation.passed = true`
+- `Evaluation.evaluator = "archctl:lifecycle_v1"`
+- `Evaluation.evaluated_at` from the injected `Clock`
+- `EVALUATES` edge links `(:Evaluation) → (:Evidence)`
+
+The `Evaluation` node is **not** updated when evidence is superseded — superseded evidence is excluded from projections without an explicit rejection `Evaluation`.
+
+### CLI surface
+
+```sh
+# Accept drafted evidence
+archctl evidence accept --id <evidence-id>
+
+# Supersede an evidence row
+archctl evidence supersede --old-id <evidence-id>
+
+# List only accepted evidence (default: all)
+archctl evidence list --status accepted
+
+# List drafted evidence
+archctl evidence list --status drafted
+```
+
+Exit codes: 3 = `evidence not found`, 4 = `cannot accept superseded`.
+
+### Storage adapter: read-merge-write pattern (D6)
+
+lbug 0.18.3 has no `JSON_SET`. All status mutations use read-merge-write:
+1. `MATCH (e:Evidence {id}) RETURN e.props`
+2. Parse `e.props` → `serde_json::Map`
+3. Mutate `props["status"] = "..."`
+4. `SET e.props = '<serialized JSON>'`
+
+This is non-atomic. ADR-010 single-writer CLI discipline makes it safe.
+
+### CLI tests added
+
+4 new smoke tests in `cli.rs mod tests`:
+- `evidence_list_accepts_status_flag`
+- `evidence_accept_subcommand_is_parsed`
+- `evidence_supersede_subcommand_is_parsed`
+- `evidence_list_status_flag_accepts_all_variants`
+
+---
+
 **End of delta spec — b1-source-evaluation-types**
