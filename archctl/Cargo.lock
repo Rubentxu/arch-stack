@@ -99,6 +99,7 @@ dependencies = [
  "assert_cmd",
  "ast-grep-core",
  "ast-grep-language",
+ "basemind-tree-sitter-graph",
  "blake3",
  "cargo_metadata",
  "chrono",
@@ -118,6 +119,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+ "tree-sitter",
  "uuid",
 ]
 
@@ -216,6 +218,22 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "basemind-tree-sitter-graph"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f1cf802e83ff856ef119acb9f85864101878b42644a553025772ad604421e09"
+dependencies = [
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "streaming-iterator",
+ "thiserror",
+ "tree-sitter",
+]
 
 [[package]]
 name = "bisync"

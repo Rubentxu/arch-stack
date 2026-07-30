@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use tracing::debug;
+use tree_sitter_graph::graph::{Graph as TsgGraph, GraphNode, Value as TsgValue};
 
 use crate::astgrep::{compile_pattern, find_all, parse, Lang};
 use crate::inventory::supported_files;
@@ -253,6 +254,115 @@ fn evidence_id(path: &str, start: usize, end: usize, text: &str) -> String {
     h.update(&end.to_le_bytes());
     h.update(text.as_bytes());
     format!("ev:{}", hex::encode(&h.finalize().as_bytes()[..16]))
+}
+
+/// Build an Evidence row from a `tree-sitter-graph` graph node.
+/// Each graph node produced by the TSG maps to one evidence record. The
+/// graph node's attributes are flattened into the Evidence `props` map so
+/// downstream consumers can query them by name.
+pub fn from_tsg_node(
+    node: &GraphNode,
+    graph: &TsgGraph<'_>,
+    rel_path: &str,
+    source: &str,
+    claim: &str,
+    kind: EvidenceKind,
+) -> Option<Evidence> {
+    // Walk attributes and capture any string values into props.
+    let mut props = serde_json::Map::new();
+    let mut byte_start: Option<usize> = None;
+    let mut byte_end: Option<usize> = None;
+    let mut kind_attr: Option<String> = None;
+    let mut name_attr: Option<String> = None;
+    for (key, value) in node.attributes.iter() {
+        match value {
+            TsgValue::String(s) => {
+                props.insert(
+                    key.as_str().to_string(),
+                    serde_json::Value::String(s.clone()),
+                );
+                match key.as_str() {
+                    "kind" => kind_attr = Some(s.clone()),
+                    "name" => name_attr = Some(s.clone()),
+                    _ => {}
+                }
+            }
+            TsgValue::Integer(i) => {
+                props.insert(
+                    key.as_str().to_string(),
+                    serde_json::Value::Number((*i).into()),
+                );
+            }
+            TsgValue::SyntaxNode(sn_ref) => {
+                let ts_node = &graph[*sn_ref];
+                let start = ts_node.start_byte();
+                let end = ts_node.end_byte();
+                if byte_start.is_none() {
+                    byte_start = Some(start);
+                }
+                byte_end = Some(end);
+                props.insert(
+                    format!("{}_byte_start", key.as_str()),
+                    serde_json::json!(start),
+                );
+                props.insert(
+                    format!("{}_byte_end", key.as_str()),
+                    serde_json::json!(end),
+                );
+            }
+            _ => {
+                // Skip Null, Boolean, List, Set, GraphNode — the Evidence
+                // schema doesn't carry them and they don't influence the
+                // audit fields.
+            }
+        }
+    }
+
+    let start = byte_start?;
+    let end = byte_end?;
+
+    // The TSG must produce one captured syntax node per graph node for
+    // us to derive a meaningful byte range. Without a syntax-node
+    // attribute we skip the row rather than emit a position-less one.
+    let text = source.get(start..end).unwrap_or("").to_string();
+    let start_line = line_at_byte(source, start) as u64 + 1;
+    let end_line =
+        line_at_byte(source, end.saturating_sub(1).max(start)) as u64 + 1;
+    let id = evidence_id(rel_path, start, end, &text);
+    let content_hash = Some(content_hash_of(source));
+    let text_preview = Some(truncate(&text, 200));
+
+    let rule_id = format!(
+        "tsg:{}:{}",
+        kind_attr.as_deref().unwrap_or("node"),
+        name_attr.as_deref().unwrap_or("?")
+    );
+
+    let mut ev = Evidence {
+        id,
+        kind,
+        claim: claim.to_string(),
+        path: rel_path.to_string(),
+        start_line,
+        end_line,
+        start_byte: Some(start as u64),
+        end_byte: Some(end as u64),
+        tool_name: TOOL_NAME.to_string(),
+        tool_version: TOOL_VERSION.to_string(),
+        rule_id,
+        language: String::new(),
+        observed_at: Utc::now().to_rfc3339(),
+        content_hash,
+        text_preview: text_preview.clone(),
+        props,
+    };
+    if let Some(ref p) = text_preview {
+        ev.props.insert(
+            "text_preview".to_string(),
+            serde_json::Value::String(p.clone()),
+        );
+    }
+    Some(ev)
 }
 
 /// Persist a batch of evidence to the canonical graph. Each call

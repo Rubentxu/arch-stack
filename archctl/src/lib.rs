@@ -9,6 +9,7 @@ pub mod project;
 pub mod render;
 pub mod skills;
 pub mod telemetry;
+pub mod tsg;
 pub mod xdg;
 
 pub use cli::{run, Cli, Command, EvidenceAction, GraphAction, InventoryAction, ProjectAction, RenderFormat, SkillsAction};
