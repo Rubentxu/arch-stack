@@ -1,9 +1,10 @@
 use crate::cli::RenderFormat;
+use crate::Filesystem;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_url: &str) -> Result<i32> {
+pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_url: &str, fs: &dyn Filesystem) -> Result<i32> {
     if !source.exists() {
         anyhow::bail!("source not found: {}", source.display());
     }
@@ -24,10 +25,10 @@ pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_ur
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".archctl-rendered")
     });
-    std::fs::create_dir_all(&out_dir).with_context(|| format!("mkdir {}", out_dir.display()))?;
+    fs.create_dir_all(&out_dir).with_context(|| format!("mkdir {}", out_dir.display()))?;
     let out_path = out_dir.join(format!("{stem}.svg"));
 
-    let body = std::fs::read_to_string(&source).with_context(|| format!("read {}", source.display()))?;
+    let body = fs.read_to_string(&source).with_context(|| format!("read {}", source.display()))?;
     let url = format!("{kroki_url}/{fmt}/svg");
     debug!(%url, "POST to kroki");
     info!(source = %source.display(), format = fmt, "rendering");
@@ -44,7 +45,7 @@ pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_ur
         .with_context(|| format!("POST {url}"))?;
     let status = response.status();
     let bytes = response.bytes().context("read response body")?;
-    std::fs::write(&out_path, &bytes).with_context(|| format!("write {}", out_path.display()))?;
+    fs.write(&out_path, &bytes).with_context(|| format!("write {}", out_path.display()))?;
 
     let ok = status.is_success();
     let payload = serde_json::json!({
