@@ -1,0 +1,59 @@
+# scope: code
+#
+# code::c4_discover is the C4 Container boundary inference engine.
+# Four strategies (CargoWorkspace, NpmWorkspace, DockerfilePerService,
+# HelmCharts) detect container boundaries; discover() merges them;
+# apply() persists the results to the graph.
+
+id = "code"
+version = "0.1.0"
+description = "C4 Container boundary inference engine (code bounded context)"
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/code/",
+]
+
+public_symbols = [
+  "discover",
+  "apply",
+  "Container",
+  "ContainerCandidate",
+  "Evidence",
+  "EvidenceKind",
+  "DiscoverReport",
+  "DiscoverError",
+  "ProjectMeta",
+  "ApplyReport",
+  "Strategy",
+  "register_strategies",
+  "DISCOVER_REPORT_SCHEMA",
+]
+
+must_hold = [
+  "pub fn discover(",
+  "pub fn apply(",
+  "pub struct Container",
+  "pub struct ContainerCandidate",
+  "pub struct Evidence",
+  "pub enum EvidenceKind",
+  "pub struct DiscoverReport",
+  "pub struct DiscoverError",
+  "pub struct ProjectMeta",
+  "pub struct ApplyReport",
+  "pub trait Strategy",
+  "pub fn register_strategies",
+  "pub const DISCOVER_REPORT_SCHEMA",
+  "SchemaVersion",
+  "canonical_key",
+  "confidence",
+  "merged_from",
+  "evidence_refs",
+]
+
+must_not_contain = [
+  "use std::fs::",
+  "reqwest",
+]
+
+minimum_tests = 8

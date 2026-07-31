@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
 
+/// JSON Schema for DiscoverReport (JSON Schema 2020-12).
+pub const DISCOVER_REPORT_SCHEMA: &str =
+    include_str!("../../../schemas/discover-report.schema.json");
+
 /// One Container detected by one strategy. Multiple ContainerCandidate
 /// rows with the same canonical_key are merged into one Container.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -196,9 +200,9 @@ pub fn discover(
 }
 
 /// Persist a DiscoverReport to the graph. One Element per Container
-/// (with props.inferred=true, props.strategy=<id>, props.confidence=<score>),
-/// one Evidence per evidence (status="Drafted"), one SourceArtifact per
-/// unique file. Idempotent: skips canonical_keys that already exist.
+/// (with ElementVersion.props.inferred=true), one Evidence per evidence
+/// (status="Drafted"), one SourceArtifact per unique file.
+/// Idempotent: skips canonical_keys that already exist.
 pub fn apply(
     project_dir: &Path,
     report: &DiscoverReport,
@@ -240,39 +244,71 @@ pub fn apply(
             continue;
         }
 
-        // Build Element via direct Cypher (put_element not on GraphStore trait)
         let element_id = format!("c4:container:{}", container.canonical_key);
-        let props = serde_json::json!({
+        let version_props = serde_json::json!({
             "inferred": true,
             "strategy": container.strategy,
             "confidence": container.confidence,
             "merged_from": container.merged_from,
-            "discovery": {
-                "schemaVersion": "1.0",
-            },
+            "discovery_schema_version": "1.0",
         });
-        let props_str = serde_json::to_string(&props).unwrap_or_default();
-        let props_escaped = props_str.replace('\'', "\\'");
-        let version_id = format!("blake3:{}", blake3::hash(props_str.as_bytes()).to_hex());
+        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+        let version_props_escaped = version_props_str.replace('\'', "\\'");
+        let version_id =
+            format!("blake3:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
         let name_escaped = container.name.replace('\'', "\\'");
 
+        // Element: no 'props' column (that's on ElementVersion)
         let element_cypher = format!(
             "MERGE (e:Element {{id: '{element_id}'}}) SET \
              e.kind_id = 'mt.container', \
              e.category = 'c4', \
-             e.canonical_key = '{}', \
+             e.canonical_key = '{canonical_key}', \
              e.current_name = '{name_escaped}', \
              e.current_status = 'active', \
              e.current_confidence = {confidence}, \
-             e.current_version_id = '{version_id}', \
-             e.props = '{props_escaped}';",
-            container.canonical_key.replace('\'', "\\'"),
+             e.current_version_id = '{version_id}';",
+            element_id = element_id,
+            canonical_key = container.canonical_key.replace('\'', "\\'"),
+            name_escaped = name_escaped,
             confidence = container.confidence,
+            version_id = version_id,
         );
         store.query(&element_cypher).context("put_element")?;
         elements_written += 1;
 
-        // OF_TYPE edge: link Element to MetaType
+        // ElementVersion: holds the props with inferred data
+        let version_cypher = format!(
+            "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
+             v.element_id = '{element_id}', \
+             v.name = '{name_escaped}', \
+             v.status = 'drafted', \
+             v.origin = 'c4-discover', \
+             v.confidence = {confidence}, \
+             v.props = '{version_props_escaped}';",
+            version_id = version_id,
+            element_id = element_id,
+            name_escaped = name_escaped,
+            confidence = container.confidence,
+            version_props_escaped = version_props_escaped,
+        );
+        store.query(&version_cypher).ok();
+
+        // CURRENT_VERSION edge: Element → ElementVersion
+        let current_version_cypher = format!(
+            "MATCH (e:Element {{id: '{element_id}'}}), (v:ElementVersion {{id: '{version_id}'}}) \
+             MERGE (e)-[:CURRENT_VERSION]->(v);"
+        );
+        store.query(&current_version_cypher).ok();
+
+        // VERSION_OF edge: ElementVersion → Element
+        let version_of_cypher = format!(
+            "MATCH (v:ElementVersion {{id: '{version_id}'}}), (e:Element {{id: '{element_id}'}}) \
+             MERGE (v)-[:VERSION_OF]->(e);"
+        );
+        store.query(&version_of_cypher).ok();
+
+        // OF_TYPE edge: Element → MetaType
         let of_type_cypher = format!(
             "MATCH (e:Element {{id: '{element_id}'}}), (mt:MetaType {{id: 'mt.container'}}) \
              MERGE (e)-[:OF_TYPE]->(mt);"
@@ -305,31 +341,36 @@ pub fn apply(
             };
 
             // Evidence (status Drafted per B1-lifecycle D3)
-            let evidence_id = format!("ev:{}",
-                blake3::hash(format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes())
-                    .to_hex());
+            let evidence_id = format!(
+                "ev:{}",
+                blake3::hash(
+                    format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes()
+                )
+                .to_hex()
+            );
             let evidence_props = serde_json::json!({
                 "file_refs": [format!("{}:{}", evidence.file, evidence.line)],
                 "text": evidence.text,
                 "status": "Drafted",
             });
-            let props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
-            let props_escaped = props_json.replace('\'', "\\'");
+            let ev_props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
+            let ev_props_escaped = ev_props_json.replace('\'', "\\'");
             let evidence_text_escaped = evidence.text.replace('\'', "\\'");
             let evidence_cypher = format!(
-                "MERGE (e:Evidence {{id: '{evidence_id}'}}) SET \
-                 e.kind = '{kind}', \
-                 e.claim = '{text}', \
-                 e.path = '{file}', \
-                 e.start_line = {line}, \
-                 e.end_line = {line}, \
-                 e.tool_name = 'archctl', \
-                 e.tool_version = env!(\"CARGO_PKG_VERSION\"), \
-                 e.rule_id = 'c4-discover:{strategy}', \
-                 e.language = '', \
-                 e.observed_at = '', \
-                 e.props = '{props_escaped}', \
-                 e.status = 'Drafted';",
+                "MERGE (ev:Evidence {{id: '{evidence_id}'}}) SET \
+                 ev.kind = '{kind}', \
+                 ev.claim = '{text}', \
+                 ev.path = '{file}', \
+                 ev.start_line = {line}, \
+                 ev.end_line = {line}, \
+                 ev.tool_name = 'archctl', \
+                 ev.tool_version = env!(\"CARGO_PKG_VERSION\"), \
+                 ev.rule_id = 'c4-discover:{strategy}', \
+                 ev.language = '', \
+                 ev.observed_at = '', \
+                 ev.props = '{ev_props_escaped}', \
+                 ev.status = 'Drafted';",
+                evidence_id = evidence_id,
                 kind = match evidence.kind {
                     EvidenceKind::Structural => "structural",
                     EvidenceKind::Config => "config",
@@ -341,19 +382,19 @@ pub fn apply(
                 file = evidence.file.replace('\'', "\\'"),
                 line = evidence.line,
                 strategy = container.strategy.replace('\'', "\\'"),
-                props_escaped = props_escaped,
+                ev_props_escaped = ev_props_escaped,
             );
             store.query(&evidence_cypher).ok();
             evidences_written += 1;
 
-            // Link Evidence to Element
-            let link_e_cypher = format!(
-                "MATCH (e:Element {{id: '{element_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
-                 MERGE (e)-[:EXHIBITS]->(ev);"
+            // SUPPORTED_BY edge: ElementVersion → Evidence
+            let link_ev_cypher = format!(
+                "MATCH (v:ElementVersion {{id: '{version_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
+                 MERGE (v)-[:SUPPORTED_BY]->(ev);"
             );
-            store.query(&link_e_cypher).ok();
+            store.query(&link_ev_cypher).ok();
 
-            // EXTRACTED_FROM edge: link Evidence to SourceArtifact
+            // EXTRACTED_FROM edge: Evidence → SourceArtifact
             let link_cypher = format!(
                 "MATCH (ev:Evidence {{id: '{evidence_id}'}}), (s:SourceArtifact {{id: '{sa_id}'}}) \
                  MERGE (ev)-[:EXTRACTED_FROM]->(s);"
@@ -560,5 +601,134 @@ mod tests {
         let report = discover(tmp.path(), &strategies, &fs, clock).unwrap();
         assert!(report.discovered.is_empty());
         assert!(report.errors.is_empty());
+    }
+
+    #[test]
+    fn schema_is_valid_json() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(DISCOVER_REPORT_SCHEMA).expect("DISCOVER_REPORT_SCHEMA must be valid JSON");
+        assert_eq!(parsed["$schema"].as_str().unwrap(), "https://json-schema.org/draft/2020-12/schema");
+        assert_eq!(parsed["type"].as_str().unwrap(), "object");
+        assert_eq!(parsed["properties"]["schemaVersion"]["const"].as_str().unwrap(), "1.0");
+    }
+
+    #[test]
+    fn schema_validates_valid_report() {
+        use serde_json::json;
+        let jsonschema = json!(
+            serde_json::from_str::<serde_json::Value>(DISCOVER_REPORT_SCHEMA)
+                .expect("schema is valid JSON")
+        );
+        let report = json!({
+            "schemaVersion": "1.0",
+            "project": {
+                "root": "/tmp/test",
+                "filesScanned": 42,
+                "languages": {"rust": 30, "typescript": 12},
+                "durationMs": 150
+            },
+            "discovered": [{
+                "canonical_key": "auth-svc",
+                "name": "auth-svc",
+                "strategy": "cargo-workspace",
+                "confidence": 0.85,
+                "mergedFrom": ["cargo-workspace"],
+                "evidences": [{
+                    "file": "Cargo.toml",
+                    "line": 8,
+                    "kind": "structural",
+                    "text": "Cargo workspace member: auth-svc"
+                }]
+            }],
+            "errors": []
+        });
+        let validator = jsonschema::validator_for(&jsonschema)
+            .expect("schema must be valid JSON Schema");
+        let result = validator.validate(&report);
+        assert!(result.is_ok(), "valid report must pass schema: {:?}", result.err());
+    }
+
+    #[test]
+    fn apply_writes_element_with_inferred_props() {
+        use crate::store::LbugStore;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+
+        let report = DiscoverReport {
+            schema_version: "1.0".to_string(),
+            project: ProjectMeta {
+                root: project.display().to_string(),
+                files_scanned: 10,
+                languages: BTreeMap::new(),
+                duration_ms: 50,
+            },
+            discovered: vec![Container {
+                canonical_key: "test-svc".to_string(),
+                name: "test-svc".to_string(),
+                strategy: "cargo-workspace".to_string(),
+                confidence: 0.85,
+                merged_from: vec!["cargo-workspace".to_string()],
+                evidences: vec![Evidence {
+                    file: "Cargo.toml".to_string(),
+                    line: 5,
+                    kind: EvidenceKind::Structural,
+                    text: "Cargo workspace member".to_string(),
+                }],
+            }],
+            errors: vec![],
+        };
+
+        let fs = MemoryFilesystem::new();
+        let result = apply(project, &report, &fs);
+        assert!(result.is_ok(), "apply must succeed: {:?}", result.err());
+        let r = result.unwrap();
+        assert_eq!(r.elements_written, 1, "should write exactly one element");
+        assert_eq!(r.elements_skipped, 0);
+        assert!(r.evidences_written >= 1);
+        assert!(r.source_artifacts_written >= 1);
+    }
+
+    #[test]
+    fn apply_is_idempotent_skips_existing_canonical_key() {
+        use crate::store::LbugStore;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+
+        let report = DiscoverReport {
+            schema_version: "1.0".to_string(),
+            project: ProjectMeta {
+                root: project.display().to_string(),
+                files_scanned: 10,
+                languages: BTreeMap::new(),
+                duration_ms: 50,
+            },
+            discovered: vec![Container {
+                canonical_key: "dup-svc".to_string(),
+                name: "dup-svc".to_string(),
+                strategy: "cargo-workspace".to_string(),
+                confidence: 0.85,
+                merged_from: vec!["cargo-workspace".to_string()],
+                evidences: vec![Evidence {
+                    file: "Cargo.toml".to_string(),
+                    line: 5,
+                    kind: EvidenceKind::Structural,
+                    text: "Cargo workspace member".to_string(),
+                }],
+            }],
+            errors: vec![],
+        };
+
+        let fs = MemoryFilesystem::new();
+
+        // First apply — writes the element
+        let r1 = apply(project, &report, &fs).unwrap();
+        assert_eq!(r1.elements_written, 1);
+
+        // Second apply — skips the existing canonical_key
+        let r2 = apply(project, &report, &fs).unwrap();
+        assert_eq!(r2.elements_skipped, 1, "second apply must skip existing canonical_key");
+        assert_eq!(r2.elements_written, 0, "second apply must not write duplicates");
     }
 }

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.local/schemas/discover-report.schema.json",
+  "$comment": "DiscoverReport output from archctl code c4 discover. Single source of truth for schema types is c4_discover.rs.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "project", "discovered", "errors"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "project": {
+      "type": "object",
+      "required": ["root", "filesScanned", "languages", "durationMs"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Absolute path to the scanned project root"
+        },
+        "filesScanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "languages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "discovered": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Container"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiscoverError"
+      }
+    }
+  },
+  "$defs": {
+    "Container": {
+      "type": "object",
+      "required": ["canonical_key", "name", "strategy", "confidence", "mergedFrom", "evidences"],
+      "properties": {
+        "canonical_key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier deduplicated across strategies"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name for the container"
+        },
+        "strategy": {
+          "type": "string",
+          "description": "ID of the winning strategy (highest confidence)"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "mergedFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "All strategy IDs that contributed evidence to this container"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["file", "line", "kind", "text"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Relative path from project root"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number in the source file"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["structural", "config", "annotation", "lexical", "other"]
+        },
+        "text": {
+          "type": "string",
+          "description": "Human-readable claim derived from the evidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiscoverError": {
+      "type": "object",
+      "required": ["strategy", "path", "message"],
+      "properties": {
+        "strategy": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
