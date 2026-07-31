@@ -155,6 +155,26 @@ pub enum DiagramAction {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum CodeAction {
+    /// Discover C4 Container boundaries using multiple strategies.
+    C4Discover {
+        /// Project directory to scan. Defaults to the current working directory.
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Run strategy and persist inferred Containers to the graph.
+        #[arg(long)]
+        apply: bool,
+        /// Comma-separated list of strategy IDs to run (e.g. "cargo,npm").
+        /// If omitted, all strategies are run.
+        #[arg(long)]
+        strategy: Option<String>,
+        /// Emit machine-readable JSON to stdout.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum EvidenceAction {
     Extract {
         #[arg(long)]
@@ -281,6 +301,10 @@ pub enum Command {
         #[arg(long, default_value = "http://localhost:18000")]
         kroki_url: String,
     },
+    Code {
+        #[command(subcommand)]
+        action: CodeAction,
+    },
     Skills {
         #[command(subcommand)]
         action: SkillsAction,
@@ -360,6 +384,11 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
         Command::Render { source, format, out, kroki_url } => {
             render::run(source, format, out, &kroki_url, &*ctx.fs).context("render failed")
         }
+        Command::Code { action } => match action {
+            CodeAction::C4Discover { cwd, apply, strategy, json } => {
+                code_c4_discover_cmd(cwd, apply, strategy.as_deref(), json, ctx)
+            }
+        },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
     }
 }
@@ -878,6 +907,74 @@ fn diagram_apply_cmd(
             &report.new_revision[..12],
         );
     }
+    Ok(0)
+}
+
+fn code_c4_discover_cmd(
+    cwd: Option<PathBuf>,
+    apply: bool,
+    strategy: Option<&str>,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::code::c4_discover::{apply as apply_report, discover};
+    use crate::code::output::print_human_table;
+    use crate::code::strategies::register_strategies;
+    use crate::clock::SystemClock;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    // Filter strategies if --strategy was given
+    let all_strategies = register_strategies();
+    let strategies: Vec<Box<dyn crate::code::strategies::Strategy>> = if let Some(s) =
+        strategy
+    {
+        let allowed: std::collections::HashSet<&str> =
+            s.split(',').map(str::trim).collect();
+        all_strategies
+            .into_iter()
+            .filter(|s| allowed.contains(s.id()))
+            .collect()
+    } else {
+        all_strategies
+    };
+
+    // Run discovery
+    let report =
+        discover(&cwd, &strategies, &*ctx.fs, &SystemClock)
+            .map_err(|e| anyhow::anyhow!("discovery failed: {e}"))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_human_table(&report);
+    }
+
+    // Persist if --apply
+    if apply {
+        let apply_report = apply_report(&cwd, &report, &*ctx.fs)
+            .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
+        if !json {
+            println!(
+                "Applied: {} elements written, {} skipped, {} evidences, {} artifacts.",
+                apply_report.elements_written,
+                apply_report.elements_skipped,
+                apply_report.evidences_written,
+                apply_report.source_artifacts_written,
+            );
+        } else {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "elements_written": apply_report.elements_written,
+                    "elements_skipped": apply_report.elements_skipped,
+                    "evidences_written": apply_report.evidences_written,
+                    "source_artifacts_written": apply_report.source_artifacts_written,
+                }))?
+            );
+        }
+    }
+
     Ok(0)
 }
 

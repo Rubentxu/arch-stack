@@ -1,0 +1,66 @@
+# scope: code
+#
+# code::c4_discover is the C4 Container boundary inference engine.
+# Four strategies (CargoWorkspace, NpmWorkspace, DockerfilePerService,
+# HelmCharts) detect container boundaries; discover() merges them;
+# apply() persists the results to the graph.
+
+id = "code"
+version = "0.1.0"
+description = "C4 Container boundary inference engine (code bounded context)"
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/code/mod.rs",
+  "archctl/src/code/c4_discover.rs",
+  "archctl/src/code/output.rs",
+  "archctl/src/code/strategies/mod.rs",
+  "archctl/src/code/strategies/cargo.rs",
+  "archctl/src/code/strategies/npm.rs",
+  "archctl/src/code/strategies/dockerfile.rs",
+  "archctl/src/code/strategies/helm.rs",
+]
+
+public_symbols = [
+  "discover",
+  "apply",
+  "Container",
+  "ContainerCandidate",
+  "Evidence",
+  "EvidenceKind",
+  "DiscoverReport",
+  "DiscoverError",
+  "ProjectMeta",
+  "ApplyReport",
+  "Strategy",
+  "register_strategies",
+  "DISCOVER_REPORT_SCHEMA",
+]
+
+must_hold = [
+  "pub fn discover(",
+  "pub fn apply(",
+  "pub struct Container",
+  "pub struct ContainerCandidate",
+  "pub struct Evidence",
+  "pub enum EvidenceKind",
+  "pub struct DiscoverReport",
+  "pub struct DiscoverError",
+  "pub struct ProjectMeta",
+  "pub struct ApplyReport",
+  "pub trait Strategy",
+  "pub fn register_strategies",
+  "pub const DISCOVER_REPORT_SCHEMA",
+  "schema_version",
+  "canonical_key",
+  "confidence",
+  "merged_from",
+  "file_refs",
+]
+
+must_not_contain = [
+  "use std::fs::",
+  "reqwest",
+]
+
+minimum_tests = 8
