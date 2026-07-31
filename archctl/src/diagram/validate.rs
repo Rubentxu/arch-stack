@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde_json::Value;
 
 use crate::diagram::schema_embed::SCHEMA;
@@ -63,7 +63,7 @@ pub fn run_validate(
             error: "file not found".into(),
         });
     } else {
-        if let Err(e) = validate_file_against_def(&fs, &manifest_path, &schema, "Manifest") {
+        if let Err(e) = validate_file_against_def(fs, &manifest_path, &schema, "Manifest") {
             errors.push(ValidationError {
                 file: "manifest.json".into(),
                 error: e,
@@ -79,8 +79,8 @@ pub fn run_validate(
         });
         None
     } else {
-        match validate_file_against_def(&fs, &projection_path, &schema, "Projection") {
-            Ok(_) => load_projection(&fs, &projection_path).ok(),
+        match validate_file_against_def(fs, &projection_path, &schema, "Projection") {
+            Ok(_) => load_projection(fs, &projection_path).ok(),
             Err(e) => {
                 errors.push(ValidationError {
                     file: "projection.json".into(),
@@ -99,8 +99,8 @@ pub fn run_validate(
         });
         None
     } else {
-        match validate_file_against_def(&fs, &evidence_path, &schema, "EvidenceBundle") {
-            Ok(_) => load_evidence_bundle(&fs, &evidence_path).ok(),
+        match validate_file_against_def(fs, &evidence_path, &schema, "EvidenceBundle") {
+            Ok(_) => load_evidence_bundle(fs, &evidence_path).ok(),
             Err(e) => {
                 errors.push(ValidationError {
                     file: "evidence.json".into(),
@@ -118,7 +118,7 @@ pub fn run_validate(
             error: "file not found".into(),
         });
     } else {
-        if let Err(e) = validate_file_against_def(&fs, &styles_path, &schema, "Styles") {
+        if let Err(e) = validate_file_against_def(fs, &styles_path, &schema, "Styles") {
             errors.push(ValidationError {
                 file: "styles.json".into(),
                 error: e,
@@ -191,10 +191,12 @@ fn validate_file_against_def(
 /// Build a JSON Schema that validates against a specific $def.
 fn build_schema_for_def(root: &Value, def_name: &str) -> Option<Value> {
     let defs = root.get("$defs")?.as_object()?;
-    let def = defs.get(def_name)?.as_object()?;
+    if !defs.contains_key(def_name) {
+        return None;
+    }
     Some(serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$ref": format!("#/{}defs/{}", if def_name.starts_with('#') { "" } else { "#/" }, def_name),
+        "$ref": format!("#/{}", def_name), // e.g., "#/Manifest" resolves via local $defs
         "$defs": root.get("$defs")
     }))
 }
@@ -204,11 +206,13 @@ fn validate_instance(instance: &Value, schema: &Value) -> Result<(), String> {
     let validator = jsonschema::validator_for(schema)
         .map_err(|e| format!("schema compilation error: {}", e))?;
 
-    let result = validator.apply(instance);
-    if result.flag() {
+    if validator.is_valid(instance) {
         Ok(())
     } else {
-        let errors: Vec<String> = result.basic().map(|(k, v)| format!("{}: {}", k, v)).collect();
+        let errors: Vec<String> = validator
+            .iter_errors(instance)
+            .map(|e| format!("{}: {}", e.instance_path(), e))
+            .collect();
         Err(if errors.is_empty() {
             "schema validation failed".into()
         } else {

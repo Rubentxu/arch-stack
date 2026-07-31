@@ -36,21 +36,22 @@ pub fn base_revision(projection: &Projection) -> String {
     let digest = blake3::hash(&bytes);
 
     // Step 6: encode as blake3:<hex>
-    format!("blake3:{}", digest.hex_encode())
+    format!("blake3:{}", hex::encode(digest.as_bytes()))
 }
 
 /// Recursively sort all object keys in alphabetical order.
 fn sort_object_keys_recursive(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
-            // Build a BTreeMap to get sorted keys
-            let sorted: BTreeMap<String, serde_json::Value> =
-                map.drain().map(|(k, v)| (k, v)).collect();
-            *map = sorted.into_iter().collect();
-            // Recurse into each value
+            // Recurse into values first (before draining)
             for v in map.values_mut() {
                 sort_object_keys_recursive(v);
             }
+            // Build a BTreeMap to get sorted keys, then put back
+            let pairs: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let sorted: BTreeMap<String, serde_json::Value> =
+                pairs.into_iter().collect();
+            *map = sorted.into_iter().collect();
         }
         serde_json::Value::Array(arr) => {
             for v in arr.iter_mut() {
@@ -81,7 +82,7 @@ fn sort_arrays_by_id(value: &mut serde_json::Value) {
         if indices.len() == arr.len() {
             indices.sort_by(|a, b| a.1.cmp(&b.1));
             let original = std::mem::take(arr);
-            for (new_idx, (old_idx, _)) in indices.into_iter().enumerate() {
+            for (_new_idx, (old_idx, _)) in indices.into_iter().enumerate() {
                 arr.push(original[old_idx].clone());
             }
         }

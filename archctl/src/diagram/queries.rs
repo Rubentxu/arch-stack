@@ -6,8 +6,8 @@
 
 use anyhow::Context;
 use crate::graph::validate_identifier;
-use crate::store::{GraphStore, Row};
-use crate::diagram::export_types::{Edge, Node, EvidenceEntry, Projection};
+use crate::store::GraphStore;
+use crate::diagram::export_types::EvidenceEntry;
 
 /// An element row from Query 1.
 #[derive(Debug)]
@@ -33,23 +33,6 @@ pub struct SemanticEdgeRow {
     pub props: serde_json::Map<String, serde_json::Value>,
 }
 
-/// An evidence row from Query 3.
-#[derive(Debug)]
-pub struct EvidenceRow {
-    pub id: String,
-    pub kind: String,
-    pub claim: String,
-    pub path: String,
-    pub start_line: u64,
-    pub end_line: u64,
-    pub tool_name: String,
-    pub tool_version: String,
-    pub rule_id: String,
-    pub content_hash: String,
-    pub props: serde_json::Map<String, serde_json::Value>,
-    pub observed_at: String,
-}
-
 /// A version props row from Query 4.
 #[derive(Debug)]
 pub struct VersionPropsRow {
@@ -57,6 +40,19 @@ pub struct VersionPropsRow {
     pub name: String,
     pub description: String,
     pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Convert a Cell to a serde_json::Map (for Object variants).
+fn cell_to_json_map(cell: &crate::row::Cell) -> serde_json::Map<String, serde_json::Value> {
+    let json = cell.to_json();
+    json.as_object()
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// Extract a f64 from a Cell (via JSON conversion).
+fn cell_as_f64(cell: &crate::row::Cell) -> Option<f64> {
+    cell.to_json().as_f64()
 }
 
 /// Query 1: elements filtered by category and scope.
@@ -68,7 +64,6 @@ pub fn query_elements(
     category: &str,
     scope_ident: Option<&str>,
 ) -> anyhow::Result<Vec<ElementRow>> {
-    // Validate category (c4 kind string)
     let safe_category = validate_identifier(category)?;
 
     let cypher = match scope_ident {
@@ -96,17 +91,18 @@ pub fn query_elements(
     rows.into_iter()
         .map(|r| {
             Ok(ElementRow {
-                id: r.get("e.id").and_then(|c| c.as_str()).unwrap_or_default(),
-                kind_id: r.get("e.kind_id").and_then(|c| c.as_str()).unwrap_or_default(),
-                category: r.get("e.category").and_then(|c| c.as_str()).unwrap_or_default(),
-                canonical_key: r.get("e.canonical_key").and_then(|c| c.as_str()).unwrap_or_default(),
-                current_name: r.get("e.current_name").and_then(|c| c.as_str()).unwrap_or_default(),
-                current_status: r.get("e.current_status").and_then(|c| c.as_str()).unwrap_or_default(),
+                id: r.get("e.id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                kind_id: r.get("e.kind_id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                category: r.get("e.category").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                canonical_key: r.get("e.canonical_key").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                current_name: r.get("e.current_name").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                current_status: r.get("e.current_status").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
                 current_confidence: r.get("e.current_confidence")
-                    .and_then(|c| c.as_f64())
+                    .and_then(cell_as_f64)
                     .unwrap_or(0.0),
                 current_version_id: r.get("e.current_version_id")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
             })
         })
@@ -132,27 +128,28 @@ pub fn query_semantic_edges(
     let rows = store.query(&cypher).context("query_semantic_edges")?;
     rows.into_iter()
         .map(|r| {
-            let props: serde_json::Map<String, serde_json::Value> = r
-                .get("edge.props")
-                .and_then(|c| c.as_object())
-                .cloned()
-                .unwrap_or_default();
+            let props = r.get("edge.props").map(cell_to_json_map).unwrap_or_default();
 
             Ok(SemanticEdgeRow {
                 relation_id: r.get("edge.relation_id")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 predicate_id: r.get("edge.predicate_id")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 source_id: r.get("source_id")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 target_id: r.get("target_id")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 order_key: r.get("edge.order_key")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 props,
             })
@@ -172,7 +169,6 @@ pub fn query_evidence_for_versions(
         return Ok(vec![]);
     }
 
-    // Validate and join version IDs
     let safe_ids: Result<Vec<_>, _> = version_ids
         .iter()
         .map(|id| validate_identifier(id).map(|s| s.to_string()))
@@ -193,11 +189,7 @@ pub fn query_evidence_for_versions(
     rows.into_iter()
         .filter_map(|r| {
             // Filter to only Accepted evidence (status in props["status"])
-            let props: serde_json::Map<String, serde_json::Value> = r
-                .get("e.props")
-                .and_then(|c| c.as_object())
-                .cloned()
-                .unwrap_or_default();
+            let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
 
             let status = props
                 .get("status")
@@ -209,20 +201,22 @@ pub fn query_evidence_for_versions(
             }
 
             Some(Ok(EvidenceEntry {
-                id: r.get("e.id").and_then(|c| c.as_str()).unwrap_or_default(),
-                kind: r.get("e.kind").and_then(|c| c.as_str()).unwrap_or_default(),
-                claim: r.get("e.claim").and_then(|c| c.as_str()).unwrap_or_default(),
-                path: r.get("e.path").and_then(|c| c.as_str()).unwrap_or_default(),
+                id: r.get("e.id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                kind: r.get("e.kind").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                claim: r.get("e.claim").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                path: r.get("e.path").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
                 start_line: r.get("e.start_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
                 end_line: r.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
-                tool_name: r.get("e.tool_name").and_then(|c| c.as_str()).unwrap_or_default(),
-                tool_version: r.get("e.tool_version").and_then(|c| c.as_str()).unwrap_or_default(),
-                rule_id: r.get("e.rule_id").and_then(|c| c.as_str()).unwrap_or_default(),
+                tool_name: r.get("e.tool_name").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                tool_version: r.get("e.tool_version").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                rule_id: r.get("e.rule_id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
                 content_hash: r.get("e.content_hash")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 observed_at: r.get("e.observed_at")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
             }))
         })
@@ -254,17 +248,14 @@ pub fn query_version_props(
     let rows = store.query(&cypher).context("query_version_props")?;
     rows.into_iter()
         .map(|r| {
-            let props: serde_json::Map<String, serde_json::Value> = r
-                .get("v.props")
-                .and_then(|c| c.as_object())
-                .cloned()
-                .unwrap_or_default();
+            let props = r.get("v.props").map(cell_to_json_map).unwrap_or_default();
 
             Ok(VersionPropsRow {
-                id: r.get("v.id").and_then(|c| c.as_str()).unwrap_or_default(),
-                name: r.get("v.name").and_then(|c| c.as_str()).unwrap_or_default(),
+                id: r.get("v.id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
+                name: r.get("v.name").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
                 description: r.get("v.description")
                     .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 props,
             })

@@ -7,6 +7,13 @@
 use std::fmt;
 use crate::graph::validate_identifier;
 
+/// Parse a view selector string.
+///
+/// Shorthand for `ViewSelector::parse`.
+pub fn parse(s: &str) -> anyhow::Result<ViewSelector> {
+    ViewSelector::parse(s)
+}
+
 /// C4 diagram kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum C4Kind {
