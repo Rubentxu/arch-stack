@@ -29,6 +29,10 @@ pub const MIGRATIONS: &[Migration] = &[
         version: "v2-source-evaluation",
         cypher: include_str!("../../docs/schema/002_source_evaluation.cypher"),
     },
+    Migration {
+        version: "v3-view-nodes",
+        cypher: include_str!("../../docs/schema/003_view_nodes.cypher"),
+    },
 ];
 
 /// Marker filename written to the project root after a successful run.
@@ -161,19 +165,20 @@ mod tests {
 
     #[test]
     fn migrations_is_ordered() {
-        assert_eq!(MIGRATIONS.len(), 2);
+        assert_eq!(MIGRATIONS.len(), 3);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
+        assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
     }
 
     #[test]
-    fn apply_pending_on_fresh_graph_applies_both() {
+    fn apply_pending_on_fresh_graph_applies_all() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
         let fs = system_fs();
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v2-source-evaluation");
+        assert_eq!(text.trim(), "v3-view-nodes");
     }
 
     #[test]
@@ -230,6 +235,6 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v2-source-evaluation");
+        assert_eq!(text.trim(), "v3-view-nodes");
     }
 }

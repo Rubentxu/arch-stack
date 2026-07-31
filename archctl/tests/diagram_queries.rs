@@ -231,6 +231,30 @@ impl GraphStore for TinyGraphStore {
     ) -> anyhow::Result<Vec<Row>> {
         unimplemented!()
     }
+    fn put_diagram(&mut self, _: &archctl::diagram::view_types::Diagram) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn get_diagram(&self, _: &str) -> anyhow::Result<archctl::diagram::view_types::Diagram> {
+        unimplemented!()
+    }
+    fn put_view_member(&mut self, _: &archctl::diagram::view_types::ViewMember) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn put_view_group(&mut self, _: &archctl::diagram::view_types::ViewGroup) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<archctl::diagram::view_types::ViewMember>> {
+        unimplemented!()
+    }
 }
 
 // SCN-050: query_elements filtered by category returns only matching nodes

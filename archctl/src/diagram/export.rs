@@ -275,6 +275,14 @@ mod tests {
         fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
         fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
         fn list_evidence_by_status(&self, _: crate::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+        fn put_diagram(&mut self, _: &crate::diagram::view_types::Diagram) -> anyhow::Result<()> { unimplemented!() }
+        fn get_diagram(&self, _: &str) -> anyhow::Result<crate::diagram::view_types::Diagram> { unimplemented!() }
+        fn put_view_member(&mut self, _: &crate::diagram::view_types::ViewMember) -> anyhow::Result<()> { unimplemented!() }
+        fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn put_view_group(&mut self, _: &crate::diagram::view_types::ViewGroup) -> anyhow::Result<()> { unimplemented!() }
+        fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<crate::diagram::view_types::ViewMember>> { unimplemented!() }
     }
 
     fn make_element_row(id: &str, category: &str, name: &str, version_id: &str) -> Row {

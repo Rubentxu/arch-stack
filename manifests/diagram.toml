@@ -29,6 +29,7 @@ editable = [
   "archctl/src/diagram/assets.rs",
   "archctl/src/diagram/queries.rs",
   "archctl/src/diagram/export_types.rs",
+  "archctl/src/diagram/view_types.rs",
   "archctl/src/cli.rs",
 ]
 
@@ -67,6 +68,7 @@ must_hold = [
   "pub fn parse(",
   "jsonschema::validator_for",
   "blake3::hash",
+  "try_lock_exclusive",
 ]
 
 # Banned patterns: no HTTP client, no direct std::fs in the diagram module.
@@ -78,5 +80,5 @@ must_not_contain = [
 ]
 
 # Minimum number of `#[test]` items in the diagram module.
-# Counts: selector (10) + hash (4) + assets (3) + queries (2) + validate (2) = 21
-minimum_tests = 18
+# Counts: selector (10) + hash (4) + assets (3) + queries (2) + validate (2) + view_types (4) = 25
+minimum_tests = 25

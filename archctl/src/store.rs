@@ -42,6 +42,7 @@
 //!   `SparrowStore::import_lbug()` problem, not the port's.
 
 use anyhow::Result;
+use fs2::FileExt;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 
@@ -162,6 +163,32 @@ pub trait GraphStore: Send + Sync {
         status: EvidenceStatus,
         path: Option<&str>,
     ) -> Result<Vec<Row>>;
+
+    /// MERGE a Diagram node by `id`. Idempotent — re-running with the
+    /// same id and a different revision updates in place.
+    fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()>;
+
+    /// Fetch a Diagram by `id`. Errors if not found.
+    fn get_diagram(&self, id: &str) -> Result<crate::diagram::view_types::Diagram>;
+
+    /// MERGE a ViewMember node by `id`. Idempotent.
+    fn put_view_member(&mut self, member: &crate::diagram::view_types::ViewMember) -> Result<()>;
+
+    /// Create MEMBER_OF edge. Idempotent via MATCH+CREATE fallback
+    /// (lbug 0.18.3 rejects MERGE on REL TABLE).
+    fn link_member_of(&mut self, member_id: &str, diagram_id: &str) -> Result<()>;
+
+    /// Create RENDERS edge. Idempotent via MATCH+CREATE fallback.
+    fn link_renders(&mut self, member_id: &str, element_id: &str) -> Result<()>;
+
+    /// MERGE a ViewGroup node by `id`. Idempotent.
+    fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()>;
+
+    /// Create GROUP_CONTAINS edge. Idempotent via MATCH+CREATE fallback.
+    fn link_group_contains(&mut self, group_id: &str, member_id: &str) -> Result<()>;
+
+    /// Fetch all ViewMembers for a given diagram_id.
+    fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -173,16 +200,52 @@ pub fn open_default(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
 }
 
 // ---------------------------------------------------------------------------
+// DB lock errors
+// ---------------------------------------------------------------------------
+
+/// Error returned when the project DB is already locked by another process.
+#[derive(Debug)]
+pub enum LockError {
+    /// Another `archctl` process holds the lock.
+    AnotherArchctlRunning,
+    /// I/O error while acquiring the lock.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for LockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LockError::AnotherArchctlRunning => {
+                write!(f, "another archctl process is running for this project")
+            }
+            LockError::Io(e) => write!(f, "lock I/O error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for LockError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            LockError::AnotherArchctlRunning => None,
+            LockError::Io(e) => Some(e),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Adapter: LadybugDB (the only concrete implementation today)
 // ---------------------------------------------------------------------------
 
 /// The current adapter — wraps LadybugDB (the `lbug` crate) behind the
-/// port. All the per-engine code that used to live in `graph.rs` is
-/// here. Callers see a `&dyn GraphStore` and never touch a
+/// port. Callers see a `&dyn GraphStore` and never touch a
 /// `Connection`.
 pub struct LbugStore {
     project_dir: PathBuf,
     session: Option<LbugSession>,
+    /// File descriptor for the exclusive flock on `.lbdb`.
+    /// Its Drop releases the kernel-managed lock.
+    #[allow(dead_code)]
+    lock_fd: std::fs::File,
 }
 
 /// Internal scope-bounded handle. Mirrors the previous `Session` but
@@ -196,6 +259,36 @@ struct LbugSession {
 }
 
 impl LbugStore {
+    /// Open (or create) a store, acquiring an exclusive flock on `.lbdb`.
+    /// Returns `Err(LockError::AnotherArchctlRunning)` if another process
+    /// already holds the lock. The lock is released when the store is dropped.
+    pub fn open(project_dir: &Path) -> Result<Self, LockError> {
+        let lock_path = crate::graph::database_path(project_dir);
+        // Ensure the project directory exists before creating the lock file.
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent).map_err(LockError::Io)?;
+        }
+        let lock_fd = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&lock_path)
+            .map_err(LockError::Io)?;
+        // Try to acquire an exclusive lock. `WouldBlock` means another
+        // process holds it (kernel-managed, no stale recovery code needed).
+        match lock_fd.try_lock_exclusive() {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(LockError::AnotherArchctlRunning);
+            }
+            Err(e) => return Err(LockError::Io(e)),
+        }
+        Ok(Self {
+            project_dir: project_dir.to_path_buf(),
+            session: None,
+            lock_fd,
+        })
+    }
+
     fn session_mut(&mut self) -> Result<&mut LbugSession> {
         if self.session.is_none() {
             self.session = Some(open_lbug_session(&self.project_dir)?);
@@ -206,15 +299,8 @@ impl LbugStore {
 
 impl GraphStore for LbugStore {
     fn open(project_dir: &Path) -> Result<Self> {
-        // Lazy session: do not open the DB file until the first
-        // operation. `init` and `stat` already called `open_session`
-        // eagerly; `put_evidence` and `list_evidence` did not. Keeping
-        // the lazy semantics preserves the existing behaviour and
-        // shrinks the time during which we hold an exclusive lock.
-        Ok(Self {
-            project_dir: project_dir.to_path_buf(),
-            session: None,
-        })
+        LbugStore::open(project_dir)
+            .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))
     }
 
     fn init(&mut self) -> Result<()> {
@@ -648,6 +734,266 @@ impl GraphStore for LbugStore {
 
         Ok(filtered)
     }
+
+    fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&diagram.id)
+            .context("put_diagram: diagram.id failed validation")?;
+        let safe_revision = diagram.revision.replace('\'', "\\'");
+        let safe_selector = diagram.selector.replace('\'', "\\'");
+        let props_json =
+            serde_json::to_string(&diagram.props).context("serialize diagram props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (d:Diagram {{id: '{id}'}}) SET \
+             d.revision = '{safe_revision}', \
+             d.selector = '{safe_selector}', \
+             d.props = '{safe_props}', \
+             d.updated_at = timestamp('{now}'), \
+             d.created_at = COALESCE(d.created_at, timestamp('{now}'));"
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("put_diagram: failed to persist Diagram {id}")
+        })?;
+        Ok(())
+    }
+
+    fn get_diagram(&self, id: &str) -> Result<crate::diagram::view_types::Diagram> {
+        use crate::diagram::view_types::Diagram;
+        let validated_id = crate::graph::validate_identifier(id)
+            .context("get_diagram: id failed validation")?;
+        let rows = self.query(&format!(
+            "MATCH (d:Diagram {{id: '{validated_id}'}}) \
+             RETURN d.id, d.revision, d.selector, d.props, d.created_at, d.updated_at;"
+        ))?;
+        if rows.is_empty() {
+            anyhow::bail!("diagram not found: {id}");
+        }
+        let row = rows.into_iter().next().unwrap();
+        let cell_to_str = |col: &str| -> String {
+            row.get(col)
+                .and_then(|c| c.as_str())
+                .map(String::from)
+                .unwrap_or_default()
+                .replace("\\'", "'")
+        };
+        let cell_to_json = |col: &str| -> serde_json::Value {
+            row.get(col)
+                .and_then(|c| c.as_str())
+                .map(|s| {
+                    // Props are stored escaped, unescape single quotes
+                    serde_json::from_str(&s.replace("\\'", "'")).ok()
+                })
+                .flatten()
+                .unwrap_or(serde_json::Value::Null)
+        };
+        Ok(Diagram {
+            id: cell_to_str("d.id"),
+            revision: cell_to_str("d.revision"),
+            selector: cell_to_str("d.selector"),
+            props: cell_to_json("d.props"),
+            created_at: Some(cell_to_str("d.created_at")).filter(|s| !s.is_empty()),
+            updated_at: Some(cell_to_str("d.updated_at")).filter(|s| !s.is_empty()),
+        })
+    }
+
+    fn put_view_member(&mut self, member: &crate::diagram::view_types::ViewMember) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&member.id)
+            .context("put_view_member: member.id failed validation")?;
+        let diagram_id = crate::graph::validate_identifier(&member.diagram_id)
+            .context("put_view_member: diagram_id failed validation")?;
+        let element_id = crate::graph::validate_identifier(&member.element_id)
+            .context("put_view_member: element_id failed validation")?;
+        let safe_label = member.label.replace('\'', "\\'");
+        let props_json =
+            serde_json::to_string(&member.props).context("serialize view_member props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (vm:ViewMember {{id: '{id}'}}) SET \
+             vm.diagram_id = '{diagram_id}', \
+             vm.element_id = '{element_id}', \
+             vm.label = '{safe_label}', \
+             vm.x = {x}, \
+             vm.y = {y}, \
+             vm.collapsed = {collapsed}, \
+             vm.props = '{safe_props}', \
+             vm.updated_at = timestamp('{now}'), \
+             vm.created_at = COALESCE(vm.created_at, timestamp('{now}'));",
+            x = member.x,
+            y = member.y,
+            collapsed = member.collapsed,
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("put_view_member: failed to persist ViewMember {id}")
+        })?;
+        Ok(())
+    }
+
+    fn link_member_of(&mut self, member_id: &str, diagram_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("link_member_of: member_id failed validation")?;
+        let did = crate::graph::validate_identifier(diagram_id)
+            .context("link_member_of: diagram_id failed validation")?;
+
+        // ADR-017 §"Nota técnica": MERGE on REL TABLE is rejected by lbug 0.18.3.
+        // Fall back to MATCH + CREATE (idempotent: if edge exists, second CREATE is no-op).
+        let primary = format!(
+            "MATCH (vm:ViewMember {{id: '{mid}'}}), (d:Diagram {{id: '{did}'}}) \
+             MERGE (vm)-[:MEMBER_OF]->(d);"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (vm:ViewMember {{id: '{mid}'}}), (d:Diagram {{id: '{did}'}}) \
+                 CREATE (vm)-[:MEMBER_OF]->(d);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_member_of fallback for ({mid}, {did})")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn link_renders(&mut self, member_id: &str, element_id: &str) -> Result<()> {
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("link_renders: member_id failed validation")?;
+        let eid = crate::graph::validate_identifier(element_id)
+            .context("link_renders: element_id failed validation")?;
+
+        // ADR-017 §"Nota técnica": MERGE on REL TABLE rejected by lbug 0.18.3.
+        // Check element existence first (immutable borrow of self).
+        let elem_rows = self.query(&format!(
+            "MATCH (e:Element {{id: '{eid}'}}) RETURN e.id;"
+        ))?;
+        if elem_rows.is_empty() {
+            anyhow::bail!("element not found: {eid}");
+        }
+
+        // Now acquire mutable session for the edge write.
+        let session = self.session_mut()?;
+        let primary = format!(
+            "MATCH (vm:ViewMember {{id: '{mid}'}}), (e:Element {{id: '{eid}'}}) \
+             MERGE (vm)-[:RENDERS]->(e);"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (vm:ViewMember {{id: '{mid}'}}), (e:Element {{id: '{eid}'}}) \
+                 CREATE (vm)-[:RENDERS]->(e);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_renders fallback for ({mid}, {eid})")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&group.id)
+            .context("put_view_group: group.id failed validation")?;
+        let diagram_id = crate::graph::validate_identifier(&group.diagram_id)
+            .context("put_view_group: diagram_id failed validation")?;
+        let safe_label = group.label.replace('\'', "\\'");
+        let props_json =
+            serde_json::to_string(&group.props).context("serialize view_group props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (vg:ViewGroup {{id: '{id}'}}) SET \
+             vg.diagram_id = '{diagram_id}', \
+             vg.label = '{safe_label}', \
+             vg.props = '{safe_props}', \
+             vg.updated_at = timestamp('{now}'), \
+             vg.created_at = COALESCE(vg.created_at, timestamp('{now}'));"
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("put_view_group: failed to persist ViewGroup {id}")
+        })?;
+        Ok(())
+    }
+
+    fn link_group_contains(&mut self, group_id: &str, member_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let gid = crate::graph::validate_identifier(group_id)
+            .context("link_group_contains: group_id failed validation")?;
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("link_group_contains: member_id failed validation")?;
+
+        // ADR-017 §"Nota técnica": MERGE on REL TABLE rejected by lbug 0.18.3.
+        let primary = format!(
+            "MATCH (vg:ViewGroup {{id: '{gid}'}}), (vm:ViewMember {{id: '{mid}'}}) \
+             MERGE (vg)-[:GROUP_CONTAINS]->(vm);"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (vg:ViewGroup {{id: '{gid}'}}), (vm:ViewMember {{id: '{mid}'}}) \
+                 CREATE (vg)-[:GROUP_CONTAINS]->(vm);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_group_contains fallback for ({gid}, {mid})")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>> {
+        use crate::diagram::view_types::ViewMember;
+        let did = crate::graph::validate_identifier(diagram_id)
+            .context("get_view_members: diagram_id failed validation")?;
+        let rows = self.query(&format!(
+            "MATCH (vm:ViewMember) WHERE vm.diagram_id = '{did}' \
+             RETURN vm.id, vm.diagram_id, vm.element_id, vm.label, \
+                    vm.x, vm.y, vm.collapsed, \
+                    vm.props, vm.created_at, vm.updated_at;"
+        ))?;
+        let members: Vec<ViewMember> = rows
+            .into_iter()
+            .map(|row| {
+                let cell_to_str = |col: &str| -> String {
+                    row.get(col)
+                        .and_then(|c| c.as_str())
+                        .map(String::from)
+                        .unwrap_or_default()
+                        .replace("\\'", "'")
+                };
+                let cell_to_i64 = |col: &str| -> i64 {
+                    row.get(col).and_then(|c| c.as_i64()).unwrap_or(0)
+                };
+                let cell_to_bool = |col: &str| -> bool {
+                    row.get(col).and_then(|c| c.as_bool()).unwrap_or(false)
+                };
+                let cell_to_json = |col: &str| -> serde_json::Value {
+                    row.get(col)
+                        .and_then(|c| c.as_str())
+                        .map(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
+                        .flatten()
+                        .unwrap_or(serde_json::Value::Null)
+                };
+                ViewMember {
+                    id: cell_to_str("vm.id"),
+                    diagram_id: cell_to_str("vm.diagram_id"),
+                    element_id: cell_to_str("vm.element_id"),
+                    label: cell_to_str("vm.label"),
+                    x: cell_to_i64("vm.x"),
+                    y: cell_to_i64("vm.y"),
+                    collapsed: cell_to_bool("vm.collapsed"),
+                    props: cell_to_json("vm.props"),
+                    created_at: Some(cell_to_str("vm.created_at")).filter(|s| !s.is_empty()),
+                    updated_at: Some(cell_to_str("vm.updated_at")).filter(|s| !s.is_empty()),
+                }
+            })
+            .collect();
+        Ok(members)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -832,6 +1178,8 @@ mod tests {
         let project = tmp.path().join("proj");
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
+        // Drop the first store to release the lock before re-opening.
+        drop(store);
         // Re-opening and re-initialising must not error.
         let mut store2 = LbugStore::open(&project).unwrap();
         store2.init().unwrap();
@@ -1376,5 +1724,303 @@ mod tests {
             "must include superseded row"
         );
         assert_eq!(superseded_ids.len(), 1);
+    }
+
+    #[test]
+    fn lbug_store_open_succeeds_when_no_holder() {
+        // Opening a fresh project should succeed.
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let result = LbugStore::open(&project);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn lbug_store_open_fails_when_holder_exists() {
+        // Hold the lock directly on the .lbdb file, then try to open
+        // LbugStore — it should fail with AnotherArchctlRunning.
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        // First open to create the .lbdb file.
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+        // Drop the store to keep the .lbdb file but release our lock.
+        drop(store);
+        // Re-open the .lbdb file directly and hold an exclusive lock.
+        let lock_path = crate::graph::database_path(&project);
+        let holder_fd = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&lock_path)
+            .unwrap();
+        holder_fd.try_lock_exclusive().unwrap();
+        // Now LbugStore::open should fail because we hold the lock.
+        let result = LbugStore::open(&project);
+        assert!(matches!(result, Err(LockError::AnotherArchctlRunning)));
+    }
+
+    #[test]
+    fn put_diagram_is_merge_on_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let diag1 = crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "rev1".into(),
+            selector: r#"{"kind":"container"}"#.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_diagram(&diag1).unwrap();
+
+        // Update with different revision
+        let diag2 = crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "rev2".into(),
+            selector: r#"{"kind":"container"}"#.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_diagram(&diag2).unwrap();
+
+        // Should have exactly one diagram with rev2
+        let rows = store
+            .query("MATCH (d:Diagram) RETURN d.id, d.revision;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one Diagram row");
+        let rev = rows[0]
+            .get("d.revision")
+            .and_then(|c| c.as_str())
+            .unwrap();
+        assert_eq!(rev, "rev2", "revision should be updated to rev2");
+    }
+
+    #[test]
+    fn get_diagram_errors_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let result = store.get_diagram("nonexistent");
+        assert!(result.is_err(), "expected error for missing diagram");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("diagram not found:"),
+            "error should contain 'diagram not found:', got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn put_view_member_is_merge_on_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let vm1 = crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Label1".into(),
+            x: 100,
+            y: 200,
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_view_member(&vm1).unwrap();
+
+        // Update with different label
+        let vm2 = crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Label2".into(),
+            x: 100,
+            y: 200,
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_view_member(&vm2).unwrap();
+
+        // Should have exactly one ViewMember with Label2
+        let rows = store
+            .query("MATCH (vm:ViewMember) RETURN vm.id, vm.label;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one ViewMember row");
+        let label = rows[0]
+            .get("vm.label")
+            .and_then(|c| c.as_str())
+            .unwrap();
+        assert_eq!(label, "Label2", "label should be updated to Label2");
+    }
+
+    #[test]
+    fn put_view_member_persists_x_y_collapsed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let vm = crate::diagram::view_types::ViewMember {
+            id: "vm-pos".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Pos".into(),
+            x: 240,
+            y: 160,
+            collapsed: true,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_view_member(&vm).unwrap();
+
+        let members = store.get_view_members("d1").unwrap();
+        assert_eq!(members.len(), 1, "expected one view member");
+        let read = &members[0];
+        assert_eq!(read.id, "vm-pos");
+        assert_eq!(read.x, 240, "x must persist across put/get");
+        assert_eq!(read.y, 160, "y must persist across put/get");
+        assert!(read.collapsed, "collapsed must persist across put/get");
+    }
+
+    #[test]
+    fn link_member_of_is_idempotent_via_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a Diagram and ViewMember.
+        store.put_diagram(&crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "r1".into(),
+            selector: "{}".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+        store.put_view_member(&crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "L".into(),
+            x: 0,
+            y: 0,
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        // Link twice.
+        store.link_member_of("vm1", "d1").unwrap();
+        store.link_member_of("vm1", "d1").unwrap();
+
+        // Should have exactly one MEMBER_OF edge.
+        let rows = store
+            .query("MATCH (vm:ViewMember)-[:MEMBER_OF]->(d:Diagram) RETURN vm.id;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one MEMBER_OF edge");
+    }
+
+    #[test]
+    fn link_renders_errors_when_element_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a ViewMember but no Element.
+        store.put_view_member(&crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "nonexistent-element".into(),
+            label: "L".into(),
+            x: 0,
+            y: 0,
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        let result = store.link_renders("vm1", "nonexistent-element");
+        assert!(result.is_err(), "expected error when element missing");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("element not found:"),
+            "error should contain 'element not found:', got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn link_group_contains_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a ViewGroup and ViewMember.
+        store.put_view_group(&crate::diagram::view_types::ViewGroup {
+            id: "vg1".into(),
+            diagram_id: "d1".into(),
+            label: "Backend".into(),
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+        store.put_view_member(&crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "L".into(),
+            x: 0,
+            y: 0,
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        // Link twice.
+        store.link_group_contains("vg1", "vm1").unwrap();
+        store.link_group_contains("vg1", "vm1").unwrap();
+
+        // Should have exactly one GROUP_CONTAINS edge.
+        let rows = store
+            .query("MATCH (vg:ViewGroup)-[:GROUP_CONTAINS]->(vm:ViewMember) RETURN vg.id;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one GROUP_CONTAINS edge");
+    }
+
+    #[test]
+    fn get_view_members_returns_empty_when_no_members() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Diagram exists but has no ViewMembers.
+        store.put_diagram(&crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "r1".into(),
+            selector: "{}".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        let members = store.get_view_members("d1").unwrap();
+        assert!(members.is_empty(), "expected empty vec for diagram with no members");
     }
 }
