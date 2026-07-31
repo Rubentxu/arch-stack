@@ -1,10 +1,11 @@
-# ADR-013 — Viewer ortogonal basado en DiagramProjection
+# ADR-013 — Viewer ortogonal basado en DiagramProjection (Code Knowledge Graph Workbench)
 
-**Estado:** Aceptado
+**Estado:** Aceptado (revisado: 31 de julio de 2026 — pivot a workbench performance-first; ver [ADR-019](ADR-019-performance-budget.md) y [ADR-020](ADR-020-renderer-stack.md))
 **Fecha:** 29 de julio de 2026
+**Última revisión:** 31 de julio de 2026 (pivot: workbench + performance-first)
 **Proyecto:** `archview` (repositorio separado, NO parte de `archctl`)
 **Refuerza:** ADR-001 (archctl como sidecar), ADR-010 (sin daemon), ADR-011 (renderers locales)
-**Relacionado:** ADR-007 (diagramas como proyecciones), ADR-012 (política descart-CLIs), ADR-005 (LadybugDB)
+**Relacionado:** ADR-007 (diagramas como proyecciones), ADR-012 (política descart-CLIs), ADR-005 (LadybugDB), ADR-019 (performance budget), ADR-020 (renderer stack)
 
 ## Contexto
 
@@ -22,7 +23,7 @@ Construir esta interactividad dentro de `archctl` como servidor HTTP rompería A
 
 ## Decisión
 
-El rendering interactivo vive en un **proyecto ortogonal** llamado `archview`, separado de `archctl`:
+El rendering interactivo vive en un **proyecto ortogonal** llamado `archview`, separado de `archctl`. **`archview` es un Code Knowledge Graph Workbench** (no un static viewer) — multi-proyección, performance-first, zero-jank a cualquier nivel de complejidad.
 
 ```text
 archctl (sidecar CLI, Rust)
@@ -32,15 +33,25 @@ archctl (sidecar CLI, Rust)
    └── exporta bundles autocontenidos
                 │
                 ▼
-         Diagram Bundle (directorio o ZIP)
-                │
-                ▼
-       archview (proyecto HTML/TypeScript)
-                │
-                ├── Sprotty (modelo → SVG interactivo)
-                ├── ELK.js (layout en Web Worker)
-                ├── Cytoscape.js (explorador libre del grafo)
-                └── TypeScript (UI, paneles, navegación)
+          Diagram Bundle (directorio o ZIP)
+                 │
+                 ▼
+        archview (proyecto HTML/TypeScript + WASM)
+                 │
+                 ├── Renderer GPU: G6 5.x (WebGPU) o cosmos.gl (>100k nodos)
+                 ├── Layout: G6 built-in (dagre, d3-force, indent) + ELK.js
+                 ├── Compute: Rust → WASM (petgraph, centralities, projections)
+                 ├── UI: SolidJS (fine-grained reactivity, no virtual DOM)
+                 ├── Data: Apache Arrow + TypedArrays (no per-node JS objects)
+                 ├── Concurrency: Web Workers + SharedArrayBuffer
+                 ├── Selection: RoaringBitmap (Rust → WASM)
+                 ├── 5 vistas coordinadas:
+                 │     ├── C4 contextual (Context/Container/Component/Code)
+                 │     ├── Call graph (1-N niveles, blast radius)
+                 │     ├── Sequence diagram (call chains, async flows)
+                 │     ├── Class diagram (UML)
+                 │     └── Package diagram (dependencias)
+                 └── TypeScript (workspace, filtros, panel, navegación)
 ```
 
 `archview` es **estrictamente ortogonal**:
@@ -137,17 +148,25 @@ archview recarga para ver el resultado
 
 No hay WebSocket. No hay servidor. No hay conexión persistente.
 
-## Stack de `archview`
+## Stack de `archview` (revisado 2026-07-31 — performance-first)
 
-| Pieza | Crate / librería | Razón |
+| Pieza | Stack | Razón (performance-first) |
 |---|---|---|
-| Framework de diagramación | Sprotty | Modelo JSON → SVG interactivo, separan modelo/vista/comando |
-| Layout | ELK.js (en Web Worker) | Layout jerárquico de Eclipse, soporta ports y jerarquía C4 |
-| Lenguaje | TypeScript | Tipado estricto para el contrato `DiagramProjection` |
-| Build | Vite | Build rápido, ESM nativo, output estático |
-| UI shell | Svelte o Lit | Sin framework pesado; el canvas es Sprotty, los paneles son HTML directo |
-| Explorador libre | Cytoscape.js (opcional) | Para navegar el grafo completo sin restricción de vista |
-| Secuencias | Layout propio en TS | `SequenceLayout` determinista (no Sugiyama); animación por paso |
+| Framework de diagramación | **G6 5.x con WebGPU backend** | Hierarchical + force + WebGPU acceleration, MIT, activo, soporta hasta 100k nodos fluidamente |
+| Adapter para massive graphs | **cosmos.gl** (con fallback) | "Extremely high performance" según benchmarking del doc; para >100k nodos |
+| Layout | G6 built-in (dagre, d3-force, indent) + ELK.js (jerárquicos complejos) | G6 ya los trae integrados; ELK solo cuando sea estrictamente necesario |
+| Lenguaje | TypeScript | Tipado estricto para el contrato `DiagramProjection` + bindings WASM |
+| Build | Vite + Rolldown + WASM chunks separados | Bundle splitting; HMR para UI sin recargar WASM |
+| UI framework | **SolidJS** (no Svelte, no React) | Fine-grained reactivity, sin virtual DOM diffing; 2-5x más rápido en paneles con muchos elementos |
+| Compute layer | **Rust → WASM** (petgraph, centralities, projections) | JS puro es 10-50x más lento para algoritmos de grafos |
+| Data transport | **Apache Arrow + TypedArrays** | zero-copy para buffers GPU; no JSON serialization |
+| Threading | **Web Workers + SharedArrayBuffer** | Main thread libre para render; layouts pesados off-thread |
+| Selección / filtros | **RoaringBitmap** (Rust → WASM) | bitwise ops, 10-100x compression para sets dispersos |
+| Backend GPU | **WebGPU primary, WebGL2 fallback mínimo** | compute shaders, less CPU-GPU roundtrip |
+| Picking | **GPU picking** (framebuffer invisible) | O(1) vs O(n) CPU iteration |
+| Secuencias | Layout propio en TS (determinista, animación por paso) | complementario a G6 |
+
+> **Nota de descarte**: Sprotty (originalmente propuesto en este ADR) queda descartado para el workbench — el doc `Librerías-visualización-grafos-BI.md` lo identifica explícitamente como "no escala para grafos grandes". Cytoscape.js (opcional original) queda como adapter de fallback solo si G6+cosmos.gl no cubren un caso.
 
 ## Stack de `archctl` (cambios mínimos)
 
@@ -187,11 +206,18 @@ Estos comandos siguen siendo one-shot. No añaden estado persistente en `archctl
 - Workflow humano requiere alternar entre `archctl diagram export` y `archview open`. No es transparente.
 - Sin actualizaciones en tiempo real; el watcher refresca con latencia del filesystem.
 
-### Métricas de éxito
+### Métricas de éxito (revisado 2026-07-31 — performance-first)
+
+Las métricas de éxito del workbench se rigen por [ADR-019](ADR-019-performance-budget.md) (hard contract). Adicionalmente:
 
 - `archview` abre un bundle exportado por `archctl <v1.0>` y renderiza correctamente sin importar la versión del binario que lo generó.
 - El ChangeSet se aplica en menos de 1 segundo sobre un bundle de 100 nodos.
 - El bundle de un diagrama C4 Container completo (10 nodos, 15 aristas) cabe en <50 KB.
+- **TTFP <1s** para bundle de 10k nodos (ver ADR-019).
+- **Pan/zoom latency <16ms** (60 FPS) en interacción continua.
+- **Layout convergence <2s** para 10k nodos (WebGPU compute).
+- **Memory <500MB** para 100k nodos.
+- **0 long tasks (>50ms)** durante interacción.
 
 ## Cómo revertir
 

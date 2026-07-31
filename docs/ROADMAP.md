@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** propuesta revisada
-**Versión:** 2.3
+**Estado:** propuesta revisada (pivot a Code Knowledge Graph Workbench performance-first)
+**Versión:** 2.4
 **Fecha:** 31 de julio de 2026
-**Cambios vs 2.2:** ADR-013 introduce `archview` como proyecto ortogonal (ver § Ecosistema). ADR-006 marcado como DEPRECADO. ADR-007, ADR-011, ADR-012 actualizados con la nueva arquitectura. M9 reescrito con tres librerías renderer explícitas.
+**Cambios vs 2.3:** Pivot a "Code Knowledge Graph Workbench" (no BI dashboard). M9 reescrito como workbench de 5 vistas coordinadas con performance-first stack. Nuevos ADRs: **ADR-019 (Performance budget — hard contract)** y **ADR-020 (Renderer stack: G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM)**. ADR-007/011/013 revisados con el nuevo stack. M17 (archview workbench) promovido a prioridad 1. M11/M12 promovidos. M10/M14 deferred a 1.x. Ver `docs/Librerías-visualización-grafos-BI.md` para la investigación que sustenta el pivot.
 
 ---
 
@@ -85,19 +85,66 @@
 Antes de cerrar M9, `archctl` necesita emitir bundles que `archview`
 pueda consumir.
 
+**Pivot v2.4 (2026-07-31):** M9 ya no es "renderers como librerías (PlantUML, Mermaid, Structurizr propio)". Es **Code Knowledge Graph Workbench** — un workbench con 5 vistas coordinadas (C4 contextual, call graph, sequence, class, package) renderizado con stack performance-first (ver [ADR-019](adr/ADR-019-performance-budget.md) y [ADR-020](adr/ADR-020-renderer-stack.md)). El target es developers/arquitectos, no BI. M9 incluye también el setup inicial del workbench (M17.0–M17.1) y la primera validación con `archctl code c4 discover` + `archctl code call-graph`.
+
 ## M10 — Casos de uso y escenarios (era M9)
 
-## M11 — Secuencias y C4 Dynamic (era M10)
+**Pivot v2.4:** Defer a 1.x. Bajo valor vs costo en el target de developers/arquitectos. Los use cases no son el dolor primario del target.
 
-## M12 — Diagramas de clases (era M11)
+## M11 — Call graph + Sequence diagrams + C4 Dynamic (era M10) — **PRIORIDAD 1**
 
-## M13 — Vista, revisión y formatos (era M12)
+**Pivot v2.4:** Promovido a prioridad 1. M11 ahora incluye:
+- **Call graph extraction** (via tree-sitter / LSP) — `archctl code call-graph`
+- **Sequence diagram generation** (call chain extraction, async flow tracking) — `archctl code sequence`
+- **C4 Dynamic** (relationships at runtime, opcional via OpenTelemetry)
 
-## M14 — Versionado, recuperación y actualización (era M13)
+Output: tres comandos CLI que se renderizan en `archview` como proyecciones del workbench.
 
-## M15 — Herramientas semánticas opcionales (era M14)
+## M12 — Diagramas de clases UML (era M11) — **PRIORIDAD 2**
+
+**Pivot v2.4:** Promovido. Output: `archctl code class-diagram` (UML via LSP). Renderizado en `archview` como vista "class".
+
+## M13 — Workbench actions (era M12) — **REDEFINIDO**
+
+**Pivot v2.4:** Ya no es "view/review/format" (PNG/SVG/PDF). Es **workbench actions**: drift detection C4 declarado vs actual, impact analysis (blast radius), test mapping, save/load views. Reemplaza la sección "format export" original.
+
+## M14 — Versionado, recuperación y actualización (era M13) — **DEFER A 1.x**
+
+**Pivot v2.4:** Defer. Feature de enterprise (rollback, snapshots) no es core para developers.
+
+## M15 — Herramientas semánticas opcionales (era M14) — **DEFER A 1.x**
+
+**Pivot v2.4:** Defer. Optional. Solo después del workbench estable.
 
 ## M16 — Endurecimiento 1.0 (era M15)
+
+## M17 — `archview` workbench (sustituye a Av0–Av6) — **NUEVO, PRIORIDAD 1**
+
+**Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
+
+- **M17.0**: Svelte + ELK.js — **REEMPLAZADO** con SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline.
+- **M17.1**: Pan/zoom + sidebar de evidencias — primera vista funcional.
+- **M17.2**: Semantic zoom para C4 (Context → Container → Component → Code).
+- **M17.3**: Call graph view (1-N niveles, blast radius, async flow).
+- **M17.4**: Sequence diagram view (call chains, async flows).
+- **M17.5**: Class diagram view (UML).
+- **M17.6**: Package diagram view (dependencias, ciclos, cohesión).
+- **M17.7**: Drift detection (C4 declarado vs actual; cross-validation).
+- **M17.8**: Impact analysis (blast radius de un cambio propuesto).
+
+Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos.
+
+## M18 — Reactive runtime (event log + behaviors + planners) — **NUEVO, 1.x**
+
+**Pivot v2.4:** Reactive runtime inspirado en ActiveGraph pero implementado en Rust puro. Defer a 1.x (después del workbench estable). Features: event log, subscriptions, behaviors como WASM plugins, planners, capabilities. Ver sección del doc sobre Reactive Runtime.
+
+## M19 — Custom wgpu renderer (solo si cosmos.gl no alcanza) — **NUEVO, 2.0**
+
+**Pivot v2.4:** Si cosmos.gl + G6 WebGPU no cubren el caso de grafos de millones de elementos con latencia sub-16ms, construir un renderer custom en Rust + wgpu + WGSL. 2.0. Defer a menos que el benchmark suite (M17) muestre insuficiencia.
+
+## M20 — Performance validation cycle — **NUEVO**
+
+**Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
 ---
 
@@ -220,6 +267,7 @@ Incluye:
 | `hygiene-local-only-policy` | direct commit on `main` (no PR — 1-line config gap) | `0a28016` | **Cerrado** ✅ · tag `v0.4.1` |
 | `m9-archctl-export-apply` (PR1) | `feat/m9-archctl-export-apply-foundation` (mergeado a main via --no-ff) | `ce25825` | **Cerrado** ✅ · tag diferido a PR2 → v0.6.0 |
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
+| `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -381,3 +429,20 @@ Incluye:
 - **Key decisions**: D-1: fs2::try_lock_exclusive on .lbdb (vs separate lockfile — elimina 150 LOC de lock.rs); D-2: ViewMember x/y/collapsed en DDL (W-2 fix); D-5/6: MERGE SET + RETURN con todas las columnas (W-DV-1/2 fix).
 - **Debt carry to PR2**: W-DV-3 (open_lbug_session duplicado), W-DV-4 (trait bloat 16→21), W-DV-5 (link_* duplication ×3).
 - **Próximo candidato**: PR2 (apply surface: `archctl diagram apply` CLI + override/lock model).
+
+## Cycle cerrado — `roadmap-pivot-v2.4` (performance-first workbench)
+
+- **Fecha**: 2026-07-31
+- **Branch**: direct commits en `main` (no PR — doc-only + ADR-only changes)
+- **Tag**: deferido a `v0.7.0` (cuando M9-v2.4 cierre con workbench funcional)
+- **Verdict**: N/A (no código, solo docs)
+- **Commits**: 1 chore(adr) + 1 chore(roadmap) = 2 commits planeados
+- **Tests**: N/A (0 cambios de código)
+- **Output**: Pivot del roadmap de BI dashboard a Code Knowledge Graph Workbench. Performance-first stack.
+  - **ADR-007** revisado: reframe del viewer como "workbench de 5 vistas coordinadas" (C4 / call graph / sequence / class / package).
+  - **ADR-011** revisado: nota de performance para `archview` (COOP/COEP, CSP, OffscreenCanvas).
+  - **ADR-013** revisado: stack de `archview` reemplazado completamente. Sprotty y Cytoscape.js descartados. G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM. 5 vistas coordinadas explícitas.
+  - **ADR-019** nuevo: Performance budget (hard contract). TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB. 14 anti-patterns explícitos. Benchmark suite canónico + CI gate.
+  - **ADR-020** nuevo: Renderer stack. G6 5.x WebGPU primary, cosmos.gl adapter para >100k, ELK.js fallback jerárquico. SolidJS UI (no React). Rust → WASM compute. Apache Arrow + TypedArrays. Web Workers + SharedArrayBuffer. RoaringBitmap selections.
+  - **ROADMAP v2.4**: M9 redefinido como workbench. M8 (C4 boundary inference) y M11 (call graph + sequence) promovidos a prioridad 1. M17 (archview) promovido a prioridad 1. M10 (use cases) y M14 (versioning) deferred a 1.x. M18 (reactive runtime) y M19 (custom wgpu) nuevos. M20 (performance validation) nuevo.
+- **Próximo candidato**: M9-PR2 (apply surface) → v0.6.0, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench.

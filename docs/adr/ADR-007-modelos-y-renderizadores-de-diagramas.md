@@ -2,6 +2,7 @@
 
 **Estado:** Aceptado (sustituido por [ADR-013](ADR-013-viewer-ortogonal.md) en la sección de rendering)
 **Fecha:** 29 de julio de 2026
+**Última revisión:** 31 de julio de 2026 (pivot a Code Knowledge Graph Workbench; ver [ADR-020](ADR-020-renderer-stack.md) para el stack performance-first)
 **Refuerza:** ADR-005 (LadybugDB como grafo canónico), ADR-013 (viewer ortogonal)
 
 ## Contexto
@@ -27,7 +28,16 @@ LadybugDB conserva identidades, relaciones, escenarios y evidencias. Los diagram
 |---|---|---|---|
 | Estático (archctl) | `archctl render <source>` | `.svg`, `.puml`, `.dsl` | CI, agentes, embedding en Markdown, revisión sin browser |
 | Bundle para viewer (archctl) | `archctl diagram export <id>` | directorio `diagram-bundle/` con `manifest.json`, `projection.json`, `evidence.json`, `styles.json`, `assets/` | Cuando el usuario abre el viewer interactivo |
-| Interactivo (archview, proyecto separado) | Carga bundle desde disco | HTML+SVG interactivo en browser local | Drill-down, hover, comparación temporal, edición visual |
+| Interactivo (archview, proyecto separado) | Carga bundle desde disco | HTML+SVG interactivo en browser local | **Code Knowledge Graph Workbench** — drill-down C4, call graph, sequence, class, package, drift detection, impact analysis |
+
+### Pivot a "Code Knowledge Graph Workbench" (revisión 2026-07-31)
+
+Tras re-evaluación del roadmap contra `docs/Librerías-visualización-grafos-BI.md`, el target de usuario no es BI dashboard sino **developer/architect code intelligence**. La consecuencia arquitectónica es:
+
+- `archview` no es "static viewer" → es un **workbench** con 5 vistas coordinadas (C4 contextual, call graph, sequence, class, package).
+- El grafo completo nunca es el diagrama. Cada vista es una **proyección calculada, limitada y explicable** del mismo grafo de conocimiento.
+- Las proyecciones se calculan en **Rust → WASM** (algorithms, centralities, layouts) y se renderizan con **G6 5.x + WebGPU** o **cosmos.gl** (massive graphs). El workbench es zero-jank a cualquier nivel de complejidad. Ver [ADR-020](ADR-020-renderer-stack.md) para el stack completo y [ADR-019](ADR-019-performance-budget.md) para el contrato de rendimiento.
+- La performance es **prioridad #1** del workbench: hard contract (TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos). El grafo puede tener millones de relaciones; el workbench no se atasca.
 
 ### Formatos preferentes por tipo de diagrama (modo estático)
 

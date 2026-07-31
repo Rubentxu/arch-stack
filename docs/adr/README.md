@@ -17,29 +17,35 @@
 | [ADR-004](ADR-004-persistencia-externa-xdg.md) | Persistencia externa XDG por proyecto y worktree | Aceptado |
 | [ADR-005](ADR-005-ladybugdb-grafo-canonico-y-evidencias.md) | LadybugDB como grafo canónico y evidencias | Aceptado |
 | [ADR-006](ADR-006-adaptadores-de-herramientas-cli.md) | ~~Adaptadores de herramientas CLI existentes~~ | **DEPRECADO** (sustituido por ADR-012 + ADR-013) |
-| [ADR-007](ADR-007-modelos-y-renderizadores-de-diagramas.md) | Diagramas como proyecciones del grafo + split render estático/interactivo | Aceptado (sustituido en sección render por ADR-013) |
+| [ADR-007](ADR-007-modelos-y-renderizadores-de-diagramas.md) | Diagramas como proyecciones del grafo + split render estático/interactivo | Aceptado (sustituido en sección render por ADR-013; revisado 2026-07-31 con pivot a workbench) |
 | [ADR-008](ADR-008-recuperacion-versionado-y-evolucion.md) | Recuperación, versionado y evolución | Aceptado |
 | [ADR-009](ADR-009-relaciones-semanticas-reificadas.md) | Relaciones semánticas reificadas y aristas derivadas | Aceptado |
-| [ADR-010](ADR-010-concurrencia-ladybugdb.md) | Concurrencia de LadybugDB y procesos `archctl` | Aceptado (reforzado por ADR-013) |
-| [ADR-011](ADR-011-renderers-locales-y-bloqueo-de-publicos.md) | Renderers locales y bloqueo de servicios públicos (alcance = `archctl` solamente) | Aceptado (alcance reducido por ADR-013) |
+| [ADR-010](ADR-010-concurrencia-ladybugdb.md) | Concurrencia de LadybugDB y procesos `archctl` (DB lock via `fs2::try_lock_exclusive`) | Aceptado (reforzado por ADR-013) |
+| [ADR-011](ADR-011-renderers-locales-y-bloqueo-de-publicos.md) | Renderers locales y bloqueo de servicios públicos (alcance = `archctl` solamente) | Aceptado (alcance reducido por ADR-013; revisado 2026-07-31 con nota de performance para `archview`) |
 | [ADR-012](ADR-012-adopcion-incremental-crates-analisis.md) | Política "descartar CLIs" + ciclo M5–M8 + renderers como librerías | Aceptado (complementado por ADR-013) |
-| [ADR-013](ADR-013-viewer-ortogonal.md) | Viewer ortogonal basado en DiagramProjection (proyecto `archview` separado) | Aceptado |
+| [ADR-013](ADR-013-viewer-ortogonal.md) | Viewer ortogonal basado en DiagramProjection (Code Knowledge Graph Workbench; performance-first) | Aceptado (revisado 2026-07-31 con stack performance-first) |
 | [ADR-014](ADR-014-puerto-persistencia-sparrowdb.md) | Puerto de persistencia hexagonal + SparrowDB como adapter alternativo (Ola 1 implementada, Ola 2 pendiente) | Aceptado |
 | [ADR-017](ADR-017-schema-migration-runner.md) | Migration runner + SourceArtifact identity (B1: schema migration runner, hash scheme split, source_origin en props) | Aceptado |
+| [ADR-019](ADR-019-performance-budget.md) | Performance budget (hard contract) — TTFP, FPS, latency, memory targets + anti-patterns explícitos | Aceptado (nuevo 2026-07-31) |
+| [ADR-020](ADR-020-renderer-stack.md) | Renderer stack: G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM (sustituye Sprotty + Cytoscape.js) | Aceptado (nuevo 2026-07-31) |
 | [ADR-016](../ADR-016-activegraph-packs-investigacion.md) | Investigación de `activegraph-packs` + 3 bloques de mejoras para `archctl` (B1 evidence graph, B2 manifest+gates, B3 trust-by-origin) | Investigación cerrada, decisiones pendientes |
 
 ## Cómo se relacionan
 
 ```
 ADR-001 (sidecar) ─┐
-                    ├─► ADR-013 (viewer ortogonal)
+                    ├─► ADR-013 (viewer ortogonal / workbench)
 ADR-010 (no daemon)─┘
 
 ADR-006 (CLI adapters) ──► DEPRECADO ─► ADR-012 (librerías + renderers)
 
 ADR-005 (LadybugDB) ──► ADR-007 (proyecciones) ──► ADR-013 (bundle contract)
+                                                  │
+                                                  ├─► ADR-019 (performance budget)
+                                                  └─► ADR-020 (renderer stack: G6+WebGPU+SolidJS+Rust/WASM)
 
 ADR-011 (renderers locales) ──► ADR-013 (mismo principio en archview por construcción)
+                              └─► ADR-019/020 (nota de performance para archview)
 ```
 
 ## Documentos relacionados

@@ -1,7 +1,8 @@
 # ADR-011 — Renderers locales y bloqueo de servicios públicos
 
-**Estado:** Aceptado (alcance reducido a `archctl` tras ADR-013)
+**Estado:** Aceptado (alcance reducido a `archctl` tras ADR-013; revisado 2026-07-31 con nota de performance para el lado `archview`)
 **Fecha:** 29 de julio de 2026
+**Última revisión:** 31 de julio de 2026 (nota de performance para `archview`; ver [ADR-019](ADR-019-performance-budget.md) y [ADR-020](ADR-020-renderer-stack.md))
 **Relacionado:** [ADR-013](ADR-013-viewer-ortogonal.md) (viewer ortogonal), [ADR-007](ADR-007-modelos-y-renderizadores-de-diagramas.md) (modos de render)
 
 ## Contexto
@@ -76,6 +77,15 @@ El viewer cumple el principio de este ADR **por construcción**, no necesita ver
 - `archctl doctor` reporta el conjunto de renderers integrado y verifica que las versiones esperadas están disponibles.
 - `archctl render --output` en una red con acceso bloqueado a `plantuml.com` y `kroki.io` produce el mismo output que en una red abierta.
 - `archview` abre un bundle sin hacer ninguna petición de red saliente (verificable con DevTools).
+
+### Nota de performance para el lado `archview` (revisión 2026-07-31)
+
+`archview` hereda el principio "todo es local", pero la performance es **prioridad #1** del workbench. El stack específico de `archview` se detalla en [ADR-020](ADR-020-renderer-stack.md); el contrato de performance hard en [ADR-019](ADR-019-performance-budget.md). Reglas derivadas para `archview`:
+
+- `archview` no debe bloquear la red para que `archctl` pueda servir bundles locales — el file watcher es unidirectional (`archctl` escribe, `archview` lee).
+- CSP estricto: `connect-src 'self' file:;` (sin CDNs, sin trackers, sin analytics).
+- Si el workbench descarga algo (WASM, fonts), debe ser desde el bundle local, no de CDN.
+- `OffscreenCanvas` + Web Workers + SharedArrayBuffer: requiere COOP/COEP headers si el bundle se sirve por HTTP (no por `file://`). Para el workbench distribuido por `file://`, COOP/COEP no aplica, pero SharedArrayBuffer puede estar deshabilitado por el browser — fallback a single-threaded WASM.
 
 ## Cómo revertir
 
