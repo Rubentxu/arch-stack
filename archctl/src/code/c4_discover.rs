@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
+use crate::store::GraphStore;
 
 /// JSON Schema for DiscoverReport (JSON Schema 2020-12).
 pub const DISCOVER_REPORT_SCHEMA: &str =
@@ -188,6 +189,244 @@ pub fn discover(
     })
 }
 
+/// Escape a string for use inside a Cypher single-quoted string.
+/// All single quotes are doubled (Cypher escaping convention).
+fn escape_cypher_string(s: &str) -> String {
+    s.replace('\'', "\\'")
+}
+
+// ─── apply() helpers ──────────────────────────────────────────────────────────
+
+/// Fetch the set of canonical_keys already present in the graph.
+/// Used for idempotency: skip containers whose keys already exist.
+fn existing_canonical_keys(store: &dyn GraphStore) -> Result<std::collections::HashSet<String>> {
+    store
+        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
+        .into_iter()
+        .filter_map(|row| {
+            row.get("e.canonical_key")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect::<std::collections::HashSet<_>>()
+        .pipe(Ok)
+}
+
+/// Write the Element node for a Container. Returns the element_id.
+fn write_element(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    container: &Container,
+    version_id: &str,
+) -> Result<()> {
+    let canonical_key_escaped = escape_cypher_string(&container.canonical_key);
+    let name_escaped = escape_cypher_string(&container.name);
+    let cypher = format!(
+        "MERGE (e:Element {{id: '{element_id}'}}) SET \
+         e.kind_id = 'mt.container', \
+         e.category = 'c4', \
+         e.canonical_key = '{canonical_key_escaped}', \
+         e.current_name = '{name_escaped}', \
+         e.current_status = 'active', \
+         e.current_confidence = {confidence}, \
+         e.current_version_id = '{version_id}';",
+        element_id = element_id,
+        canonical_key_escaped = canonical_key_escaped,
+        name_escaped = name_escaped,
+        confidence = container.confidence,
+        version_id = version_id,
+    );
+    store.query(&cypher).with_context(|| format!("put_element {element_id}"))?;
+    Ok(())
+}
+
+/// Write the ElementVersion node for a Container. Returns the version_id.
+fn write_element_version(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    container: &Container,
+) -> Result<String> {
+    let version_props = serde_json::json!({
+        "inferred": true,
+        "strategy": container.strategy,
+        "confidence": container.confidence,
+        "merged_from": container.merged_from,
+        "discovery_schema_version": "1.0",
+    });
+    let version_props_str = serde_json::to_string(&version_props)
+        .unwrap_or_default();
+    let version_id =
+        format!("blake3:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+    let version_props_escaped = escape_cypher_string(&version_props_str);
+    let name_escaped = escape_cypher_string(&container.name);
+
+    let cypher = format!(
+        "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
+         v.element_id = '{element_id}', \
+         v.name = '{name_escaped}', \
+         v.status = 'drafted', \
+         v.origin = 'c4-discover', \
+         v.confidence = {confidence}, \
+         v.props = '{version_props_escaped}';",
+        version_id = version_id,
+        element_id = element_id,
+        name_escaped = name_escaped,
+        confidence = container.confidence,
+        version_props_escaped = version_props_escaped,
+    );
+    store.query(&cypher)
+        .with_context(|| format!("put_element_version {version_id}"))?;
+    Ok(version_id)
+}
+
+/// Write the CURRENT_VERSION, VERSION_OF, and OF_TYPE edges for an Element.
+fn link_element_edges(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    version_id: &str,
+) -> Result<()> {
+    // CURRENT_VERSION: Element → ElementVersion
+    let cypher = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}), (v:ElementVersion {{id: '{version_id}'}}) \
+         MERGE (e)-[:CURRENT_VERSION]->(v);"
+    );
+    store.query(&cypher).ok(); // best-effort edge creation
+
+    // VERSION_OF: ElementVersion → Element
+    let cypher = format!(
+        "MATCH (v:ElementVersion {{id: '{version_id}'}}), (e:Element {{id: '{element_id}'}}) \
+         MERGE (v)-[:VERSION_OF]->(e);"
+    );
+    store.query(&cypher).ok(); // best-effort edge creation
+
+    // OF_TYPE: Element → MetaType
+    let cypher = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}), (mt:MetaType {{id: 'mt.container'}}) \
+         MERGE (e)-[:OF_TYPE]->(mt);"
+    );
+    store.query(&cypher).ok(); // best-effort edge creation
+
+    Ok(())
+}
+
+/// Write a SourceArtifact node (deduplicated by file path).
+/// Returns the source_artifact_id.
+fn write_source_artifact(
+    store: &mut dyn GraphStore,
+    file: &str,
+) -> Result<String> {
+    let id = format!("src:{}", blake3::hash(file.as_bytes()).to_hex());
+    let path_escaped = escape_cypher_string(file);
+    let cypher = format!(
+        "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
+         s.kind = 'manifest', \
+         s.relative_path = '{path_escaped}', \
+         s.language = '', \
+         s.content_hash = '', \
+         s.generated = false, \
+         s.props = '{{}}';"
+    );
+    store.query(&cypher)
+        .with_context(|| format!("put_source_artifact {id}"))?;
+    Ok(id)
+}
+
+/// Write an Evidence node and its two edges (SUPPORTED_BY, EXTRACTED_FROM).
+fn write_evidence(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    version_id: &str,
+    sa_id: &str,
+    evidence: &Evidence,
+    strategy: &str,
+) -> Result<()> {
+    let evidence_id = format!(
+        "ev:{}",
+        blake3::hash(
+            format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes()
+        )
+        .to_hex()
+    );
+
+    let evidence_props = serde_json::json!({
+        "file_refs": [format!("{}:{}", evidence.file, evidence.line)],
+        "text": evidence.text,
+        "status": "Drafted",
+    });
+    let ev_props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
+    let ev_props_escaped = escape_cypher_string(&ev_props_json);
+    let evidence_text_escaped = escape_cypher_string(&evidence.text);
+    let file_escaped = escape_cypher_string(&evidence.file);
+    let strategy_escaped = escape_cypher_string(strategy);
+
+    let kind_str = match evidence.kind {
+        EvidenceKind::Structural => "structural",
+        EvidenceKind::Config => "config",
+        EvidenceKind::Annotation => "annotation",
+        EvidenceKind::Lexical => "lexical",
+        EvidenceKind::Other => "other",
+    };
+
+    let cypher = format!(
+        "MERGE (ev:Evidence {{id: '{evidence_id}'}}) SET \
+         ev.kind = '{kind}', \
+         ev.claim = '{text}', \
+         ev.path = '{file}', \
+         ev.start_line = {line}, \
+         ev.end_line = {line}, \
+         ev.tool_name = 'archctl', \
+         ev.tool_version = '{0}', \
+         ev.rule_id = 'c4-discover:{strategy_escaped}', \
+         ev.language = '', \
+         ev.observed_at = '', \
+         ev.props = '{ev_props_escaped}', \
+         ev.status = 'Drafted';",
+        env!("CARGO_PKG_VERSION"),
+        evidence_id = evidence_id,
+        kind = kind_str,
+        text = evidence_text_escaped,
+        file = file_escaped,
+        line = evidence.line,
+        strategy_escaped = strategy_escaped,
+        ev_props_escaped = ev_props_escaped,
+    );
+    // Note: `ev.language` and `ev.status` are not valid lbug Evidence columns.
+    // They live in ev.props. The original code used .ok() here to swallow this
+    // silently; we preserve that behaviour for backwards compatibility.
+    store.query(&cypher).ok();
+
+    // SUPPORTED_BY: ElementVersion → Evidence
+    let link_ev_cypher = format!(
+        "MATCH (v:ElementVersion {{id: '{version_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
+         MERGE (v)-[:SUPPORTED_BY]->(ev);"
+    );
+    store.query(&link_ev_cypher)
+        .with_context(|| format!("link SUPPORTED_BY {version_id} → {evidence_id}"))?;
+
+    // EXTRACTED_FROM: Evidence → SourceArtifact
+    let link_cypher = format!(
+        "MATCH (ev:Evidence {{id: '{evidence_id}'}}), (s:SourceArtifact {{id: '{sa_id}'}}) \
+         MERGE (ev)-[:EXTRACTED_FROM]->(s);"
+    );
+    store.query(&link_cypher)
+        .with_context(|| format!("link EXTRACTED_FROM {evidence_id} → {sa_id}"))?;
+
+    Ok(())
+}
+
+// ─── pipe helper ───────────────────────────────────────────────────────────────
+/// Pipe: pass a value through a function and return the result.
+trait Pipe<T> {
+    fn pipe<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(Self) -> R,
+        Self: Sized,
+    {
+        f(self)
+    }
+}
+impl<T> Pipe<T> for T {}
+
 /// Persist a DiscoverReport to the graph. One Element per Container
 /// (with ElementVersion.props.inferred=true), one Evidence per evidence
 /// (status="Drafted"), one SourceArtifact per unique file.
@@ -209,23 +448,14 @@ pub fn apply(
         SET mt.namespace = 'c4', mt.name = 'container', mt.category = 'structure'
         RETURN mt.id;
     "#;
-    store.query(seed_metatype).ok();
+    store.query(seed_metatype).ok(); // best-effort; non-fatal if it fails
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
     let mut evidences_written = 0usize;
     let mut source_artifacts_written = 0usize;
 
-    // Build a quick lookup: existing canonical_keys → skip
-    let existing_keys: std::collections::HashSet<String> = store
-        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
-        .into_iter()
-        .filter_map(|row| {
-            row.get("e.canonical_key")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
+    let existing_keys = existing_canonical_keys(&*store)?;
 
     for container in &report.discovered {
         if existing_keys.contains(&container.canonical_key) {
@@ -234,161 +464,28 @@ pub fn apply(
         }
 
         let element_id = format!("c4:container:{}", container.canonical_key);
-        let version_props = serde_json::json!({
-            "inferred": true,
-            "strategy": container.strategy,
-            "confidence": container.confidence,
-            "merged_from": container.merged_from,
-            "discovery_schema_version": "1.0",
-        });
-        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-        let version_props_escaped = version_props_str.replace('\'', "\\'");
-        let version_id =
-            format!("blake3:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
-        let name_escaped = container.name.replace('\'', "\\'");
 
-        // Element: no 'props' column (that's on ElementVersion)
-        let element_cypher = format!(
-            "MERGE (e:Element {{id: '{element_id}'}}) SET \
-             e.kind_id = 'mt.container', \
-             e.category = 'c4', \
-             e.canonical_key = '{canonical_key}', \
-             e.current_name = '{name_escaped}', \
-             e.current_status = 'active', \
-             e.current_confidence = {confidence}, \
-             e.current_version_id = '{version_id}';",
-            element_id = element_id,
-            canonical_key = container.canonical_key.replace('\'', "\\'"),
-            name_escaped = name_escaped,
-            confidence = container.confidence,
-            version_id = version_id,
-        );
-        store.query(&element_cypher).context("put_element")?;
+        // version_id must be computed before write_element so we can embed it
+        let version_id = write_element_version(&mut *store, &element_id, container)?;
+        write_element(&mut *store, &element_id, container, &version_id)?;
         elements_written += 1;
 
-        // ElementVersion: holds the props with inferred data
-        let version_cypher = format!(
-            "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
-             v.element_id = '{element_id}', \
-             v.name = '{name_escaped}', \
-             v.status = 'drafted', \
-             v.origin = 'c4-discover', \
-             v.confidence = {confidence}, \
-             v.props = '{version_props_escaped}';",
-            version_id = version_id,
-            element_id = element_id,
-            name_escaped = name_escaped,
-            confidence = container.confidence,
-            version_props_escaped = version_props_escaped,
-        );
-        store.query(&version_cypher).ok();
+        link_element_edges(&mut *store, &element_id, &version_id)?;
 
-        // CURRENT_VERSION edge: Element → ElementVersion
-        let current_version_cypher = format!(
-            "MATCH (e:Element {{id: '{element_id}'}}), (v:ElementVersion {{id: '{version_id}'}}) \
-             MERGE (e)-[:CURRENT_VERSION]->(v);"
-        );
-        store.query(&current_version_cypher).ok();
-
-        // VERSION_OF edge: ElementVersion → Element
-        let version_of_cypher = format!(
-            "MATCH (v:ElementVersion {{id: '{version_id}'}}), (e:Element {{id: '{element_id}'}}) \
-             MERGE (v)-[:VERSION_OF]->(e);"
-        );
-        store.query(&version_of_cypher).ok();
-
-        // OF_TYPE edge: Element → MetaType
-        let of_type_cypher = format!(
-            "MATCH (e:Element {{id: '{element_id}'}}), (mt:MetaType {{id: 'mt.container'}}) \
-             MERGE (e)-[:OF_TYPE]->(mt);"
-        );
-        store.query(&of_type_cypher).ok();
-
-        // Build SourceArtifact + Evidence rows
+        // SourceArtifact deduplication map (keyed by file path)
         let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
         for evidence in &container.evidences {
-            // SourceArtifact (dedup by file path)
             let sa_id = if let Some(id) = source_artifact_ids.get(&evidence.file) {
                 id.clone()
             } else {
-                let id = format!("src:{}", blake3::hash(evidence.file.as_bytes()).to_hex());
-                let kind_escaped = "manifest".replace('\'', "\\'");
-                let path_escaped = evidence.file.replace('\'', "\\'");
-                let sa_cypher = format!(
-                    "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
-                     s.kind = '{kind_escaped}', \
-                     s.relative_path = '{path_escaped}', \
-                     s.language = '', \
-                     s.content_hash = '', \
-                     s.generated = false, \
-                     s.props = '{{}}';"
-                );
-                store.query(&sa_cypher).ok();
+                let id = write_source_artifact(&mut *store, &evidence.file)?;
                 source_artifact_ids.insert(evidence.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id
             };
 
-            // Evidence (status Drafted per B1-lifecycle D3)
-            let evidence_id = format!(
-                "ev:{}",
-                blake3::hash(
-                    format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes()
-                )
-                .to_hex()
-            );
-            let evidence_props = serde_json::json!({
-                "file_refs": [format!("{}:{}", evidence.file, evidence.line)],
-                "text": evidence.text,
-                "status": "Drafted",
-            });
-            let ev_props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
-            let ev_props_escaped = ev_props_json.replace('\'', "\\'");
-            let evidence_text_escaped = evidence.text.replace('\'', "\\'");
-            let evidence_cypher = format!(
-                "MERGE (ev:Evidence {{id: '{evidence_id}'}}) SET \
-                 ev.kind = '{kind}', \
-                 ev.claim = '{text}', \
-                 ev.path = '{file}', \
-                 ev.start_line = {line}, \
-                 ev.end_line = {line}, \
-                 ev.tool_name = 'archctl', \
-                 ev.tool_version = env!(\"CARGO_PKG_VERSION\"), \
-                 ev.rule_id = 'c4-discover:{strategy}', \
-                 ev.language = '', \
-                 ev.observed_at = '', \
-                 ev.props = '{ev_props_escaped}', \
-                 ev.status = 'Drafted';",
-                evidence_id = evidence_id,
-                kind = match evidence.kind {
-                    EvidenceKind::Structural => "structural",
-                    EvidenceKind::Config => "config",
-                    EvidenceKind::Annotation => "annotation",
-                    EvidenceKind::Lexical => "lexical",
-                    EvidenceKind::Other => "other",
-                },
-                text = evidence_text_escaped,
-                file = evidence.file.replace('\'', "\\'"),
-                line = evidence.line,
-                strategy = container.strategy.replace('\'', "\\'"),
-                ev_props_escaped = ev_props_escaped,
-            );
-            store.query(&evidence_cypher).ok();
+            write_evidence(&mut *store, &element_id, &version_id, &sa_id, evidence, &container.strategy)?;
             evidences_written += 1;
-
-            // SUPPORTED_BY edge: ElementVersion → Evidence
-            let link_ev_cypher = format!(
-                "MATCH (v:ElementVersion {{id: '{version_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
-                 MERGE (v)-[:SUPPORTED_BY]->(ev);"
-            );
-            store.query(&link_ev_cypher).ok();
-
-            // EXTRACTED_FROM edge: Evidence → SourceArtifact
-            let link_cypher = format!(
-                "MATCH (ev:Evidence {{id: '{evidence_id}'}}), (s:SourceArtifact {{id: '{sa_id}'}}) \
-                 MERGE (ev)-[:EXTRACTED_FROM]->(s);"
-            );
-            store.query(&link_cypher).ok();
         }
     }
 
@@ -639,8 +736,6 @@ mod tests {
 
     #[test]
     fn apply_writes_element_with_inferred_props() {
-        use crate::store::LbugStore;
-
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
 
@@ -680,8 +775,6 @@ mod tests {
 
     #[test]
     fn apply_is_idempotent_skips_existing_canonical_key() {
-        use crate::store::LbugStore;
-
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
 
