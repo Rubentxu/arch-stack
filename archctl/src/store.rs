@@ -910,9 +910,11 @@ impl GraphStore for LbugStore {
             "MERGE (vg:ViewGroup {{id: '{id}'}}) SET \
              vg.diagram_id = '{diagram_id}', \
              vg.label = '{safe_label}', \
+             vg.collapsed = {collapsed}, \
              vg.props = '{safe_props}', \
              vg.updated_at = timestamp('{now}'), \
-             vg.created_at = COALESCE(vg.created_at, timestamp('{now}'));"
+             vg.created_at = COALESCE(vg.created_at, timestamp('{now}'));",
+            collapsed = group.collapsed,
         );
         session.conn.query(&cypher).with_context(|| {
             format!("put_view_group: failed to persist ViewGroup {id}")
