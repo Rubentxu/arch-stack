@@ -301,6 +301,7 @@ Incluye:
 | `hygiene-local-only-policy` | direct commit on `main` (no PR — 1-line config gap) | `0a28016` | **Cerrado** ✅ · tag `v0.4.1` |
 | `m9-archctl-export-apply` (PR1 + PR2) | `feat/m9-archctl-export-apply-foundation` → `feat/m9-archctl-export-apply` (merged to main via --no-ff) | `f8c4101` | **Cerrado** ✅ · tag `v0.6.0` |
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
+| `m8-c4-boundary-inference` | `feat/m8-c4-boundary-inference` (merged to main via --no-ff) | `2c6e4e1` | **Cerrado** ✅ · tag `v0.7.0` |
 | `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
 | `roadmap-pivot-v2.5` (cognitive layer) | direct commits (no PR — 3 ADRs nuevos) | pendiente | **En curso** · tag diferido al M22 → 1.x |
 
@@ -481,6 +482,20 @@ Incluye:
   - **ADR-020** nuevo: Renderer stack. G6 5.x WebGPU primary, cosmos.gl adapter para >100k, ELK.js fallback jerárquico. SolidJS UI (no React). Rust → WASM compute. Apache Arrow + TypedArrays. Web Workers + SharedArrayBuffer. RoaringBitmap selections.
   - **ROADMAP v2.4**: M9 redefinido como workbench. M8 (C4 boundary inference) y M11 (call graph + sequence) promovidos a prioridad 1. M17 (archview) promovido a prioridad 1. M10 (use cases) y M14 (versioning) deferred a 1.x. M18 (reactive runtime) y M19 (custom wgpu) nuevos. M20 (performance validation) nuevo.
 - **Próximo candidato**: M9-PR2 (apply surface) → v0.6.0, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench.
+
+## Cycle cerrado — `m8-c4-boundary-inference`
+
+- **Fecha**: 2026-08-01
+- **Branch**: `feat/m8-c4-boundary-inference` (merged to main via --no-ff)
+- **Tag**: v0.7.0 (minor — new CLI surface: `archctl code c4 discover`)
+- **Verdict**: verify PASS WITH WARNINGS · debt-verify round 1 PASS WITH WARNINGS (0 CRIT, 0 HIGH)
+- **Commits**: 9 (5 main + 3 fix + 1 merge)
+- **Tests**: 235 passing (vs 222 baseline, +13)
+- **Output**: `archctl code c4 discover [--apply] [--strategy <s>] [--json]` — deterministic C4 Container boundary inference. 4 MVP strategies: cargo-workspace (0.85), npm-workspace (0.80), dockerfile (0.60), helm (0.70). `--apply` persists Element + ElementVersion + Evidence + SourceArtifact + EXTRACTED_FROM edges via existing GraphStore port methods (zero new port surface). New bounded context `code::c4_discover` (6 files in `archctl/src/code/`). New manifest `manifests/code.toml`. New schema `schemas/discover-report.schema.json`. New dep: `serde_yaml = "0.9.34"`.
+- **Deuda técnica cerrada**: CRIT-1 (EvidenceKind schema mismatch) closed via snake_case fix; HIGH-1 (apply() god method) closed via refactor; HIGH-2 (missing integration tests) closed via 4 new integration tests.
+- **Scope deviation**: 5 spec scenarios DEFERRED (integration fixtures missing); EvidenceKind not consolidated with evidence::EvidenceKind (W-3); Element.props pre-existing gap surfaced.
+- **Fix branch preserved**: `refactor/debt-m8-c4-boundary-inference-1` kept as historical record (git-contract rule: never delete branches).
+- **Próximo candidato**: M11 (call graph + sequence — needs Container boundaries as scope anchor) o M17.7 (drift detection — needs inferred Containers).
 
 ## Cycle cerrado — `roadmap-pivot-v2.5` (cognitive layer)
 
