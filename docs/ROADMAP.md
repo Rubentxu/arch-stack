@@ -218,6 +218,7 @@ Incluye:
 | `refactor-extract-cell-to-json-map` | `refactor/extract-cell-to-json-map` (merged a main via FF) | `504560f` | **Cerrado** ✅ · tag `v0.3.1` |
 | `m9-archctl-export` | `feat/m9-archctl-export` (merged a main via FF) | `7c2f167` | **Cerrado** ✅ · tag `v0.4.0` |
 | `hygiene-local-only-policy` | direct commit on `main` (no PR — 1-line config gap) | `0a28016` | **Cerrado** ✅ · tag `v0.4.1` |
+| `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -333,6 +334,35 @@ Incluye:
 - **Output**: cierra la brecha de la v3.3 local-only policy identificada en el v0.4.0 release report.
   - `.ignore` companion file (gitignored itself) que re-incluye `sddk/` para opencode tools (grep, glob, read). El archivo está documentado en el `.gitignore` con referencia cruzada.
   - `docs/reports/*.html` agregado al `.gitignore`. El `sddk-release` phase ya no commitea `closing-v*.html` al remote. El `closing-v0.3.0.html` ya commiteado (`6d3802a`) queda en history; los untracked `closing-v0.2.0.html` y `closing-v0.4.0.html` ahora son ignored.
-- **Próximo candidato**: `m9-archctl-export-apply` (planning completo con score 100/100, depende de la decisión arquitectónica de DB lock via fs2 documentada en engram obs 5349), o `more-manifests-*` (~11 módulos restantes).
+- **Próximo candidato**: `m9-archctl-export-apply` (planning completo con score 100/100, depende de la decisión arquitectónica de DB lock via fs2 documentada en engram obs 5349).
 
 > `hygiene-local-only-policy`: cierra la v3.3 local-only policy gap. `.ignore` companion file re-incluye `sddk/` para opencode tools; `docs/reports/*.html` gitignored para detener la fuga de HTML closing reports al remote. Config-only, sin cambios de comportamiento. Archivado en `sddk/hygiene-local-only-policy/archive-report.md` (minimal).
+
+## Cycle cerrado — `more-manifests-2`
+
+- **Fecha**: 2026-07-31
+- **Branch**: directo a `main` (no PR — bulk manifest cycle, mismo patrón que `more-manifests-clock-env-identity`)
+- **Tag**: v0.5.0 (minor — adds 11 manifests, coverage 11/23 → 22/23)
+- **Verdict**: N/A (no aplica verify/debt — sin cambios de código)
+- **Commits**: 1 (`feat(manifests): add 11 module scope manifests`)
+- **Tests**: 183 unit + 4 doctests + 23 integration = 210 passing (no regressions, baseline preserved)
+- **Output**: 11 new scope manifests. `migrations.toml` intencionalmente excluido (bootstrap infrastructure, no domain module). Coverage: 22/23 modules.
+
+  | Manifest | Min tests | Pub symbols | must_hold |
+  |---|---|---|---|
+  | astgrep | 9 | 9 | 11 |
+  | cli | 13 | 17 | 11 |
+  | doctor | 0 | 7 | 7 |
+  | graph | 8 | 8 | 11 |
+  | inventory | 6 | 7 | 8 |
+  | project | 0 | 7 | 6 |
+  | render | 0 | 2 | 8 |
+  | row | 8 | 24 | 12 |
+  | skills | 0 | 14 | 14 |
+  | telemetry | 0 | 1 | 5 |
+  | xdg | 0 | 13 | 11 |
+
+- **Verification**: scope gate validada por static analysis (Python script verificando must_hold/public_symbols/must_not_contain) porque `doctor --check-scope` end-to-end tomaría ~5 min (22 manifests × ~13s por cargo test gate). 0 must_hold failures, 0 public_symbols failures, 0 must_not_contain violations.
+- **Próximo candidato**: `m9-archctl-export-apply` (PR1 foundation: schema v3 + DB lock via fs2 + 8 port methods). Planning 100/100 PASS, ADR-018 eliminado, listo para arrancar.
+
+> `more-manifests-2`: cierra la cobertura de scope manifests. 11 nuevos TOML declaran public API + must_hold invariants para astgrep/cli/doctor/graph/inventory/project/render/row/skills/telemetry/xdg. 183 unit tests preservados. Config-only, no functional changes. Archivado en `sddk/more-manifests-2/archive-report.md` (minimal).
