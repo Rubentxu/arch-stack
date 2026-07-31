@@ -818,9 +818,15 @@ impl GraphStore for LbugStore {
              vm.diagram_id = '{diagram_id}', \
              vm.element_id = '{element_id}', \
              vm.label = '{safe_label}', \
+             vm.x = {x}, \
+             vm.y = {y}, \
+             vm.collapsed = {collapsed}, \
              vm.props = '{safe_props}', \
              vm.updated_at = timestamp('{now}'), \
-             vm.created_at = COALESCE(vm.created_at, timestamp('{now}'));"
+             vm.created_at = COALESCE(vm.created_at, timestamp('{now}'));",
+            x = member.x,
+            y = member.y,
+            collapsed = member.collapsed,
         );
         session.conn.query(&cypher).with_context(|| {
             format!("put_view_member: failed to persist ViewMember {id}")
@@ -945,7 +951,9 @@ impl GraphStore for LbugStore {
             .context("get_view_members: diagram_id failed validation")?;
         let rows = self.query(&format!(
             "MATCH (vm:ViewMember) WHERE vm.diagram_id = '{did}' \
-             RETURN vm.id, vm.diagram_id, vm.element_id, vm.label, vm.props, vm.created_at, vm.updated_at;"
+             RETURN vm.id, vm.diagram_id, vm.element_id, vm.label, \
+                    vm.x, vm.y, vm.collapsed, \
+                    vm.props, vm.created_at, vm.updated_at;"
         ))?;
         let members: Vec<ViewMember> = rows
             .into_iter()
@@ -1852,6 +1860,36 @@ mod tests {
             .and_then(|c| c.as_str())
             .unwrap();
         assert_eq!(label, "Label2", "label should be updated to Label2");
+    }
+
+    #[test]
+    fn put_view_member_persists_x_y_collapsed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let vm = crate::diagram::view_types::ViewMember {
+            id: "vm-pos".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Pos".into(),
+            x: 240,
+            y: 160,
+            collapsed: true,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_view_member(&vm).unwrap();
+
+        let members = store.get_view_members("d1").unwrap();
+        assert_eq!(members.len(), 1, "expected one view member");
+        let read = &members[0];
+        assert_eq!(read.id, "vm-pos");
+        assert_eq!(read.x, 240, "x must persist across put/get");
+        assert_eq!(read.y, 160, "y must persist across put/get");
+        assert!(read.collapsed, "collapsed must persist across put/get");
     }
 
     #[test]
