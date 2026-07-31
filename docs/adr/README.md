@@ -28,6 +28,9 @@
 | [ADR-017](ADR-017-schema-migration-runner.md) | Migration runner + SourceArtifact identity (B1: schema migration runner, hash scheme split, source_origin en props) | Aceptado |
 | [ADR-019](ADR-019-performance-budget.md) | Performance budget (hard contract) — TTFP, FPS, latency, memory targets + anti-patterns explícitos | Aceptado (nuevo 2026-07-31) |
 | [ADR-020](ADR-020-renderer-stack.md) | Renderer stack: G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM (sustituye Sprotty + Cytoscape.js) | Aceptado (nuevo 2026-07-31) |
+| [ADR-021](ADR-021-cognitive-layer.md) | Cognitive Layer (Agentic Intelligence) — 7-layer architecture, contract uniforme, escalation ladder, MCP boundary | Aceptado (nuevo 2026-07-31) |
+| [ADR-022](ADR-022-agent-catalog.md) | Agent catalog — 9 agentes especializados (Semantic Curator, Architecture, Projection, Investigation, Impact, Planning, Documentation, Presenter, Review/Critic) | Aceptado (nuevo 2026-07-31) |
+| [ADR-023](ADR-023-action-proposal-and-policy.md) | Action Proposal & Policy Engine — ActionProposal estructurado, Policy Engine TOML, MCP gateway, audit log inmutable | Aceptado (nuevo 2026-07-31) |
 | [ADR-016](../ADR-016-activegraph-packs-investigacion.md) | Investigación de `activegraph-packs` + 3 bloques de mejoras para `archctl` (B1 evidence graph, B2 manifest+gates, B3 trust-by-origin) | Investigación cerrada, decisiones pendientes |
 
 ## Cómo se relacionan
@@ -42,7 +45,10 @@ ADR-006 (CLI adapters) ──► DEPRECADO ─► ADR-012 (librerías + renderer
 ADR-005 (LadybugDB) ──► ADR-007 (proyecciones) ──► ADR-013 (bundle contract)
                                                   │
                                                   ├─► ADR-019 (performance budget)
-                                                  └─► ADR-020 (renderer stack: G6+WebGPU+SolidJS+Rust/WASM)
+                                                  ├─► ADR-020 (renderer stack: G6+WebGPU+SolidJS+Rust/WASM)
+                                                  └─► ADR-021 (cognitive layer)
+                                                        ├─► ADR-022 (agent catalog: 9 agentes)
+                                                        └─► ADR-023 (action proposal + policy)
 
 ADR-011 (renderers locales) ──► ADR-013 (mismo principio en archview por construcción)
                               └─► ADR-019/020 (nota de performance para archview)

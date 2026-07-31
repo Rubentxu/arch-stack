@@ -136,13 +136,47 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 ## M18 — Reactive runtime (event log + behaviors + planners) — **NUEVO, 1.x**
 
-**Pivot v2.4:** Reactive runtime inspirado en ActiveGraph pero implementado en Rust puro. Defer a 1.x (después del workbench estable). Features: event log, subscriptions, behaviors como WASM plugins, planners, capabilities. Ver sección del doc sobre Reactive Runtime.
+**Pivot v2.4 + v2.5:** Reactive runtime inspirado en ActiveGraph pero implementado en Rust puro. Defer a 1.x (después del workbench estable). Features: event log, subscriptions, behaviors como WASM plugins, planners, capabilities. Ver sección del doc sobre Reactive Runtime.
+
+> **Pivot v2.5 (2026-07-31, post-capa-cognitiva):** M18 se reposiciona como el substrate sobre el cual corre la Cognitive Layer (ver M21-M23). El reactive runtime añade la capacidad de que comportamientos (algoritmos deterministas) Y agentes (LLM) reaccionen al estado del grafo. Ver [ADR-021](adr/ADR-021-cognitive-layer.md).
 
 ## M19 — Custom wgpu renderer (solo si cosmos.gl no alcanza) — **NUEVO, 2.0**
 
 **Pivot v2.4:** Si cosmos.gl + G6 WebGPU no cubren el caso de grafos de millones de elementos con latencia sub-16ms, construir un renderer custom en Rust + wgpu + WGSL. 2.0. Defer a menos que el benchmark suite (M17) muestre insuficiencia.
 
-## M20 — Performance validation cycle — **NUEVO**
+## M20 — Performance validation cycle — **NUEVO, PRIORIDAD 1**
+
+**Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
+
+## M21 — Cognitive Layer foundation — **NUEVO, PRIORIDAD 1 (1.x)**
+
+**Pivot v2.5 (2026-07-31, post-capa-cognitiva):** Substrate sobre el cual corren los agentes especializados. Outputs:
+- Contrato `ReactiveObserver` + `AgentContext` + `AgentOutput` (ver [ADR-021](adr/ADR-021-cognitive-layer.md))
+- ModelPolicy + AgentBudget + escalation ladder (heurística → local → potente → humana)
+- MCP gateway mínimo (3 tools read-only: `graph_query`, `schema_validate`, `run_tests_local`)
+- 2 agentes proof-of-concept (heurística pura): **Architecture Agent** + **Projection Agent**
+
+Output verificable: queries del workbench responden con output estructurado (no solo texto). Foundation sienta las bases para M22.
+
+## M22 — Agent catalog v1 — **NUEVO, 1.x**
+
+**Pivot v2.5:** Catálogo inicial de los 9 agentes especializados (ver [ADR-022](adr/ADR-022-agent-catalog.md)):
+- Semantic Curator · Architecture · Projection · Investigation · Impact · Planning · Documentation · Presenter · Review/Critic
+
+Para v1.0 (M16) solo Architecture + Projection (heurística pura). Para 1.x, los otros 7 agentes con LLM local (Phi-3 / Llama-3-8B) + LLM potente (Claude/GPT) para los más sensibles (Investigation, Planning, Review).
+
+## M23 — Action Proposal & Policy Engine — **NUEVO, 1.x**
+
+**Pivot v2.5:** Implementación completa del ActionProposal + Policy Engine + MCP gateway (ver [ADR-023](adr/ADR-023-action-proposal-and-policy.md)):
+- ActionProposal estructurado (goal + command + capabilities + approval + evidence esperada + rollback)
+- Policy Engine con reglas declarativas (TOML) editables sin recompilar
+- MCP gateway como frontera de capabilities (resources = read-only, tools = con efectos, prompts = procedimientos)
+- Audit log append-only en el grafo (inmutable)
+- HITL UI en `archview` (mostrar proposals pendientes al usuario)
+
+Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejemplo: `archctl code c4 discover --auto-apply` (corre agentes, valida confidence > 0.9, ejecuta propuesta vía MCP).
+
+> **Pipeline de v1.x**: M18 (reactive runtime) → M20 (benchmark) → M21 (cognitive foundation) → M22 (agent catalog) → M23 (action proposal + policy). Cada cycle valida el anterior.
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
@@ -268,6 +302,7 @@ Incluye:
 | `m9-archctl-export-apply` (PR1) | `feat/m9-archctl-export-apply-foundation` (mergeado a main via --no-ff) | `ce25825` | **Cerrado** ✅ · tag diferido a PR2 → v0.6.0 |
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
 | `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
+| `roadmap-pivot-v2.5` (cognitive layer) | direct commits (no PR — 3 ADRs nuevos) | pendiente | **En curso** · tag diferido al M22 → 1.x |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -442,7 +477,22 @@ Incluye:
   - **ADR-007** revisado: reframe del viewer como "workbench de 5 vistas coordinadas" (C4 / call graph / sequence / class / package).
   - **ADR-011** revisado: nota de performance para `archview` (COOP/COEP, CSP, OffscreenCanvas).
   - **ADR-013** revisado: stack de `archview` reemplazado completamente. Sprotty y Cytoscape.js descartados. G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM. 5 vistas coordinadas explícitas.
-  - **ADR-019** nuevo: Performance budget (hard contract). TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB. 14 anti-patterns explícitos. Benchmark suite canónico + CI gate.
+  - **ADR-019** nuevo: Performance budget (hard contract). TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos. 14 anti-patterns explícitos. Benchmark suite canónico + CI gate.
   - **ADR-020** nuevo: Renderer stack. G6 5.x WebGPU primary, cosmos.gl adapter para >100k, ELK.js fallback jerárquico. SolidJS UI (no React). Rust → WASM compute. Apache Arrow + TypedArrays. Web Workers + SharedArrayBuffer. RoaringBitmap selections.
   - **ROADMAP v2.4**: M9 redefinido como workbench. M8 (C4 boundary inference) y M11 (call graph + sequence) promovidos a prioridad 1. M17 (archview) promovido a prioridad 1. M10 (use cases) y M14 (versioning) deferred a 1.x. M18 (reactive runtime) y M19 (custom wgpu) nuevos. M20 (performance validation) nuevo.
 - **Próximo candidato**: M9-PR2 (apply surface) → v0.6.0, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench.
+
+## Cycle cerrado — `roadmap-pivot-v2.5` (cognitive layer)
+
+- **Fecha**: 2026-07-31
+- **Branch**: direct commits en `main` (no PR — ADR-only changes)
+- **Tag**: deferido a M22 → 1.x
+- **Verdict**: N/A (no código, solo docs)
+- **Commits**: 1 chore(adr) = 3 ADRs nuevos
+- **Tests**: N/A (0 cambios de código)
+- **Output**: Adopción de la **capa cognitiva** sobre el grafo de conocimiento (ver `docs/Librerías-visualización-grafos-BI.md` sección "Code Knowledge Graph Workbench"). Tres ADRs nuevos formalizan el patrón:
+  - **ADR-021 (cognitive layer)**: posición en 7 planos (Developer Experience / Cognitive / Projection / Reactive Runtime / Graph / Deterministic / Sensors); contrato uniforme `ReactiveObserver + AgentContext + AgentOutput`; escalera de resolución (heurística → local → potente → humana); coordinación vía estado (eventos), no conversación; MCP como capability boundary; v1.0 ship 2 agentes (heurística pura).
+  - **ADR-022 (agent catalog)**: 9 agentes especializados (Semantic Curator, Architecture, Projection, Investigation, Impact, Planning, Documentation, Presenter, Review/Critic) con suscripciones, view, output schema, budget, capability. v1.0 (M16) ship Architecture + Projection; 1.x (M22) ship los otros 7 con LLM local Phi-3 / potente Claude.
+  - **ADR-023 (action proposal + policy engine)**: ActionProposal estructurado (goal + command + capabilities + approval + evidence esperada + rollback); Policy Engine con reglas TOML editables; MCP gateway como única frontera de ejecución; audit log inmutable en el grafo; HITL UI en `archview`.
+  - **ROADMAP v2.5**: M18 (reactive runtime) reposicionado como substrate de la cognitive layer. M21 (cognitive foundation) + M22 (agent catalog v1) + M23 (action proposal + policy) añadidos al roadmap 1.x.
+- **Próximo candidato**: PR2 (m9-archctl-export-apply v0.6.0) → commit pendiente, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench → M17 (archview workbench scaffold) → M20 (performance validation) → M21-M23 (cognitive layer 1.x).
