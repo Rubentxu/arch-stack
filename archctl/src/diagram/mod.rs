@@ -14,6 +14,7 @@ pub mod queries;
 pub mod schema_embed;
 pub mod selector;
 pub mod validate;
+pub mod view_types;
 
 // Public re-exports
 pub use assets::icon_for;
