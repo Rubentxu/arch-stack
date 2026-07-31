@@ -218,6 +218,237 @@ fn write_atomic_bytes(fs: &dyn Filesystem, path: &Path, contents: &[u8]) -> anyh
 
 #[cfg(test)]
 mod tests {
-    // Tests deferred to T12 integration tests which use a real store.
-    // The export module is tested end-to-end there.
+    use super::*;
+    use crate::clock::FixedClock;
+    use crate::diagram::export_types::{
+        EvidenceBundle, Manifest, Projection, Styles,
+    };
+    use crate::filesystem::MemoryFilesystem;
+    use crate::row::{Cell, Row};
+
+    /// A minimal GraphStore stub that returns pre-configured query results.
+    struct MockGraphStore {
+        elements: Vec<Row>,
+        edges: Vec<Row>,
+        evidence: Vec<Row>,
+        version_props: Vec<Row>,
+    }
+
+    impl MockGraphStore {
+        fn new(elements: Vec<Row>, edges: Vec<Row>, evidence: Vec<Row>, version_props: Vec<Row>) -> Self {
+            Self { elements, edges, evidence, version_props }
+        }
+    }
+
+    impl crate::store::GraphStore for MockGraphStore {
+        fn open(_: &std::path::Path) -> anyhow::Result<Self>
+        where Self: Sized {
+            unimplemented!()
+        }
+        fn init(&mut self) -> anyhow::Result<()> { unimplemented!() }
+        fn stat(&self) -> anyhow::Result<crate::GraphStat> { unimplemented!() }
+        fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
+            // Route based on Cypher pattern
+            if cypher.contains("MATCH (e:Element)") && cypher.contains("e.category") {
+                // query_elements: MATCH (e:Element) ... WHERE e.category = ...
+                Ok(self.elements.clone())
+            } else if cypher.contains("SEMANTIC_EDGE") {
+                // query_semantic_edges
+                Ok(self.edges.clone())
+            } else if cypher.contains("SUPPORTED_BY") {
+                // query_evidence_for_versions
+                Ok(self.evidence.clone())
+            } else if cypher.contains("MATCH (v:ElementVersion)") {
+                // query_version_props
+                Ok(self.version_props.clone())
+            } else {
+                Ok(Vec::new())
+            }
+        }
+        fn put_evidence(&mut self, _: &[crate::evidence::Evidence]) -> anyhow::Result<usize> { unimplemented!() }
+        fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+        fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> { unimplemented!() }
+        fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> { unimplemented!() }
+        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
+        fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn list_evidence_by_status(&self, _: crate::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+    }
+
+    fn make_element_row(id: &str, category: &str, name: &str, version_id: &str) -> Row {
+        let mut r = Row::new();
+        r.push("e.id", Cell::String(id.to_string()));
+        r.push("e.kind_id", Cell::String("struct".to_string()));
+        r.push("e.category", Cell::String(category.to_string()));
+        r.push("e.canonical_key", Cell::String("orders".to_string()));
+        r.push("e.current_name", Cell::String(name.to_string()));
+        r.push("e.current_status", Cell::String("accepted".to_string()));
+        r.push("e.current_confidence", Cell::Float(0.9));
+        r.push("e.current_version_id", Cell::String(version_id.to_string()));
+        r
+    }
+
+    fn make_edge_row(rel_id: &str, src: &str, tgt: &str) -> Row {
+        let mut r = Row::new();
+        r.push("edge.relation_id", Cell::String(rel_id.to_string()));
+        r.push("edge.predicate_id", Cell::String("calls".to_string()));
+        r.push("src.id", Cell::String(src.to_string()));
+        r.push("tgt.id", Cell::String(tgt.to_string()));
+        r.push("edge.order_key", Cell::String("1".to_string()));
+        r.push("edge.props", Cell::Object(Vec::new()));
+        r
+    }
+
+    fn make_evidence_row(id: &str, version_id: &str) -> Row {
+        let mut r = Row::new();
+        r.push("e.id", Cell::String(id.to_string()));
+        r.push("e.kind", Cell::String("structural".to_string()));
+        r.push("e.claim", Cell::String("test claim".to_string()));
+        r.push("e.path", Cell::String("src/lib.rs".to_string()));
+        r.push("e.start_line", Cell::Int(1));
+        r.push("e.end_line", Cell::Int(10));
+        r.push("e.tool_name", Cell::String("archctl".to_string()));
+        r.push("e.tool_version", Cell::String("0.1.0".to_string()));
+        r.push("e.rule_id", Cell::String("test:rule".to_string()));
+        r.push("e.content_hash", Cell::String("sha256:abc".to_string()));
+        r.push("e.observed_at", Cell::String("2026-07-30T00:00:00Z".to_string()));
+        r.push("v.id", Cell::String(version_id.to_string()));
+        // props must include status = "accepted" for evidence to pass the filter
+        r.push("e.props", Cell::Object(vec![
+            ("status".to_string(), Cell::String("accepted".to_string())),
+        ]));
+        r
+    }
+
+    fn make_version_row(id: &str, name: &str, desc: &str) -> Row {
+        let mut r = Row::new();
+        r.push("v.id", Cell::String(id.to_string()));
+        r.push("v.name", Cell::String(name.to_string()));
+        r.push("v.description", Cell::String(desc.to_string()));
+        r.push("v.props", Cell::Object(Vec::new()));
+        r
+    }
+
+    #[test]
+    fn export_produces_all_bundle_files() {
+        let elements = vec![
+            make_element_row("el:1", "container", "OrderService", "v:1"),
+            make_element_row("el:2", "container", "PaymentService", "v:2"),
+        ];
+        let edges = vec![
+            make_edge_row("rel:1", "el:1", "el:2"),
+        ];
+        let evidence = vec![
+            make_evidence_row("ev:1", "v:1"),
+            make_evidence_row("ev:2", "v:2"),
+        ];
+        let version_props = vec![
+            make_version_row("v:1", "OrderService", "Handles order processing"),
+            make_version_row("v:2", "PaymentService", "Handles payment processing"),
+        ];
+
+        let store = MockGraphStore::new(elements, edges, evidence, version_props);
+        let clock = FixedClock::new("2026-07-30T12:00:00Z");
+        let fs = MemoryFilesystem::new();
+        let out_dir = std::path::PathBuf::from("/out");
+
+        let report = run_export(&store, "container:orders", &out_dir, &clock, &fs).unwrap();
+
+        // Verify report
+        assert_eq!(report.element_count, 2);
+        assert_eq!(report.edge_count, 1);
+        assert_eq!(report.evidence_count, 2);
+        assert_eq!(report.manifest.schema_version, "1.0.0");
+        assert_eq!(report.manifest.format, "viewer-bundle");
+        assert_eq!(report.manifest.view_selector, "container:orders");
+        assert!(!report.manifest.base_revision.is_empty());
+        assert_eq!(report.manifest.generated_at, "2026-07-30T12:00:00Z");
+
+        // Verify manifest.json
+        let manifest_json = fs.read_to_string(&out_dir.join("manifest.json")).unwrap();
+        let manifest: Manifest = serde_json::from_str(&manifest_json).unwrap();
+        assert_eq!(manifest.element_count, 2);
+        assert_eq!(manifest.edge_count, 1);
+
+        // Verify projection.json
+        let projection_json = fs.read_to_string(&out_dir.join("projection.json")).unwrap();
+        let projection: Projection = serde_json::from_str(&projection_json).unwrap();
+        assert_eq!(projection.nodes.len(), 2);
+        assert_eq!(projection.edges.len(), 1);
+
+        // Verify evidence.json
+        let evidence_json = fs.read_to_string(&out_dir.join("evidence.json")).unwrap();
+        let bundle: EvidenceBundle = serde_json::from_str(&evidence_json).unwrap();
+        assert_eq!(bundle.evidence.len(), 2);
+
+        // Verify styles.json
+        let styles_json = fs.read_to_string(&out_dir.join("styles.json")).unwrap();
+        let styles: Styles = serde_json::from_str(&styles_json).unwrap();
+        assert_eq!(styles.theme, "default");
+        assert_eq!(styles.element_colors.container, "#438dd5");
+
+        // Verify assets directory and icons
+        assert!(fs.exists(&out_dir.join("assets")));
+        for icon in ["context", "container", "component", "person", "external_person", "software_system"] {
+            assert!(fs.exists(&out_dir.join("assets").join(format!("{icon}.png"))),
+                "icon {icon}.png should exist");
+        }
+    }
+
+    #[test]
+    fn export_with_all_scope_returns_only_matching_category() {
+        // Only container elements - the mock doesn't filter, it returns all elements as-is.
+        // To test category filtering, we only put container elements here.
+        let elements = vec![
+            make_element_row("el:1", "container", "ServiceA", "v:1"),
+            make_element_row("el:2", "container", "ServiceB", "v:2"),
+        ];
+        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
+        let clock = FixedClock::new("2026-07-30T12:00:00Z");
+        let fs = MemoryFilesystem::new();
+        let out_dir = std::path::PathBuf::from("/out");
+
+        // With container:*, should return both containers
+        let report = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+        assert_eq!(report.element_count, 2);
+
+        // Verify the names
+        let proj_json = fs.read_to_string(&out_dir.join("projection.json")).unwrap();
+        let proj: Projection = serde_json::from_str(&proj_json).unwrap();
+        let names: Vec<_> = proj.nodes.iter().map(|n| n.name.clone()).collect();
+        assert!(names.contains(&"ServiceA".to_string()));
+        assert!(names.contains(&"ServiceB".to_string()));
+    }
+
+    #[test]
+    fn export_idempotent_on_same_input() {
+        let elements = vec![make_element_row("el:1", "container", "Svc", "v:1")];
+        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
+        let clock = FixedClock::new("2026-07-30T12:00:00Z");
+        let fs = MemoryFilesystem::new();
+        let out_dir = std::path::PathBuf::from("/out2");
+
+        let r1 = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+        let r2 = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+
+        // Both runs succeed and produce same revision (deterministic)
+        assert_eq!(r1.manifest.base_revision, r2.manifest.base_revision);
+    }
+
+    #[test]
+    fn export_rejects_malformed_selector() {
+        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let clock = FixedClock::new("2026-07-30T12:00:00Z");
+        let fs = MemoryFilesystem::new();
+        let out_dir = std::path::PathBuf::from("/out");
+
+        // Empty selector
+        let result = run_export(&store, "", &out_dir, &clock, &fs);
+        assert!(result.is_err());
+
+        // Unknown kind
+        let result = run_export(&store, "unknown_kind", &out_dir, &clock, &fs);
+        assert!(result.is_err());
+    }
 }

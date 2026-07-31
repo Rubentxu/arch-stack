@@ -234,18 +234,9 @@ fn load_evidence_bundle(fs: &dyn Filesystem, path: &Path) -> anyhow::Result<Evid
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use crate::filesystem::{Filesystem, MemoryFilesystem};
+    use crate::filesystem::MemoryFilesystem;
 
     use super::*;
-
-    fn mem_fs() -> impl Filesystem + Clone {
-        MemoryFilesystem::new()
-    }
-
-    fn valid_bundle_fs() -> impl Filesystem + Clone {
-        let fs = MemoryFilesystem::new();
-        fs
-    }
 
     #[test]
     fn validate_missing_manifest() {
