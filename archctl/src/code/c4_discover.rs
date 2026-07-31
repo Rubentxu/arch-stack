@@ -39,26 +39,15 @@ pub struct Evidence {
 /// Mirrors evidence::EvidenceKind (kept separate to avoid coupling
 /// `code` to `evidence` module — discover is a producer, not a
 /// consumer of the B1-lifecycle).
+/// NOTE: uses snake_case to match the schema's lowercase enum values.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceKind {
     Structural,
     Config,
     Annotation,
     Lexical,
     Other,
-}
-
-impl From<EvidenceKind> for crate::evidence::EvidenceKind {
-    fn from(kind: EvidenceKind) -> Self {
-        match kind {
-            EvidenceKind::Structural => crate::evidence::EvidenceKind::Structural,
-            EvidenceKind::Config => crate::evidence::EvidenceKind::Config,
-            EvidenceKind::Annotation => crate::evidence::EvidenceKind::Annotation,
-            EvidenceKind::Lexical => crate::evidence::EvidenceKind::Lexical,
-            EvidenceKind::Other => crate::evidence::EvidenceKind::Other,
-        }
-    }
 }
 
 /// Final Container after cross-strategy merge.
@@ -730,5 +719,75 @@ mod tests {
         let r2 = apply(project, &report, &fs).unwrap();
         assert_eq!(r2.elements_skipped, 1, "second apply must skip existing canonical_key");
         assert_eq!(r2.elements_written, 0, "second apply must not write duplicates");
+    }
+
+    // ─── CRIT-1 regression: real Container round-trip against schema ───────────
+    // This test would have caught the PascalCase/lowercase mismatch. It
+    // serialises a real Container (not hand-crafted JSON) then validates
+    // against the embedded schema.
+
+    #[test]
+    fn serialize_container_then_validate_against_schema() {
+        // Build a real DiscoverReport with real Container + Evidence
+        let report = DiscoverReport {
+            schema_version: "1.0".to_string(),
+            project: ProjectMeta {
+                root: "/tmp/test".to_string(),
+                files_scanned: 5,
+                languages: BTreeMap::from([("rust".to_string(), 5)]),
+                duration_ms: 42,
+            },
+            discovered: vec![
+                Container {
+                    canonical_key: "auth-svc".to_string(),
+                    name: "auth-svc".to_string(),
+                    strategy: "cargo-workspace".to_string(),
+                    confidence: 0.85,
+                    merged_from: vec!["cargo-workspace".to_string()],
+                    evidences: vec![
+                        Evidence {
+                            file: "Cargo.toml".to_string(),
+                            line: 8,
+                            kind: EvidenceKind::Structural,
+                            text: "Cargo workspace member: auth-svc".to_string(),
+                        },
+                        Evidence {
+                            file: "src/main.rs".to_string(),
+                            line: 1,
+                            kind: EvidenceKind::Lexical,
+                            text: "Module root".to_string(),
+                        },
+                    ],
+                },
+                Container {
+                    canonical_key: "api-gateway".to_string(),
+                    name: "api-gateway".to_string(),
+                    strategy: "dockerfile".to_string(),
+                    confidence: 0.60,
+                    merged_from: vec!["dockerfile".to_string()],
+                    evidences: vec![Evidence {
+                        file: "services/api/Dockerfile".to_string(),
+                        line: 1,
+                        kind: EvidenceKind::Config,
+                        text: "Dockerfile for api-gateway".to_string(),
+                    }],
+                },
+            ],
+            errors: vec![],
+        };
+
+        // Round-trip: Rust struct → JSON string → parsed Value
+        let json_str = serde_json::to_string(&report)
+            .expect("DiscoverReport must serialise to JSON");
+        let parsed: serde_json::Value = serde_json::from_str(&json_str)
+            .expect("JSON must be parseable");
+
+        // Validate against the embedded schema
+        let schema_val: serde_json::Value = serde_json::from_str(DISCOVER_REPORT_SCHEMA)
+            .expect("DISCOVER_REPORT_SCHEMA must be valid JSON");
+        let validator = jsonschema::validator_for(&schema_val)
+            .expect("DISCOVER_REPORT_SCHEMA must be a valid JSON Schema");
+        let result = validator.validate(&parsed);
+        assert!(result.is_ok(), "real Container must pass schema validation: {:?}", result.err());
     }
 }
