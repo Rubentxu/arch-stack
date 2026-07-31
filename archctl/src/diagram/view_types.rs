@@ -36,7 +36,10 @@ pub struct Diagram {
 ///
 /// `diagram_id` is denormalised for indexed lookup.
 /// `element_id` is the foreign key to Element.id.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `x`, `y`, `collapsed`: view-level position + collapse state
+/// (per spec §Capability 1; ADR-007 §"Vista persistida"). Defaults via
+/// `Default::default()` so construction sites can use `..Default::default()`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViewMember {
     /// Unique view-member identifier.
     pub id: String,
@@ -46,6 +49,15 @@ pub struct ViewMember {
     pub element_id: String,
     /// Display label (may differ from Element.name in the view).
     pub label: String,
+    /// View-level x coordinate. Default 0.
+    #[serde(default)]
+    pub x: i64,
+    /// View-level y coordinate. Default 0.
+    #[serde(default)]
+    pub y: i64,
+    /// Whether this member is collapsed in the view. Default false.
+    #[serde(default)]
+    pub collapsed: bool,
     /// Arbitrary key-value metadata.
     pub props: serde_json::Value,
     /// Creation timestamp.
@@ -83,7 +95,8 @@ pub struct ViewEdge {
 }
 
 /// A named group of ViewMembers within a Diagram.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `collapsed`: view-level collapse state (per spec §Capability 5 SCN-101).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViewGroup {
     /// Unique group identifier.
     pub id: String,
@@ -91,6 +104,9 @@ pub struct ViewGroup {
     pub diagram_id: String,
     /// Display label.
     pub label: String,
+    /// Whether this group is collapsed in the view. Default false.
+    #[serde(default)]
+    pub collapsed: bool,
     /// Arbitrary key-value metadata.
     pub props: serde_json::Value,
     /// Creation timestamp.
@@ -130,6 +146,9 @@ mod tests {
             diagram_id: "d1".into(),
             element_id: "el1".into(),
             label: "My Service".into(),
+            x: 240,
+            y: 160,
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
@@ -138,6 +157,27 @@ mod tests {
         let decoded: ViewMember = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded.id, vm.id);
         assert_eq!(decoded.element_id, vm.element_id);
+        assert_eq!(decoded.x, 240);
+        assert_eq!(decoded.y, 160);
+        assert!(!decoded.collapsed);
+    }
+
+    #[test]
+    fn view_member_default_serde_round_trip() {
+        // Construct with `..Default::default()` — proves x/y/collapsed
+        // can be omitted on read (serde(default) attribute on each field).
+        let vm = ViewMember {
+            id: "vm-default".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Default member".into(),
+            ..Default::default()
+        };
+        let encoded = serde_json::to_string(&vm).unwrap();
+        let decoded: ViewMember = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.x, 0);
+        assert_eq!(decoded.y, 0);
+        assert!(!decoded.collapsed);
     }
 
     #[test]
@@ -164,7 +204,8 @@ mod tests {
             id: "vg1".into(),
             diagram_id: "d1".into(),
             label: "Backend".into(),
-            props: serde_json::json!({"collapsed": false}),
+            collapsed: false,
+            props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
         };
@@ -172,5 +213,6 @@ mod tests {
         let decoded: ViewGroup = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded.id, vg.id);
         assert_eq!(decoded.label, vg.label);
+        assert!(!decoded.collapsed);
     }
 }

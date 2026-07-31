@@ -21,11 +21,16 @@ CREATE NODE TABLE Diagram (
 -- ViewMember: a canonical Element placed in a Diagram.
 -- diagram_id is denormalised for indexed lookup (GET view_members BY diagram_id).
 -- element_id is the foreign key to Element.id.
+-- x, y, collapsed: view-level position + collapse state (per ADR-007 §"Vista
+-- persistida" + spec §Capability 1). Defaults: x/y = 0, collapsed = false.
 CREATE NODE TABLE ViewMember (
     id STRING PRIMARY KEY,
     diagram_id STRING,
     element_id STRING,
     label STRING,
+    x INT64 DEFAULT 0,
+    y INT64 DEFAULT 0,
+    collapsed BOOLEAN DEFAULT false,
     props JSON,
     created_at TIMESTAMP,
     updated_at TIMESTAMP
@@ -45,10 +50,12 @@ CREATE NODE TABLE ViewEdge (
 );
 
 -- ViewGroup: a named group of ViewMembers within a Diagram.
+-- collapsed: view-level collapse state (per spec §Capability 5 SCN-101).
 CREATE NODE TABLE ViewGroup (
     id STRING PRIMARY KEY,
     diagram_id STRING,
     label STRING,
+    collapsed BOOLEAN DEFAULT false,
     props JSON,
     created_at TIMESTAMP,
     updated_at TIMESTAMP

@@ -957,6 +957,12 @@ impl GraphStore for LbugStore {
                         .unwrap_or_default()
                         .replace("\\'", "'")
                 };
+                let cell_to_i64 = |col: &str| -> i64 {
+                    row.get(col).and_then(|c| c.as_i64()).unwrap_or(0)
+                };
+                let cell_to_bool = |col: &str| -> bool {
+                    row.get(col).and_then(|c| c.as_bool()).unwrap_or(false)
+                };
                 let cell_to_json = |col: &str| -> serde_json::Value {
                     row.get(col)
                         .and_then(|c| c.as_str())
@@ -969,6 +975,9 @@ impl GraphStore for LbugStore {
                     diagram_id: cell_to_str("vm.diagram_id"),
                     element_id: cell_to_str("vm.element_id"),
                     label: cell_to_str("vm.label"),
+                    x: cell_to_i64("vm.x"),
+                    y: cell_to_i64("vm.y"),
+                    collapsed: cell_to_bool("vm.collapsed"),
                     props: cell_to_json("vm.props"),
                     created_at: Some(cell_to_str("vm.created_at")).filter(|s| !s.is_empty()),
                     updated_at: Some(cell_to_str("vm.updated_at")).filter(|s| !s.is_empty()),
@@ -1809,6 +1818,9 @@ mod tests {
             diagram_id: "d1".into(),
             element_id: "el1".into(),
             label: "Label1".into(),
+            x: 100,
+            y: 200,
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
@@ -1821,6 +1833,9 @@ mod tests {
             diagram_id: "d1".into(),
             element_id: "el1".into(),
             label: "Label2".into(),
+            x: 100,
+            y: 200,
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
@@ -1860,6 +1875,9 @@ mod tests {
             diagram_id: "d1".into(),
             element_id: "el1".into(),
             label: "L".into(),
+            x: 0,
+            y: 0,
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
@@ -1889,6 +1907,9 @@ mod tests {
             diagram_id: "d1".into(),
             element_id: "nonexistent-element".into(),
             label: "L".into(),
+            x: 0,
+            y: 0,
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
@@ -1915,6 +1936,7 @@ mod tests {
             id: "vg1".into(),
             diagram_id: "d1".into(),
             label: "Backend".into(),
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
@@ -1924,6 +1946,9 @@ mod tests {
             diagram_id: "d1".into(),
             element_id: "el1".into(),
             label: "L".into(),
+            x: 0,
+            y: 0,
+            collapsed: false,
             props: serde_json::json!({}),
             created_at: None,
             updated_at: None,
