@@ -16,12 +16,14 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "canonicalKey")]
     pub canonical_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "evidenceRefs")]
     pub evidence_refs: Option<Vec<String>>,
 }
 
