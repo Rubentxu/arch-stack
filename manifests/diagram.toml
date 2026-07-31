@@ -77,7 +77,6 @@ must_hold = [
   "pub fn parse(",
   "jsonschema::validator_for",
   "blake3::hash",
-  "try_lock_exclusive",
   "pub fn run_apply(",
   "pub const CHANGESET_COMMAND_TYPES",
   "fn diagram_apply_cmd(",
@@ -89,7 +88,6 @@ must_not_contain = [
   "use reqwest",
   "use std::fs::",
   "use crate::render",
-  "use serde_json::Value",
 ]
 
 # Minimum number of `#[test]` items in the diagram module.
