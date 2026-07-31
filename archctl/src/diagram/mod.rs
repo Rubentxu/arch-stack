@@ -7,6 +7,8 @@
 //! Read-only on the graph — no schema migration, no lock.
 
 pub mod assets;
+pub mod changeset_schema;
+pub mod changeset_types;
 pub mod export;
 pub mod export_types;
 pub mod hash;
@@ -18,6 +20,7 @@ pub mod view_types;
 
 // Public re-exports
 pub use assets::icon_for;
+pub use changeset_types::{ChangeSet, Command, CHANGESET_COMMAND_TYPES};
 pub use export::{run_export, ExportReport};
 pub use hash::base_revision;
 pub use selector::{parse, C4Kind, ScopeFilter, ViewSelector};

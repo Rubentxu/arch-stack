@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.local/schemas/changeset.schema.json",
+  "$comment": "ChangeSet format for archctl diagram apply. ADR-013 §'Cambios de vuelta'. Single source of truth for command types is CHANGESET_COMMAND_TYPES in changeset_types.rs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "diagramId", "baseRevision", "commands"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "diagramId": {
+      "type": "string",
+      "pattern": "^(context|container|component|dynamic|deployment):.+",
+      "description": "View selector identifying the diagram (e.g. container:orders)"
+    },
+    "baseRevision": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$",
+      "description": "Content-hash of the projection at export time"
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Command"
+      }
+    }
+  },
+  "$defs": {
+    "Command": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MoveMember"
+        },
+        {
+          "$ref": "#/$defs/CollapseGroup"
+        },
+        {
+          "$ref": "#/$defs/SetLabel"
+        }
+      ]
+    },
+    "MoveMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "memberId", "elementId", "x", "y"],
+      "properties": {
+        "type": {
+          "const": "move-member"
+        },
+        "memberId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "elementId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        }
+      }
+    },
+    "CollapseGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "groupId", "memberIds"],
+      "properties": {
+        "type": {
+          "const": "collapse-group"
+        },
+        "groupId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memberIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "SetLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "memberId", "label"],
+      "properties": {
+        "type": {
+          "const": "set-label"
+        },
+        "memberId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}
