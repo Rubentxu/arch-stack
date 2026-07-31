@@ -2,7 +2,7 @@
 
 **Estado:** propuesta revisada
 **Versión:** 2.3
-**Fecha:** 29 de julio de 2026
+**Fecha:** 31 de julio de 2026
 **Cambios vs 2.2:** ADR-013 introduce `archview` como proyecto ortogonal (ver § Ecosistema). ADR-006 marcado como DEPRECADO. ADR-007, ADR-011, ADR-012 actualizados con la nueva arquitectura. M9 reescrito con tres librerías renderer explícitas.
 
 ---
@@ -217,6 +217,7 @@ Incluye:
 | `fix-parallel-lbug-test-races` | `fix/parallel-lbug-test-races` (merged a main via FF) | `4b8ac47` | **Cerrado** ✅ · tag `v0.2.2` |
 | `refactor-extract-cell-to-json-map` | `refactor/extract-cell-to-json-map` (merged a main via FF) | `504560f` | **Cerrado** ✅ · tag `v0.3.1` |
 | `m9-archctl-export` | `feat/m9-archctl-export` (merged a main via FF) | `7c2f167` | **Cerrado** ✅ · tag `v0.4.0` |
+| `hygiene-local-only-policy` | direct commit on `main` (no PR — 1-line config gap) | `0a28016` | **Cerrado** ✅ · tag `v0.4.1` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -317,6 +318,21 @@ Incluye:
 - **Scope decision**: cycle **scoping down** decidido en explore phase. **NO incluye** `archctl diagram apply` (deferido a `m9-archctl-export-apply`). NO incluye ADR-010 lockfile infra. NO incluye schema v3 migration (`view.diagram` nodes). Razón: bundle contract tiene zero backing en código (ADR-007 prescribió view.* nodes que nunca se construyeron); Path 2 (stateless projections) entrega el 100% del valor de lectura para `archview`. Apply necesita diseño dedicado de lock + override model.
 - **Risk divergence**: ADR-013 §"baseRevision" muestra `revision:42` (counter) — divergencia documentada. Implementación usa content-hash blake3 (más defensivo). ADR text update owed.
 - **Debt detail**: 0 CRITICAL · 5 WARNING · 0 SUGGESTION · 0 ponytail ledger items · 0 hidden deps · 0 global state risks · accidental-bloat 0.12/1.00. Clústeres corridos (deep): architecture + smells + duplication + coupling + overeng. Clusters skipped: none (deep depth).
-- **Próximo candidato**: `m9-archctl-export-apply` (ciclo dedicado para lock + override model), o hygiene cycle (`.ignore` + gitignore de `docs/reports/*.html` para cerrar la policy local-only de v3.3), o `more-manifests-*` (~11 módulos restantes: astgrep/cli/doctor/graph/inventory/project/render/row/skills/telemetry/xdg).
+- **Próximo candidato**: `m9-archctl-export-apply` (ciclo dedicado para lock + override model), o `more-manifests-*` (~11 módulos restantes: astgrep/cli/doctor/graph/inventory/project/render/row/skills/telemetry/xdg).
 
 > `m9-archctl-export`: surface CLI nueva (`archctl diagram export` + `validate`) que proyecta el grafo LadybugDB en un bundle JSON de 5 archivos consumible por `archview`. Path 2 (stateless projections), `baseRevision` content-hash, zero schema migration, scope-down respecto al contrato completo ADR-013 (apply deferred). 166 tests passing, debt deep 5/5 PASS_WITH_WARNINGS. Archivado en `sddk/m9-archctl-export/archive-report.md`.
+
+## Cycle cerrado — `hygiene-local-only-policy`
+
+- **Fecha**: 2026-07-31
+- **Branch**: directo a `main` (no PR — cambio trivial de configuración, 6 líneas)
+- **Tag**: v0.4.1 (patch — non-functional, infra-only)
+- **Verdict**: N/A (no aplica verify/debt — sin código)
+- **Commits**: 1 (chore(gitignore))
+- **Tests**: N/A (cero cambios de código)
+- **Output**: cierra la brecha de la v3.3 local-only policy identificada en el v0.4.0 release report.
+  - `.ignore` companion file (gitignored itself) que re-incluye `sddk/` para opencode tools (grep, glob, read). El archivo está documentado en el `.gitignore` con referencia cruzada.
+  - `docs/reports/*.html` agregado al `.gitignore`. El `sddk-release` phase ya no commitea `closing-v*.html` al remote. El `closing-v0.3.0.html` ya commiteado (`6d3802a`) queda en history; los untracked `closing-v0.2.0.html` y `closing-v0.4.0.html` ahora son ignored.
+- **Próximo candidato**: `m9-archctl-export-apply` (planning completo con score 100/100, depende de la decisión arquitectónica de DB lock via fs2 documentada en engram obs 5349), o `more-manifests-*` (~11 módulos restantes).
+
+> `hygiene-local-only-policy`: cierra la v3.3 local-only policy gap. `.ignore` companion file re-incluye `sddk/` para opencode tools; `docs/reports/*.html` gitignored para detener la fuga de HTML closing reports al remote. Config-only, sin cambios de comportamiento. Archivado en `sddk/hygiene-local-only-policy/archive-report.md` (minimal).
