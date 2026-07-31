@@ -180,6 +180,15 @@ pub trait GraphStore: Send + Sync {
 
     /// Create RENDERS edge. Idempotent via MATCH+CREATE fallback.
     fn link_renders(&mut self, member_id: &str, element_id: &str) -> Result<()>;
+
+    /// MERGE a ViewGroup node by `id`. Idempotent.
+    fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()>;
+
+    /// Create GROUP_CONTAINS edge. Idempotent via MATCH+CREATE fallback.
+    fn link_group_contains(&mut self, group_id: &str, member_id: &str) -> Result<()>;
+
+    /// Fetch all ViewMembers for a given diagram_id.
+    fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -877,6 +886,96 @@ impl GraphStore for LbugStore {
             })?;
         }
         Ok(())
+    }
+
+    fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&group.id)
+            .context("put_view_group: group.id failed validation")?;
+        let diagram_id = crate::graph::validate_identifier(&group.diagram_id)
+            .context("put_view_group: diagram_id failed validation")?;
+        let safe_label = group.label.replace('\'', "\\'");
+        let props_json =
+            serde_json::to_string(&group.props).context("serialize view_group props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (vg:ViewGroup {{id: '{id}'}}) SET \
+             vg.diagram_id = '{diagram_id}', \
+             vg.label = '{safe_label}', \
+             vg.props = '{safe_props}', \
+             vg.updated_at = timestamp('{now}'), \
+             vg.created_at = COALESCE(vg.created_at, timestamp('{now}'));"
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("put_view_group: failed to persist ViewGroup {id}")
+        })?;
+        Ok(())
+    }
+
+    fn link_group_contains(&mut self, group_id: &str, member_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let gid = crate::graph::validate_identifier(group_id)
+            .context("link_group_contains: group_id failed validation")?;
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("link_group_contains: member_id failed validation")?;
+
+        // ADR-017 §"Nota técnica": MERGE on REL TABLE rejected by lbug 0.18.3.
+        let primary = format!(
+            "MATCH (vg:ViewGroup {{id: '{gid}'}}), (vm:ViewMember {{id: '{mid}'}}) \
+             MERGE (vg)-[:GROUP_CONTAINS]->(vm);"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (vg:ViewGroup {{id: '{gid}'}}), (vm:ViewMember {{id: '{mid}'}}) \
+                 CREATE (vg)-[:GROUP_CONTAINS]->(vm);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_group_contains fallback for ({gid}, {mid})")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>> {
+        use crate::diagram::view_types::ViewMember;
+        let did = crate::graph::validate_identifier(diagram_id)
+            .context("get_view_members: diagram_id failed validation")?;
+        let rows = self.query(&format!(
+            "MATCH (vm:ViewMember) WHERE vm.diagram_id = '{did}' \
+             RETURN vm.id, vm.diagram_id, vm.element_id, vm.label, vm.props, vm.created_at, vm.updated_at;"
+        ))?;
+        let members: Vec<ViewMember> = rows
+            .into_iter()
+            .map(|row| {
+                let cell_to_str = |col: &str| -> String {
+                    row.get(col)
+                        .and_then(|c| c.as_str())
+                        .map(String::from)
+                        .unwrap_or_default()
+                        .replace("\\'", "'")
+                };
+                let cell_to_json = |col: &str| -> serde_json::Value {
+                    row.get(col)
+                        .and_then(|c| c.as_str())
+                        .map(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
+                        .flatten()
+                        .unwrap_or(serde_json::Value::Null)
+                };
+                ViewMember {
+                    id: cell_to_str("vm.id"),
+                    diagram_id: cell_to_str("vm.diagram_id"),
+                    element_id: cell_to_str("vm.element_id"),
+                    label: cell_to_str("vm.label"),
+                    props: cell_to_json("vm.props"),
+                    created_at: Some(cell_to_str("vm.created_at")).filter(|s| !s.is_empty()),
+                    updated_at: Some(cell_to_str("vm.updated_at")).filter(|s| !s.is_empty()),
+                }
+            })
+            .collect();
+        Ok(members)
     }
 }
 
@@ -1802,5 +1901,63 @@ mod tests {
             err_msg.contains("element not found:"),
             "error should contain 'element not found:', got: {err_msg}"
         );
+    }
+
+    #[test]
+    fn link_group_contains_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a ViewGroup and ViewMember.
+        store.put_view_group(&crate::diagram::view_types::ViewGroup {
+            id: "vg1".into(),
+            diagram_id: "d1".into(),
+            label: "Backend".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+        store.put_view_member(&crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "L".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        // Link twice.
+        store.link_group_contains("vg1", "vm1").unwrap();
+        store.link_group_contains("vg1", "vm1").unwrap();
+
+        // Should have exactly one GROUP_CONTAINS edge.
+        let rows = store
+            .query("MATCH (vg:ViewGroup)-[:GROUP_CONTAINS]->(vm:ViewMember) RETURN vg.id;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one GROUP_CONTAINS edge");
+    }
+
+    #[test]
+    fn get_view_members_returns_empty_when_no_members() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Diagram exists but has no ViewMembers.
+        store.put_diagram(&crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "r1".into(),
+            selector: "{}".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        let members = store.get_view_members("d1").unwrap();
+        assert!(members.is_empty(), "expected empty vec for diagram with no members");
     }
 }
