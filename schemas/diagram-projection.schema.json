@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.local/schemas/diagram-projection.schema.json",
+  "$comment": "baseRevision uses blake3 content-hash (not a counter like ADR-013's revision:42 example). Hash computed over canonical projection.json bytes (sorted keys, sorted arrays, no whitespace).",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest", "projection", "evidence", "styles"],
+  "properties": {
+    "manifest": { "$ref": "#/$defs/Manifest" },
+    "projection": { "$ref": "#/$defs/Projection" },
+    "evidence": { "$ref": "#/$defs/EvidenceBundle" },
+    "styles": { "$ref": "#/$defs/Styles" }
+  },
+
+  "$defs": {
+    "Manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "format", "viewSelector", "baseRevision", "generatedAt", "elementCount", "edgeCount", "evidenceCount"],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "format": {
+          "const": "viewer-bundle"
+        },
+        "viewSelector": {
+          "type": "string",
+          "pattern": "^(context|container|component|dynamic|deployment):.+"
+        },
+        "baseRevision": {
+          "type": "string",
+          "pattern": "^blake3:[0-9a-f]{64}$"
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "elementCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edgeCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidenceCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+
+    "Node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": ["context", "container", "component", "dynamic", "deployment"]
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "canonicalKey": {
+          "type": "string"
+        },
+        "status": {
+          "enum": ["accepted", "drafted", "superseded"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "Edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target", "predicate"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "predicate": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+
+    "Projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Node" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Edge" }
+        }
+      }
+    },
+
+    "EvidenceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "claim", "path", "startLine", "endLine", "toolName", "toolVersion", "ruleId", "contentHash", "observedAt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string"
+        },
+        "claim": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "toolVersion": {
+          "type": "string"
+        },
+        "ruleId": {
+          "type": "string"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "EvidenceBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence"],
+      "properties": {
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EvidenceEntry" }
+        }
+      }
+    },
+
+    "Styles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["theme", "version", "elementColors", "edgeColors"],
+      "properties": {
+        "theme": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "elementColors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "context": { "type": "string" },
+            "container": { "type": "string" },
+            "component": { "type": "string" },
+            "dynamic": { "type": "string" },
+            "deployment": { "type": "string" }
+          }
+        },
+        "edgeColors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
