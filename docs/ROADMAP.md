@@ -299,7 +299,7 @@ Incluye:
 | `refactor-extract-cell-to-json-map` | `refactor/extract-cell-to-json-map` (merged a main via FF) | `504560f` | **Cerrado** ✅ · tag `v0.3.1` |
 | `m9-archctl-export` | `feat/m9-archctl-export` (merged a main via FF) | `7c2f167` | **Cerrado** ✅ · tag `v0.4.0` |
 | `hygiene-local-only-policy` | direct commit on `main` (no PR — 1-line config gap) | `0a28016` | **Cerrado** ✅ · tag `v0.4.1` |
-| `m9-archctl-export-apply` (PR1) | `feat/m9-archctl-export-apply-foundation` (mergeado a main via --no-ff) | `ce25825` | **Cerrado** ✅ · tag diferido a PR2 → v0.6.0 |
+| `m9-archctl-export-apply` (PR1 + PR2) | `feat/m9-archctl-export-apply-foundation` → `feat/m9-archctl-export-apply` (merged to main via --no-ff) | `f8c4101` | **Cerrado** ✅ · tag `v0.6.0` |
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
 | `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
 | `roadmap-pivot-v2.5` (cognitive layer) | direct commits (no PR — 3 ADRs nuevos) | pendiente | **En curso** · tag diferido al M22 → 1.x |
