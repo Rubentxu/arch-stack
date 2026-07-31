@@ -1,76 +1,203 @@
 # Changelog
 
-## [unreleased] — M0 scaffold: OpenCode profile + minimal `archctl`
+All notable changes to `archctl` are documented here. The format is
+loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
 
-Per [`docs/ROADMAP.md`](docs/ROADMAP.md), M0 is "Validación de
-OpenCode". This commit ships the M0 deliverables:
+## [unreleased] — v0.6.1 hygiene
 
-- **`profile/`** — OpenCode profile source.
-  - `opencode.jsonc`: sets `default_agent: diagram-architect`, lists
-    the four subagents, registers the `/diagram` command, restricts
-    `edit` to the XDG project dir, allow-lists `archctl *` and the
-    read-only git commands, denies `webfetch`.
-  - `agents/diagram-architect.md` (primary) and the four subagents
-    (`architecture-evidence`, `c4-modeler`, `uml-modeler`,
-    `diagram-reviewer`) lifted from the v2 §5.
-  - `commands/diagram.md`: the `/diagram <kind> [args]` dispatcher.
-  - `skills/c4-context.md` and `skills/plantuml-sequence.md`: M0
-    skeleton wrappers (full wrappers in M1).
-  - `plugins/archctl-env.ts`: `shell.env` injection of `ARCHCTL_*`.
-- **`archctl/`** — minimal TypeScript CLI for M0.
-  - `cli.ts`: dispatcher for `doctor`, `project resolve`, `render`.
-  - `doctor.ts`: XDG writability, Structurizr / PlantUML / Kroki
-    reachability, OpenCode / `archctl` on PATH.
-  - `render.ts`: HTTP POST to local Kroki on `:18000` and write the
-    SVG beside the source.
-  - `resolve.ts`: stub `project resolve` returning a default
-    `SourceIdentity`. M1+ replaces it with the XDG-aware resolver.
-- **`scripts/install.sh`** — copies `profile/` to
-  `$XDG_CONFIG_HOME/opencode-architecture/`, prints the launch
-  command.
-- **`README.md`** — entry point with the install + run flow.
-- **`.gitignore`** — also ignores `.archctl-rendered/`, the
-  `target/` (Rust M2), and `~/.local/share/archctl/`.
+### Added
+- `AGENTS.md` (root): repository-level operating guidelines for AI agents
+  and human contributors. Captures intent, core principles, scope,
+  architecture rules, change strategy, build/test commands, validation
+  matrix, code style, testing principles, dependencies, security,
+  performance budget, compatibility/migrations, doc rules, git hygiene,
+  definition of done, failure/recovery, instruction precedence, and
+  open questions.
 
-Tests are deferred to M1: M0's exit criterion is end-to-end via
-`/diagram`, not a unit test. The `archctl` CLI is intentionally
-TypeScript here; M2 replaces it with the Rust binary per
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+### Fixed
+- `CHANGELOG.md` was missing entries for v0.2.0 through v0.6.0; this
+  release backfills the gap (prior entries below).
 
-## [unreleased] — adopt `docs/` v2 spec as authoritative
+## [0.6.0] — 2026-07-31 — `archctl diagram apply` (write-side)
 
-The previous single-document proposals in this repo (a flat list of 7
-ADRs, a JSON+SQLite property graph, and a 3-phase roadmap) contradicted
-the parallel `docs/` specification. Resolution:
+### Added
+- New CLI surface: `archctl diagram apply --changes <file>` (cosmetic
+  view overrides — never touches `Element`/`SemanticRelation`/
+  `ElementVersion`/`RelationVersion` nodes per ADR-013).
+- Schema v3 migration `docs/schema/003_view_nodes.cypher` introducing
+  4 NODE TABLEs (`Diagram`, `ViewMember`, `ViewEdge`, `ViewGroup`) and
+  3 REL TABLEs (`MEMBER_OF`, `RENDERS`, `GROUP_CONTAINS`).
+- Per-project DB lock via `fs2::try_lock_exclusive` on the `.lbdb`
+  file (ADR-010 letter/states gap closed).
+- 8 additive `GraphStore` port methods: `put_diagram`, `get_diagram`,
+  `put_view_member`, `link_member_of`, `link_renders`,
+  `put_view_group`, `link_group_contains`, `get_view_members`.
+- ChangeSet format `schemas/changeset.schema.json` (JSON Schema 2020-12,
+  `schemaVersion: "1.0"`) with 3 commands:
+  - `move-member` (updates ViewMember x/y)
+  - `collapse-group` (toggles ViewGroup.collapsed)
+  - `set-label` (updates ViewMember label)
+- Optimistic concurrency control via blake3 `baseRevision` content-hash.
+- New dependency: `fs2 = "0.4"` (POSIX `flock` on Unix, `LockFileEx`
+  on Windows).
+- Extended `manifests/diagram.toml` with apply substrate entries
+  (editable, must_hold, minimum_tests 25 → 56).
 
-- **`docs/data-model.md`** removed. Superseded by the v2
-  [`docs/DATA-MODEL-LADYBUGDB.md`](docs/DATA-MODEL-LADYBUGDB.md)
-  (LadybugDB, reified relations, versioned elements).
-- **`docs/adr/README.md`** replaced with an index over the 11
-  individual ADRs in `docs/adr/`. ADR-000 documents the scope
-  restart; ADR-011 (new) closes the public-renderer-policy gap that
-  was missing in the v2 spec.
-- **`ROADMAP.md`** (root) replaced with a redirect to
-  [`docs/ROADMAP.md`](docs/ROADMAP.md) (M0–M11).
-- **`CONTEXT.md`** rewritten to match the v2 vocabulary (OpenCode
-  first, `archctl` sidecar, LadybugDB) and cross-link the new docs.
-- **`docs/manifest.json`** updated to register ADR-011 and to list
-  what the v2 supersedes.
-- The full v2 document tree under `docs/` is now tracked.
+### Fixed
+- `put_view_group.collapsed` was not persisted through the MERGE SET
+  clause (latent bug from PR1 — masked because PR1 only created groups
+  with `collapsed=false`). Surfaced by `dispatch_collapse_group_creates_group`
+  in PR2 integration tests.
+- Dropped 2 misplaced `manifests/diagram.toml` invariants (`try_lock_exclusive`
+  belonged in `store.toml`, `use serde_json::Value` ban conflicted with
+  pre-existing `validate.rs` usage).
 
-## [unreleased] — second reset: aligned to the source document
+### Security
+- DB lock now prevents concurrent mutation of the same project's
+  LadybugDB instance (single-writer enforced).
 
-Discarded the first reset's framing and rewrote from
-`Skills-para-agentes-IA-v2.md` literally:
+## [0.5.0] — 2026-07-31 — manifest coverage 11/23 → 22/23
 
-- A CLI (`archctl`) that drives OpenCode + skills for C4/UML
-  architecture diagrams of a repo.
-- 7 ADRs (was 8) — only operational decisions reflected in code.
-- No "Architecture IR" (the user wanted diagrams, not a graph store).
-- No "Architecture Auditor / Falsifier" (the user wanted tooling, not
-  an autonomous agent platform).
-- No "Temporal Architecture" / "Drift Detector" / "Coherence Gate" /
-  "Spike Report" — those came from the planning agent's drift.
+### Added
+- 11 new scope manifests: `astgrep.toml`, `cli.toml`, `doctor.toml`,
+  `graph.toml`, `inventory.toml`, `project.toml`, `render.toml`,
+  `row.toml`, `skills.toml`, `telemetry.toml`, `xdg.toml`. Each
+  declares public symbols + `must_hold` invariants + `must_not_contain`
+  bans. Coverage: 22/23 modules.
+- `migrations.toml` deliberately excluded (bootstrap infrastructure,
+  not a domain module).
+
+### Notes
+- No functional code changes; this release closes a coverage gap in
+  the manifest gate (`archctl doctor --scopes <id>`).
+
+## [0.4.1] — 2026-07-31 — v3.3 local-only policy hygiene
+
+### Fixed
+- `.ignore` companion file (gitignored itself) added that re-includes
+  `sddk/` for opencode tools (grep, glob, read). The `.gitignore`
+  documents the cross-reference inline.
+- `docs/reports/*.html` added to `.gitignore` so the `sddk-release`
+  phase no longer commits HTML closing reports to the remote.
+
+### Notes
+- Non-functional, infra-only. No code changes.
+
+## [0.4.0] — 2026-07-31 — `archctl diagram export` (read-side)
+
+### Added
+- New CLI surface: `archctl diagram export <view-selector> --format
+  viewer-bundle --output <dir>` and `archctl diagram validate
+  <bundle-dir>`. Two new subcommands on the existing `Diagram` action.
+- 5-file viewer bundle format: `manifest.json`, `projection.json`,
+  `evidence.json`, `styles.json`, `assets/` (consumable by `archview`).
+- View-selector grammar `<c4-kind>:<scope>` with 5 c4-kinds:
+  `context`, `container`, `component`, `dynamic`, `deployment`.
+- `baseRevision` = blake3 content-hash of the canonical JSON projection
+  (OCC support; deterministic ordering before hashing).
+- JSON Schema 2020-12 for bundle validation:
+  `schemas/diagram-projection.schema.json`.
+- C4 icon set in `archctl/src/diagram/icons/` (1×1 PNG placeholders).
+- Bundle contract spec at `docs/specs/diagram-projection-bundle.md`.
+- New dependency: `jsonschema` (already present via other paths; used
+  here for bundle validation).
+- `manifests/diagram.toml` registered with `must_hold` + `must_not_contain`
+  + `minimum_tests`.
+
+### Changed
+- `archctl/src/diagram/` (9 new files, ~1605 LOC total): `export`,
+  `validate`, `queries`, `export_types`, `selector`, `hash`, `assets`,
+  `schema_embed`, `view_types`. Module wired into `lib.rs` with
+  re-exports.
+- `GraphStore::query` port gained a thin wrapper for diagram read
+  queries (read-side only; no mutations).
+
+### Fixed
+- Icon list unified across `export` + `validate` (round-trip consistency).
+- `Node.canonical_key` / `evidence_refs` fields renamed to camelCase
+  in projection JSON.
+
+### Notes
+- ADR-007 split: `view.*` projection graph nodes deferred to M9-v2
+  (now v0.6.0); this release ships **stateless projections** (Path 2).
+  Apply (write-side) is deferred to v0.6.0.
+
+## [0.3.1] — 2026-07-31 — extract `cell_to_json_map` helper
+
+### Changed
+- New private helper `cell_to_json_map(&Cell) -> serde_json::Map` in
+  `archctl/src/store.rs:667-689` ("Internal helpers") replaces 3
+  inline duplications in `accept_evidence`, `supersede_evidence`, and
+  `list_evidence_by_status`. Net **-41 LOC**.
+
+### Notes
+- Mechanical refactor, no behavior change. `manifests/store.toml`
+  unchanged, `must_hold` satisfied, `minimum_tests = 13` exceeded.
+- 3 homologous inline patterns in test fixtures
+  (`store.rs:1064, 1208, 1261`) deferred to a follow-up cycle
+  (`refactor-extract-cell-to-json-map-v2`).
+
+## [0.3.0] — 2026-07-30 — Evidence lifecycle (Drafted → Accepted)
+
+### Added
+- `EvidenceStatus` enum: `Drafted`, `Accepted`, `Superseded`.
+- `status` field on `Evidence`, persisted in `props` (zero migration
+  required).
+- 3 new `GraphStore` port methods: `accept`, `supersede`,
+  `list_by_status`.
+- 2 new CLI subcommands: `archctl evidence accept <id>` and
+  `archctl evidence supersede <id>`, plus a `--status` flag on the
+  existing `archctl evidence list`.
+
+### Docs
+- ADR-016 §3.2 closed (lifecycle for evidence status).
+
+## [0.2.2] — 2026-07-30 — fix parallel lbug test races
+
+### Fixed
+- Bound lbug buffer pool and DB size to 256 MB each in `archctl/src/graph.rs`
+  (`BUFFER_POOL_SIZE = 256 * 1024 * 1024`). With 64 cores × 8 TB
+  (lbug `SystemConfig::default()` returns `UINT64_MAX` for mmap size),
+  the kernel could not satisfy the virtual memory requirement under
+  parallel tests. 256 MB per DB × 64 cores = 16 GiB total, well within
+  kernel limits.
+
+### Changed
+- Removed `--test-threads=1` workaround from `archctl/src/scope.rs` tests.
+  Parallel test execution restored.
+
+### Performance
+- `archctl doctor --scopes <id>` per-scope runtime: ~10s (was ~2 min
+  when forced serial).
+
+## [0.2.1] — 2026-07-30 — manifest coverage 7/23 → 10/23
+
+### Added
+- 3 new scope manifests: `clock.toml`, `environment.toml`,
+  `identity.toml`. Coverage: 10/23 modules.
+
+## [0.2.0] — 2026-07-30 — SourceArtifact + Evaluation types
+
+### Added
+- `SourceArtifact` and `Evaluation` domain types in the graph.
+- 2 new REL TABLEs: `EXTRACTED_FROM` (Evidence → SourceArtifact),
+  `EVALUATES` (Evaluation → Element).
+- Schema migration runner (`archctl/src/migrations.rs::MigrationRunner`)
+  wiring both v1 and v2 init paths.
+- Schema migration `docs/schema/002_source_evaluation.cypher` adds
+  the new NODE/REL TABLEs.
+- 4 new `GraphStore` port methods: `put_source`, `put_evaluation`,
+  `link_extracted_from`, `link_evaluates`.
+- `put_with_source` wrapper: combine evidence + source provenance
+  in a single call.
+- `source_origin` field in `Evidence.props` (no schema change; props
+  is `serde_json::Value`).
+
+### Docs
+- ADR-017 (schema migration runner) + SourceArtifact identity section.
+
+---
 
 ## [0.1.0] — first reset (commits `f5e7f83` / `b7b57a6`)
 
