@@ -163,6 +163,13 @@ pub trait GraphStore: Send + Sync {
         status: EvidenceStatus,
         path: Option<&str>,
     ) -> Result<Vec<Row>>;
+
+    /// MERGE a Diagram node by `id`. Idempotent — re-running with the
+    /// same id and a different revision updates in place.
+    fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()>;
+
+    /// Fetch a Diagram by `id`. Errors if not found.
+    fn get_diagram(&self, id: &str) -> Result<crate::diagram::view_types::Diagram>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -707,6 +714,70 @@ impl GraphStore for LbugStore {
             .collect();
 
         Ok(filtered)
+    }
+
+    fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&diagram.id)
+            .context("put_diagram: diagram.id failed validation")?;
+        let safe_revision = diagram.revision.replace('\'', "\\'");
+        let safe_selector = diagram.selector.replace('\'', "\\'");
+        let props_json =
+            serde_json::to_string(&diagram.props).context("serialize diagram props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (d:Diagram {{id: '{id}'}}) SET \
+             d.revision = '{safe_revision}', \
+             d.selector = '{safe_selector}', \
+             d.props = '{safe_props}', \
+             d.updated_at = timestamp('{now}'), \
+             d.created_at = COALESCE(d.created_at, timestamp('{now}'));"
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("put_diagram: failed to persist Diagram {id}")
+        })?;
+        Ok(())
+    }
+
+    fn get_diagram(&self, id: &str) -> Result<crate::diagram::view_types::Diagram> {
+        use crate::diagram::view_types::Diagram;
+        let validated_id = crate::graph::validate_identifier(id)
+            .context("get_diagram: id failed validation")?;
+        let rows = self.query(&format!(
+            "MATCH (d:Diagram {{id: '{validated_id}'}}) \
+             RETURN d.id, d.revision, d.selector, d.props, d.created_at, d.updated_at;"
+        ))?;
+        if rows.is_empty() {
+            anyhow::bail!("diagram not found: {id}");
+        }
+        let row = rows.into_iter().next().unwrap();
+        let cell_to_str = |col: &str| -> String {
+            row.get(col)
+                .and_then(|c| c.as_str())
+                .map(String::from)
+                .unwrap_or_default()
+                .replace("\\'", "'")
+        };
+        let cell_to_json = |col: &str| -> serde_json::Value {
+            row.get(col)
+                .and_then(|c| c.as_str())
+                .map(|s| {
+                    // Props are stored escaped, unescape single quotes
+                    serde_json::from_str(&s.replace("\\'", "'")).ok()
+                })
+                .flatten()
+                .unwrap_or(serde_json::Value::Null)
+        };
+        Ok(Diagram {
+            id: cell_to_str("d.id"),
+            revision: cell_to_str("d.revision"),
+            selector: cell_to_str("d.selector"),
+            props: cell_to_json("d.props"),
+            created_at: Some(cell_to_str("d.created_at")).filter(|s| !s.is_empty()),
+            updated_at: Some(cell_to_str("d.updated_at")).filter(|s| !s.is_empty()),
+        })
     }
 }
 
@@ -1470,5 +1541,61 @@ mod tests {
         // Now LbugStore::open should fail because we hold the lock.
         let result = LbugStore::open(&project);
         assert!(matches!(result, Err(LockError::AnotherArchctlRunning)));
+    }
+
+    #[test]
+    fn put_diagram_is_merge_on_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let diag1 = crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "rev1".into(),
+            selector: r#"{"kind":"container"}"#.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_diagram(&diag1).unwrap();
+
+        // Update with different revision
+        let diag2 = crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "rev2".into(),
+            selector: r#"{"kind":"container"}"#.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_diagram(&diag2).unwrap();
+
+        // Should have exactly one diagram with rev2
+        let rows = store
+            .query("MATCH (d:Diagram) RETURN d.id, d.revision;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one Diagram row");
+        let rev = rows[0]
+            .get("d.revision")
+            .and_then(|c| c.as_str())
+            .unwrap();
+        assert_eq!(rev, "rev2", "revision should be updated to rev2");
+    }
+
+    #[test]
+    fn get_diagram_errors_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let result = store.get_diagram("nonexistent");
+        assert!(result.is_err(), "expected error for missing diagram");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("diagram not found:"),
+            "error should contain 'diagram not found:', got: {err_msg}"
+        );
     }
 }

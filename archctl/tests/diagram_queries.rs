@@ -231,6 +231,12 @@ impl GraphStore for TinyGraphStore {
     ) -> anyhow::Result<Vec<Row>> {
         unimplemented!()
     }
+    fn put_diagram(&mut self, _: &archctl::diagram::view_types::Diagram) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn get_diagram(&self, _: &str) -> anyhow::Result<archctl::diagram::view_types::Diagram> {
+        unimplemented!()
+    }
 }
 
 // SCN-050: query_elements filtered by category returns only matching nodes

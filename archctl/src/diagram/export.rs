@@ -275,6 +275,8 @@ mod tests {
         fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
         fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
         fn list_evidence_by_status(&self, _: crate::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+        fn put_diagram(&mut self, _: &crate::diagram::view_types::Diagram) -> anyhow::Result<()> { unimplemented!() }
+        fn get_diagram(&self, _: &str) -> anyhow::Result<crate::diagram::view_types::Diagram> { unimplemented!() }
     }
 
     fn make_element_row(id: &str, category: &str, name: &str, version_id: &str) -> Row {
