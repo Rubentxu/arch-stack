@@ -196,7 +196,7 @@ fn build_schema_for_def(root: &Value, def_name: &str) -> Option<Value> {
     }
     Some(serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$ref": format!("#/{}", def_name), // e.g., "#/Manifest" resolves via local $defs
+        "$ref": format!("#/$defs/{}", def_name), // e.g., "#/$defs/Manifest" resolves to $defs.Manifest
         "$defs": root.get("$defs")
     }))
 }
@@ -255,5 +255,20 @@ mod tests {
         let r1 = run_validate(&dir, &fs).unwrap();
         let r2 = run_validate(&dir, &fs).unwrap();
         assert_eq!(r1.errors.len(), r2.errors.len());
+    }
+
+    #[test]
+    fn build_schema_for_def_compiles_all_def_names() {
+        // Regression: ensure $ref paths like "#/$defs/Manifest" are resolvable.
+        // Previously build_schema_for_def used "#/Manifest" which JSON Schema
+        // resolves as a top-level key (not under $defs), producing
+        // "Pointer '/Manifest' does not exist" at schema compilation time.
+        let schema: Value = serde_json::from_str(SCHEMA).unwrap();
+        for def_name in ["Manifest", "Projection", "EvidenceBundle", "Styles"] {
+            let def_schema = build_schema_for_def(&schema, def_name);
+            assert!(def_schema.is_some(), "definition '{}' should be found in schema", def_name);
+            let compiled = jsonschema::validator_for(def_schema.as_ref().unwrap());
+            assert!(compiled.is_ok(), "schema for '{}' should compile without errors", def_name);
+        }
     }
 }
