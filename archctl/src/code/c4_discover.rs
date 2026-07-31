@@ -195,6 +195,190 @@ pub fn discover(
     })
 }
 
+/// Persist a DiscoverReport to the graph. One Element per Container
+/// (with props.inferred=true, props.strategy=<id>, props.confidence=<score>),
+/// one Evidence per evidence (status="Drafted"), one SourceArtifact per
+/// unique file. Idempotent: skips canonical_keys that already exist.
+pub fn apply(
+    project_dir: &Path,
+    report: &DiscoverReport,
+    _fs: &dyn Filesystem,
+) -> Result<ApplyReport> {
+    use crate::store::open_default;
+
+    let mut store = open_default(project_dir)
+        .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
+    store.init().context("graph init (c4 discover apply)")?;
+
+    // Seed mt.container MetaType if it doesn't exist
+    let seed_metatype = r#"
+        MERGE (mt:MetaType {id: 'mt.container'})
+        SET mt.namespace = 'c4', mt.name = 'container', mt.category = 'structure'
+        RETURN mt.id;
+    "#;
+    store.query(seed_metatype).ok();
+
+    let mut elements_written = 0usize;
+    let mut elements_skipped = 0usize;
+    let mut evidences_written = 0usize;
+    let mut source_artifacts_written = 0usize;
+
+    // Build a quick lookup: existing canonical_keys → skip
+    let existing_keys: std::collections::HashSet<String> = store
+        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
+        .into_iter()
+        .filter_map(|row| {
+            row.get("e.canonical_key")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+
+    for container in &report.discovered {
+        if existing_keys.contains(&container.canonical_key) {
+            elements_skipped += 1;
+            continue;
+        }
+
+        // Build Element via direct Cypher (put_element not on GraphStore trait)
+        let element_id = format!("c4:container:{}", container.canonical_key);
+        let props = serde_json::json!({
+            "inferred": true,
+            "strategy": container.strategy,
+            "confidence": container.confidence,
+            "merged_from": container.merged_from,
+            "discovery": {
+                "schemaVersion": "1.0",
+            },
+        });
+        let props_str = serde_json::to_string(&props).unwrap_or_default();
+        let props_escaped = props_str.replace('\'', "\\'");
+        let version_id = format!("blake3:{}", blake3::hash(props_str.as_bytes()).to_hex());
+        let name_escaped = container.name.replace('\'', "\\'");
+
+        let element_cypher = format!(
+            "MERGE (e:Element {{id: '{element_id}'}}) SET \
+             e.kind_id = 'mt.container', \
+             e.category = 'c4', \
+             e.canonical_key = '{}', \
+             e.current_name = '{name_escaped}', \
+             e.current_status = 'active', \
+             e.current_confidence = {confidence}, \
+             e.current_version_id = '{version_id}', \
+             e.props = '{props_escaped}';",
+            container.canonical_key.replace('\'', "\\'"),
+            confidence = container.confidence,
+        );
+        store.query(&element_cypher).context("put_element")?;
+        elements_written += 1;
+
+        // OF_TYPE edge: link Element to MetaType
+        let of_type_cypher = format!(
+            "MATCH (e:Element {{id: '{element_id}'}}), (mt:MetaType {{id: 'mt.container'}}) \
+             MERGE (e)-[:OF_TYPE]->(mt);"
+        );
+        store.query(&of_type_cypher).ok();
+
+        // Build SourceArtifact + Evidence rows
+        let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
+        for evidence in &container.evidences {
+            // SourceArtifact (dedup by file path)
+            let sa_id = if let Some(id) = source_artifact_ids.get(&evidence.file) {
+                id.clone()
+            } else {
+                let id = format!("src:{}", blake3::hash(evidence.file.as_bytes()).to_hex());
+                let kind_escaped = "manifest".replace('\'', "\\'");
+                let path_escaped = evidence.file.replace('\'', "\\'");
+                let sa_cypher = format!(
+                    "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
+                     s.kind = '{kind_escaped}', \
+                     s.relative_path = '{path_escaped}', \
+                     s.language = '', \
+                     s.content_hash = '', \
+                     s.generated = false, \
+                     s.props = '{{}}';"
+                );
+                store.query(&sa_cypher).ok();
+                source_artifact_ids.insert(evidence.file.clone(), id.clone());
+                source_artifacts_written += 1;
+                id
+            };
+
+            // Evidence (status Drafted per B1-lifecycle D3)
+            let evidence_id = format!("ev:{}",
+                blake3::hash(format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes())
+                    .to_hex());
+            let evidence_props = serde_json::json!({
+                "file_refs": [format!("{}:{}", evidence.file, evidence.line)],
+                "text": evidence.text,
+                "status": "Drafted",
+            });
+            let props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
+            let props_escaped = props_json.replace('\'', "\\'");
+            let evidence_text_escaped = evidence.text.replace('\'', "\\'");
+            let evidence_cypher = format!(
+                "MERGE (e:Evidence {{id: '{evidence_id}'}}) SET \
+                 e.kind = '{kind}', \
+                 e.claim = '{text}', \
+                 e.path = '{file}', \
+                 e.start_line = {line}, \
+                 e.end_line = {line}, \
+                 e.tool_name = 'archctl', \
+                 e.tool_version = env!(\"CARGO_PKG_VERSION\"), \
+                 e.rule_id = 'c4-discover:{strategy}', \
+                 e.language = '', \
+                 e.observed_at = '', \
+                 e.props = '{props_escaped}', \
+                 e.status = 'Drafted';",
+                kind = match evidence.kind {
+                    EvidenceKind::Structural => "structural",
+                    EvidenceKind::Config => "config",
+                    EvidenceKind::Annotation => "annotation",
+                    EvidenceKind::Lexical => "lexical",
+                    EvidenceKind::Other => "other",
+                },
+                text = evidence_text_escaped,
+                file = evidence.file.replace('\'', "\\'"),
+                line = evidence.line,
+                strategy = container.strategy.replace('\'', "\\'"),
+                props_escaped = props_escaped,
+            );
+            store.query(&evidence_cypher).ok();
+            evidences_written += 1;
+
+            // Link Evidence to Element
+            let link_e_cypher = format!(
+                "MATCH (e:Element {{id: '{element_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
+                 MERGE (e)-[:EXHIBITS]->(ev);"
+            );
+            store.query(&link_e_cypher).ok();
+
+            // EXTRACTED_FROM edge: link Evidence to SourceArtifact
+            let link_cypher = format!(
+                "MATCH (ev:Evidence {{id: '{evidence_id}'}}), (s:SourceArtifact {{id: '{sa_id}'}}) \
+                 MERGE (ev)-[:EXTRACTED_FROM]->(s);"
+            );
+            store.query(&link_cypher).ok();
+        }
+    }
+
+    Ok(ApplyReport {
+        elements_written,
+        elements_skipped,
+        evidences_written,
+        source_artifacts_written,
+    })
+}
+
+/// Report from a successful `--apply` run.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApplyReport {
+    pub elements_written: usize,
+    pub elements_skipped: usize,
+    pub evidences_written: usize,
+    pub source_artifacts_written: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
