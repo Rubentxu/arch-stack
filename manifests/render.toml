@@ -1,0 +1,34 @@
+# scope: render
+#
+# Architecture diagram renderer — POSTs the source to a kroki
+# endpoint (Structurizr or PlantUML), writes the SVG locally. The
+# ADR-011 network policy is enforced via the `--kroki-url` flag
+# (defaults to the local kroki instance).
+
+id = "render"
+version = "0.1.0"
+description = "Architecture diagram renderer (PlantUML/Structurizr via kroki)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/render.rs"]
+
+public_symbols = [
+  "run",
+  "detect_format",
+]
+
+must_hold = [
+  "pub fn run(",
+  "fn detect_format(",
+  "RenderFormat",
+  "Structurizr",
+  "Plantuml",
+  "kroki",
+  "reqwest",
+  ".archctl-rendered",
+]
+
+minimum_tests = 0
+
+must_not_contain = ["use std::fs::"]

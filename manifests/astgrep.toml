@@ -1,0 +1,44 @@
+# scope: astgrep
+#
+# ast-grep adapter using `ast-grep-language` with builtin-parser.
+# `Lang` is a thin wrapper over `SupportLang` (Rust, TypeScript,
+# JavaScript, Python, Go, Java, Kotlin). The adapter exposes the
+# subset of the ast-grep surface the rest of the CLI needs.
+
+id = "astgrep"
+version = "0.1.0"
+description = "ast-grep adapter (7 languages via ast-grep-language builtin-parser)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/astgrep.rs"]
+
+public_symbols = [
+  "Lang",
+  "ALL",
+  "from_label",
+  "from_path",
+  "label",
+  "parse",
+  "compile_pattern",
+  "find_all",
+  "find_by_kind",
+]
+
+must_hold = [
+  "pub enum Lang",
+  "pub const ALL",
+  "pub fn from_label(",
+  "pub fn from_path(",
+  "pub fn parse(",
+  "pub fn compile_pattern(",
+  "pub fn find_all",
+  "pub fn find_by_kind",
+  "ast_grep_core",
+  "ast_grep_language",
+  "SupportLang",
+]
+
+minimum_tests = 9
+
+must_not_contain = ["use std::fs::"]

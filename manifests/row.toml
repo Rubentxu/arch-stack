@@ -1,0 +1,60 @@
+# scope: row
+#
+# Typed query result row (Row, Cell) — small alternative to leaking
+# `serde_json::Value` into the domain. The domain stays agnostic of
+# how the result will be serialised; `to_json()` lives at the
+# adapter edge (CLI formatter).
+
+id = "row"
+version = "0.1.0"
+description = "Typed query result row (Row, Cell) — domain stays JSON-free"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/row.rs"]
+
+public_symbols = [
+  "Row",
+  "Cell",
+  "Null",
+  "Bool",
+  "Int",
+  "Float",
+  "String",
+  "Bytes",
+  "List",
+  "Object",
+  "is_null",
+  "as_str",
+  "as_i64",
+  "as_bool",
+  "as_list",
+  "as_bytes",
+  "to_json",
+  "column",
+  "get",
+  "iter",
+  "len",
+  "is_empty",
+  "column_names",
+  "remove",
+]
+
+must_hold = [
+  "pub struct Row",
+  "pub enum Cell",
+  "pub fn as_str(",
+  "pub fn as_i64(",
+  "pub fn as_bool(",
+  "pub fn as_list(",
+  "pub fn as_bytes(",
+  "pub fn to_json(",
+  "pub fn column(",
+  "pub fn get(",
+  "pub fn column_names(",
+  "pub fn remove(",
+]
+
+minimum_tests = 8
+
+must_not_contain = ["use std::fs::"]

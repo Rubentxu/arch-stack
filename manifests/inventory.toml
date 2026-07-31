@@ -1,0 +1,44 @@
+# scope: inventory
+#
+# Project tree walking (respects .gitignore / .ignore / global
+# ignores) + per-file language detection. Hard cap on entries protects
+# against pathologically large repos.
+
+id = "inventory"
+version = "0.1.0"
+description = "Project tree walker (gitignore-respecting) + language detection"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/inventory.rs"]
+
+public_symbols = [
+  "Entry",
+  "EntryKind",
+  "File",
+  "Dir",
+  "tree",
+  "languages",
+  "supported_files",
+  "detect_language",
+  "walk_to_paths",
+  "depends",
+  "depends_summary",
+]
+
+must_hold = [
+  "pub struct Entry",
+  "pub enum EntryKind",
+  "pub fn tree(",
+  "pub fn detect_language(",
+  "pub fn languages(",
+  "pub fn supported_files(",
+  "pub fn depends(",
+  "WalkBuilder",
+  "ignore",
+  "standard_filters",
+]
+
+minimum_tests = 6
+
+must_not_contain = ["use std::fs::"]

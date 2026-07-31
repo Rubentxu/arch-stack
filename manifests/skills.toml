@@ -1,0 +1,51 @@
+# scope: skills
+#
+# Skill registry: lockfile (skills.lock.yaml), sync (git clone →
+# .local/share/archctl/skills/sources/), verify, activate (symlink
+# into OPENCODE_CONFIG_DIR). Three modes: direct, wrapped, patched.
+
+id = "skills"
+version = "0.1.0"
+description = "Skill registry (lockfile + sync + verify + activate)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/skills.rs"]
+
+public_symbols = [
+  "SkillMode",
+  "Direct",
+  "Wrapped",
+  "Patched",
+  "SkillLockEntry",
+  "SkillsLock",
+  "SyncReport",
+  "VerifyReport",
+  "load_lock",
+  "sync_skill",
+  "sync_skills",
+  "verify_skills",
+  "activate_skill",
+  "run",
+]
+
+must_hold = [
+  "pub enum SkillMode",
+  "pub struct SkillLockEntry",
+  "pub struct SkillsLock",
+  "pub struct SyncReport",
+  "pub struct VerifyReport",
+  "pub fn load_lock(",
+  "pub fn sync_skill(",
+  "pub fn sync_skills(",
+  "pub fn verify_skills(",
+  "pub fn activate_skill(",
+  "pub fn run(",
+  "schema-version",
+  "SKILL.md",
+  "OPENCODE_CONFIG_DIR",
+]
+
+minimum_tests = 0
+
+must_not_contain = ["use std::fs::"]

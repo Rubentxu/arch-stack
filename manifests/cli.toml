@@ -1,0 +1,55 @@
+# scope: cli
+#
+# Top-level CLI surface — clap derive + dispatcher. CliContext is
+# the carrier for the two ports (Environment + Filesystem) that
+# every handler needs. Per-handler `pub fn` lives in the implementing
+# module (e.g. `run_export` in `diagram::export`), not in cli.rs.
+
+id = "cli"
+version = "0.1.0"
+description = "Top-level CLI dispatch (clap derive) — CliContext + run/run_inner"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/cli.rs"]
+
+public_symbols = [
+  "CliContext",
+  "production",
+  "for_test",
+  "for_test_with_fs",
+  "resolve_cwd",
+  "RenderFormat",
+  "Auto",
+  "Structurizr",
+  "Plantuml",
+  "ProjectAction",
+  "EvidenceAction",
+  "SkillsAction",
+  "DiagramAction",
+  "InventoryAction",
+  "GraphAction",
+  "Cli",
+  "Command",
+  "run",
+  "run_inner",
+]
+
+must_hold = [
+  "pub struct CliContext",
+  "pub fn run(",
+  "pub fn run_inner(",
+  "pub fn resolve_cwd(",
+  "pub enum Command",
+  "pub enum DiagramAction",
+  "pub enum ProjectAction",
+  "pub enum EvidenceAction",
+  "pub enum SkillsAction",
+  "use clap::",
+  "Parser",
+  "Subcommand",
+]
+
+minimum_tests = 13
+
+must_not_contain = ["use std::fs::"]

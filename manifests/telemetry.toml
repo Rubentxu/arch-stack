@@ -1,0 +1,29 @@
+# scope: telemetry
+#
+# Tracing initialisation (tracing-subscriber). Respects the
+# `NO_COLOR` convention via the Environment port so tests can
+# inject a fixed answer.
+
+id = "telemetry"
+version = "0.1.0"
+description = "Tracing init (tracing-subscriber) — respects NO_COLOR via Environment port"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/telemetry.rs"]
+
+public_symbols = [
+  "init",
+]
+
+must_hold = [
+  "pub fn init(",
+  "tracing_subscriber",
+  "EnvFilter",
+  "NO_COLOR",
+  "SystemEnvironment",
+]
+
+minimum_tests = 0
+
+must_not_contain = ["use std::fs::"]

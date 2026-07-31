@@ -1,0 +1,45 @@
+# scope: graph
+#
+# LadybugDB session lifecycle. Bounded buffer pool (256 MiB per
+# database) keeps the per-fixture footprint bounded — lbug 0.18.3's
+# `SystemConfig::default()` resolves to UINT64_MAX which exhausts the
+# kernel under parallel test fixtures. Refs: fix-parallel-lbug-test-races.
+
+id = "graph"
+version = "0.1.0"
+description = "LadybugDB session lifecycle + bounded buffer pool (256 MiB)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/graph.rs"]
+
+public_symbols = [
+  "BUFFER_POOL_SIZE",
+  "Session",
+  "GraphStat",
+  "database_path",
+  "open_session",
+  "init",
+  "stat",
+  "query",
+  "neighbours",
+  "validate_identifier",
+]
+
+must_hold = [
+  "pub const BUFFER_POOL_SIZE",
+  "pub struct Session",
+  "pub struct GraphStat",
+  "pub fn database_path(",
+  "pub fn open_session(",
+  "pub fn init(",
+  "pub fn stat(",
+  "buffer_pool_size",
+  "max_db_size",
+  "Database::new",
+  "Connection::new",
+]
+
+minimum_tests = 8
+
+must_not_contain = ["use std::fs::"]

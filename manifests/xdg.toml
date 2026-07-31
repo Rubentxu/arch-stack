@@ -1,0 +1,48 @@
+# scope: xdg
+#
+# XDG Base Directory layout (data, config, state, cache) with five
+# sub-roots under data (skills, projects, lib, sources). The
+# `ensure_xdg` helper creates the full tree. `resolve_xdg` reads
+# env vars via the Environment port (testable).
+
+id = "xdg"
+version = "0.1.0"
+description = "XDG Base Directory layout (data, config, state, cache + sub-roots)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/xdg.rs"]
+
+public_symbols = [
+  "XdgLayout",
+  "data",
+  "config",
+  "state",
+  "cache",
+  "skills_root",
+  "projects_root",
+  "lib_root",
+  "sources_root",
+  "user_home",
+  "resolve_xdg",
+  "resolve_xdg_from_env",
+  "ensure_xdg",
+]
+
+must_hold = [
+  "pub struct XdgLayout",
+  "pub fn user_home(",
+  "pub fn resolve_xdg(",
+  "pub fn resolve_xdg_from_env(",
+  "pub fn ensure_xdg(",
+  "XDG_DATA_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_STATE_HOME",
+  "XDG_CACHE_HOME",
+  "projects_root",
+  "skills_root",
+]
+
+minimum_tests = 0
+
+must_not_contain = ["use std::fs::"]
