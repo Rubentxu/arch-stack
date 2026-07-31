@@ -218,6 +218,7 @@ Incluye:
 | `refactor-extract-cell-to-json-map` | `refactor/extract-cell-to-json-map` (merged a main via FF) | `504560f` | **Cerrado** ✅ · tag `v0.3.1` |
 | `m9-archctl-export` | `feat/m9-archctl-export` (merged a main via FF) | `7c2f167` | **Cerrado** ✅ · tag `v0.4.0` |
 | `hygiene-local-only-policy` | direct commit on `main` (no PR — 1-line config gap) | `0a28016` | **Cerrado** ✅ · tag `v0.4.1` |
+| `m9-archctl-export-apply` (PR1) | `feat/m9-archctl-export-apply-foundation` (mergeado a main via --no-ff) | `ce25825` | **Cerrado** ✅ · tag diferido a PR2 → v0.6.0 |
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
@@ -366,3 +367,17 @@ Incluye:
 - **Próximo candidato**: `m9-archctl-export-apply` (PR1 foundation: schema v3 + DB lock via fs2 + 8 port methods). Planning 100/100 PASS, ADR-018 eliminado, listo para arrancar.
 
 > `more-manifests-2`: cierra la cobertura de scope manifests. 11 nuevos TOML declaran public API + must_hold invariants para astgrep/cli/doctor/graph/inventory/project/render/row/skills/telemetry/xdg. 183 unit tests preservados. Config-only, no functional changes. Archivado en `sddk/more-manifests-2/archive-report.md` (minimal).
+
+## Cycle cerrado — `m9-archctl-export-apply` (PR1 — Foundation)
+
+- **Fecha**: 2026-07-31
+- **Branch**: `feat/m9-archctl-export-apply-foundation` (merged to main via --no-ff)
+- **Tag**: none (deferido a PR2 → v0.6.0; PR1 es infraestructura foundation, sin superficie CLI)
+- **Verdict**: verify PASS WITH WARNINGS (4W + 3S; W-2 resolved post-verify) · debt-verify PASS WITH WARNINGS (5W + 5S; W-DV-1 + W-DV-2 resolved post-verify)
+- **Commits**: 12 (11 cycle + 1 merge --no-ff via ce25825)
+- **Tests**: 198 passing (183 baseline + 15 new)
+- **Output**: schema v3 migration (`003_view_nodes.cypher`: 4 NODE TABLEs + 3 REL TABLEs), DB lock via `fs2::try_lock_exclusive` on `.lbdb` (ADR-010 gap cerrada), 8 GraphStore port methods additivos (put_diagram, get_diagram, put_view_member, link_member_of, link_renders, put_view_group, link_group_contains, get_view_members), ViewMember x/y/collapsed columns, ViewGroup collapsed column. Trait grew 8→16 methods. Zero breaking changes.
+- **PR1 specific output**: view_types.rs (+194 LOC), store.rs (+817 LOC), 003_view_nodes.cypher (+141 LOC), tests (+63 LOC). HTML closing report: `docs/reports/closing-pr1-m9-archctl-export-apply-foundation.html`.
+- **Key decisions**: D-1: fs2::try_lock_exclusive on .lbdb (vs separate lockfile — elimina 150 LOC de lock.rs); D-2: ViewMember x/y/collapsed en DDL (W-2 fix); D-5/6: MERGE SET + RETURN con todas las columnas (W-DV-1/2 fix).
+- **Debt carry to PR2**: W-DV-3 (open_lbug_session duplicado), W-DV-4 (trait bloat 16→21), W-DV-5 (link_* duplication ×3).
+- **Próximo candidato**: PR2 (apply surface: `archctl diagram apply` CLI + override/lock model).
