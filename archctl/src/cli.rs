@@ -122,6 +122,29 @@ pub enum InventoryAction {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum DiagramAction {
+    Export {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// View selector in the form `<c4-kind>:<scope>` (e.g., `container:orders`, `context:*`).
+        selector: String,
+        #[arg(long, default_value = "viewer-bundle")]
+        format: String,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Validate {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        bundle_dir: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum EvidenceAction {
     Extract {
         #[arg(long)]
@@ -231,6 +254,10 @@ pub enum Command {
         #[command(subcommand)]
         action: InventoryAction,
     },
+    Diagram {
+        #[command(subcommand)]
+        action: DiagramAction,
+    },
     Evidence {
         #[command(subcommand)]
         action: EvidenceAction,
@@ -295,6 +322,14 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             }
             InventoryAction::Depends { cwd, manifest, json } => {
                 inventory_depends_cmd(cwd, manifest, json, ctx)
+            }
+        },
+        Command::Diagram { action } => match action {
+            DiagramAction::Export { cwd, selector, format, output, json } => {
+                diagram_export_cmd(cwd, &selector, &format, output, json, ctx)
+            }
+            DiagramAction::Validate { cwd, bundle_dir, json } => {
+                diagram_validate_cmd(cwd, bundle_dir, json, ctx)
             }
         },
         Command::Evidence { action } => match action {
@@ -719,6 +754,81 @@ fn evidence_list_cmd(
         }
     }
     Ok(0)
+}
+
+fn diagram_export_cmd(
+    cwd: Option<PathBuf>,
+    selector: &str,
+    format: &str,
+    output: PathBuf,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    if format != "viewer-bundle" {
+        anyhow::bail!("only 'viewer-bundle' format is supported (got: {format})");
+    }
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
+    store.init().context("graph init (export prerequisite)")?;
+
+    let report = crate::diagram::run_export(
+        &*store,
+        selector,
+        &output,
+        &crate::clock::SystemClock,
+        &*ctx.fs,
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report.manifest)?);
+    } else {
+        println!(
+            "Exported {} elements, {} edges, {} evidence to {}",
+            report.element_count,
+            report.edge_count,
+            report.evidence_count,
+            output.display()
+        );
+    }
+    Ok(0)
+}
+
+fn diagram_validate_cmd(
+    cwd: Option<PathBuf>,
+    bundle_dir: PathBuf,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    let _cwd = ctx.resolve_cwd(cwd.as_ref());
+    let report = crate::diagram::run_validate(&bundle_dir, &*ctx.fs)?;
+
+    if report.is_valid() {
+        if !json {
+            println!("Bundle {} is valid", bundle_dir.display());
+        }
+        Ok(0)
+    } else {
+        if !json {
+            println!("Bundle {} has validation errors:", bundle_dir.display());
+            for err in &report.errors {
+                println!("  [{}] {}", err.file, err.error);
+            }
+        } else {
+            let errors: Vec<serde_json::Value> = report
+                .errors
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "file": e.file,
+                        "error": e.error
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&errors)?);
+        }
+        Ok(1)
+    }
 }
 
 #[cfg(test)]

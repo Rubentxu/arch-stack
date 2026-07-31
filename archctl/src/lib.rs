@@ -22,7 +22,7 @@ pub mod telemetry;
 pub mod tsg;
 pub mod xdg;
 
-pub use cli::{run, Cli, Command, EvidenceAction, GraphAction, InventoryAction, ProjectAction, RenderFormat, SkillsAction};
+pub use cli::{run, Cli, Command, DiagramAction, EvidenceAction, GraphAction, InventoryAction, ProjectAction, RenderFormat, SkillsAction};
 pub use clock::{fixed_clock, system_clock, Clock, FixedClock, SystemClock};
 pub use environment::{fixed_environment, system_environment, Environment, FixedEnvironment, SystemEnvironment};
 pub use filesystem::{system_filesystem, memory_filesystem, DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem};
