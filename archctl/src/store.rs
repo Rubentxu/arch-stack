@@ -42,6 +42,7 @@
 //!   `SparrowStore::import_lbug()` problem, not the port's.
 
 use anyhow::Result;
+use fs2::FileExt;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 
@@ -173,16 +174,52 @@ pub fn open_default(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
 }
 
 // ---------------------------------------------------------------------------
+// DB lock errors
+// ---------------------------------------------------------------------------
+
+/// Error returned when the project DB is already locked by another process.
+#[derive(Debug)]
+pub enum LockError {
+    /// Another `archctl` process holds the lock.
+    AnotherArchctlRunning,
+    /// I/O error while acquiring the lock.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for LockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LockError::AnotherArchctlRunning => {
+                write!(f, "another archctl process is running for this project")
+            }
+            LockError::Io(e) => write!(f, "lock I/O error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for LockError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            LockError::AnotherArchctlRunning => None,
+            LockError::Io(e) => Some(e),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Adapter: LadybugDB (the only concrete implementation today)
 // ---------------------------------------------------------------------------
 
 /// The current adapter — wraps LadybugDB (the `lbug` crate) behind the
-/// port. All the per-engine code that used to live in `graph.rs` is
-/// here. Callers see a `&dyn GraphStore` and never touch a
+/// port. Callers see a `&dyn GraphStore` and never touch a
 /// `Connection`.
 pub struct LbugStore {
     project_dir: PathBuf,
     session: Option<LbugSession>,
+    /// File descriptor for the exclusive flock on `.lbdb`.
+    /// Its Drop releases the kernel-managed lock.
+    #[allow(dead_code)]
+    lock_fd: std::fs::File,
 }
 
 /// Internal scope-bounded handle. Mirrors the previous `Session` but
@@ -196,6 +233,36 @@ struct LbugSession {
 }
 
 impl LbugStore {
+    /// Open (or create) a store, acquiring an exclusive flock on `.lbdb`.
+    /// Returns `Err(LockError::AnotherArchctlRunning)` if another process
+    /// already holds the lock. The lock is released when the store is dropped.
+    pub fn open(project_dir: &Path) -> Result<Self, LockError> {
+        let lock_path = crate::graph::database_path(project_dir);
+        // Ensure the project directory exists before creating the lock file.
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent).map_err(LockError::Io)?;
+        }
+        let lock_fd = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&lock_path)
+            .map_err(LockError::Io)?;
+        // Try to acquire an exclusive lock. `WouldBlock` means another
+        // process holds it (kernel-managed, no stale recovery code needed).
+        match lock_fd.try_lock_exclusive() {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(LockError::AnotherArchctlRunning);
+            }
+            Err(e) => return Err(LockError::Io(e)),
+        }
+        Ok(Self {
+            project_dir: project_dir.to_path_buf(),
+            session: None,
+            lock_fd,
+        })
+    }
+
     fn session_mut(&mut self) -> Result<&mut LbugSession> {
         if self.session.is_none() {
             self.session = Some(open_lbug_session(&self.project_dir)?);
@@ -206,15 +273,8 @@ impl LbugStore {
 
 impl GraphStore for LbugStore {
     fn open(project_dir: &Path) -> Result<Self> {
-        // Lazy session: do not open the DB file until the first
-        // operation. `init` and `stat` already called `open_session`
-        // eagerly; `put_evidence` and `list_evidence` did not. Keeping
-        // the lazy semantics preserves the existing behaviour and
-        // shrinks the time during which we hold an exclusive lock.
-        Ok(Self {
-            project_dir: project_dir.to_path_buf(),
-            session: None,
-        })
+        LbugStore::open(project_dir)
+            .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))
     }
 
     fn init(&mut self) -> Result<()> {
@@ -832,6 +892,8 @@ mod tests {
         let project = tmp.path().join("proj");
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
+        // Drop the first store to release the lock before re-opening.
+        drop(store);
         // Re-opening and re-initialising must not error.
         let mut store2 = LbugStore::open(&project).unwrap();
         store2.init().unwrap();
@@ -1376,5 +1438,37 @@ mod tests {
             "must include superseded row"
         );
         assert_eq!(superseded_ids.len(), 1);
+    }
+
+    #[test]
+    fn lbug_store_open_succeeds_when_no_holder() {
+        // Opening a fresh project should succeed.
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let result = LbugStore::open(&project);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn lbug_store_open_fails_when_holder_exists() {
+        // Hold the lock directly on the .lbdb file, then try to open
+        // LbugStore — it should fail with AnotherArchctlRunning.
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        // First open to create the .lbdb file.
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+        // Drop the store to keep the .lbdb file but release our lock.
+        drop(store);
+        // Re-open the .lbdb file directly and hold an exclusive lock.
+        let lock_path = crate::graph::database_path(&project);
+        let holder_fd = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&lock_path)
+            .unwrap();
+        holder_fd.try_lock_exclusive().unwrap();
+        // Now LbugStore::open should fail because we hold the lock.
+        let result = LbugStore::open(&project);
+        assert!(matches!(result, Err(LockError::AnotherArchctlRunning)));
     }
 }

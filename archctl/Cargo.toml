@@ -36,6 +36,7 @@ ast-grep-core = { version = "0.45", features = ["tree-sitter"] }
 ast-grep-language = { version = "0.45.0", features = ["builtin-parser"] }
 basemind-tree-sitter-graph = "0.12"
 ignore = "0.4"
+fs2 = "0.4"
 lbug = "0.18.3"
 tree-sitter = "0.26"
 jsonschema = { version = "0.49.2", default-features = false }
