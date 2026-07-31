@@ -273,7 +273,7 @@ mod tests {
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
-        assert_eq!(text.trim(), "v2-source-evaluation");
+        assert_eq!(text.trim(), "v3-view-nodes");
     }
 
     #[test]
