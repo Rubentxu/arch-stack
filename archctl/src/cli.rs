@@ -142,6 +142,16 @@ pub enum DiagramAction {
         #[arg(long)]
         json: bool,
     },
+    /// Apply a changeset (view-level edits) to a persisted diagram.
+    Apply {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Path to the changeset JSON file (validated against changeset.schema.json).
+        #[arg(long)]
+        changes: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -330,6 +340,9 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             }
             DiagramAction::Validate { cwd, bundle_dir, json } => {
                 diagram_validate_cmd(cwd, bundle_dir, json, ctx)
+            }
+            DiagramAction::Apply { cwd, changes, json } => {
+                diagram_apply_cmd(cwd, changes, json, ctx)
             }
         },
         Command::Evidence { action } => match action {
@@ -829,6 +842,43 @@ fn diagram_validate_cmd(
         }
         Ok(1)
     }
+}
+
+fn diagram_apply_cmd(
+    cwd: Option<PathBuf>,
+    changes: PathBuf,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let report = crate::diagram::run_apply(
+        &cwd,
+        &changes,
+        &crate::clock::SystemClock,
+        &*ctx.fs,
+    )
+    .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "diagram_id": report.diagram_id,
+                "commands_applied": report.commands_applied,
+                "old_revision": report.old_revision,
+                "new_revision": report.new_revision,
+            }))?
+        );
+    } else {
+        println!(
+            "Applied {} command(s) to {} (revision: {} → {})",
+            report.commands_applied,
+            report.diagram_id,
+            &report.old_revision[..12],
+            &report.new_revision[..12],
+        );
+    }
+    Ok(0)
 }
 
 #[cfg(test)]

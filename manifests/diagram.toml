@@ -30,6 +30,9 @@ editable = [
   "archctl/src/diagram/queries.rs",
   "archctl/src/diagram/export_types.rs",
   "archctl/src/diagram/view_types.rs",
+  "archctl/src/diagram/apply.rs",
+  "archctl/src/diagram/changeset_types.rs",
+  "archctl/src/diagram/changeset_schema.rs",
   "archctl/src/cli.rs",
 ]
 
@@ -49,6 +52,11 @@ public_symbols = [
   "base_revision",
   "parse",
   "icon_for",
+  "run_apply",
+  "ApplyReport",
+  "CHANGESET_COMMAND_TYPES",
+  "ChangeSet",
+  "Command",
 ]
 
 # Textual invariants that prove the module does what its scope
@@ -68,7 +76,9 @@ must_hold = [
   "pub fn parse(",
   "jsonschema::validator_for",
   "blake3::hash",
-  "try_lock_exclusive",
+  "pub fn run_apply(",
+  "pub const CHANGESET_COMMAND_TYPES",
+  "fn diagram_apply_cmd(",
 ]
 
 # Banned patterns: no HTTP client, no direct std::fs in the diagram module.
@@ -80,5 +90,7 @@ must_not_contain = [
 ]
 
 # Minimum number of `#[test]` items in the diagram module.
-# Counts: selector (10) + hash (4) + assets (3) + queries (2) + validate (2) + view_types (4) = 25
-minimum_tests = 25
+# Counts (approximate): selector (10) + hash (4) + assets (3) + queries (2)
+# + validate (2) + view_types (4) + changeset_types (4) + changeset_schema (1)
+# + apply (15+) + apply_queries (3) + integration (8) = ~56
+minimum_tests = 56
