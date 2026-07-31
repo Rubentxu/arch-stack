@@ -147,9 +147,13 @@ pub fn run_validate(
     }
 
     // 7. Consistency: required icon files exist in assets/
-    let required_icons = ["context.png", "container.png", "component.png", "dynamic.png", "deployment.png"];
+    // The 5 canonical C4 levels are the source of truth shared with export.rs.
+    let required_icons: Vec<String> = crate::diagram::assets::CANONICAL_C4_ICONS
+        .iter()
+        .map(|kind| format!("{kind}.png"))
+        .collect();
     if fs.exists(&assets_dir) {
-        for icon in required_icons {
+        for icon in &required_icons {
             let icon_path = assets_dir.join(icon);
             if !fs.exists(&icon_path) {
                 errors.push(ValidationError {

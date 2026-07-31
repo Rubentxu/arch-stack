@@ -183,8 +183,9 @@ pub fn run_export(
     fs.create_dir_all(&assets_dir)
         .with_context(|| format!("creating assets directory {}", assets_dir.display()))?;
 
-    // Write icons (all 6, even if not all are referenced — ADR-011 optimization deferred)
-    for icon_name in ["context", "container", "component", "person", "external_person", "software_system"] {
+    // Write icons — the 5 canonical C4 levels (shared with validate.rs).
+    // Single source of truth: `assets::CANONICAL_C4_ICONS`.
+    for icon_name in crate::diagram::assets::CANONICAL_C4_ICONS {
         let icon_bytes = crate::diagram::assets::icon_for(icon_name)
             .unwrap_or_default();
         write_atomic_bytes(fs, &assets_dir.join(format!("{icon_name}.png")), icon_bytes)?;
@@ -388,9 +389,9 @@ mod tests {
         assert_eq!(styles.theme, "default");
         assert_eq!(styles.element_colors.container, "#438dd5");
 
-        // Verify assets directory and icons
+        // Verify assets directory and icons — must match the canonical C4 set shared with validate.rs.
         assert!(fs.exists(&out_dir.join("assets")));
-        for icon in ["context", "container", "component", "person", "external_person", "software_system"] {
+        for icon in crate::diagram::assets::CANONICAL_C4_ICONS {
             assert!(fs.exists(&out_dir.join("assets").join(format!("{icon}.png"))),
                 "icon {icon}.png should exist");
         }
