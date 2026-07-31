@@ -8,7 +8,6 @@
 //! Apply acquires a shared-lock on the project DB (fs2) before mutating.
 
 pub mod apply;
-pub mod apply_queries;
 pub mod assets;
 pub mod changeset_schema;
 pub mod changeset_types;

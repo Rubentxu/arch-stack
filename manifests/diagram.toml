@@ -31,7 +31,6 @@ editable = [
   "archctl/src/diagram/export_types.rs",
   "archctl/src/diagram/view_types.rs",
   "archctl/src/diagram/apply.rs",
-  "archctl/src/diagram/apply_queries.rs",
   "archctl/src/diagram/changeset_types.rs",
   "archctl/src/diagram/changeset_schema.rs",
   "archctl/src/cli.rs",
