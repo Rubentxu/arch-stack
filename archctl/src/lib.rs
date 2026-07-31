@@ -1,6 +1,7 @@
 pub mod astgrep;
 pub mod cli;
 pub mod clock;
+pub mod diagram;
 pub mod doctor;
 pub mod environment;
 pub mod evidence;
