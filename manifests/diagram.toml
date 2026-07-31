@@ -1,0 +1,82 @@
+# scope: diagram
+#
+# diagram::run_export + diagram::run_validate implement the read-side
+# archview bundle contract (ADR-013). The module reads from GraphStore,
+# Filesystem, and Clock ports. It never writes to the graph.
+#
+# This manifest declares what MUST hold for the diagram scope to be
+# considered sane by `archctl doctor --scopes diagram`.
+
+id = "diagram"
+version = "0.1.0"
+description = "Diagram bundle export + validate (read-side archview contract)"
+
+# Cargo crate root for the test-count gate. Monorepo convention:
+# `manifests/` lives at the workspace root, the crate at `archctl/`.
+cargo_dir = "archctl"
+
+# Files that may be edited freely within this scope.
+# cli.rs is included for the DiagramAction enum wiring; the ADR-011
+# network bans apply only to archctl/src/diagram/ (enforced by
+# must_not_contain patterns scoped to diagram/ subdirectory).
+editable = [
+  "archctl/src/diagram/mod.rs",
+  "archctl/src/diagram/export.rs",
+  "archctl/src/diagram/validate.rs",
+  "archctl/src/diagram/selector.rs",
+  "archctl/src/diagram/hash.rs",
+  "archctl/src/diagram/schema_embed.rs",
+  "archctl/src/diagram/assets.rs",
+  "archctl/src/diagram/queries.rs",
+  "archctl/src/diagram/export_types.rs",
+  "archctl/src/cli.rs",
+]
+
+# Public symbols that consumers depend on. If any of these disappear
+# the CLI subcommands `archctl diagram export|validate` break.
+# DiagramAction is defined in cli.rs and re-exported from the crate.
+public_symbols = [
+  "DiagramAction",
+  "run_export",
+  "ExportReport",
+  "run_validate",
+  "ValidationReport",
+  "ValidationError",
+  "ViewSelector",
+  "C4Kind",
+  "ScopeFilter",
+  "base_revision",
+  "parse",
+  "icon_for",
+]
+
+# Textual invariants that prove the module does what its scope
+# declares. Each line is searched for inside the editable files.
+# Plain strings (not regex) so a doctype tweak can't quietly
+# satisfy a stale contract.
+must_hold = [
+  "pub fn run_export(",
+  "pub fn run_validate(",
+  "pub struct ViewSelector",
+  "pub enum C4Kind",
+  "pub enum ScopeFilter",
+  "&dyn Filesystem",
+  "dyn Clock",
+  "pub fn base_revision(",
+  "pub fn icon_for(",
+  "pub fn parse(",
+  "jsonschema::validator_for",
+  "blake3::hash",
+]
+
+# Banned patterns: no HTTP client, no direct std::fs in the diagram module.
+# Network patterns (http://, https://) are excluded from cli.rs defaults.
+must_not_contain = [
+  "use reqwest",
+  "use std::fs::",
+  "use crate::render",
+]
+
+# Minimum number of `#[test]` items in the diagram module.
+# Counts: selector (10) + hash (4) + assets (3) + queries (2) + validate (2) = 21
+minimum_tests = 18
