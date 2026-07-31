@@ -170,6 +170,16 @@ pub trait GraphStore: Send + Sync {
 
     /// Fetch a Diagram by `id`. Errors if not found.
     fn get_diagram(&self, id: &str) -> Result<crate::diagram::view_types::Diagram>;
+
+    /// MERGE a ViewMember node by `id`. Idempotent.
+    fn put_view_member(&mut self, member: &crate::diagram::view_types::ViewMember) -> Result<()>;
+
+    /// Create MEMBER_OF edge. Idempotent via MATCH+CREATE fallback
+    /// (lbug 0.18.3 rejects MERGE on REL TABLE).
+    fn link_member_of(&mut self, member_id: &str, diagram_id: &str) -> Result<()>;
+
+    /// Create RENDERS edge. Idempotent via MATCH+CREATE fallback.
+    fn link_renders(&mut self, member_id: &str, element_id: &str) -> Result<()>;
 }
 
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -778,6 +788,95 @@ impl GraphStore for LbugStore {
             created_at: Some(cell_to_str("d.created_at")).filter(|s| !s.is_empty()),
             updated_at: Some(cell_to_str("d.updated_at")).filter(|s| !s.is_empty()),
         })
+    }
+
+    fn put_view_member(&mut self, member: &crate::diagram::view_types::ViewMember) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&member.id)
+            .context("put_view_member: member.id failed validation")?;
+        let diagram_id = crate::graph::validate_identifier(&member.diagram_id)
+            .context("put_view_member: diagram_id failed validation")?;
+        let element_id = crate::graph::validate_identifier(&member.element_id)
+            .context("put_view_member: element_id failed validation")?;
+        let safe_label = member.label.replace('\'', "\\'");
+        let props_json =
+            serde_json::to_string(&member.props).context("serialize view_member props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (vm:ViewMember {{id: '{id}'}}) SET \
+             vm.diagram_id = '{diagram_id}', \
+             vm.element_id = '{element_id}', \
+             vm.label = '{safe_label}', \
+             vm.props = '{safe_props}', \
+             vm.updated_at = timestamp('{now}'), \
+             vm.created_at = COALESCE(vm.created_at, timestamp('{now}'));"
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("put_view_member: failed to persist ViewMember {id}")
+        })?;
+        Ok(())
+    }
+
+    fn link_member_of(&mut self, member_id: &str, diagram_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("link_member_of: member_id failed validation")?;
+        let did = crate::graph::validate_identifier(diagram_id)
+            .context("link_member_of: diagram_id failed validation")?;
+
+        // ADR-017 §"Nota técnica": MERGE on REL TABLE is rejected by lbug 0.18.3.
+        // Fall back to MATCH + CREATE (idempotent: if edge exists, second CREATE is no-op).
+        let primary = format!(
+            "MATCH (vm:ViewMember {{id: '{mid}'}}), (d:Diagram {{id: '{did}'}}) \
+             MERGE (vm)-[:MEMBER_OF]->(d);"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (vm:ViewMember {{id: '{mid}'}}), (d:Diagram {{id: '{did}'}}) \
+                 CREATE (vm)-[:MEMBER_OF]->(d);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_member_of fallback for ({mid}, {did})")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn link_renders(&mut self, member_id: &str, element_id: &str) -> Result<()> {
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("link_renders: member_id failed validation")?;
+        let eid = crate::graph::validate_identifier(element_id)
+            .context("link_renders: element_id failed validation")?;
+
+        // ADR-017 §"Nota técnica": MERGE on REL TABLE rejected by lbug 0.18.3.
+        // Check element existence first (immutable borrow of self).
+        let elem_rows = self.query(&format!(
+            "MATCH (e:Element {{id: '{eid}'}}) RETURN e.id;"
+        ))?;
+        if elem_rows.is_empty() {
+            anyhow::bail!("element not found: {eid}");
+        }
+
+        // Now acquire mutable session for the edge write.
+        let session = self.session_mut()?;
+        let primary = format!(
+            "MATCH (vm:ViewMember {{id: '{mid}'}}), (e:Element {{id: '{eid}'}}) \
+             MERGE (vm)-[:RENDERS]->(e);"
+        );
+        let result = session.conn.query(&primary);
+        if result.is_err() {
+            let fallback = format!(
+                "MATCH (vm:ViewMember {{id: '{mid}'}}), (e:Element {{id: '{eid}'}}) \
+                 CREATE (vm)-[:RENDERS]->(e);"
+            );
+            session.conn.query(&fallback).with_context(|| {
+                format!("link_renders fallback for ({mid}, {eid})")
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -1596,6 +1695,112 @@ mod tests {
         assert!(
             err_msg.contains("diagram not found:"),
             "error should contain 'diagram not found:', got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn put_view_member_is_merge_on_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let vm1 = crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Label1".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_view_member(&vm1).unwrap();
+
+        // Update with different label
+        let vm2 = crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "Label2".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        };
+        store.put_view_member(&vm2).unwrap();
+
+        // Should have exactly one ViewMember with Label2
+        let rows = store
+            .query("MATCH (vm:ViewMember) RETURN vm.id, vm.label;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one ViewMember row");
+        let label = rows[0]
+            .get("vm.label")
+            .and_then(|c| c.as_str())
+            .unwrap();
+        assert_eq!(label, "Label2", "label should be updated to Label2");
+    }
+
+    #[test]
+    fn link_member_of_is_idempotent_via_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a Diagram and ViewMember.
+        store.put_diagram(&crate::diagram::view_types::Diagram {
+            id: "d1".into(),
+            revision: "r1".into(),
+            selector: "{}".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+        store.put_view_member(&crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "el1".into(),
+            label: "L".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        // Link twice.
+        store.link_member_of("vm1", "d1").unwrap();
+        store.link_member_of("vm1", "d1").unwrap();
+
+        // Should have exactly one MEMBER_OF edge.
+        let rows = store
+            .query("MATCH (vm:ViewMember)-[:MEMBER_OF]->(d:Diagram) RETURN vm.id;")
+            .unwrap();
+        assert_eq!(rows.len(), 1, "expected exactly one MEMBER_OF edge");
+    }
+
+    #[test]
+    fn link_renders_errors_when_element_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a ViewMember but no Element.
+        store.put_view_member(&crate::diagram::view_types::ViewMember {
+            id: "vm1".into(),
+            diagram_id: "d1".into(),
+            element_id: "nonexistent-element".into(),
+            label: "L".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        }).unwrap();
+
+        let result = store.link_renders("vm1", "nonexistent-element");
+        assert!(result.is_err(), "expected error when element missing");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("element not found:"),
+            "error should contain 'element not found:', got: {err_msg}"
         );
     }
 }
