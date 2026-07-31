@@ -6,6 +6,7 @@
 //!
 //! Read-only on the graph — no schema migration, no lock.
 
+pub mod apply_queries;
 pub mod assets;
 pub mod changeset_schema;
 pub mod changeset_types;
