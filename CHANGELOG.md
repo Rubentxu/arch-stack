@@ -4,6 +4,28 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.10.0] — 2026-08-01
+
+### Added
+- **`archctl/benches/` criterion harness** (M20 first slice). Three bench binaries:
+  - `export_pipeline` — `query_elements`, `query_semantic_edges`, `base_revision_hash`
+  - `apply_pipeline` — `apply_set_label_small`, `apply_move_member_medium`, `apply_chained_commands_large` (gated)
+  - `query_pipeline` — `query_count_elements_small`, `query_semantic_edges_medium`, `query_evidence_filter_large` (gated)
+- **Three deterministic dataset fixtures** at `benchmarks/datasets/`:
+  - `small-100.json` (100 elements, 250 relations, 65 KB)
+  - `medium-1k.json` (1k elements, 2.5k relations, 660 KB)
+  - `large-10k.json` (10k elements, 25k relations, 6.6 MB)
+  - Generation is deterministic via `scripts/generate_bench_datasets.py` (seed 0xC0DE0001); re-running produces byte-identical fixtures.
+- **`manifests/benchmark.toml`** — doctor scope gate for the bench harness. `cargo run --bin archctl -- doctor --scopes benchmark` validates the public symbols and must_hold invariants.
+- **`benchmarks/README.md`** — user-facing harness documentation (layout, how to run, baseline measurements, ADR-019 budget mapping, follow-ups).
+
+### Notes
+- Minor bump because this is a new feature surface (bench harness + new manifests + new docs). Zero new public API on the `archctl` binary itself.
+- New dev-dep: `criterion = { version = "0.5", features = ["html_reports"] }`. Adds ~20 transitive dev-deps (plotters, walkdir, tinytemplate, etc.) — all dev-only, never in the release binary.
+- 260 tests pass (baseline preserved). All three doctor scopes (`benchmark`, `diagram`, `store`) report 0 findings.
+- The 1k-node medium benches clock ~3s because each iteration is dominated by the seed cost (bulk Cypher inserts via `MATCH ... CREATE` on the `SEMANTIC_EDGE` REL TABLE), not by the actual query/apply. Future cycle should split seed cost out of the measurement loop.
+- M20 first slice only — the full ADR-019 budget mapping (full `run_export` bench, cold-start, RSS measurement, CI gate workflow) is documented as follow-ups in `benchmarks/README.md`.
+
 ## [v0.9.2] — 2026-08-01
 
 ### Changed
