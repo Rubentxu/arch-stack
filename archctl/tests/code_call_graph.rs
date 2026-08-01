@@ -8,10 +8,10 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
+use archctl::Row;
 use archctl::code::call_graph::{self, Language};
 use archctl::filesystem::SystemFilesystem;
 use archctl::store::{GraphStore, LbugStore};
-use archctl::Row;
 
 // ─── Integration tests ─────────────────────────────────────────────────────────
 
@@ -91,11 +91,15 @@ fn test_call_graph_apply_persists_elements_and_evidences() {
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
 
-    write(project, "Cargo.toml", r#"[package]
+    write(
+        project,
+        "Cargo.toml",
+        r#"[package]
 name = "smoke"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+    );
     write(
         project,
         "src/lib.rs",
@@ -106,14 +110,13 @@ edition = "2021"
 
     // Extract call graph
     let fs = SystemFilesystem;
-    let report = call_graph::extract(project, &[Language::Rust], None, &fs)
-        .expect("extract must succeed");
+    let report =
+        call_graph::extract(project, &[Language::Rust], None, &fs).expect("extract must succeed");
     assert_eq!(report.nodes.len(), 3, "expected 3 function nodes");
     assert_eq!(report.edges.len(), 2, "expected 2 call edges");
 
     // Apply to graph store
-    let r = call_graph::apply(project, &report, &SystemFilesystem)
-        .expect("apply must succeed");
+    let r = call_graph::apply(project, &report, &SystemFilesystem).expect("apply must succeed");
     assert_eq!(r.elements_written, 3, "should write 3 elements");
     assert_eq!(r.relations_written, 2, "should write 2 relations");
     assert_eq!(r.evidences_written, 2, "should write 2 evidences");
