@@ -12,8 +12,8 @@
 //! - **Mermaid** → SVG via `merman` (Rust crate; same graphviz vendor
 //!   blocker as PlantUML).
 //!
-//! **No HTTP egress.** The previous kroki-POST path is removed. The
-//! `--kroki-url` CLI flag is removed (security fix per
+//! **No HTTP egress.** The previous remote-renderer POST path is removed.
+//! The remote-URL CLI flag is removed (security fix per
 //! `docs/audits/2026-08-01-archctl-adr-vs-impl.md` §F1).
 //!
 //! Unsupported format errors are surfaced with a clear message pointing

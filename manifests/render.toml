@@ -1,34 +1,50 @@
 # scope: render
 #
-# Architecture diagram renderer — POSTs the source to a kroki
-# endpoint (Structurizr or PlantUML), writes the SVG locally. The
-# ADR-011 network policy is enforced via the `--kroki-url` flag
-# (defaults to the local kroki instance).
+# Architecture diagram renderer — local-only. Implements a minimal
+# Structurizr DSL → SVG renderer in pure Rust (petgraph + svg). PlantUML
+# and Mermaid renderers are deferred until the libgraphviz vendor
+# strategy is resolved (see docs/adr/ADR-011 + docs/audits/2026-08-01).
+#
+# Network egress is removed entirely: there is no `reqwest` dependency,
+# no `--kroki-url` flag, no remote fallback. The previous kroki-POST
+# path was a security risk per the 2026-08-01 audit §F1.
 
 id = "render"
-version = "0.1.0"
-description = "Architecture diagram renderer (PlantUML/Structurizr via kroki)"
-
+version = "0.2.0"
+description = "Local architecture diagram renderer (Structurizr DSL → SVG via petgraph+svg; PlantUML/Mermaid deferred)"
 cargo_dir = "archctl"
 
-editable = ["archctl/src/render.rs"]
+editable = [
+  "archctl/src/render.rs",
+  "archctl/src/render/structurizr.rs",
+]
 
 public_symbols = [
   "run",
   "detect_format",
+  "RenderKind",
 ]
 
 must_hold = [
   "pub fn run(",
+  "pub enum RenderKind",
   "fn detect_format(",
-  "RenderFormat",
   "Structurizr",
   "Plantuml",
-  "kroki",
-  "reqwest",
+  "Mermaid",
+  "petgraph",
+  "svg::Document",
   ".archctl-rendered",
+  "DiGraph",
+  "layered_svg",
 ]
 
-minimum_tests = 0
+minimum_tests = 3
 
-must_not_contain = ["use std::fs::"]
+must_not_contain = [
+  "use reqwest",
+  "kroki",
+  "tokio::",
+  "ureq",
+  "async fn",
+]
