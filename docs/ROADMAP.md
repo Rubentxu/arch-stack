@@ -594,3 +594,26 @@ Incluye:
 - **Próximo candidato**: M17.0 archview scaffold (PRIORIDAD 1) o M12 class-diagram UML (PRIORIDAD 2) o un ciclo de cleanup de los follow-ups (seed-cost decomposition).
 
 > `m20-benchmark-suite`: M20 first slice — archctl-side bench harness + 3 deterministic datasets + doctor scope gate + docs. ADR-019 producer-side budget is now measurable; consumer-side (archview TTFP, pan/zoom) belongs in M17. 260 tests passing without behavioural change. Minor tag `v0.10.0` (new feature surface: bench harness). Archivado en `sddk/m20-benchmark-suite/verify-report.md`.
+
+## Cycle cerrado — `m9-renderers-local` (v0.11.0)
+
+- **Fecha**: 2026-08-01
+- **Branch**: `m9-renderers-local` (merged to main via --no-ff)
+- **Tag**: `v0.11.0` (merge commit)
+- **Verdict**: verify PASS · doctor render 0 findings
+- **Commits**: 5 (1 refactor security + 2 feat renderer + 1 manifest + 1 docs)
+- **Tests**: 263 passing (260 baseline + 3 new structurizr tests)
+- **Output**: closes audit finding F1 from `docs/audits/2026-08-01-archctl-adr-vs-impl.md`.
+  - **`reqwest` dependency dropped.** archctl cannot reach the network at runtime. -19 transitive deps.
+  - **`--kroki-url` CLI flag removed.** The escape hatch that could silently POST diagrams to a public service is gone.
+  - **Custom Structurizr DSL → SVG renderer** (`archctl/src/render/structurizr.rs`). Pure-Rust via `petgraph 0.6 + svg 0.14`. Sugiyama-style layered layout. C4 subset only.
+  - **Format detection** now recognises `.mmd` as Mermaid (previously fell into Structurizr branch — wrong).
+- **Deferred (documented in render.rs + CHANGELOG)**:
+  - **PlantUML rendering**: `plantuml-little 1.2026.2-4` requires `libgraphviz` at build time via the `graphviz-anywhere` transitive dep. Vendor strategy needs a separate cycle.
+  - **Mermaid rendering**: `merman 0.8.0-alpha.3` has the same graphviz blocker.
+  - Both paths yield a clear "not yet wired" error from `archctl render` today.
+- **Files changed**: `archctl/Cargo.toml` (-2, +3), `archctl/Cargo.lock` (-267 lines net), `archctl/src/cli.rs`, `archctl/src/render.rs` (-19 +50 lines), `archctl/src/render/structurizr.rs` (+540 lines new), `manifests/render.toml` (-15, +31), `CHANGELOG.md`.
+- **Smoke verified locally**: `archctl render /tmp/diagram.dsl` on a 4-node 3-relation DSL produces a 1.5 KB SVG with correct layered layout (Customer → Web App → API → Database, viewBox `0 0 220 520`).
+- **Próximo candidato**: F2 (M9-relations-decision: resolver bypass de reificación en call-graph writer) o F3 (fate de AnalysisRun/Snapshot — eliminar schema no usado o implementar `archctl run resume`).
+
+> `m9-renderers-local`: closes audit F1 (security risk of public-renderer POST). `archctl` no longer reaches the network at runtime; the local Structurizr renderer ships in pure Rust; PlantUML/Mermaid deferred to a follow-up that resolves the `libgraphviz` vendor strategy. 263 tests passing without behavioural regression on existing commands. Minor tag `v0.11.0` (public surface change: new `RenderKind` enum, removed `--kroki-url` flag).
