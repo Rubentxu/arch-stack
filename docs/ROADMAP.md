@@ -544,3 +544,21 @@ Incluye:
 - **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview workbench scaffold, prioridad 1) o cleanup de los 4 WARN carried (CP-W1 + CP-W2 son port-seam hygiene, fácil cerrar).
 
 > `refactor-m9-debt-cleanup`: 6 carryover debt items from `m9-archctl-export-apply` PR2 closed via 6 refactor commits + 2 style + 1 docs. `GraphStore` restructured into 3 sub-traits (ISP benefit unlocked); `Command::apply` method on enum (OCP win); atomic `update_view_member_label` replaces RMW (W-DV2-C2). 260 tests passing without behavioural change. Patch tag `v0.9.1`. Archivado en `sddk/refactor-m9-debt-cleanup/archive-report.md`.
+
+## Cycle cerrado — `refactor/store-port-seams` (v0.9.2)
+
+- **Fecha**: 2026-08-01
+- **Branch**: `refactor/store-port-seams` (merged to main via --no-ff)
+- **Tag**: `v0.9.2` (`71ea783`)
+- **Verdict**: verify PASS · archive PASS
+- **Commits**: 3 refactor (CP-W1, CP-W2, CP-W3+OE-W1)
+- **Tests**: 260 passing (baseline preserved; 0 regressions)
+- **Output**: 4 WARN items carried from `refactor-m9-debt-cleanup` debt audit closed:
+  - **CP-W1** (`graph::create_db_session` bypassed Filesystem port) — `create_db_session` drops redundant mkdir; signature `&Path` → `path: &Path`. Both callers already do their own mkdir.
+  - **CP-W2** (`update_view_member_label` used ambient `chrono::Utc::now()`) — SET clause for `vm.updated_at` removed. Column was set-but-unread (only `m.label` is hashed for `base_revision`).
+  - **CP-W3** + **OE-W1** (apply pipeline required full `GraphStore`) — `apply_to_store`, `reexport_view`, and `Command::apply` now take `&mut dyn DiagramOps` (narrowest sub-trait covering all calls). Realises the ISP benefit of the v0.9.1 trait split.
+- **Files changed**: 4 (77 ins / 30 del). Net +47 LOC (mostly doc-comment updates).
+- **Carried forward**: 0. All 4 carried WARN items closed; the m9-debt-cleanup carryover chain is fully drained.
+- **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview scaffold, prioridad 1).
+
+> `refactor/store-port-seams`: 4 WARN items from prior cycle's debt audit closed via 3 refactor commits. `MemoryFilesystem` test isolation now works correctly. Apply pipeline narrowed to `DiagramOps` sub-trait. Ambient `chrono::Utc::now()` removed from update path. 260 tests passing without behavioural change. Patch tag `v0.9.2`. Archivado en `sddk/refactor-store-port-seams/archive-report.md`.
