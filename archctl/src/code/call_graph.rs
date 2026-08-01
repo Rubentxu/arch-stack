@@ -1029,17 +1029,31 @@ fn write_call_edge(
 
     // Try to find the callee Element by matching canonical_key pattern
     // MVP: we don't do symbol resolution, so callee may not exist
+    //
+    // NOTE: Writing to SEMANTIC_EDGE (Element→Element with props) rather than
+    // the reified REL_SOURCE→SemanticRelation→REL_TARGET pattern, because the
+    // sequence projection reads from SEMANTIC_EDGE and needs r.props.
+    //
+    // Use MERGE to avoid duplicates; set properties unconditionally.
+    let callee_escaped = escape_cypher_string(&edge.callee);
     let cypher = format!(
         "MATCH (src:Element {{id: '{src_id}'}}) \
-         MERGE (src)-[r:REL_SOURCE {{rel_id: '{rel_id}'}}]->(tgt) \
-         SET r.predicate = 'code.calls', \
+         OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
+         WITH src, tgt \
+         WHERE tgt IS NOT NULL \
+         MERGE (src)-[r:SEMANTIC_EDGE]->(tgt) \
+         SET r.relation_id = '{rel_id}', \
+         r.predicate_id = 'code.calls', \
          r.props = '{props}', \
+         r.active = true, \
          r.version_id = '{version_id}';",
         src_id = src_element_id,
+        callee = callee_escaped,
         rel_id = rel_id,
         props = rel_props_escaped,
         version_id = version_id,
     );
+    // Note: errors are silently ignored (matches prior behavior for MVP)
     let _ = store.query(&cypher);
 
     // Write Evidence for this call edge
