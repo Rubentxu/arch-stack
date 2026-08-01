@@ -30,7 +30,7 @@ use crate::diagram::hash::base_revision;
 use crate::diagram::view_types::{Diagram, ViewGroup, ViewMember};
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
-use crate::store::{DiagramOps, GraphStore, LbugStore};
+use crate::store::{GraphStore, LbugStore};
 
 /// Report from a successful apply operation.
 #[derive(Debug)]
@@ -64,12 +64,17 @@ pub fn run_apply(
     apply_changeset(&info.project_dir, changeset, clock)
 }
 
-/// Apply a parsed `ChangeSet` to an already-open `LbugStore`.
+/// Apply a parsed `ChangeSet` to an already-open graph store.
 ///
 /// This is the core apply logic extracted for testability.
 /// The store must already be initialized; caller retains ownership.
+///
+/// Takes `&mut dyn GraphStore` (not concrete `LbugStore`) so any port
+/// adapter (test mocks, future SparrowDB, etc.) can drive the apply
+/// pipeline. The lock-aware `LbugStore::open` factory is the caller's
+/// concern; the apply core only touches port methods.
 pub fn apply_to_store(
-    store: &mut LbugStore,
+    store: &mut dyn GraphStore,
     changeset: ChangeSet,
 ) -> Result<ApplyReport> {
     // Schema-validation of the changeset structure
@@ -152,6 +157,11 @@ pub fn apply_to_store(
 }
 
 /// Run the apply pipeline, opening a new `LbugStore` internally.
+///
+/// Concrete `LbugStore` is constructed here because the lockfile lives
+/// in `.lbdb` and only `LbugStore::open` knows how to acquire the
+/// `fs2` flock. Once the store is open and initialised, the rest of
+/// the pipeline operates on `&mut dyn GraphStore`.
 pub fn apply_changeset(
     project_dir: &Path,
     changeset: ChangeSet,
@@ -192,7 +202,11 @@ fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
 }
 
 /// Dispatch a single `Command` to the appropriate `GraphStore` method.
-fn dispatch_command(store: &mut LbugStore, cmd: &Command, diagram_id: &str) -> Result<()> {
+///
+/// Takes `&mut dyn GraphStore` so the dispatch table works against any
+/// port adapter. The trait object unlocks test mocks driving the apply
+/// pipeline without spinning up a real LadybugDB session.
+fn dispatch_command(store: &mut dyn GraphStore, cmd: &Command, diagram_id: &str) -> Result<()> {
     match cmd {
         Command::MoveMember {
             member_id,
