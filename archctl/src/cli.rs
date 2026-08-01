@@ -60,7 +60,9 @@ impl CliContext {
         if let Some(p) = explicit {
             return p.clone();
         }
-        self.env.current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        self.env
+            .current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
     }
 }
 
@@ -69,6 +71,7 @@ pub enum RenderFormat {
     Auto,
     Structurizr,
     Plantuml,
+    Mermaid,
 }
 
 #[derive(Debug, Subcommand)]
@@ -293,7 +296,11 @@ pub enum GraphAction {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "archctl", version, about = "OpenCode Architecture Diagrammer sidecar CLI (M4)")]
+#[command(
+    name = "archctl",
+    version,
+    about = "OpenCode Architecture Diagrammer sidecar CLI (M4)"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -338,8 +345,6 @@ pub enum Command {
         format: RenderFormat,
         #[arg(long)]
         out: Option<PathBuf>,
-        #[arg(long, default_value = "http://localhost:18000")]
-        kroki_url: String,
     },
     Code {
         #[command(subcommand)]
@@ -383,52 +388,89 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             GraphAction::Init { cwd, json } => graph_init_cmd(cwd, json, ctx),
             GraphAction::Stat { cwd, json } => graph_stat_cmd(cwd, json, ctx),
             GraphAction::Query { cwd, cypher, json } => graph_query_cmd(cwd, &cypher, json, ctx),
-            GraphAction::Neighbours { cwd, id, depth, json } => {
-                graph_neighbours_cmd(cwd, &id, depth, json, ctx)
-            }
+            GraphAction::Neighbours {
+                cwd,
+                id,
+                depth,
+                json,
+            } => graph_neighbours_cmd(cwd, &id, depth, json, ctx),
         },
         Command::Inventory { action } => match action {
-            InventoryAction::Tree { cwd, max_depth, max_entries, json } => {
-                inventory_tree_cmd(cwd, max_depth, max_entries, json, ctx)
-            }
-            InventoryAction::Languages { cwd, max_depth, max_entries, json } => {
-                inventory_languages_cmd(cwd, max_depth, max_entries, json, ctx)
-            }
-            InventoryAction::Depends { cwd, manifest, json } => {
-                inventory_depends_cmd(cwd, manifest, json, ctx)
-            }
+            InventoryAction::Tree {
+                cwd,
+                max_depth,
+                max_entries,
+                json,
+            } => inventory_tree_cmd(cwd, max_depth, max_entries, json, ctx),
+            InventoryAction::Languages {
+                cwd,
+                max_depth,
+                max_entries,
+                json,
+            } => inventory_languages_cmd(cwd, max_depth, max_entries, json, ctx),
+            InventoryAction::Depends {
+                cwd,
+                manifest,
+                json,
+            } => inventory_depends_cmd(cwd, manifest, json, ctx),
         },
         Command::Diagram { action } => match action {
-            DiagramAction::Export { cwd, selector, format, output, json } => {
-                diagram_export_cmd(cwd, &selector, &format, output, json, ctx)
-            }
-            DiagramAction::Validate { cwd, bundle_dir, json } => {
-                diagram_validate_cmd(cwd, bundle_dir, json, ctx)
-            }
+            DiagramAction::Export {
+                cwd,
+                selector,
+                format,
+                output,
+                json,
+            } => diagram_export_cmd(cwd, &selector, &format, output, json, ctx),
+            DiagramAction::Validate {
+                cwd,
+                bundle_dir,
+                json,
+            } => diagram_validate_cmd(cwd, bundle_dir, json, ctx),
             DiagramAction::Apply { cwd, changes, json } => {
                 diagram_apply_cmd(cwd, changes, json, ctx)
             }
         },
         Command::Evidence { action } => match action {
-            EvidenceAction::Extract { cwd, lang, pattern, claim, kind, json, put } => {
-                evidence_extract_cmd(cwd, lang, &pattern, &claim, kind, json, put, ctx)
-            }
-            EvidenceAction::List { cwd, path, status, json } => {
-                evidence_list_cmd(cwd, path, status, json, ctx)
-            }
+            EvidenceAction::Extract {
+                cwd,
+                lang,
+                pattern,
+                claim,
+                kind,
+                json,
+                put,
+            } => evidence_extract_cmd(cwd, lang, &pattern, &claim, kind, json, put, ctx),
+            EvidenceAction::List {
+                cwd,
+                path,
+                status,
+                json,
+            } => evidence_list_cmd(cwd, path, status, json, ctx),
             EvidenceAction::Accept { cwd, id, json } => evidence_accept_cmd(cwd, &id, json, ctx),
             EvidenceAction::Supersede { cwd, old_id, json } => {
                 evidence_supersede_cmd(cwd, &old_id, json, ctx)
             }
         },
-        Command::Render { source, format, out, kroki_url } => {
-            render::run(source, format, out, &kroki_url, &*ctx.fs).context("render failed")
-        }
+        Command::Render {
+            source,
+            format,
+            out,
+        } => render::run(source, format, out, &*ctx.fs).context("render failed"),
         Command::Code { action } => match action {
-            CodeAction::C4Discover { cwd, apply, strategy, json } => {
-                code_c4_discover_cmd(cwd, apply, strategy.as_deref(), json, ctx)
-            }
-            CodeAction::CallGraph { cwd, apply, json, lang, depth } => {
+            CodeAction::C4Discover {
+                cwd,
+                apply,
+                strategy,
+                json,
+            } => code_c4_discover_cmd(cwd, apply, strategy.as_deref(), json, ctx),
+            CodeAction::CallGraph {
+                cwd,
+                apply,
+                json,
+                lang,
+                depth,
+            } => {
                 let fs = filesystem::system_filesystem();
                 let report = crate::code::call_graph::extract(&cwd, &lang, depth, &*fs)
                     .map_err(|e| anyhow::anyhow!("extract failed: {e}"))?;
@@ -455,7 +497,14 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 }
                 Ok(0)
             }
-            CodeAction::Sequence { cwd, from, depth, max_interactions, json, apply } => {
+            CodeAction::Sequence {
+                cwd,
+                from,
+                depth,
+                max_interactions,
+                json,
+                apply,
+            } => {
                 if apply {
                     eprintln!("warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges");
                 }
@@ -490,7 +539,10 @@ fn graph_init_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<
     store.init().context("graph init")?;
     let path = graph::database_path(&info.project_dir);
     if json {
-        println!("{}", serde_json::json!({"database": path.display().to_string(), "project_id": info.project_id}));
+        println!(
+            "{}",
+            serde_json::json!({"database": path.display().to_string(), "project_id": info.project_id})
+        );
     } else {
         println!("database:  {}", path.display());
         println!("projectId: {}", info.project_id);
@@ -518,7 +570,12 @@ fn graph_stat_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<
     Ok(0)
 }
 
-fn graph_query_cmd(cwd: Option<PathBuf>, cypher: &str, json: bool, ctx: &CliContext) -> Result<i32> {
+fn graph_query_cmd(
+    cwd: Option<PathBuf>,
+    cypher: &str,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
     let mut store = store::open_default(&info.project_dir).context("open graph store")?;
@@ -535,7 +592,13 @@ fn graph_query_cmd(cwd: Option<PathBuf>, cypher: &str, json: bool, ctx: &CliCont
     Ok(0)
 }
 
-fn graph_neighbours_cmd(cwd: Option<PathBuf>, id: &str, depth: u8, json: bool, ctx: &CliContext) -> Result<i32> {
+fn graph_neighbours_cmd(
+    cwd: Option<PathBuf>,
+    id: &str,
+    depth: u8,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
     use tracing::warn;
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
@@ -545,14 +608,19 @@ fn graph_neighbours_cmd(cwd: Option<PathBuf>, id: &str, depth: u8, json: bool, c
     let safe_id = graph::validate_identifier(id).context("invalid element id")?;
     let clamped_depth = depth.clamp(1, 4);
     if depth > 2 {
-        warn!(depth, "graph traversal depth > 2 may be slow on large graphs");
+        warn!(
+            depth,
+            "graph traversal depth > 2 may be slow on large graphs"
+        );
     }
     let cypher = format!(
         "MATCH (e:Element {{id: '{safe_id}'}})-[*1..{clamped_depth}]-(n) \
          RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
     let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (neighbours prerequisite)")?;
+    store
+        .init()
+        .context("graph init (neighbours prerequisite)")?;
     let rows = store.query(&cypher).context("graph neighbours")?;
     if json {
         let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
@@ -620,7 +688,10 @@ fn inventory_languages_cmd(
     if json {
         println!("{}", serde_json::to_string_pretty(&summary)?);
     } else {
-        println!("files: {}  bytes: {}", summary.total_files, summary.total_bytes);
+        println!(
+            "files: {}  bytes: {}",
+            summary.total_files, summary.total_bytes
+        );
         let mut v: Vec<_> = summary.languages.iter().collect();
         v.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes));
         for (lang, stat) in v {
@@ -728,7 +799,9 @@ fn evidence_accept_cmd(
     let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
     let info = resolve_project(&cwd.to_string_lossy());
     let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (evidence accept prerequisite)")?;
+    store
+        .init()
+        .context("graph init (evidence accept prerequisite)")?;
 
     let result = store.accept_evidence(id, clock);
 
@@ -783,7 +856,9 @@ fn evidence_supersede_cmd(
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
     let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (evidence supersede prerequisite)")?;
+    store
+        .init()
+        .context("graph init (evidence supersede prerequisite)")?;
 
     let result = store.supersede_evidence(old_id);
 
@@ -840,7 +915,9 @@ fn evidence_list_cmd(
         .map(crate::graph::validate_identifier)
         .transpose()?;
     let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (evidence list prerequisite)")?;
+    store
+        .init()
+        .context("graph init (evidence list prerequisite)")?;
 
     let rows = if let Some(s) = status {
         store
@@ -862,7 +939,10 @@ fn evidence_list_cmd(
                 id = row.get("e.id").and_then(|c| c.as_str()).unwrap_or("?"),
                 kind = row.get("e.kind").and_then(|c| c.as_str()).unwrap_or("?"),
                 path = row.get("e.path").and_then(|c| c.as_str()).unwrap_or("?"),
-                sl = row.get("e.start_line").and_then(|c| c.as_i64()).unwrap_or(0),
+                sl = row
+                    .get("e.start_line")
+                    .and_then(|c| c.as_i64())
+                    .unwrap_or(0),
                 el = row.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0),
                 claim = row.get("e.claim").and_then(|c| c.as_str()).unwrap_or(""),
             );
@@ -953,13 +1033,8 @@ fn diagram_apply_cmd(
     ctx: &CliContext,
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
-    let report = crate::diagram::run_apply(
-        &cwd,
-        &changes,
-        &crate::clock::SystemClock,
-        &*ctx.fs,
-    )
-    .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
+    let report = crate::diagram::run_apply(&cwd, &changes, &crate::clock::SystemClock, &*ctx.fs)
+        .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
 
     if json {
         println!(
@@ -993,12 +1068,16 @@ fn parse_from_selector(s: &str) -> Result<crate::code::sequence::FromSelector, S
         if parts.len() != 2 {
             return Err(format!("invalid file:line selector: {s}"));
         }
-        let line: u32 = parts[1].parse().map_err(|_| format!("invalid line: {}", parts[1]))?;
+        let line: u32 = parts[1]
+            .parse()
+            .map_err(|_| format!("invalid line: {}", parts[1]))?;
         Ok(FromSelector::ByFileLine {
             file: std::path::PathBuf::from(parts[0]),
             line,
         })
-    } else if s.contains("::") || (s.starts_with("rust:") || s.starts_with("typescript:") || s.starts_with("python:")) {
+    } else if s.contains("::")
+        || (s.starts_with("rust:") || s.starts_with("typescript:") || s.starts_with("python:"))
+    {
         // Looks like a canonical key: "rust:src/lib.rs:foo:42"
         Ok(FromSelector::ByCanonicalKey {
             canonical_key: s.to_string(),
@@ -1040,20 +1119,17 @@ fn code_c4_discover_cmd(
     json: bool,
     ctx: &CliContext,
 ) -> Result<i32> {
+    use crate::clock::SystemClock;
     use crate::code::c4_discover::{apply as apply_report, discover};
     use crate::code::output::print_human_table;
     use crate::code::strategies::register_strategies;
-    use crate::clock::SystemClock;
 
     let cwd = ctx.resolve_cwd(cwd.as_ref());
 
     // Filter strategies if --strategy was given
     let all_strategies = register_strategies();
-    let strategies: Vec<Box<dyn crate::code::strategies::Strategy>> = if let Some(s) =
-        strategy
-    {
-        let allowed: std::collections::HashSet<&str> =
-            s.split(',').map(str::trim).collect();
+    let strategies: Vec<Box<dyn crate::code::strategies::Strategy>> = if let Some(s) = strategy {
+        let allowed: std::collections::HashSet<&str> = s.split(',').map(str::trim).collect();
         all_strategies
             .into_iter()
             .filter(|s| allowed.contains(s.id()))
@@ -1063,9 +1139,8 @@ fn code_c4_discover_cmd(
     };
 
     // Run discovery
-    let report =
-        discover(&cwd, &strategies, &*ctx.fs, &SystemClock)
-            .map_err(|e| anyhow::anyhow!("discovery failed: {e}"))?;
+    let report = discover(&cwd, &strategies, &*ctx.fs, &SystemClock)
+        .map_err(|e| anyhow::anyhow!("discovery failed: {e}"))?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -1191,7 +1266,8 @@ mod tests {
             "archctl",
             "graph",
             "init",
-            "--cwd", project.to_str().unwrap(),
+            "--cwd",
+            project.to_str().unwrap(),
         ]);
         let code = run_inner(cli, &ctx).expect("run_inner succeeds");
         assert_eq!(code, 0);
@@ -1236,10 +1312,8 @@ mod tests {
         let ctx_b = ctx_for(cwd_b);
 
         // Direct call: prove the port changes the contract.
-        let info_a =
-            crate::project::resolve_project(&ctx_a.resolve_cwd(None).to_string_lossy());
-        let info_b =
-            crate::project::resolve_project(&ctx_b.resolve_cwd(None).to_string_lossy());
+        let info_a = crate::project::resolve_project(&ctx_a.resolve_cwd(None).to_string_lossy());
+        let info_b = crate::project::resolve_project(&ctx_b.resolve_cwd(None).to_string_lossy());
 
         assert_ne!(
             info_a.project_id, info_b.project_id,
@@ -1276,8 +1350,10 @@ mod tests {
             "archctl",
             "evidence",
             "list",
-            "--cwd", project.to_str().unwrap(),
-            "--status", "accepted",
+            "--cwd",
+            project.to_str().unwrap(),
+            "--status",
+            "accepted",
         ]);
         // Parsing succeeds — handler logic is tested in store tests.
         let _ = run_inner(cli, &ctx);
@@ -1301,7 +1377,9 @@ mod tests {
         let cli = Cli::parse_from(["archctl", "evidence", "supersede", "--old-id", "ev:old"]);
         match cli.command {
             Command::Evidence { action } => {
-                assert!(matches!(action, EvidenceAction::Supersede { old_id, .. } if old_id == "ev:old"));
+                assert!(
+                    matches!(action, EvidenceAction::Supersede { old_id, .. } if old_id == "ev:old")
+                );
             }
             _ => panic!("expected Evidence command"),
         }
@@ -1311,15 +1389,16 @@ mod tests {
     fn evidence_list_status_flag_accepts_all_variants() {
         // Verify EvidenceStatus variants are accepted as --status values.
         for variant in ["drafted", "accepted", "superseded"] {
-            let cli = Cli::parse_from([
-                "archctl",
-                "evidence",
-                "list",
-                "--status", variant,
-            ]);
+            let cli = Cli::parse_from(["archctl", "evidence", "list", "--status", variant]);
             match cli.command {
                 Command::Evidence { action } => {
-                    assert!(matches!(action, EvidenceAction::List { status: Some(_), .. }));
+                    assert!(matches!(
+                        action,
+                        EvidenceAction::List {
+                            status: Some(_),
+                            ..
+                        }
+                    ));
                 }
                 _ => panic!("expected Evidence List command"),
             }
