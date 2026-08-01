@@ -14,8 +14,7 @@ use serde::{Deserialize, Serialize};
 /// Single source of truth shared by the apply parser and the schema
 /// round-trip test. Adding a new command requires updating both this
 /// const and the schema's `$defs.Command.oneOf`.
-pub const CHANGESET_COMMAND_TYPES: &[&str] =
-    &["move-member", "collapse-group", "set-label"];
+pub const CHANGESET_COMMAND_TYPES: &[&str] = &["move-member", "collapse-group", "set-label"];
 
 /// A command in a ChangeSet.
 ///
@@ -82,8 +81,8 @@ impl Command {
         store: &mut dyn crate::store::GraphStore,
         diagram_id: &str,
     ) -> anyhow::Result<()> {
-        use anyhow::{anyhow, Context};
         use crate::diagram::view_types::{ViewGroup, ViewMember};
+        use anyhow::{anyhow, Context};
 
         match self {
             Command::MoveMember {
@@ -201,9 +200,11 @@ mod tests {
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let round_tripped: Command = serde_json::from_str(&json).unwrap();
-        assert!(matches!(round_tripped, Command::MoveMember { member_id, element_id, x: 240, y: 160 }
-            if member_id == "vm:el:1" && element_id == "el:1"
-        ));
+        assert!(
+            matches!(round_tripped, Command::MoveMember { member_id, element_id, x: 240, y: 160 }
+                if member_id == "vm:el:1" && element_id == "el:1"
+            )
+        );
     }
 
     #[test]

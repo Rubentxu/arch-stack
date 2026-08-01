@@ -47,8 +47,8 @@ use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 
 use crate::clock::Clock;
-use crate::evidence::{Evidence, EvidenceStatus};
 use crate::evaluation::Evaluation;
+use crate::evidence::{Evidence, EvidenceStatus};
 use crate::graph::GraphStat;
 use crate::migrations;
 use crate::row::{Cell, Row};
@@ -81,11 +81,7 @@ pub trait EvidenceOps: Send + Sync {
     /// Side effect (D4): creates Evaluation node + EVALUATES edge
     /// (best-effort audit; Evaluation write failure does NOT roll back
     /// the status flip).
-    fn accept_evidence(
-        &mut self,
-        evidence_id: &str,
-        clock: &dyn Clock,
-    ) -> Result<()>;
+    fn accept_evidence(&mut self, evidence_id: &str, clock: &dyn Clock) -> Result<()>;
 
     /// Errors if the evidence does not exist.
     /// The caller is responsible for creating the replacement via
@@ -123,20 +119,12 @@ pub trait SourceOps: Send + Sync {
     /// Create the EXTRACTED_FROM edge linking `evidence_id` to
     /// `source_id`. Idempotent: MERGE on the (evidence_id, source_id)
     /// pair so re-runs are a no-op.
-    fn link_extracted_from(
-        &mut self,
-        evidence_id: &str,
-        source_id: &str,
-    ) -> Result<()>;
+    fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()>;
 
     /// Create the EVALUATES edge linking `evaluation_id` to
     /// `evidence_id`. Idempotent: MERGE on the (evaluation_id, evidence_id)
     /// pair so re-runs are a no-op.
-    fn link_evaluates(
-        &mut self,
-        evaluation_id: &str,
-        evidence_id: &str,
-    ) -> Result<()>;
+    fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()>;
 }
 
 /// Diagram projection persistence — `archctl diagram export/apply`.
@@ -167,7 +155,10 @@ pub trait DiagramOps: Send + Sync {
     fn link_group_contains(&mut self, group_id: &str, member_id: &str) -> Result<()>;
 
     /// Fetch all ViewMembers for a given diagram_id.
-    fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>>;
+    fn get_view_members(
+        &self,
+        diagram_id: &str,
+    ) -> Result<Vec<crate::diagram::view_types::ViewMember>>;
 
     /// Atomically update the `label` of a single ViewMember.
     ///
@@ -326,13 +317,12 @@ impl LbugStore {
 
 impl GraphStore for LbugStore {
     fn open(project_dir: &Path) -> Result<Self> {
-        LbugStore::open(project_dir)
-            .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))
+        LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))
     }
 
     fn init(&mut self) -> Result<()> {
-        use tracing::info;
         use crate::filesystem::SystemFilesystem;
+        use tracing::info;
 
         // Run migrations using a separate session. The store's own
         // session is opened lazily by session_mut(); running migrations
@@ -473,19 +463,13 @@ impl EvidenceOps for LbugStore {
         self.query(&cypher)
     }
 
-    fn accept_evidence(
-        &mut self,
-        evidence_id: &str,
-        clock: &dyn Clock,
-    ) -> Result<()> {
+    fn accept_evidence(&mut self, evidence_id: &str, clock: &dyn Clock) -> Result<()> {
         let session = self.session_mut()?;
 
         // Step 1: read current props
         let eid = crate::graph::validate_identifier(evidence_id)
             .context("accept_evidence: evidence_id failed validation")?;
-        let read_cypher = format!(
-            "MATCH (e:Evidence {{id: '{eid}'}}) RETURN e.props;"
-        );
+        let read_cypher = format!("MATCH (e:Evidence {{id: '{eid}'}}) RETURN e.props;");
         let rows = run_query(&session.conn, &read_cypher)
             .with_context(|| format!("accept_evidence: failed to read {eid}"))?;
         if rows.is_empty() {
@@ -506,9 +490,7 @@ impl EvidenceOps for LbugStore {
             return Ok(());
         }
         if current == EvidenceStatus::Superseded {
-            anyhow::bail!(
-                "cannot accept superseded evidence: {eid} — reinstate first"
-            );
+            anyhow::bail!("cannot accept superseded evidence: {eid} — reinstate first");
         }
         // current == Drafted: proceed
 
@@ -518,26 +500,19 @@ impl EvidenceOps for LbugStore {
             "status".to_string(),
             serde_json::Value::String(EvidenceStatus::Accepted.as_str().to_string()),
         );
-        let safe_props =
-            serde_json::to_string(&new_props).context("serialize updated props")?;
+        let safe_props = serde_json::to_string(&new_props).context("serialize updated props")?;
         let safe_props_escaped = safe_props.replace('\'', "\\'");
 
         // Step 4: write updated props back
-        let write_cypher = format!(
-            "MATCH (e:Evidence {{id: '{eid}'}}) SET e.props = '{safe_props_escaped}';"
-        );
+        let write_cypher =
+            format!("MATCH (e:Evidence {{id: '{eid}'}}) SET e.props = '{safe_props_escaped}';");
         session
             .conn
             .query(&write_cypher)
             .with_context(|| format!("accept_evidence: failed to update props for {eid}"))?;
 
         // Step 5: create Evaluation node + EVALUATES edge (best-effort)
-        let eval = Evaluation::accept(
-            evidence_id,
-            "user_accepted",
-            "archctl:lifecycle_v1",
-            clock,
-        );
+        let eval = Evaluation::accept(evidence_id, "user_accepted", "archctl:lifecycle_v1", clock);
         // Best-effort: failure here does NOT roll back the status flip
         if let Err(e) = self.put_evaluation(&eval) {
             tracing::warn!(err = %e, eval_id = %eval.id, "accept_evidence: put_evaluation failed, continuing");
@@ -554,9 +529,7 @@ impl EvidenceOps for LbugStore {
         // Step 1: read current props
         let eid = crate::graph::validate_identifier(old_evidence_id)
             .context("supersede_evidence: old_evidence_id failed validation")?;
-        let read_cypher = format!(
-            "MATCH (e:Evidence {{id: '{eid}'}}) RETURN e.props;"
-        );
+        let read_cypher = format!("MATCH (e:Evidence {{id: '{eid}'}}) RETURN e.props;");
         let rows = run_query(&session.conn, &read_cypher)
             .with_context(|| format!("supersede_evidence: failed to read {eid}"))?;
         if rows.is_empty() {
@@ -581,14 +554,12 @@ impl EvidenceOps for LbugStore {
             "status".to_string(),
             serde_json::Value::String(EvidenceStatus::Superseded.as_str().to_string()),
         );
-        let safe_props =
-            serde_json::to_string(&new_props).context("serialize updated props")?;
+        let safe_props = serde_json::to_string(&new_props).context("serialize updated props")?;
         let safe_props_escaped = safe_props.replace('\'', "\\'");
 
         // Step 4: write updated props back
-        let write_cypher = format!(
-            "MATCH (e:Evidence {{id: '{eid}'}}) SET e.props = '{safe_props_escaped}';"
-        );
+        let write_cypher =
+            format!("MATCH (e:Evidence {{id: '{eid}'}}) SET e.props = '{safe_props_escaped}';");
         session
             .conn
             .query(&write_cypher)
@@ -623,10 +594,8 @@ impl EvidenceOps for LbugStore {
         let filtered: Vec<Row> = rows
             .into_iter()
             .filter(|r| {
-                let props_map: serde_json::Map<String, serde_json::Value> = r
-                    .get("e.props")
-                    .map(cell_to_json_map)
-                    .unwrap_or_default();
+                let props_map: serde_json::Map<String, serde_json::Value> =
+                    r.get("e.props").map(cell_to_json_map).unwrap_or_default();
                 EvidenceStatus::from_props(&props_map) == status
             })
             .map(|mut r| {
@@ -643,22 +612,18 @@ impl EvidenceOps for LbugStore {
 impl SourceOps for LbugStore {
     fn put_source(&mut self, source: &SourceArtifact) -> Result<()> {
         let session = self.session_mut()?;
-        let id = crate::graph::validate_identifier(&source.id)
-            .context("source id failed validation")?;
+        let id =
+            crate::graph::validate_identifier(&source.id).context("source id failed validation")?;
         let rel_path = crate::graph::validate_identifier(&source.relative_path)
             .context("source relative_path failed validation")?;
         let lang = crate::graph::validate_identifier(&source.language)
             .context("source language failed validation")?;
         let kind = crate::graph::validate_identifier(&source.kind)
             .context("source kind failed validation")?;
-        let props_json =
-            serde_json::to_string(&source.props).context("serialize source props")?;
+        let props_json = serde_json::to_string(&source.props).context("serialize source props")?;
         let safe_props = props_json.replace('\'', "\\'");
         let safe_ch = source.content_hash.replace('\'', "\\'");
-        let commit_str = source
-            .commit_hash
-            .as_deref()
-            .unwrap_or("");
+        let commit_str = source.commit_hash.as_deref().unwrap_or("");
 
         let cypher = format!(
             "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
@@ -671,9 +636,10 @@ impl SourceOps for LbugStore {
              s.props = '{safe_props}';",
             generated = source.generated,
         );
-        session.conn.query(&cypher).with_context(|| {
-            format!("persist SourceArtifact {id}")
-        })?;
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("persist SourceArtifact {id}"))?;
         Ok(())
     }
 
@@ -707,9 +673,10 @@ impl SourceOps for LbugStore {
              ev.props = '{safe_props}';",
             passed = evaluation.passed,
         );
-        session.conn.query(&cypher).with_context(|| {
-            format!("persist Evaluation {id}")
-        })?;
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("persist Evaluation {id}"))?;
         Ok(())
     }
 
@@ -766,16 +733,17 @@ impl DiagramOps for LbugStore {
              d.updated_at = timestamp('{now}'), \
              d.created_at = COALESCE(d.created_at, timestamp('{now}'));"
         );
-        session.conn.query(&cypher).with_context(|| {
-            format!("put_diagram: failed to persist Diagram {id}")
-        })?;
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("put_diagram: failed to persist Diagram {id}"))?;
         Ok(())
     }
 
     fn get_diagram(&self, id: &str) -> Result<crate::diagram::view_types::Diagram> {
         use crate::diagram::view_types::Diagram;
-        let validated_id = crate::graph::validate_identifier(id)
-            .context("get_diagram: id failed validation")?;
+        let validated_id =
+            crate::graph::validate_identifier(id).context("get_diagram: id failed validation")?;
         let rows = self.query(&format!(
             "MATCH (d:Diagram {{id: '{validated_id}'}}) \
              RETURN d.id, d.revision, d.selector, d.props, d.created_at, d.updated_at;"
@@ -840,9 +808,10 @@ impl DiagramOps for LbugStore {
             y = member.y,
             collapsed = member.collapsed,
         );
-        session.conn.query(&cypher).with_context(|| {
-            format!("put_view_member: failed to persist ViewMember {id}")
-        })?;
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("put_view_member: failed to persist ViewMember {id}"))?;
         Ok(())
     }
 
@@ -870,9 +839,7 @@ impl DiagramOps for LbugStore {
 
         // Pre-check element existence (semantic constraint, separate from
         // the link's MERGE-on-REL plumbing).
-        let elem_rows = self.query(&format!(
-            "MATCH (e:Element {{id: '{eid}'}}) RETURN e.id;"
-        ))?;
+        let elem_rows = self.query(&format!("MATCH (e:Element {{id: '{eid}'}}) RETURN e.id;"))?;
         if elem_rows.is_empty() {
             anyhow::bail!("element not found: {eid}");
         }
@@ -910,9 +877,10 @@ impl DiagramOps for LbugStore {
              vg.created_at = COALESCE(vg.created_at, timestamp('{now}'));",
             collapsed = group.collapsed,
         );
-        session.conn.query(&cypher).with_context(|| {
-            format!("put_view_group: failed to persist ViewGroup {id}")
-        })?;
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("put_view_group: failed to persist ViewGroup {id}"))?;
         Ok(())
     }
 
@@ -948,9 +916,10 @@ impl DiagramOps for LbugStore {
              SET vm.label = '{safe_label}', vm.updated_at = timestamp('{now}') \
              RETURN vm.id;"
         );
-        let mut result = session.conn.query(&cypher).with_context(|| {
-            format!("update_view_member_label: failed to update {mid}")
-        })?;
+        let mut result = session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("update_view_member_label: failed to update {mid}"))?;
         let updated = result.next().is_some();
         if !updated {
             anyhow::bail!("member not found: {mid}");
@@ -958,7 +927,10 @@ impl DiagramOps for LbugStore {
         Ok(())
     }
 
-    fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>> {
+    fn get_view_members(
+        &self,
+        diagram_id: &str,
+    ) -> Result<Vec<crate::diagram::view_types::ViewMember>> {
         use crate::diagram::view_types::ViewMember;
         let did = crate::graph::validate_identifier(diagram_id)
             .context("get_view_members: diagram_id failed validation")?;
@@ -978,12 +950,10 @@ impl DiagramOps for LbugStore {
                         .unwrap_or_default()
                         .replace("\\'", "'")
                 };
-                let cell_to_i64 = |col: &str| -> i64 {
-                    row.get(col).and_then(|c| c.as_i64()).unwrap_or(0)
-                };
-                let cell_to_bool = |col: &str| -> bool {
-                    row.get(col).and_then(|c| c.as_bool()).unwrap_or(false)
-                };
+                let cell_to_i64 =
+                    |col: &str| -> i64 { row.get(col).and_then(|c| c.as_i64()).unwrap_or(0) };
+                let cell_to_bool =
+                    |col: &str| -> bool { row.get(col).and_then(|c| c.as_bool()).unwrap_or(false) };
                 let cell_to_json = |col: &str| -> serde_json::Value {
                     row.get(col)
                         .and_then(|c| c.as_str())
@@ -1086,7 +1056,6 @@ fn link_with_merge_fallback(
     Ok(())
 }
 
-
 fn count_match(conn: &lbug::Connection<'_>, cypher: &str) -> Result<i64> {
     use anyhow::Context;
     let mut result = conn.query(cypher).context("count query")?;
@@ -1107,8 +1076,8 @@ fn value_to_i64(v: &lbug::Value) -> i64 {
 }
 
 fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
-    use anyhow::Context;
     use crate::row::{Cell, Row};
+    use anyhow::Context;
     let mut result = conn.query(cypher).context("execute query")?;
     let columns = result.get_column_names();
     let mut rows = Vec::new();
@@ -1191,7 +1160,9 @@ use anyhow::Context;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evidence::{Evidence, EvidenceKind, EvidenceStatus, SourceOrigin, TOOL_NAME, TOOL_VERSION};
+    use crate::evidence::{
+        Evidence, EvidenceKind, EvidenceStatus, SourceOrigin, TOOL_NAME, TOOL_VERSION,
+    };
 
     fn fixture() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -1290,10 +1261,7 @@ mod tests {
             rows[0].get("m.id").and_then(|c| c.as_str()),
             Some("mt.port")
         );
-        assert_eq!(
-            rows[0].get("m.name").and_then(|c| c.as_str()),
-            Some("port")
-        );
+        assert_eq!(rows[0].get("m.name").and_then(|c| c.as_str()), Some("port"));
     }
 
     #[test]
@@ -1328,8 +1296,15 @@ mod tests {
         let rows = store
             .query("MATCH (s:SourceArtifact) RETURN s.id, s.relative_path ORDER BY s.id;")
             .unwrap();
-        assert_eq!(rows.len(), 1, "MERGE must not duplicate SourceArtifact nodes");
-        assert_eq!(rows[0].get("s.relative_path").and_then(|c| c.as_str()), Some("src/lib.rs"));
+        assert_eq!(
+            rows.len(),
+            1,
+            "MERGE must not duplicate SourceArtifact nodes"
+        );
+        assert_eq!(
+            rows[0].get("s.relative_path").and_then(|c| c.as_str()),
+            Some("src/lib.rs")
+        );
     }
 
     #[test]
@@ -1374,9 +1349,7 @@ mod tests {
         store.put_evidence(std::slice::from_ref(&ev)).unwrap();
 
         // Link evidence to source
-        store
-            .link_extracted_from("ev:test:link", &sa.id)
-            .unwrap();
+        store.link_extracted_from("ev:test:link", &sa.id).unwrap();
 
         // Verify the edge exists
         let rows = store
@@ -1452,18 +1425,14 @@ mod tests {
                     let mut m = serde_json::Map::new();
                     for (k, v) in fields {
                         let json_val = match v {
-                            crate::row::Cell::String(s) => {
-                                serde_json::Value::String(s.clone())
-                            }
+                            crate::row::Cell::String(s) => serde_json::Value::String(s.clone()),
                             crate::row::Cell::Int(n) => {
                                 serde_json::Value::Number(serde_json::Number::from(*n))
                             }
                             crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
-                            crate::row::Cell::Float(f) => {
-                                serde_json::Number::from_f64(*f)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            }
+                            crate::row::Cell::Float(f) => serde_json::Number::from_f64(*f)
+                                .map(serde_json::Value::Number)
+                                .unwrap_or(serde_json::Value::Null),
                             _ => serde_json::Value::Null,
                         };
                         m.insert(k.clone(), json_val);
@@ -1473,10 +1442,7 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert_eq!(
-            EvidenceStatus::from_props(&props),
-            EvidenceStatus::Accepted
-        );
+        assert_eq!(EvidenceStatus::from_props(&props), EvidenceStatus::Accepted);
     }
 
     #[test]
@@ -1501,10 +1467,7 @@ mod tests {
             eval_rows[0].get("c").and_then(|c| c.as_str()),
             Some("user_accepted")
         );
-        assert_eq!(
-            eval_rows[0].get("p").and_then(|c| c.as_bool()),
-            Some(true)
-        );
+        assert_eq!(eval_rows[0].get("p").and_then(|c| c.as_bool()), Some(true));
     }
 
     #[test]
@@ -1596,18 +1559,14 @@ mod tests {
                     let mut m = serde_json::Map::new();
                     for (k, v) in fields {
                         let json_val = match v {
-                            crate::row::Cell::String(s) => {
-                                serde_json::Value::String(s.clone())
-                            }
+                            crate::row::Cell::String(s) => serde_json::Value::String(s.clone()),
                             crate::row::Cell::Int(n) => {
                                 serde_json::Value::Number(serde_json::Number::from(*n))
                             }
                             crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
-                            crate::row::Cell::Float(f) => {
-                                serde_json::Number::from_f64(*f)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            }
+                            crate::row::Cell::Float(f) => serde_json::Number::from_f64(*f)
+                                .map(serde_json::Value::Number)
+                                .unwrap_or(serde_json::Value::Null),
                             _ => serde_json::Value::Null,
                         };
                         m.insert(k.clone(), json_val);
@@ -1649,18 +1608,14 @@ mod tests {
                     let mut m = serde_json::Map::new();
                     for (k, v) in fields {
                         let json_val = match v {
-                            crate::row::Cell::String(s) => {
-                                serde_json::Value::String(s.clone())
-                            }
+                            crate::row::Cell::String(s) => serde_json::Value::String(s.clone()),
                             crate::row::Cell::Int(n) => {
                                 serde_json::Value::Number(serde_json::Number::from(*n))
                             }
                             crate::row::Cell::Bool(b) => serde_json::Value::Bool(*b),
-                            crate::row::Cell::Float(f) => {
-                                serde_json::Number::from_f64(*f)
-                                    .map(serde_json::Value::Number)
-                                    .unwrap_or(serde_json::Value::Null)
-                            }
+                            crate::row::Cell::Float(f) => serde_json::Number::from_f64(*f)
+                                .map(serde_json::Value::Number)
+                                .unwrap_or(serde_json::Value::Null),
                             _ => serde_json::Value::Null,
                         };
                         m.insert(k.clone(), json_val);
@@ -1710,9 +1665,7 @@ mod tests {
             ev.status = EvidenceStatus::Accepted;
             ev
         };
-        store
-            .put_evidence(std::slice::from_ref(&legacy))
-            .unwrap();
+        store.put_evidence(std::slice::from_ref(&legacy)).unwrap();
 
         // list_evidence_by_status(Accepted) — should return accepted + legacy
         let accepted = store
@@ -1829,10 +1782,7 @@ mod tests {
             .query("MATCH (d:Diagram) RETURN d.id, d.revision;")
             .unwrap();
         assert_eq!(rows.len(), 1, "expected exactly one Diagram row");
-        let rev = rows[0]
-            .get("d.revision")
-            .and_then(|c| c.as_str())
-            .unwrap();
+        let rev = rows[0].get("d.revision").and_then(|c| c.as_str()).unwrap();
         assert_eq!(rev, "rev2", "revision should be updated to rev2");
     }
 
@@ -1893,10 +1843,7 @@ mod tests {
             .query("MATCH (vm:ViewMember) RETURN vm.id, vm.label;")
             .unwrap();
         assert_eq!(rows.len(), 1, "expected exactly one ViewMember row");
-        let label = rows[0]
-            .get("vm.label")
-            .and_then(|c| c.as_str())
-            .unwrap();
+        let label = rows[0].get("vm.label").and_then(|c| c.as_str()).unwrap();
         assert_eq!(label, "Label2", "label should be updated to Label2");
     }
 
@@ -1938,26 +1885,30 @@ mod tests {
         store.init().unwrap();
 
         // Seed a Diagram and ViewMember.
-        store.put_diagram(&crate::diagram::view_types::Diagram {
-            id: "d1".into(),
-            revision: "r1".into(),
-            selector: "{}".into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
-        store.put_view_member(&crate::diagram::view_types::ViewMember {
-            id: "vm1".into(),
-            diagram_id: "d1".into(),
-            element_id: "el1".into(),
-            label: "L".into(),
-            x: 0,
-            y: 0,
-            collapsed: false,
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&crate::diagram::view_types::Diagram {
+                id: "d1".into(),
+                revision: "r1".into(),
+                selector: "{}".into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+        store
+            .put_view_member(&crate::diagram::view_types::ViewMember {
+                id: "vm1".into(),
+                diagram_id: "d1".into(),
+                element_id: "el1".into(),
+                label: "L".into(),
+                x: 0,
+                y: 0,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         // Link twice.
         store.link_member_of("vm1", "d1").unwrap();
@@ -1978,18 +1929,20 @@ mod tests {
         store.init().unwrap();
 
         // Seed a ViewMember but no Element.
-        store.put_view_member(&crate::diagram::view_types::ViewMember {
-            id: "vm1".into(),
-            diagram_id: "d1".into(),
-            element_id: "nonexistent-element".into(),
-            label: "L".into(),
-            x: 0,
-            y: 0,
-            collapsed: false,
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_view_member(&crate::diagram::view_types::ViewMember {
+                id: "vm1".into(),
+                diagram_id: "d1".into(),
+                element_id: "nonexistent-element".into(),
+                label: "L".into(),
+                x: 0,
+                y: 0,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let result = store.link_renders("vm1", "nonexistent-element");
         assert!(result.is_err(), "expected error when element missing");
@@ -2008,27 +1961,31 @@ mod tests {
         store.init().unwrap();
 
         // Seed a ViewGroup and ViewMember.
-        store.put_view_group(&crate::diagram::view_types::ViewGroup {
-            id: "vg1".into(),
-            diagram_id: "d1".into(),
-            label: "Backend".into(),
-            collapsed: false,
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
-        store.put_view_member(&crate::diagram::view_types::ViewMember {
-            id: "vm1".into(),
-            diagram_id: "d1".into(),
-            element_id: "el1".into(),
-            label: "L".into(),
-            x: 0,
-            y: 0,
-            collapsed: false,
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_view_group(&crate::diagram::view_types::ViewGroup {
+                id: "vg1".into(),
+                diagram_id: "d1".into(),
+                label: "Backend".into(),
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+        store
+            .put_view_member(&crate::diagram::view_types::ViewMember {
+                id: "vm1".into(),
+                diagram_id: "d1".into(),
+                element_id: "el1".into(),
+                label: "L".into(),
+                x: 0,
+                y: 0,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         // Link twice.
         store.link_group_contains("vg1", "vm1").unwrap();
@@ -2049,16 +2006,21 @@ mod tests {
         store.init().unwrap();
 
         // Diagram exists but has no ViewMembers.
-        store.put_diagram(&crate::diagram::view_types::Diagram {
-            id: "d1".into(),
-            revision: "r1".into(),
-            selector: "{}".into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&crate::diagram::view_types::Diagram {
+                id: "d1".into(),
+                revision: "r1".into(),
+                selector: "{}".into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let members = store.get_view_members("d1").unwrap();
-        assert!(members.is_empty(), "expected empty vec for diagram with no members");
+        assert!(
+            members.is_empty(),
+            "expected empty vec for diagram with no members"
+        );
     }
 }

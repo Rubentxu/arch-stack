@@ -46,12 +46,7 @@ struct TinyGraphStore {
 }
 
 impl TinyGraphStore {
-    fn new(
-        elements: Vec<Row>,
-        edges: Vec<Row>,
-        evidence: Vec<Row>,
-        versions: Vec<Row>,
-    ) -> Self {
+    fn new(elements: Vec<Row>, edges: Vec<Row>, evidence: Vec<Row>, versions: Vec<Row>) -> Self {
         Self {
             elements,
             edges,
@@ -100,9 +95,7 @@ impl TinyGraphStore {
         let mut current = rest;
         while !current.is_empty() && !current.starts_with(']') {
             // Skip whitespace and commas
-            while !current.is_empty()
-                && (current.starts_with(' ') || current.starts_with(','))
-            {
+            while !current.is_empty() && (current.starts_with(' ') || current.starts_with(',')) {
                 current = &current[1..];
             }
             if current.is_empty() || current.starts_with(']') {
@@ -152,10 +145,7 @@ impl GraphStore for TinyGraphStore {
                 .iter()
                 .filter(|row| {
                     // Each evidence row has an associated version_id stored in a column
-                    let ev_version = row
-                        .get("ev.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("");
+                    let ev_version = row.get("ev.id").and_then(|c| c.as_str()).unwrap_or("");
                     version_ids
                         .iter()
                         .any(|v| ev_version.to_uppercase() == v.to_uppercase())
@@ -199,7 +189,6 @@ impl GraphStore for TinyGraphStore {
             Ok(Vec::new())
         }
     }
-
 }
 
 // Sub-trait impls — these exist purely so `GraphStore for TinyGraphStore`
@@ -209,30 +198,79 @@ impl GraphStore for TinyGraphStore {
 // trait per type, and the methods above are already part of the
 // `impl GraphStore for TinyGraphStore` block.
 impl EvidenceOps for TinyGraphStore {
-    fn put_evidence(&mut self, _: &[archctl::evidence::Evidence]) -> anyhow::Result<usize> { unimplemented!() }
-    fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
-    fn accept_evidence(&mut self, _: &str, _: &dyn archctl::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
-    fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
-    fn list_evidence_by_status(&self, _: archctl::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+    fn put_evidence(&mut self, _: &[archctl::evidence::Evidence]) -> anyhow::Result<usize> {
+        unimplemented!()
+    }
+    fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> {
+        unimplemented!()
+    }
+    fn accept_evidence(&mut self, _: &str, _: &dyn archctl::clock::Clock) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn list_evidence_by_status(
+        &self,
+        _: archctl::evidence::EvidenceStatus,
+        _: Option<&str>,
+    ) -> anyhow::Result<Vec<Row>> {
+        unimplemented!()
+    }
 }
 
 impl SourceOps for TinyGraphStore {
-    fn put_source(&mut self, _: &archctl::source::SourceArtifact) -> anyhow::Result<()> { unimplemented!() }
-    fn put_evaluation(&mut self, _: &archctl::evaluation::Evaluation) -> anyhow::Result<()> { unimplemented!() }
-    fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-    fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn put_source(&mut self, _: &archctl::source::SourceArtifact) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn put_evaluation(&mut self, _: &archctl::evaluation::Evaluation) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
 }
 
 impl DiagramOps for TinyGraphStore {
-    fn put_diagram(&mut self, _: &archctl::diagram::view_types::Diagram) -> anyhow::Result<()> { unimplemented!() }
-    fn get_diagram(&self, _: &str) -> anyhow::Result<archctl::diagram::view_types::Diagram> { unimplemented!() }
-    fn put_view_member(&mut self, _: &archctl::diagram::view_types::ViewMember) -> anyhow::Result<()> { unimplemented!() }
-    fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-    fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-    fn put_view_group(&mut self, _: &archctl::diagram::view_types::ViewGroup) -> anyhow::Result<()> { unimplemented!() }
-    fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-    fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<archctl::diagram::view_types::ViewMember>> { unimplemented!() }
-    fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn put_diagram(&mut self, _: &archctl::diagram::view_types::Diagram) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn get_diagram(&self, _: &str) -> anyhow::Result<archctl::diagram::view_types::Diagram> {
+        unimplemented!()
+    }
+    fn put_view_member(
+        &mut self,
+        _: &archctl::diagram::view_types::ViewMember,
+    ) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn put_view_group(
+        &mut self,
+        _: &archctl::diagram::view_types::ViewGroup,
+    ) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn get_view_members(
+        &self,
+        _: &str,
+    ) -> anyhow::Result<Vec<archctl::diagram::view_types::ViewMember>> {
+        unimplemented!()
+    }
+    fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
 }
 
 // SCN-050: query_elements filtered by category returns only matching nodes
@@ -358,7 +396,10 @@ fn query_evidence_filters_to_accepted() {
             ("e.rule_id", Cell::String("order-handler".to_string())),
             ("e.props", evidence_props_cell("accepted")),
             ("e.content_hash", Cell::String("sha256:abc".to_string())),
-            ("e.observed_at", Cell::String("2026-07-30T10:00:00Z".to_string())),
+            (
+                "e.observed_at",
+                Cell::String("2026-07-30T10:00:00Z".to_string()),
+            ),
             // Version association (used by mock for WHERE clause filtering)
             ("ev.id", Cell::String("v:1".to_string())),
         ]),
@@ -375,7 +416,10 @@ fn query_evidence_filters_to_accepted() {
             ("e.rule_id", Cell::String("drafted-handler".to_string())),
             ("e.props", evidence_props_cell("drafted")),
             ("e.content_hash", Cell::String("sha256:def".to_string())),
-            ("e.observed_at", Cell::String("2026-07-30T11:00:00Z".to_string())),
+            (
+                "e.observed_at",
+                Cell::String("2026-07-30T11:00:00Z".to_string()),
+            ),
             // Version association
             ("ev.id", Cell::String("v:2".to_string())),
         ]),
@@ -401,13 +445,19 @@ fn query_version_props_returns_props() {
         row_from_pairs(vec![
             ("v.id", Cell::String("v:1".to_string())),
             ("v.name", Cell::String("OrderService".to_string())),
-            ("v.description", Cell::String("Handles order processing".to_string())),
+            (
+                "v.description",
+                Cell::String("Handles order processing".to_string()),
+            ),
             ("v.props", evidence_props_cell("accepted")),
         ]),
         row_from_pairs(vec![
             ("v.id", Cell::String("v:2".to_string())),
             ("v.name", Cell::String("PaymentService".to_string())),
-            ("v.description", Cell::String("Handles payment processing".to_string())),
+            (
+                "v.description",
+                Cell::String("Handles payment processing".to_string()),
+            ),
             ("v.props", evidence_props_cell("drafted")),
         ]),
     ];

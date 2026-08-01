@@ -59,8 +59,8 @@ pub fn run_apply(
     let changeset_json = fs
         .read_to_string(changeset_path)
         .with_context(|| format!("read changeset file: {}", changeset_path.display()))?;
-    let changeset: ChangeSet = serde_json::from_str(&changeset_json)
-        .context("parse changeset JSON")?;
+    let changeset: ChangeSet =
+        serde_json::from_str(&changeset_json).context("parse changeset JSON")?;
     apply_changeset(&info.project_dir, changeset, clock)
 }
 
@@ -73,13 +73,9 @@ pub fn run_apply(
 /// adapter (test mocks, future SparrowDB, etc.) can drive the apply
 /// pipeline. The lock-aware `LbugStore::open` factory is the caller's
 /// concern; the apply core only touches port methods.
-pub fn apply_to_store(
-    store: &mut dyn GraphStore,
-    changeset: ChangeSet,
-) -> Result<ApplyReport> {
+pub fn apply_to_store(store: &mut dyn GraphStore, changeset: ChangeSet) -> Result<ApplyReport> {
     // Schema-validation of the changeset structure
-    let changeset_json =
-        serde_json::to_string(&changeset).context("re-serialize changeset")?;
+    let changeset_json = serde_json::to_string(&changeset).context("re-serialize changeset")?;
     validate_changeset_schema(&changeset_json)?;
 
     // Basic semantic validation
@@ -115,8 +111,7 @@ pub fn apply_to_store(
                 updated_at: None,
             };
             store.put_diagram(&initial).context("seed Diagram node")?;
-            "blake3:0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string()
+            "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string()
         }
     };
 
@@ -169,8 +164,7 @@ pub fn apply_changeset(
 ) -> Result<ApplyReport> {
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
-    store.init()
-        .context("graph init (apply prerequisite)")?;
+    store.init().context("graph init (apply prerequisite)")?;
     apply_to_store(&mut store, changeset)
 }
 
@@ -179,8 +173,7 @@ fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
     let schema: serde_json::Value =
         serde_json::from_str(&CHANGESET_SCHEMA).context("parse embedded changeset schema")?;
 
-    let validator =
-        jsonschema::validator_for(&schema).context("compile changeset schema")?;
+    let validator = jsonschema::validator_for(&schema).context("compile changeset schema")?;
 
     let instance: serde_json::Value =
         serde_json::from_str(changeset_json).context("parse changeset JSON")?;
@@ -256,9 +249,7 @@ pub fn assert_command_types_match_schema() {
     for item in oneof {
         // Each item is { "$ref": "#/$defs/Name" } — resolve the $ref
         if let Some(ref_path) = item["$ref"].as_str() {
-            let def_name = ref_path
-                .strip_prefix("#/$defs/")
-                .unwrap_or(ref_path);
+            let def_name = ref_path.strip_prefix("#/$defs/").unwrap_or(ref_path);
             let def = defs
                 .get(def_name)
                 .expect(&format!("$defs.{} must exist", def_name));
@@ -372,27 +363,32 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:orders";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
-        store.put_view_member(&ViewMember {
-            id: "vm:container:orders:el:1".into(),
-            diagram_id: diagram_id.into(),
-            element_id: "el:1".into(),
-            label: "Old Label".into(),
-            x: 100,
-            y: 200,
-            collapsed: false,
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_view_member(&ViewMember {
+                id: "vm:container:orders:el:1".into(),
+                diagram_id: diagram_id.into(),
+                element_id: "el:1".into(),
+                label: "Old Label".into(),
+                x: 100,
+                y: 200,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let cmd = Command::SetLabel {
             member_id: "vm:container:orders:el:1".into(),
@@ -401,7 +397,10 @@ mod tests {
         dispatch_command(&mut store, &cmd, diagram_id).unwrap();
 
         let members = store.get_view_members(diagram_id).unwrap();
-        let m = members.iter().find(|m| m.id == "vm:container:orders:el:1").unwrap();
+        let m = members
+            .iter()
+            .find(|m| m.id == "vm:container:orders:el:1")
+            .unwrap();
         assert_eq!(m.label, "New Label");
     }
 
@@ -410,14 +409,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:orders";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let cmd = Command::SetLabel {
             member_id: "vm:container:orders:el:999".into(),
@@ -432,7 +434,8 @@ mod tests {
         // `err.to_string()` only returns the topmost message; check
         // the whole chain for the underlying "member not found" cause.
         assert!(
-            err.chain().any(|c| c.to_string().contains("member not found")),
+            err.chain()
+                .any(|c| c.to_string().contains("member not found")),
             "expected chain to contain 'member not found', got: {err:?}"
         );
     }
@@ -495,14 +498,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:svc";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let cmd = Command::CollapseGroup {
             group_id: "vg:container:svc:group:1".into(),
@@ -514,11 +520,14 @@ mod tests {
         dispatch_command(&mut store, &cmd, diagram_id).unwrap();
 
         // Verify group was created via raw query
-        let rows = store.query(
-            "MATCH (g:ViewGroup {id: 'vg:container:svc:group:1'}) RETURN g.id, g.collapsed;"
-        ).unwrap();
+        let rows = store
+            .query("MATCH (g:ViewGroup {id: 'vg:container:svc:group:1'}) RETURN g.id, g.collapsed;")
+            .unwrap();
         assert_eq!(rows.len(), 1, "ViewGroup should exist");
-        let collapsed = rows[0].get("g.collapsed").and_then(|c| c.as_bool()).unwrap();
+        let collapsed = rows[0]
+            .get("g.collapsed")
+            .and_then(|c| c.as_bool())
+            .unwrap();
         assert!(collapsed, "group should be collapsed");
     }
 
@@ -527,14 +536,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:be";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         // Create an Element node so link_renders finds it.
         // Uses the pattern from graph.rs: CREATE with required fields.
@@ -551,7 +563,10 @@ mod tests {
         dispatch_command(&mut store, &cmd, diagram_id).unwrap();
 
         let members = store.get_view_members(diagram_id).unwrap();
-        let m = members.iter().find(|mm| mm.id == "vm:container:be:el:api").unwrap();
+        let m = members
+            .iter()
+            .find(|mm| mm.id == "vm:container:be:el:api")
+            .unwrap();
         assert_eq!(m.x, 240);
         assert_eq!(m.y, 160);
     }
@@ -561,14 +576,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:be";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         // No element seeded — link_renders will fail
         let cmd = Command::MoveMember {

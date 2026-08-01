@@ -3,12 +3,13 @@
 //! Orchestrates the 4 read queries, canonicalizes the result,
 //! computes the content hash, and writes the 5-file bundle.
 
-use std::path::Path;
 use anyhow::Context;
+use std::path::Path;
 
+use crate::clock::Clock;
 use crate::diagram::export_types::{
-    Edge as ExportEdge, EdgeColors, ElementColors, EvidenceBundle,
-    Manifest, Node as ExportNode, Projection, Styles,
+    Edge as ExportEdge, EdgeColors, ElementColors, EvidenceBundle, Manifest, Node as ExportNode,
+    Projection, Styles,
 };
 use crate::diagram::hash::base_revision;
 use crate::diagram::queries::{
@@ -16,7 +17,6 @@ use crate::diagram::queries::{
     ElementRow,
 };
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
-use crate::clock::Clock;
 use crate::filesystem::Filesystem;
 use crate::store::GraphStore;
 
@@ -45,8 +45,8 @@ pub fn run_export(
     fs: &dyn Filesystem,
 ) -> anyhow::Result<ExportReport> {
     // 1. Parse selector
-    let view: ViewSelector = crate::diagram::selector::parse(selector)
-        .context("invalid view selector")?;
+    let view: ViewSelector =
+        crate::diagram::selector::parse(selector).context("invalid view selector")?;
 
     let category = view.kind.to_string();
     let scope_ident = match &view.scope {
@@ -55,11 +55,11 @@ pub fn run_export(
     };
 
     // 2. Run queries
-    let element_rows = query_elements(store, &category, scope_ident)
-        .context("query_elements failed")?;
+    let element_rows =
+        query_elements(store, &category, scope_ident).context("query_elements failed")?;
 
-    let edge_rows = query_semantic_edges(store, &category)
-        .context("query_semantic_edges failed")?;
+    let edge_rows =
+        query_semantic_edges(store, &category).context("query_semantic_edges failed")?;
 
     // Collect version IDs for evidence + version props queries
     let version_ids: Vec<String> = element_rows
@@ -71,8 +71,8 @@ pub fn run_export(
     let evidence_entries = query_evidence_for_versions(store, &version_ids)
         .context("query_evidence_for_versions failed")?;
 
-    let version_props = query_version_props(store, &version_ids)
-        .context("query_version_props failed")?;
+    let version_props =
+        query_version_props(store, &version_ids).context("query_version_props failed")?;
 
     // 3. Build projection (nodes + edges)
     let version_map: std::collections::HashMap<String, &crate::diagram::queries::VersionPropsRow> =
@@ -82,7 +82,9 @@ pub fn run_export(
         .iter()
         .map(|e: &ElementRow| {
             let version = version_map.get(&e.current_version_id);
-            let description = version.map(|v| v.description.clone()).filter(|s| !s.is_empty());
+            let description = version
+                .map(|v| v.description.clone())
+                .filter(|s| !s.is_empty());
             let evidence_refs: Vec<String> = evidence_entries
                 .iter()
                 .filter(|_ev| {
@@ -186,8 +188,7 @@ pub fn run_export(
     // Write icons — the 5 canonical C4 levels (shared with validate.rs).
     // Single source of truth: `assets::CANONICAL_C4_ICONS`.
     for icon_name in crate::diagram::assets::CANONICAL_C4_ICONS {
-        let icon_bytes = crate::diagram::assets::icon_for(icon_name)
-            .unwrap_or_default();
+        let icon_bytes = crate::diagram::assets::icon_for(icon_name).unwrap_or_default();
         write_atomic_bytes(fs, &assets_dir.join(format!("{icon_name}.png")), icon_bytes)?;
     }
 
@@ -200,9 +201,12 @@ pub fn run_export(
 }
 
 /// Write a serializable value to a file atomically (write to .tmp, then rename).
-fn write_atomic(fs: &dyn Filesystem, path: &Path, value: &impl serde::Serialize) -> anyhow::Result<()> {
-    let json = serde_json::to_string_pretty(value)
-        .context("serialization failed")?;
+fn write_atomic(
+    fs: &dyn Filesystem,
+    path: &Path,
+    value: &impl serde::Serialize,
+) -> anyhow::Result<()> {
+    let json = serde_json::to_string_pretty(value).context("serialization failed")?;
     let tmp_path = path.with_extension("json.tmp");
     fs.write(&tmp_path, json.as_bytes())?;
     fs.write(path, json.as_bytes())?; // rename not available; overwrite is acceptably atomic for this use
@@ -221,9 +225,7 @@ fn write_atomic_bytes(fs: &dyn Filesystem, path: &Path, contents: &[u8]) -> anyh
 mod tests {
     use super::*;
     use crate::clock::FixedClock;
-    use crate::diagram::export_types::{
-        EvidenceBundle, Manifest, Projection, Styles,
-    };
+    use crate::diagram::export_types::{EvidenceBundle, Manifest, Projection, Styles};
     use crate::filesystem::MemoryFilesystem;
     use crate::row::{Cell, Row};
 
@@ -236,18 +238,34 @@ mod tests {
     }
 
     impl MockGraphStore {
-        fn new(elements: Vec<Row>, edges: Vec<Row>, evidence: Vec<Row>, version_props: Vec<Row>) -> Self {
-            Self { elements, edges, evidence, version_props }
+        fn new(
+            elements: Vec<Row>,
+            edges: Vec<Row>,
+            evidence: Vec<Row>,
+            version_props: Vec<Row>,
+        ) -> Self {
+            Self {
+                elements,
+                edges,
+                evidence,
+                version_props,
+            }
         }
     }
 
     impl crate::store::GraphStore for MockGraphStore {
         fn open(_: &std::path::Path) -> anyhow::Result<Self>
-        where Self: Sized {
+        where
+            Self: Sized,
+        {
             unimplemented!()
         }
-        fn init(&mut self) -> anyhow::Result<()> { unimplemented!() }
-        fn stat(&self) -> anyhow::Result<crate::GraphStat> { unimplemented!() }
+        fn init(&mut self) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn stat(&self) -> anyhow::Result<crate::GraphStat> {
+            unimplemented!()
+        }
         fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
             // Route based on Cypher pattern
             if cypher.contains("MATCH (e:Element)") && cypher.contains("e.category") {
@@ -270,30 +288,79 @@ mod tests {
 
     // Sub-trait impls (see diagram_queries.rs for rationale).
     impl crate::store::EvidenceOps for MockGraphStore {
-        fn put_evidence(&mut self, _: &[crate::evidence::Evidence]) -> anyhow::Result<usize> { unimplemented!() }
-        fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
-        fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
-        fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn list_evidence_by_status(&self, _: crate::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+        fn put_evidence(&mut self, _: &[crate::evidence::Evidence]) -> anyhow::Result<usize> {
+            unimplemented!()
+        }
+        fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> {
+            unimplemented!()
+        }
+        fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn list_evidence_by_status(
+            &self,
+            _: crate::evidence::EvidenceStatus,
+            _: Option<&str>,
+        ) -> anyhow::Result<Vec<Row>> {
+            unimplemented!()
+        }
     }
 
     impl crate::store::SourceOps for MockGraphStore {
-        fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> { unimplemented!() }
-        fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> { unimplemented!() }
-        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
     }
 
     impl crate::store::DiagramOps for MockGraphStore {
-        fn put_diagram(&mut self, _: &crate::diagram::view_types::Diagram) -> anyhow::Result<()> { unimplemented!() }
-        fn get_diagram(&self, _: &str) -> anyhow::Result<crate::diagram::view_types::Diagram> { unimplemented!() }
-        fn put_view_member(&mut self, _: &crate::diagram::view_types::ViewMember) -> anyhow::Result<()> { unimplemented!() }
-        fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn put_view_group(&mut self, _: &crate::diagram::view_types::ViewGroup) -> anyhow::Result<()> { unimplemented!() }
-        fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<crate::diagram::view_types::ViewMember>> { unimplemented!() }
-        fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn put_diagram(&mut self, _: &crate::diagram::view_types::Diagram) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn get_diagram(&self, _: &str) -> anyhow::Result<crate::diagram::view_types::Diagram> {
+            unimplemented!()
+        }
+        fn put_view_member(
+            &mut self,
+            _: &crate::diagram::view_types::ViewMember,
+        ) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn put_view_group(
+            &mut self,
+            _: &crate::diagram::view_types::ViewGroup,
+        ) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn get_view_members(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<Vec<crate::diagram::view_types::ViewMember>> {
+            unimplemented!()
+        }
+        fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
     }
 
     fn make_element_row(id: &str, category: &str, name: &str, version_id: &str) -> Row {
@@ -332,12 +399,19 @@ mod tests {
         r.push("e.tool_version", Cell::String("0.1.0".to_string()));
         r.push("e.rule_id", Cell::String("test:rule".to_string()));
         r.push("e.content_hash", Cell::String("sha256:abc".to_string()));
-        r.push("e.observed_at", Cell::String("2026-07-30T00:00:00Z".to_string()));
+        r.push(
+            "e.observed_at",
+            Cell::String("2026-07-30T00:00:00Z".to_string()),
+        );
         r.push("v.id", Cell::String(version_id.to_string()));
         // props must include status = "accepted" for evidence to pass the filter
-        r.push("e.props", Cell::Object(vec![
-            ("status".to_string(), Cell::String("accepted".to_string())),
-        ]));
+        r.push(
+            "e.props",
+            Cell::Object(vec![(
+                "status".to_string(),
+                Cell::String("accepted".to_string()),
+            )]),
+        );
         r
     }
 
@@ -356,9 +430,7 @@ mod tests {
             make_element_row("el:1", "container", "OrderService", "v:1"),
             make_element_row("el:2", "container", "PaymentService", "v:2"),
         ];
-        let edges = vec![
-            make_edge_row("rel:1", "el:1", "el:2"),
-        ];
+        let edges = vec![make_edge_row("rel:1", "el:1", "el:2")];
         let evidence = vec![
             make_evidence_row("ev:1", "v:1"),
             make_evidence_row("ev:2", "v:2"),
@@ -411,8 +483,10 @@ mod tests {
         // Verify assets directory and icons — must match the canonical C4 set shared with validate.rs.
         assert!(fs.exists(&out_dir.join("assets")));
         for icon in crate::diagram::assets::CANONICAL_C4_ICONS {
-            assert!(fs.exists(&out_dir.join("assets").join(format!("{icon}.png"))),
-                "icon {icon}.png should exist");
+            assert!(
+                fs.exists(&out_dir.join("assets").join(format!("{icon}.png"))),
+                "icon {icon}.png should exist"
+            );
         }
     }
 
