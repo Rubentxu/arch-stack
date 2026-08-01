@@ -172,6 +172,25 @@ pub enum CodeAction {
         #[arg(long)]
         json: bool,
     },
+    /// Extract static call-graph (function→function call edges) via tree-sitter-graph.
+    CallGraph {
+        /// Project directory to scan. Defaults to the current working directory.
+        #[arg(long, default_value = ".")]
+        cwd: PathBuf,
+        /// Persist extracted call-graph nodes + edges to the graph store.
+        #[arg(long)]
+        apply: bool,
+        /// Emit machine-readable JSON to stdout.
+        #[arg(long)]
+        json: bool,
+        /// Comma-separated languages to process (rust, typescript, python).
+        /// If omitted, all MVP languages are processed.
+        #[arg(long, value_enum, value_delimiter = ',')]
+        lang: Vec<crate::code::call_graph::Language>,
+        /// Maximum call-depth to traverse (0 = unlimited in MVP).
+        #[arg(long)]
+        depth: Option<u32>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -387,6 +406,33 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
         Command::Code { action } => match action {
             CodeAction::C4Discover { cwd, apply, strategy, json } => {
                 code_c4_discover_cmd(cwd, apply, strategy.as_deref(), json, ctx)
+            }
+            CodeAction::CallGraph { cwd, apply, json, lang, depth } => {
+                let fs = filesystem::system_filesystem();
+                let report = crate::code::call_graph::extract(&cwd, &lang, depth, &*fs)
+                    .map_err(|e| anyhow::anyhow!("extract failed: {e}"))?;
+                if apply {
+                    let apply_report = crate::code::call_graph::apply(&cwd, &report, &*fs)
+                        .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&apply_report)?);
+                    } else {
+                        println!(
+                            "Applied {} elements ({} skipped), {} relations ({} skipped), {} evidences ({} ms).",
+                            apply_report.elements_written,
+                            apply_report.elements_skipped,
+                            apply_report.relations_written,
+                            apply_report.relations_skipped,
+                            apply_report.evidences_written,
+                            apply_report.duration_ms
+                        );
+                    }
+                } else if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    crate::code::output::print_call_graph_table(&report);
+                }
+                Ok(0)
             }
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
