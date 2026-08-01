@@ -168,6 +168,16 @@ pub trait DiagramOps: Send + Sync {
 
     /// Fetch all ViewMembers for a given diagram_id.
     fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>>;
+
+    /// Atomically update the `label` of a single ViewMember.
+    ///
+    /// Implementation note: prefer this over the read-modify-write
+    /// pattern of `get_view_members` + `put_view_member`. A single
+    /// MATCH … SET … RETURN is atomic with respect to the row, removing
+    /// the race window where another writer could clobber the intervening
+    /// edits. Errors if `member_id` does not exist (the SET … RETURN
+    /// pattern surfaces no-rows-affected as a parse-time Cypher error).
+    fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()>;
 }
 
 /// The persistence port — superset of all three sub-traits.
@@ -920,6 +930,32 @@ impl DiagramOps for LbugStore {
             "ViewMember",
             &mid,
         )
+    }
+
+    fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let mid = crate::graph::validate_identifier(member_id)
+            .context("update_view_member_label: member_id failed validation")?;
+        let safe_label = label.replace('\'', "\\'");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Single MATCH ... SET ... RETURN — atomic with respect to the
+        // row. lbug 0.18.3 silently succeeds with 0 rows when the
+        // member does not exist, so we check the row count and bail
+        // explicitly to preserve the old RMW error contract.
+        let cypher = format!(
+            "MATCH (vm:ViewMember {{id: '{mid}'}}) \
+             SET vm.label = '{safe_label}', vm.updated_at = timestamp('{now}') \
+             RETURN vm.id;"
+        );
+        let mut result = session.conn.query(&cypher).with_context(|| {
+            format!("update_view_member_label: failed to update {mid}")
+        })?;
+        let updated = result.next().is_some();
+        if !updated {
+            anyhow::bail!("member not found: {mid}");
+        }
+        Ok(())
     }
 
     fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>> {

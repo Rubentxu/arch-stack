@@ -27,7 +27,7 @@ use crate::diagram::changeset_schema::CHANGESET_SCHEMA;
 use crate::diagram::changeset_types::{ChangeSet, Command, CHANGESET_COMMAND_TYPES};
 use crate::diagram::export_types::Projection;
 use crate::diagram::hash::base_revision;
-use crate::diagram::view_types::{Diagram, ViewGroup, ViewMember};
+use crate::diagram::view_types::{Diagram, ViewMember};
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
 use crate::store::{DiagramOps, GraphStore, LbugStore};
@@ -424,7 +424,70 @@ mod tests {
             label: "Should Fail".into(),
         };
         let err = dispatch_command(&mut store, &cmd, diagram_id).unwrap_err();
-        assert!(err.to_string().contains("member not found"));
+        // After T6 (atomic update_view_member_label), the bail!() in
+        // the GraphStore impl is wrapped by `with_context` in
+        // `Command::apply`, so the error chain is:
+        //   [0] update_view_member_label for {member_id}
+        //   [1] member not found: {member_id}
+        // `err.to_string()` only returns the topmost message; check
+        // the whole chain for the underlying "member not found" cause.
+        assert!(
+            err.chain().any(|c| c.to_string().contains("member not found")),
+            "expected chain to contain 'member not found', got: {err:?}"
+        );
+    }
+
+    // W-DV2-C2 regression: set_label must use the atomic
+    // update_view_member_label path. After the refactor, a single
+    // MATCH ... SET ... RETURN replaces the read-modify-write. This
+    // test proves the new path persists the label through a round-trip
+    // get_view_members call.
+    #[test]
+    fn set_label_atomic_path_persists_through_round_trip() {
+        let (mut store, _tmp) = make_test_store();
+        let diagram_id = "container:orders";
+
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+
+        store
+            .put_view_member(&ViewMember {
+                id: "vm:container:orders:el:1".into(),
+                diagram_id: diagram_id.into(),
+                element_id: "el:1".into(),
+                label: "Old Label".into(),
+                x: 100,
+                y: 200,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+
+        // Direct call to the new atomic method
+        store
+            .update_view_member_label("vm:container:orders:el:1", "Atomic New Label")
+            .unwrap();
+
+        // Verify round-trip: label persisted
+        let members = store.get_view_members(diagram_id).unwrap();
+        let m = members
+            .iter()
+            .find(|m| m.id == "vm:container:orders:el:1")
+            .unwrap();
+        assert_eq!(m.label, "Atomic New Label");
+        assert_eq!(m.x, 100, "x preserved by atomic update (not RMW)");
+        assert_eq!(m.y, 200, "y preserved by atomic update (not RMW)");
     }
 
     #[test]

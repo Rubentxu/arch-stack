@@ -125,18 +125,9 @@ impl Command {
             }
 
             Command::SetLabel { member_id, label } => {
-                let members = store
-                    .get_view_members(diagram_id)
-                    .with_context(|| format!("get_view_members for set-label"))?;
-                let existing = members
-                    .iter()
-                    .find(|m| m.id == *member_id)
-                    .with_context(|| format!("member not found: {member_id}"))?;
-                let mut updated = existing.clone();
-                updated.label = label.clone();
                 store
-                    .put_view_member(&updated)
-                    .with_context(|| format!("put_view_member for set-label {member_id}"))?;
+                    .update_view_member_label(member_id, label)
+                    .with_context(|| format!("update_view_member_label for {member_id}"))?;
                 Ok(())
             }
 

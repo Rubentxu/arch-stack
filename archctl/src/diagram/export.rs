@@ -293,6 +293,7 @@ mod tests {
         fn put_view_group(&mut self, _: &crate::diagram::view_types::ViewGroup) -> anyhow::Result<()> { unimplemented!() }
         fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
         fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<crate::diagram::view_types::ViewMember>> { unimplemented!() }
+        fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
     }
 
     fn make_element_row(id: &str, category: &str, name: &str, version_id: &str) -> Row {
