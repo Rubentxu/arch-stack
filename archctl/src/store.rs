@@ -900,26 +900,29 @@ impl DiagramOps for LbugStore {
         )
     }
 
-    fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
+fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
         let session = self.session_mut()?;
         let mid = crate::graph::validate_identifier(member_id)
             .context("update_view_member_label: member_id failed validation")?;
         let safe_label = label.replace('\'', "\\'");
-        let now = chrono::Utc::now().to_rfc3339();
 
         // Single MATCH ... SET ... RETURN — atomic with respect to the
         // row. lbug 0.18.3 silently succeeds with 0 rows when the
         // member does not exist, so we check the row count and bail
         // explicitly to preserve the old RMW error contract.
+        //
+        // updated_at is intentionally NOT set: reexport_view (the only
+        // reader) only hashes `m.label` for base_revision, so updated_at
+        // was set-but-unread. Skipping the SET clause removes the ambient
+        // chrono::Utc::now() call that bypassed the Clock port seam (CP-W2).
         let cypher = format!(
             "MATCH (vm:ViewMember {{id: '{mid}'}}) \
-             SET vm.label = '{safe_label}', vm.updated_at = timestamp('{now}') \
+             SET vm.label = '{safe_label}' \
              RETURN vm.id;"
         );
-        let mut result = session
-            .conn
-            .query(&cypher)
-            .with_context(|| format!("update_view_member_label: failed to update {mid}"))?;
+        let mut result = session.conn.query(&cypher).with_context(|| {
+            format!("update_view_member_label: failed to update {mid}")
+        })?;
         let updated = result.next().is_some();
         if !updated {
             anyhow::bail!("member not found: {mid}");
