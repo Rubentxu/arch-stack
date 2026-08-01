@@ -902,7 +902,6 @@ fn write_function_element(
     };
     let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
     let name_escaped = escape_cypher_string(&node.name);
-    let fq_name_escaped = escape_cypher_string(&node.fq_name);
     let id = format!("cg:{}", node.canonical_key);
     let cypher = format!(
         "MERGE (e:Element {{id: '{id}'}}) SET \
@@ -912,13 +911,11 @@ fn write_function_element(
          e.current_name = '{name_escaped}', \
          e.current_status = 'active', \
          e.current_confidence = {confidence}, \
-         e.current_version_id = '{version_id}', \
-         e.props = '{{\"fq_name\": \"{fq_name_escaped}\"}}';",
+         e.current_version_id = '{version_id}';",
         id = id,
         kind_id = kind_id,
         canonical_key_escaped = canonical_key_escaped,
         name_escaped = name_escaped,
-        fq_name_escaped = fq_name_escaped,
         confidence = node.confidence,
         version_id = version_id,
     );
@@ -1062,12 +1059,15 @@ fn write_call_edge(
         "MERGE (ev:Evidence {{id: '{ev_id}'}}) SET \
          ev.kind = 'structural', \
          ev.claim = 'call-graph edge', \
+         ev.classification = 'derived', \
+         ev.confidence = {confidence}, \
          ev.props = '{props}', \
          ev.start_line = {line}, \
          ev.end_line = {line}, \
-         ev.file = '{file}';",
+         ev.path = '{file}';",
         ev_id = evidence_id,
         props = ev_props_escaped,
+        confidence = edge.confidence,
         line = edge.line,
         file = file_escaped,
     );
@@ -1117,10 +1117,10 @@ pub fn apply(
     // Seed MetaType rows for code.function, code.method, code.closure
     // and Predicate row for code.calls
     let seed_metatypes = r#"
-        MERGE (mt:MetaType {id: 'code.function'}) ON CREATE SET mt.label = 'Function', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (mt:MetaType {id: 'code.method'}) ON CREATE SET mt.label = 'Method', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (mt:MetaType {id: 'code.closure'}) ON CREATE SET mt.label = 'Closure', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (p:Predicate {id: 'code.calls'}) ON CREATE SET p.label = 'calls', p.namespace = 'code'
+        MERGE (mt:MetaType {id: 'code.function'}) ON CREATE SET mt.name = 'Function', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (mt:MetaType {id: 'code.method'}) ON CREATE SET mt.name = 'Method', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (mt:MetaType {id: 'code.closure'}) ON CREATE SET mt.name = 'Closure', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (p:Predicate {id: 'code.calls'}) ON CREATE SET p.name = 'calls', p.namespace = 'code'
         RETURN 1;
     "#;
     let seed_result = store.query(seed_metatypes);
