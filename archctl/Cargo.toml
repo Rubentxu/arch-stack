@@ -46,3 +46,16 @@ tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
 insta = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "export_pipeline"
+harness = false
+
+[[bench]]
+name = "apply_pipeline"
+harness = false
+
+[[bench]]
+name = "query_pipeline"
+harness = false
