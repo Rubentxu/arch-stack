@@ -4,6 +4,16 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.9.0] — 2026-08-01
+
+### Added
+- `archctl code sequence --from <selector>` — BFS projection over persisted call-graph edges into the `behavior.interaction` shape. Supports `--depth` (default 5), `--max-interactions` (default 500), `--json`, `--cwd`. `--apply` is accepted but no-op (sequence is read-only per spec SCN-217).
+
+### Notes
+- Requires PR1 (v0.8.1) call-graph data (run `archctl code call-graph --apply` first).
+- Selector forms: `ByName("foo")`, `ByFileLine { file, line }`, `ByCanonicalKey("rust:src/lib.rs:foo:42")`.
+- Cycle detection: marks `cyclic: true` when a callee is already in the visited set.
+
 ## [v0.8.1] — 2026-08-01
 
 ### Fixed
