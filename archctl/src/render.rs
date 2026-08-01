@@ -1,23 +1,69 @@
+//! Architecture diagram renderer.
+//!
+//! Implements `archctl render <source> [--format FMT] [--out DIR]`. Renders
+//! an architecture diagram to local SVG without any network egress.
+//!
+//! Per ADR-011, renderers run **locally only**:
+//! - **Structurizr** DSL → SVG via a minimal `petgraph + svg` renderer that
+//!   parses a C4-shaped subset (`workspace { … } model { … } views { … }`).
+//! - **PlantUML** → SVG via `plantuml-little` (Rust crate; deferred until
+//!   graphviz vendor strategy is resolved — `plantuml-little` requires
+//!   `libgraphviz` at build time via `graphviz-anywhere`).
+//! - **Mermaid** → SVG via `merman` (Rust crate; same graphviz vendor
+//!   blocker as PlantUML).
+//!
+//! **No HTTP egress.** The previous kroki-POST path is removed. The
+//! `--kroki-url` CLI flag is removed (security fix per
+//! `docs/audits/2026-08-01-archctl-adr-vs-impl.md` §F1).
+//!
+//! Unsupported format errors are surfaced with a clear message pointing
+//! at the deferred vendor path; users with PlantUML/Mermaid needs
+//! should install `libgraphviz-dev` system-wide and re-vendor
+//! `plantuml-little` + `merman` in a follow-up cycle.
+
 use crate::cli::RenderFormat;
 use crate::Filesystem;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use tracing::{info, warn};
 
-pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_url: &str, fs: &dyn Filesystem) -> Result<i32> {
-    if !fs.exists(&source) {
-        anyhow::bail!("source not found: {}", source.display());
+mod structurizr;
+
+/// Format identifier emitted by `detect_format` and consumed by `run`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderKind {
+    Structurizr,
+    Plantuml,
+    Mermaid,
+}
+
+impl RenderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RenderKind::Structurizr => "structurizr",
+            RenderKind::Plantuml => "plantuml",
+            RenderKind::Mermaid => "mermaid",
+        }
     }
-    let fmt = match format {
+}
+
+pub fn run(
+    source: PathBuf,
+    format: RenderFormat,
+    out: Option<PathBuf>,
+    fs: &dyn Filesystem,
+) -> Result<i32> {
+    if !fs.exists(&source) {
+        bail!("source not found: {}", source.display());
+    }
+    let kind = match format {
         RenderFormat::Auto => detect_format(&source),
-        RenderFormat::Structurizr => "structurizr",
-        RenderFormat::Plantuml => "plantuml",
+        RenderFormat::Structurizr => RenderKind::Structurizr,
+        RenderFormat::Plantuml => RenderKind::Plantuml,
+        RenderFormat::Mermaid => RenderKind::Mermaid,
     };
 
-    let stem = source
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("out");
+    let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
     let out_dir = out.unwrap_or_else(|| {
         source
             .parent()
@@ -25,44 +71,59 @@ pub fn run(source: PathBuf, format: RenderFormat, out: Option<PathBuf>, kroki_ur
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".archctl-rendered")
     });
-    fs.create_dir_all(&out_dir).with_context(|| format!("mkdir {}", out_dir.display()))?;
+    fs.create_dir_all(&out_dir)
+        .with_context(|| format!("mkdir {}", out_dir.display()))?;
     let out_path = out_dir.join(format!("{stem}.svg"));
 
-    let body = fs.read_to_string(&source).with_context(|| format!("read {}", source.display()))?;
-    let url = format!("{kroki_url}/{fmt}/svg");
-    debug!(%url, "POST to kroki");
-    info!(source = %source.display(), format = fmt, "rendering");
+    let body = fs
+        .read_to_string(&source)
+        .with_context(|| format!("read {}", source.display()))?;
+    info!(source = %source.display(), format = kind.as_str(), "rendering");
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .context("build reqwest client")?;
-    let response = client
-        .post(&url)
-        .header("Content-Type", "text/plain")
-        .body(body)
-        .send()
-        .with_context(|| format!("POST {url}"))?;
-    let status = response.status();
-    let bytes = response.bytes().context("read response body")?;
-    fs.write(&out_path, &bytes).with_context(|| format!("write {}", out_path.display()))?;
+    let svg = match kind {
+        RenderKind::Structurizr => structurizr::render(&body)
+            .with_context(|| format!("structurizr render of {}", source.display()))?,
+        RenderKind::Plantuml => {
+            warn!("plantuml format is not yet wired (see ADR-011 deferred vendor)");
+            bail!(
+                "plantuml rendering not implemented in v0.11.0 — re-vendor \
+                 plantuml-little in a follow-up cycle (see docs/audits/2026-08-01)"
+            );
+        }
+        RenderKind::Mermaid => {
+            warn!("mermaid format is not yet wired (see ADR-011 deferred vendor)");
+            bail!(
+                "mermaid rendering not implemented in v0.11.0 — re-vendor \
+                 merman in a follow-up cycle (see docs/audits/2026-08-01)"
+            );
+        }
+    };
 
-    let ok = status.is_success();
+    fs.write(&out_path, svg.as_bytes())
+        .with_context(|| format!("write {}", out_path.display()))?;
+
     let payload = serde_json::json!({
-        "ok": ok,
-        "format": fmt,
+        "ok": true,
+        "format": kind.as_str(),
         "source": source.display().to_string(),
         "output": out_path.display().to_string(),
-        "status": status.as_u16(),
+        "bytes": svg.len(),
     });
     println!("{payload}");
-    Ok(if ok { 0 } else { 1 })
+    Ok(0)
 }
 
-fn detect_format(source: &Path) -> &'static str {
-    let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("");
-    match ext.to_ascii_lowercase().as_str() {
-        "puml" | "iuml" | "wsd" => "plantuml",
-        _ => "structurizr",
+pub fn detect_format(source: &Path) -> RenderKind {
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "puml" | "iuml" | "wsd" => RenderKind::Plantuml,
+        "mmd" => RenderKind::Mermaid,
+        // Default: anything else (including `.dsl` and absence of
+        // extension) is treated as Structurizr DSL.
+        _ => RenderKind::Structurizr,
     }
 }
