@@ -58,14 +58,17 @@ pub struct Session {
 ///
 /// Used by both `Session` (public, port-aware) and `LbugSession`
 /// (private, std-fs) wrappers to avoid duplicating the transmute logic.
-pub(crate) fn create_db_session(project_dir: &Path) -> Result<(Connection<'static>, Database)> {
-    let path = database_path(project_dir);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("mkdir {}", parent.display()))?;
-    }
+///
+/// **Caller responsibility**: the caller MUST ensure the parent directory
+/// of `path` exists. Both [`open_session`] (via `Filesystem::create_dir_all`)
+/// and [`crate::store::open_lbug_session`] (via the lockfile path's
+/// `std::fs::create_dir_all` in `LbugStore::open`) handle their own
+/// directory creation at their respective layers. The helper used to do
+/// `std::fs::create_dir_all` itself, which defeated `MemoryFilesystem`
+/// test isolation (CP-W1 in the prior cycle's debt report).
+pub(crate) fn create_db_session(path: &Path) -> Result<(Connection<'static>, Database)> {
     let db = Database::new(
-        &path,
+        path,
         SystemConfig::default()
             .buffer_pool_size(BUFFER_POOL_SIZE)
             .max_db_size(BUFFER_POOL_SIZE),
@@ -82,7 +85,7 @@ pub fn open_session(project_dir: &Path, fs: &dyn Filesystem) -> Result<Session> 
         fs.create_dir_all(parent)
             .with_context(|| format!("mkdir {}", parent.display()))?;
     }
-    let (conn, db) = create_db_session(project_dir)?;
+    let (conn, db) = create_db_session(&path)?;
     Ok(Session { conn, _db: db })
 }
 

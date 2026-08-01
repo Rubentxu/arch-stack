@@ -24,7 +24,9 @@ use jsonschema;
 
 use crate::clock::Clock;
 use crate::diagram::changeset_schema::CHANGESET_SCHEMA;
-use crate::diagram::changeset_types::{ChangeSet, Command, CHANGESET_COMMAND_TYPES};
+#[cfg(test)]
+use crate::diagram::changeset_types::Command;
+use crate::diagram::changeset_types::{ChangeSet, CHANGESET_COMMAND_TYPES};
 use crate::diagram::export_types::Projection;
 use crate::diagram::hash::base_revision;
 use crate::diagram::view_types::Diagram;
@@ -32,9 +34,7 @@ use crate::diagram::view_types::Diagram;
 use crate::diagram::view_types::ViewMember;
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
-use crate::store::{GraphStore, LbugStore};
-#[cfg(test)]
-use crate::store::DiagramOps;
+use crate::store::{DiagramOps, GraphStore, LbugStore};
 
 /// Report from a successful apply operation.
 #[derive(Debug)]
@@ -73,11 +73,13 @@ pub fn run_apply(
 /// This is the core apply logic extracted for testability.
 /// The store must already be initialized; caller retains ownership.
 ///
-/// Takes `&mut dyn GraphStore` (not concrete `LbugStore`) so any port
-/// adapter (test mocks, future SparrowDB, etc.) can drive the apply
-/// pipeline. The lock-aware `LbugStore::open` factory is the caller's
-/// concern; the apply core only touches port methods.
-pub fn apply_to_store(store: &mut dyn GraphStore, changeset: ChangeSet) -> Result<ApplyReport> {
+/// Takes `&mut dyn DiagramOps` (the narrowest sub-trait covering every
+/// method this pipeline calls). Realises the ISP benefit of the
+/// `GraphStore` trait split — the apply core depends only on DiagramOps,
+/// not the full super-trait. Concrete `LbugStore` implements DiagramOps
+/// via GraphStore, so the lock-aware `LbugStore::open` factory is the
+/// caller's concern; the apply core only touches DiagramOps methods.
+pub fn apply_to_store(store: &mut dyn DiagramOps, changeset: ChangeSet) -> Result<ApplyReport> {
     // Schema-validation of the changeset structure
     let changeset_json = serde_json::to_string(&changeset).context("re-serialize changeset")?;
     validate_changeset_schema(&changeset_json)?;
@@ -204,7 +206,7 @@ fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
 /// for tests that want to exercise dispatch in isolation. New code
 /// should call `cmd.apply(store, diagram_id)?` directly.
 #[cfg(test)]
-fn dispatch_command(store: &mut dyn GraphStore, cmd: &Command, diagram_id: &str) -> Result<()> {
+fn dispatch_command(store: &mut dyn DiagramOps, cmd: &Command, diagram_id: &str) -> Result<()> {
     cmd.apply(store, diagram_id)
 }
 
@@ -212,7 +214,7 @@ fn dispatch_command(store: &mut dyn GraphStore, cmd: &Command, diagram_id: &str)
 ///
 /// Reads all current ViewMembers for `diagram_id`, reconstructs a minimal
 /// `Projection`, and returns it so `base_revision()` can hash it.
-fn reexport_view(store: &dyn GraphStore, diagram_id: &str) -> Result<Projection> {
+fn reexport_view(store: &dyn DiagramOps, diagram_id: &str) -> Result<Projection> {
     use crate::diagram::export_types::Node;
 
     let members = store.get_view_members(diagram_id)?;

@@ -72,13 +72,19 @@ impl Command {
     /// each variant's apply logic travels with the data definition. The
     /// dispatcher collapses to `cmd.apply(store, diagram_id)?`.
     ///
-    /// Implementation note: this couples `Command` to the `GraphStore`
+    /// Takes `&mut dyn DiagramOps` (the narrowest sub-trait covering
+    /// every method called below: put_diagram, put_view_member,
+    /// link_renders, link_member_of, put_view_group, link_group_contains,
+    /// get_view_members). Realises the ISP benefit of the trait split
+    /// from the prior cycle.
+    ///
+    /// Implementation note: this couples `Command` to the `DiagramOps`
     /// port. The trade-off is accepted because the alternative (a
     /// `CommandExecutor` trait per variant) triples the surface area for
-    /// marginal benefit — the port is already small and stable.
+    /// marginal benefit — the sub-trait is small and stable.
     pub fn apply(
         &self,
-        store: &mut dyn crate::store::GraphStore,
+        store: &mut dyn crate::store::DiagramOps,
         diagram_id: &str,
     ) -> anyhow::Result<()> {
         use crate::diagram::view_types::{ViewGroup, ViewMember};
