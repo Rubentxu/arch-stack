@@ -4,8 +4,22 @@
 //! (no LLM, no clock) via tree-sitter-graph; deterministic; idempotent apply.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use anyhow::Result;
+use ast_grep_core::tree_sitter::LanguageExt;
+use ast_grep_language::SupportLang;
 use serde::{Deserialize, Serialize};
+use tree_sitter::{Parser, Tree};
+use tree_sitter_graph::ast::File as TsgFile;
+use tree_sitter_graph::functions::Functions;
+use tree_sitter_graph::graph::Graph;
+use tree_sitter_graph::{ExecutionConfig, NoCancellation, Variables};
+
+use crate::filesystem::Filesystem;
+
+use super::call_rules;
 
 /// JSON Schema for CallGraphReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -135,6 +149,398 @@ pub enum CallGraphError {
     TsgExecution { path: String, message: String },
     #[error("graph write failed: {0}")]
     GraphWrite(#[from] anyhow::Error),
+}
+
+// ─── Extract ─────────────────────────────────────────────────────────────────
+
+/// Extract function nodes + call edges from `cwd`, filtered to `languages`
+/// (empty = all MVP languages). Pure: no graph writes. Deterministic.
+pub fn extract(
+    cwd: &Path,
+    languages: &[Language],
+    depth_limit: Option<u32>,
+    fs: &dyn Filesystem,
+) -> Result<CallGraphReport, CallGraphError> {
+    let start = Instant::now();
+    let root = cwd.to_string_lossy().to_string();
+
+    // Collect files to process
+    let mut files_to_process: Vec<(PathBuf, Language, String)> = Vec::new();
+    let mut lang_counts: BTreeMap<String, u64> = BTreeMap::new();
+
+    let walker = ignore::WalkBuilder::new(cwd)
+        .hidden(false)
+        .follow_links(false)
+        .build();
+
+    for entry in walker.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension() else { continue };
+        let ext_str = ext.to_string_lossy().to_lowercase();
+        let (lang, lang_label) = match ext_str.as_str() {
+            "rs" => (Some(Language::Rust), "rust"),
+            "ts" | "tsx" => (Some(Language::TypeScript), "typescript"),
+            "js" | "jsx" | "mjs" | "cjs" => (Some(Language::TypeScript), "typescript"),
+            "py" => (Some(Language::Python), "python"),
+            _ => (None, ""),
+        };
+        let Some(lang) = lang else { continue };
+        if !languages.is_empty() && !languages.contains(&lang) {
+            continue;
+        }
+        let rel = path.strip_prefix(cwd).unwrap_or(path);
+        files_to_process.push((rel.to_path_buf(), lang, lang_label.to_string()));
+        *lang_counts.entry(lang_label.to_string()).or_insert(0) += 1;
+    }
+
+    let mut all_nodes: Vec<FunctionNode> = Vec::new();
+    let mut all_edges: Vec<CallEdge> = Vec::new();
+    let mut errors: Vec<ExtractError> = Vec::new();
+
+    for (rel_path, lang, lang_label) in files_to_process {
+        let abs_path = cwd.join(&rel_path);
+        let source = match fs.read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(ExtractError {
+                    strategy: lang_label.clone(),
+                    path: rel_path.to_string_lossy().to_string(),
+                    message: format!("read error: {e}"),
+                });
+                continue;
+            }
+        };
+
+        let tsg_src = match lang {
+            Language::Rust => call_rules::RUST_TSG,
+            Language::TypeScript => call_rules::TYPESCRIPT_TSG,
+            Language::Python => call_rules::PYTHON_TSG,
+        };
+
+        let support_lang = match lang {
+            Language::Rust => SupportLang::Rust,
+            Language::TypeScript => SupportLang::TypeScript,
+            Language::Python => SupportLang::Python,
+        };
+
+        // Parse with tree-sitter
+        let ts_lang = support_lang.get_ts_language();
+        let mut parser = Parser::new();
+        if parser.set_language(&ts_lang).is_err() {
+            errors.push(ExtractError {
+                strategy: lang_label.clone(),
+                path: rel_path.to_string_lossy().to_string(),
+                message: "failed to set tree-sitter language".to_string(),
+            });
+            continue;
+        }
+        let tree = match parser.parse(&source, None) {
+            Some(t) => t,
+            None => {
+                errors.push(ExtractError {
+                    strategy: lang_label.clone(),
+                    path: rel_path.to_string_lossy().to_string(),
+                    message: "parse failed".to_string(),
+                });
+                continue;
+            }
+        };
+
+        // Execute TSG rules
+        let tsg_file = match TsgFile::from_str(ts_lang, tsg_src) {
+            Ok(f) => f,
+            Err(e) => {
+                errors.push(ExtractError {
+                    strategy: lang_label.clone(),
+                    path: rel_path.to_string_lossy().to_string(),
+                    message: format!("TSG parse error: {e}"),
+                });
+                continue;
+            }
+        };
+        let functions = Functions::stdlib();
+        let globals = Variables::new();
+        let config = ExecutionConfig::new(&functions, &globals);
+        let graph = match tsg_file.execute(&tree, &source, &config, &NoCancellation) {
+            Ok(g) => g,
+            Err(e) => {
+                errors.push(ExtractError {
+                    strategy: lang_label.clone(),
+                    path: rel_path.to_string_lossy().to_string(),
+                    message: format!("TSG execution error: {e}"),
+                });
+                continue;
+            }
+        };
+
+        let file_str = rel_path.to_string_lossy().to_string();
+
+        // Extract function definitions from TSG graph nodes
+        extract_function_definitions(&graph, &source, lang, &file_str, &mut all_nodes);
+
+        // Extract call edges via direct tree-sitter walk
+        extract_call_edges(&tree, &source, lang, &file_str, &all_nodes, &mut all_edges, depth_limit);
+    }
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+    let files_scanned = all_nodes.len() as u64; // approx
+
+    Ok(CallGraphReport {
+        schema_version: "1.0".to_string(),
+        project: ProjectMeta {
+            root,
+            files_scanned: files_scanned,
+            languages: lang_counts,
+            duration_ms,
+        },
+        nodes: all_nodes,
+        edges: all_edges,
+        errors,
+    })
+}
+
+/// Walk TSG graph nodes and create FunctionNode records.
+fn extract_function_definitions(
+    graph: &Graph<'_>,
+    _source: &str,
+    lang: Language,
+    file: &str,
+    nodes: &mut Vec<FunctionNode>,
+) {
+    for node_ref in graph.iter_nodes() {
+        let graph_node = &graph[node_ref];
+        let Some(kind_val) = graph_node.attributes.get("node_kind") else { continue };
+        let Ok(kind_str) = kind_val.as_str() else { continue };
+        let node_kind = match kind_str {
+            "function" => FunctionKind::Function,
+            "method" => FunctionKind::Method,
+            "closure" => FunctionKind::Closure,
+            _ => continue, // skip call nodes
+        };
+
+        let name = graph_node
+            .attributes
+            .get("name")
+            .and_then(|v| v.as_str().ok())
+            .unwrap_or("<unknown>")
+            .to_string();
+
+        // Get syntax node for byte range
+        let line: u32 = if let Some(syntax_val) = graph_node.attributes.get("syntax") {
+            if let Ok(sn_ref) = syntax_val.as_syntax_node_ref() {
+                let ts_node = &graph[sn_ref];
+                (ts_node.start_position().row + 1) as u32
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let fq_name = name.clone(); // MVP: fq_name = name
+        let confidence = match lang {
+            Language::Rust => 0.90,
+            Language::TypeScript => 0.85,
+            Language::Python => 0.80,
+        };
+
+        let parent = graph_node
+            .attributes
+            .get("parent")
+            .and_then(|v| v.as_str().ok())
+            .map(|s| s.to_string());
+
+        let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+
+        nodes.push(FunctionNode {
+            canonical_key,
+            kind: node_kind,
+            language: lang,
+            file: file.to_string(),
+            line,
+            name,
+            fq_name,
+            confidence,
+            parent,
+        });
+    }
+}
+
+/// Walk tree-sitter tree to find call expressions and resolve enclosing function.
+fn extract_call_edges(
+    tree: &Tree,
+    source: &str,
+    lang: Language,
+    file: &str,
+    nodes: &[FunctionNode],
+    edges: &mut Vec<CallEdge>,
+    _depth_limit: Option<u32>,
+) {
+    let root = tree.root_node();
+    find_call_expressions(root, source, lang, file, nodes, edges);
+}
+
+/// Recursively walk tree-sitter nodes to find call expressions.
+fn find_call_expressions<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+    lang: Language,
+    file: &str,
+    nodes: &[FunctionNode],
+    edges: &mut Vec<CallEdge>,
+) {
+    // Check if this node is a call expression
+    let kind = node.kind();
+
+    match lang {
+        Language::Rust => {
+            if kind == "call_expression" {
+                if let Some(callee) = extract_callee_from_call(node, source) {
+                    let line = (node.start_position().row + 1) as u32;
+                    edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::DirectCall, MessageKind::SyncCall));
+                }
+            } else if kind == "method_call_expression" {
+                if let Some(callee) = extract_method_callee(node, source) {
+                    let line = (node.start_position().row + 1) as u32;
+                    edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::MethodCall, MessageKind::SyncCall));
+                }
+            } else if kind == "await_expression" {
+                // Look for call_expression inside await
+                for i in 0..node.child_count() {
+                    let child = node.child(i as u32).unwrap();
+                    if child.kind() == "call_expression" {
+                        if let Some(callee) = extract_callee_from_call(child, source) {
+                            let line = (node.start_position().row + 1) as u32;
+                            edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::DirectCall, MessageKind::AsyncCall));
+                        }
+                    }
+                }
+            }
+        }
+        Language::TypeScript => {
+            if kind == "call_expression" {
+                if let Some(callee) = extract_ts_callee(node, source) {
+                    let line = (node.start_position().row + 1) as u32;
+                    edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::DirectCall, MessageKind::SyncCall));
+                }
+            }
+        }
+        Language::Python => {
+            if kind == "call" {
+                let (callee, is_method) = extract_python_callee(node, source);
+                if !callee.is_empty() {
+                    let line = (node.start_position().row + 1) as u32;
+                    let call_kind = if is_method { CallKind::MethodCall } else { CallKind::DirectCall };
+                    edges.push(make_call_edge(nodes, lang, file, &callee, line, call_kind, MessageKind::SyncCall));
+                }
+            }
+        }
+    }
+
+    // Recurse into children
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32) {
+            find_call_expressions(child, source, lang, file, nodes, edges);
+        }
+    }
+}
+
+fn extract_callee_from_call(node: tree_sitter::Node, source: &str) -> Option<String> {
+    for i in 0..node.child_count() {
+        let child = node.child(i as u32).unwrap();
+        if child.kind() == "identifier" {
+            return Some(source.get(child.start_byte()..child.end_byte())?.to_string());
+        }
+    }
+    None
+}
+
+fn extract_method_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
+    for i in 0..node.child_count() {
+        let child = node.child(i as u32).unwrap();
+        if child.kind() == "field_identifier" {
+            return Some(source.get(child.start_byte()..child.end_byte())?.to_string());
+        }
+    }
+    None
+}
+
+fn extract_ts_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
+    for i in 0..node.child_count() {
+        let child = node.child(i as u32).unwrap();
+        if child.kind() == "identifier" {
+            return Some(source.get(child.start_byte()..child.end_byte())?.to_string());
+        }
+    }
+    None
+}
+
+fn extract_python_callee(node: tree_sitter::Node, source: &str) -> (String, bool) {
+    let first_child = node.child(0u32);
+    if let Some(child) = first_child {
+        if child.kind() == "attribute" {
+            // obj.method -> method
+            for i in 0..child.child_count() {
+                let c2 = child.child(i as u32).unwrap();
+                if c2.kind() == "identifier" {
+                    let name = source.get(c2.start_byte()..c2.end_byte()).unwrap_or("").to_string();
+                    return (name, true);
+                }
+            }
+        } else if child.kind() == "identifier" {
+            return (source.get(child.start_byte()..child.end_byte()).unwrap_or("").to_string(), false);
+        }
+    }
+    (String::new(), false)
+}
+
+fn make_call_edge(
+    nodes: &[FunctionNode],
+    lang: Language,
+    file: &str,
+    callee: &str,
+    line: u32,
+    kind: CallKind,
+    message_kind: MessageKind,
+) -> CallEdge {
+    // Find the enclosing function for this call site
+    // Simple heuristic: find the nearest function node whose line <= call_line
+    let caller = nodes
+        .iter()
+        .filter(|n| n.language == lang && n.file == file && n.line <= line)
+        .max_by_key(|n| n.line)
+        .map(|n| n.canonical_key.clone())
+        .unwrap_or_else(|| format!("{}:{}:<unknown>:0", lang_label(&lang), file));
+
+    let confidence = match lang {
+        Language::Rust => 0.90,
+        Language::TypeScript => 0.85,
+        Language::Python => 0.80,
+    };
+
+    let canonical_key = format!("{}:{}:{}→{}:{}", lang_label(&lang), file, caller, callee, line);
+
+    CallEdge {
+        canonical_key,
+        caller,
+        callee: callee.to_string(),
+        file: file.to_string(),
+        line,
+        kind,
+        message_kind,
+        confidence,
+    }
+}
+
+fn lang_label(lang: &Language) -> &'static str {
+    match lang {
+        Language::Rust => "rust",
+        Language::TypeScript => "typescript",
+        Language::Python => "python",
+    }
 }
 
 
