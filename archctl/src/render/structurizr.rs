@@ -127,7 +127,27 @@ fn parse(dsl: &str) -> Result<Vec<Stmt>> {
     let mut stmts: Vec<Stmt> = Vec::new();
     for (lineno, raw) in dsl.lines().enumerate() {
         let line = raw.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
+        // Skip blank lines and block headers/closers (`workspace … {`,
+        // `model {`, `views { … {`, `}`, `*`).
+        if line.is_empty()
+            || line.starts_with("workspace")
+            || line.starts_with("model")
+            || line.starts_with("views")
+            || line == "}"
+            || line == "{"
+        {
+            continue;
+        }
+        // The `views { id { include ... } }` blocks contain nested braces
+        // that the line-based tokenizer would split incorrectly. We
+        // currently skip their contents (views are rendered by `archview`,
+        // not `archctl` per ADR-011 scope).
+        if line.starts_with("include")
+            || line.starts_with("exclude")
+            || line.starts_with("description")
+            || line.ends_with('{')
+            || line.ends_with('}')
+        {
             continue;
         }
         let stmt = parse_line(line)
