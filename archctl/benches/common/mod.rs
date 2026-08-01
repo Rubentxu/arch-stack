@@ -43,9 +43,10 @@ fn seed(dataset_path: &str) -> (LbugStore, TempDir) {
     let mut store = LbugStore::open(&project).expect("LbugStore::open");
     store.init().expect("store.init");
 
-    // Resolve dataset path relative to the benches/ working directory.
+    // Resolve dataset path relative to the workspace root (one level
+    // up from archctl/, where `benchmarks/datasets/` lives).
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("benches");
+    path.pop(); // archctl/ → workspace root
     path.push(dataset_path.trim_start_matches("../"));
 
     let bytes = std::fs::read(&path).unwrap_or_else(|e| {
@@ -105,16 +106,12 @@ fn seed(dataset_path: &str) -> (LbugStore, TempDir) {
         let pid = archctl::graph::validate_identifier(pid).expect("pid");
         let src = archctl::graph::validate_identifier(src).expect("src");
         let tgt = archctl::graph::validate_identifier(tgt).expect("tgt");
-        let order: i64 = rel
-            .edge_order_key
-            .parse()
-            .ok()
-            .unwrap_or(0);
+        let order: i64 = rel.edge_order_key.parse().ok().unwrap_or(0);
         let props_safe = rel.edge_props.replace('\'', "\\'");
 
         let cypher = format!(
             "MATCH (a:Element {{id: '{src}'}}), (b:Element {{id: '{tgt}'}}) \
-             CREATE (a)-[r:SemanticRelation {{id: '{rid}', predicate_id: '{pid}', \
+             CREATE (a)-[r:SEMANTIC_EDGE {{id: '{rid}', predicate_id: '{pid}', \
                                         order_key: {order}, props: '{props_safe}'}}]->(b);"
         );
         // CREATE on a REL TABLE requires explicit MATCH — lbug 0.18.3
@@ -144,7 +141,14 @@ fn seed_meta_predicate(store: &mut LbugStore) {
         let mt = archctl::graph::validate_identifier(mt).expect("mt");
         let _ = store.query(&format!("MERGE (:MetaType {{id: '{mt}'}});"));
     }
-    let predicates = ["p.calls", "p.depends_on", "p.uses", "p.owns", "p.contains", "p.flows_to"];
+    let predicates = [
+        "p.calls",
+        "p.depends_on",
+        "p.uses",
+        "p.owns",
+        "p.contains",
+        "p.flows_to",
+    ];
     for p in predicates {
         let p = archctl::graph::validate_identifier(p).expect("p");
         let _ = store.query(&format!("MERGE (:Predicate {{id: '{p}'}});"));
