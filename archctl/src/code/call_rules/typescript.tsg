@@ -9,7 +9,6 @@
   attr (fn_node) name = (source-text @fname)
   attr (fn_node) language = "typescript"
   attr (fn_node) syntax = @fdef
-  attr (fn_node) start_line = (start-row @fdef)
 }
 
 ; Arrow function: const foo = () => { ... }
@@ -22,7 +21,6 @@
   attr (arrow_node) name = (source-text @vname)
   attr (arrow_node) language = "typescript"
   attr (arrow_node) syntax = @afunc
-  attr (arrow_node) start_line = (start-row @afunc)
 }
 
 ; Function expression: const foo = function() { ... }
@@ -35,7 +33,6 @@
   attr (fn_expr_node) name = (source-text @vname)
   attr (fn_expr_node) language = "typescript"
   attr (fn_expr_node) syntax = @fexpr
-  attr (fn_expr_node) start_line = (start-row @fexpr)
 }
 
 ; Class method: class Foo { bar() { ... } }
@@ -47,29 +44,18 @@
   attr (method_node) name = (source-text @mname)
   attr (method_node) language = "typescript"
   attr (method_node) syntax = @mdef
-  attr (method_node) start_line = (start-row @mdef)
 }
 
-; ─── Call expressions → graph edges ────────────────────────────────────────────
+; ─── Call nodes (edges resolved via syntax parent chain in Rust) ─────────────────
 
 ; Direct call: foo(...)
 (call_expression
   function: (identifier) @callee) @call
 {
-  edge caller -> @callee
-  attr (edge) call_kind = "direct_call"
-  attr (edge) message_kind = "sync_call"
-  attr (edge) start_line = (start-row @call)
-}
-
-; Method call: obj.method(...)
-(method_declaration
-  body: (statement_block) @body) @mdecl
-{
-  node method_body_node
-  attr (method_body_node) node_kind = "method_body"
-  attr (method_body_node) syntax = @body
-  attr (method_body_node) start_line = (start-row @body)
+  node call_node
+  attr (call_node) node_kind = "call"
+  attr (call_node) callee = (source-text @callee)
+  attr (call_node) syntax = @call
 }
 
 ; await async call: await foo()
@@ -77,8 +63,8 @@
   argument: (call_expression
     function: (identifier) @acallee) @acall) @await
 {
-  edge caller -> @acallee
-  attr (edge) call_kind = "direct_call"
-  attr (edge) message_kind = "async_call"
-  attr (edge) start_line = (start-row @await)
+  node await_call_node
+  attr (await_call_node) node_kind = "async_call"
+  attr (await_call_node) callee = (source-text @acallee)
+  attr (await_call_node) syntax = @await
 }

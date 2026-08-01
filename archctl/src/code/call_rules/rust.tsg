@@ -10,7 +10,6 @@
   attr (fn_node) name = (source-text @fname)
   attr (fn_node) language = "rust"
   attr (fn_node) syntax = @fdef
-  attr (fn_node) start_line = (start-row @fdef)
 }
 
 ; Impl block method: impl Foo { fn bar() { ... } }
@@ -27,7 +26,6 @@
   attr (method_node) language = "rust"
   attr (method_node) parent = (source-text @itype)
   attr (method_node) syntax = @mdef
-  attr (method_node) start_line = (start-row @mdef)
 }
 
 ; Closure expression: let x = |a, b| { a + b }
@@ -40,38 +38,37 @@
   attr (closure_node) name = "<closure>"
   attr (closure_node) language = "rust"
   attr (closure_node) syntax = @cdef
-  attr (closure_node) start_line = (start-row @cdef)
 }
 
-; ─── Call expressions → graph edges ────────────────────────────────────────────
+; ─── Call nodes (edges resolved via syntax parent chain in Rust) ─────────────────
 
 ; Direct function call: foo(...)
 (call_expression
   function: (identifier) @callee) @call
 {
-  edge caller -> @callee
-  attr (edge) call_kind = "direct_call"
-  attr (edge) message_kind = "sync_call"
-  attr (edge) start_line = (start-row @call)
+  node call_node
+  attr (call_node) node_kind = "call"
+  attr (call_node) callee = (source-text @callee)
+  attr (call_node) syntax = @call
 }
 
 ; Method call: obj.method(...)
 (method_call_expression
   method: (field_identifier) @mcallee) @mcall
 {
-  edge caller -> @mcallee
-  attr (edge) call_kind = "method_call"
-  attr (edge) message_kind = "sync_call"
-  attr (edge) start_line = (start-row @mcall)
+  node method_call_node
+  attr (method_call_node) node_kind = "method_call"
+  attr (method_call_node) callee = (source-text @mcallee)
+  attr (method_call_node) syntax = @mcall
 }
 
-; Async call wrapped in await: await foo()
+; await async call: await foo()
 (await_expression
   argument: (call_expression
     function: (identifier) @acallee) @acall) @await
 {
-  edge caller -> @acallee
-  attr (edge) call_kind = "direct_call"
-  attr (edge) message_kind = "async_call"
-  attr (edge) start_line = (start-row @await)
+  node await_call_node
+  attr (await_call_node) node_kind = "async_call"
+  attr (await_call_node) callee = (source-text @acallee)
+  attr (await_call_node) syntax = @await
 }

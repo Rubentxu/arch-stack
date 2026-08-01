@@ -9,7 +9,6 @@
   attr (fn_node) name = (source-text @fname)
   attr (fn_node) language = "python"
   attr (fn_node) syntax = @fdef
-  attr (fn_node) start_line = (start-row @fdef)
 }
 
 ; Class method: class Foo: def bar(self): ...
@@ -24,7 +23,6 @@
   attr (method_node) name = (source-text @mname)
   attr (method_node) language = "python"
   attr (method_node) syntax = @mdef
-  attr (method_node) start_line = (start-row @mdef)
 }
 
 ; Lambda: f = lambda x: x + 1
@@ -36,19 +34,18 @@
   attr (lambda_node) name = "<lambda>"
   attr (lambda_node) language = "python"
   attr (lambda_node) syntax = @ldef
-  attr (lambda_node) start_line = (start-row @ldef)
 }
 
-; ─── Call expressions → graph edges ────────────────────────────────────────────
+; ─── Call nodes (edges resolved via syntax parent chain in Rust) ─────────────────
 
 ; Direct call: foo()
 (call
   function: (identifier) @callee) @call
 {
-  edge caller -> @callee
-  attr (edge) call_kind = "direct_call"
-  attr (edge) message_kind = "sync_call"
-  attr (edge) start_line = (start-row @call)
+  node call_node
+  attr (call_node) node_kind = "call"
+  attr (call_node) callee = (source-text @callee)
+  attr (call_node) syntax = @call
 }
 
 ; Method call: obj.method()
@@ -57,15 +54,8 @@
     object: (_) @obj
     attribute: (identifier) @attr) @method) @mcall
 {
-  edge caller -> @attr
-  attr (edge) call_kind = "method_call"
-  attr (edge) message_kind = "sync_call"
-  attr (edge) start_line = (start-row @mcall)
-}
-
-; Async call via asyncio.run(): asyncio.run(coro())
-(identifier) @id @idel
-{
-  node id_node
-  attr (id_node) name = (source-text @id)
+  node method_call_node
+  attr (method_call_node) node_kind = "method_call"
+  attr (method_call_node) callee = (source-text @attr)
+  attr (method_call_node) syntax = @mcall
 }

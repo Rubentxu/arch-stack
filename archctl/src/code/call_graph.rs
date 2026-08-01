@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,7 @@ use tree_sitter_graph::graph::Graph;
 use tree_sitter_graph::{ExecutionConfig, NoCancellation, Variables};
 
 use crate::filesystem::Filesystem;
+use crate::store::GraphStore;
 
 use super::call_rules;
 
@@ -543,4 +544,358 @@ fn lang_label(lang: &Language) -> &'static str {
     }
 }
 
+// ─── Apply ──────────────────────────────────────────────────────────────────
+
+/// Escape a string for use inside a Cypher single-quoted string.
+/// All single quotes are doubled (Cypher escaping convention).
+/// Private copy matching c4_discover.rs:escape_cypher_string.
+fn escape_cypher_string(s: &str) -> String {
+    s.replace('\'', "\\'")
+}
+
+/// Pipe: pass a value through a function and return the result.
+trait Pipe<T> {
+    fn pipe<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(Self) -> R,
+        Self: Sized,
+    {
+        f(self)
+    }
+}
+
+impl<T> Pipe<T> for T {}
+
+/// Fetch the set of canonical_keys already present in the graph.
+fn existing_canonical_keys(store: &dyn GraphStore) -> Result<std::collections::HashSet<String>> {
+    store
+        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
+        .into_iter()
+        .filter_map(|row| {
+            row.get("e.canonical_key")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect::<std::collections::HashSet<_>>()
+        .pipe(Ok)
+}
+
+/// Write the Element node for a FunctionNode.
+fn write_function_element(
+    store: &mut dyn GraphStore,
+    node: &FunctionNode,
+    version_id: &str,
+) -> Result<()> {
+    let kind_id = match node.kind {
+        FunctionKind::Function => "code.function",
+        FunctionKind::Method => "code.method",
+        FunctionKind::Closure => "code.closure",
+    };
+    let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
+    let name_escaped = escape_cypher_string(&node.name);
+    let fq_name_escaped = escape_cypher_string(&node.fq_name);
+    let cypher = format!(
+        "MERGE (e:Element {{id: '{id}'}}) SET \
+         e.kind_id = '{kind_id}', \
+         e.category = 'code', \
+         e.canonical_key = '{canonical_key_escaped}', \
+         e.current_name = '{name_escaped}', \
+         e.current_status = 'active', \
+         e.current_confidence = {confidence}, \
+         e.current_version_id = '{version_id}', \
+         e.props = '{{\"fq_name\": \"{fq_name_escaped}\"}}';",
+        id = format!("cg:{}", node.canonical_key),
+        kind_id = kind_id,
+        canonical_key_escaped = canonical_key_escaped,
+        name_escaped = name_escaped,
+        fq_name_escaped = fq_name_escaped,
+        confidence = node.confidence,
+        version_id = version_id,
+    );
+    store.query(&cypher).with_context(|| format!("write_function_element {}", node.canonical_key))?;
+    Ok(())
+}
+
+/// Write the ElementVersion node for a FunctionNode.
+fn write_function_version(
+    store: &mut dyn GraphStore,
+    node: &FunctionNode,
+) -> Result<String> {
+    let version_props = serde_json::json!({
+        "kind": format!("{:?}", node.kind).to_lowercase(),
+        "language": lang_label(&node.language),
+        "confidence": node.confidence,
+        "call_graph_schema_version": "1.0",
+    });
+    let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+    let version_id = format!("cgv:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+    let version_props_escaped = escape_cypher_string(&version_props_str);
+
+    let cypher = format!(
+        "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
+         v.element_id = '{element_id}', \
+         v.name = '{name}', \
+         v.status = 'drafted', \
+         v.origin = 'call-graph', \
+         v.confidence = {confidence}, \
+         v.props = '{props}';",
+        version_id = version_id,
+        element_id = format!("cg:{}", node.canonical_key),
+        name = escape_cypher_string(&node.name),
+        confidence = node.confidence,
+        props = version_props_escaped,
+    );
+    store.query(&cypher).with_context(|| format!("write_function_version {}", node.canonical_key))?;
+    Ok(version_id)
+}
+
+/// Link Element to ElementVersion via CURRENT_VERSION and VERSION_OF edges.
+fn link_function_edges(
+    store: &mut dyn GraphStore,
+    node: &FunctionNode,
+    version_id: &str,
+) -> Result<()> {
+    let element_id = format!("cg:{}", node.canonical_key);
+    // CURRENT_VERSION: Element → ElementVersion
+    let cypher1 = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}) \
+         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
+         MERGE (e)-[r:CURRENT_VERSION]->(v);",
+        element_id = element_id,
+        version_id = version_id,
+    );
+    store.query(&cypher1).with_context(|| "link current_version")?;
+
+    // VERSION_OF: ElementVersion → Element
+    let cypher2 = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}) \
+         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
+         MERGE (v)-[r:VERSION_OF]->(e);",
+        element_id = element_id,
+        version_id = version_id,
+    );
+    store.query(&cypher2).with_context(|| "link version_of")?;
+
+    // OF_TYPE: Element → MetaType
+    let kind_id = match node.kind {
+        FunctionKind::Function => "code.function",
+        FunctionKind::Method => "code.method",
+        FunctionKind::Closure => "code.closure",
+    };
+    let cypher3 = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}) \
+         MATCH (mt:MetaType {{id: '{kind_id}'}}) \
+         MERGE (e)-[r:OF_TYPE]->(mt);",
+        element_id = element_id,
+        kind_id = kind_id,
+    );
+    store.query(&cypher3).with_context(|| "link of_type")?;
+
+    Ok(())
+}
+
+/// Write a call edge as a SemanticRelation + Evidence.
+fn write_call_edge(
+    store: &mut dyn GraphStore,
+    edge: &CallEdge,
+    src_element_id: &str,
+    sa_id: &str,
+    version_id: &str,
+) -> Result<()> {
+    let rel_id = format!("rel:{}", edge.canonical_key);
+    let rel_props = serde_json::json!({
+        "predicate": "code.calls",
+        "call_kind": format!("{:?}", edge.kind).to_lowercase(),
+        "message_kind": format!("{:?}", edge.message_kind).to_lowercase(),
+        "rel_id": rel_id,
+    });
+    let rel_props_str = serde_json::to_string(&rel_props).unwrap_or_default();
+    let rel_props_escaped = escape_cypher_string(&rel_props_str);
+
+    // Try to find the callee Element by matching canonical_key pattern
+    // MVP: we don't do symbol resolution, so callee may not exist
+    let cypher = format!(
+        "MATCH (src:Element {{id: '{src_id}'}}) \
+         MERGE (src)-[r:REL_SOURCE {{rel_id: '{rel_id}'}}]->(tgt) \
+         SET r.predicate = 'code.calls', \
+         r.props = '{props}', \
+         r.version_id = '{version_id}';",
+        src_id = src_element_id,
+        rel_id = rel_id,
+        props = rel_props_escaped,
+        version_id = version_id,
+    );
+    let _ = store.query(&cypher);
+
+    // Write Evidence for this call edge
+    let evidence_id = format!("ev:{}", blake3::hash(edge.canonical_key.as_bytes()).to_hex());
+    let evidence_props = serde_json::json!({
+        "file_refs": [format!("{}:{}", edge.file, edge.line)],
+        "status": "Drafted",
+        "classification": "derived",
+    });
+    let ev_props_str = serde_json::to_string(&evidence_props).unwrap_or_default();
+    let ev_props_escaped = escape_cypher_string(&ev_props_str);
+    let file_escaped = escape_cypher_string(&edge.file);
+
+    let cypher_ev = format!(
+        "MERGE (ev:Evidence {{id: '{ev_id}'}}) SET \
+         ev.kind = 'structural', \
+         ev.claim = 'call-graph edge', \
+         ev.props = '{props}', \
+         ev.start_line = {line}, \
+         ev.end_line = {line}, \
+         ev.file = '{file}';",
+        ev_id = evidence_id,
+        props = ev_props_escaped,
+        line = edge.line,
+        file = file_escaped,
+    );
+    store.query(&cypher_ev).with_context(|| format!("write_call_evidence {}", evidence_id))?;
+
+    // Link Evidence to SourceArtifact
+    let cypher_sa = format!(
+        "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
+         MATCH (sa:SourceArtifact {{id: '{sa_id}'}}) \
+         MERGE (ev)-[r:EXTRACTED_FROM]->(sa);",
+        ev_id = evidence_id,
+        sa_id = sa_id,
+    );
+    let _ = store.query(&cypher_sa);
+
+    // Link Evidence to Element
+    let cypher_el = format!(
+        "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
+         MATCH (e:Element {{id: '{e_id}'}}) \
+         MERGE (e)-[r:SUPPORTED_BY]->(ev);",
+        ev_id = evidence_id,
+        e_id = src_element_id,
+    );
+    let _ = store.query(&cypher_el);
+
+    Ok(())
+}
+
+/// Persist a CallGraphReport to the graph.
+/// Idempotent: skips canonical_keys that already exist.
+pub fn apply(
+    project_dir: &Path,
+    report: &CallGraphReport,
+    _fs: &dyn Filesystem,
+) -> Result<ApplyReport, CallGraphError> {
+    use crate::store::open_default;
+
+    let mut store = open_default(project_dir)
+        .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
+    store.init().context("graph init (call_graph apply)").map_err(CallGraphError::GraphWrite)?;
+
+    // Seed MetaType rows for code.function, code.method, code.closure
+    // and Predicate row for code.calls
+    let seed_metatypes = r#"
+        MERGE (mt:MetaType {id: 'code.function'}) ON CREATE SET mt.label = 'Function', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (mt:MetaType {id: 'code.method'}) ON CREATE SET mt.label = 'Method', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (mt:MetaType {id: 'code.closure'}) ON CREATE SET mt.label = 'Closure', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (p:Predicate {id: 'code.calls'}) ON CREATE SET p.label = 'calls', p.namespace = 'code'
+        RETURN 1;
+    "#;
+    let seed_result = store.query(seed_metatypes);
+    let seed_writes = if seed_result.is_ok() { 1 } else { 0 };
+
+    let existing_keys = existing_canonical_keys(&*store)
+        .context("fetch existing keys")
+        .map_err(CallGraphError::GraphWrite)?;
+
+    let mut elements_written = 0usize;
+    let mut elements_skipped = 0usize;
+    let mut relations_written = 0usize;
+    let mut relations_skipped = 0usize;
+    let mut evidences_written = 0usize;
+    let mut source_artifacts_written = 0usize;
+
+    // SourceArtifact deduplication per file
+    let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
+
+    for node in &report.nodes {
+        if existing_keys.contains(&node.canonical_key) {
+            elements_skipped += 1;
+            continue;
+        }
+
+        // Get or create SourceArtifact for this file
+        if !source_artifact_ids.contains_key(&node.file) {
+            let id = write_source_artifact_for_file(&mut *store, &node.file)?;
+            source_artifact_ids.insert(node.file.clone(), id);
+            source_artifacts_written += 1;
+        }
+
+        // Write version first (needed for element)
+        let version_id = write_function_version(&mut *store, node)
+            .context("write_function_version")
+            .map_err(CallGraphError::GraphWrite)?;
+
+        // Write element
+        write_function_element(&mut *store, node, &version_id)
+            .context("write_function_element")
+            .map_err(CallGraphError::GraphWrite)?;
+        elements_written += 1;
+
+        // Link edges
+        link_function_edges(&mut *store, node, &version_id)
+            .context("link_function_edges")
+            .map_err(CallGraphError::GraphWrite)?;
+    }
+
+    // Write call edges
+    for edge in &report.edges {
+        let src_element_id = format!("cg:{}", edge.caller);
+        // Only write if caller element exists
+        if !existing_keys.contains(&edge.caller) {
+            // Get or create SourceArtifact
+            let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
+                id.clone()
+            } else {
+                let id = write_source_artifact_for_file(&mut *store, &edge.file)?;
+                source_artifact_ids.insert(edge.file.clone(), id.clone());
+                source_artifacts_written += 1;
+                id
+            };
+            let version_id = format!("cgv:{}", blake3::hash(edge.caller.as_bytes()).to_hex());
+            write_call_edge(&mut *store, edge, &src_element_id, &sa_id, &version_id)
+                .context("write_call_edge")
+                .map_err(CallGraphError::GraphWrite)?;
+            relations_written += 1;
+            evidences_written += 1;
+        } else {
+            relations_skipped += 1;
+        }
+    }
+
+    Ok(ApplyReport {
+        elements_written,
+        elements_skipped,
+        relations_written,
+        relations_skipped,
+        evidences_written,
+        source_artifacts_written,
+        seed_writes,
+        duration_ms: 0,
+    })
+}
+
+/// Write SourceArtifact for a file, return its id.
+fn write_source_artifact_for_file(store: &mut dyn GraphStore, file: &str) -> Result<String> {
+    let id = format!("src:{}", blake3::hash(file.as_bytes()).to_hex());
+    let path_escaped = escape_cypher_string(file);
+    let cypher = format!(
+        "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
+         s.kind = 'manifest', \
+         s.relative_path = '{path_escaped}', \
+         s.language = '', \
+         s.content_hash = '', \
+         s.generated = false, \
+         s.props = '{{}}';"
+    );
+    store.query(&cypher).with_context(|| format!("put_source_artifact {id}"))?;
+    Ok(id)
+}
 
