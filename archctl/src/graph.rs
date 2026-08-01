@@ -48,16 +48,41 @@ pub struct Session {
     _db: Database,
 }
 
+/// Open (or create) the LadybugDB file and return a scope-bounded session.
+///
+/// Field declaration order is `conn` FIRST, `_db` SECOND — Rust drops
+/// struct fields in declaration order, so `conn`'s destructor runs while
+/// `_db` is still alive. The `'static` lifetime on `Connection` is a lie
+/// bounded by the `_db` field's drop; see `Session` for the safety
+/// argument.
+///
+/// Used by both `Session` (public, port-aware) and `LbugSession`
+/// (private, std-fs) wrappers to avoid duplicating the transmute logic.
+pub(crate) fn create_db_session(project_dir: &Path) -> Result<(Connection<'static>, Database)> {
+    let path = database_path(project_dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let db = Database::new(
+        &path,
+        SystemConfig::default()
+            .buffer_pool_size(BUFFER_POOL_SIZE)
+            .max_db_size(BUFFER_POOL_SIZE),
+    )
+    .with_context(|| format!("open database at {}", path.display()))?;
+    let conn = Connection::new(&db).context("create connection")?;
+    let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
+    Ok((conn, db))
+}
+
 pub fn open_session(project_dir: &Path, fs: &dyn Filesystem) -> Result<Session> {
     let path = database_path(project_dir);
     if let Some(parent) = path.parent() {
         fs.create_dir_all(parent)
             .with_context(|| format!("mkdir {}", parent.display()))?;
     }
-    let db = Database::new(&path, SystemConfig::default().buffer_pool_size(BUFFER_POOL_SIZE).max_db_size(BUFFER_POOL_SIZE))
-        .with_context(|| format!("open database at {}", path.display()))?;
-    let conn = Connection::new(&db).context("create connection")?;
-    let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
+    let (conn, db) = create_db_session(project_dir)?;
     Ok(Session { conn, _db: db })
 }
 

@@ -27,10 +27,14 @@ use crate::diagram::changeset_schema::CHANGESET_SCHEMA;
 use crate::diagram::changeset_types::{ChangeSet, Command, CHANGESET_COMMAND_TYPES};
 use crate::diagram::export_types::Projection;
 use crate::diagram::hash::base_revision;
-use crate::diagram::view_types::{Diagram, ViewGroup, ViewMember};
+use crate::diagram::view_types::Diagram;
+#[cfg(test)]
+use crate::diagram::view_types::ViewMember;
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
 use crate::store::{GraphStore, LbugStore};
+#[cfg(test)]
+use crate::store::DiagramOps;
 
 /// Report from a successful apply operation.
 #[derive(Debug)]
@@ -59,22 +63,23 @@ pub fn run_apply(
     let changeset_json = fs
         .read_to_string(changeset_path)
         .with_context(|| format!("read changeset file: {}", changeset_path.display()))?;
-    let changeset: ChangeSet = serde_json::from_str(&changeset_json)
-        .context("parse changeset JSON")?;
+    let changeset: ChangeSet =
+        serde_json::from_str(&changeset_json).context("parse changeset JSON")?;
     apply_changeset(&info.project_dir, changeset, clock)
 }
 
-/// Apply a parsed `ChangeSet` to an already-open `LbugStore`.
+/// Apply a parsed `ChangeSet` to an already-open graph store.
 ///
 /// This is the core apply logic extracted for testability.
 /// The store must already be initialized; caller retains ownership.
-pub fn apply_to_store(
-    store: &mut LbugStore,
-    changeset: ChangeSet,
-) -> Result<ApplyReport> {
+///
+/// Takes `&mut dyn GraphStore` (not concrete `LbugStore`) so any port
+/// adapter (test mocks, future SparrowDB, etc.) can drive the apply
+/// pipeline. The lock-aware `LbugStore::open` factory is the caller's
+/// concern; the apply core only touches port methods.
+pub fn apply_to_store(store: &mut dyn GraphStore, changeset: ChangeSet) -> Result<ApplyReport> {
     // Schema-validation of the changeset structure
-    let changeset_json =
-        serde_json::to_string(&changeset).context("re-serialize changeset")?;
+    let changeset_json = serde_json::to_string(&changeset).context("re-serialize changeset")?;
     validate_changeset_schema(&changeset_json)?;
 
     // Basic semantic validation
@@ -110,8 +115,7 @@ pub fn apply_to_store(
                 updated_at: None,
             };
             store.put_diagram(&initial).context("seed Diagram node")?;
-            "blake3:0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string()
+            "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string()
         }
     };
 
@@ -127,7 +131,7 @@ pub fn apply_to_store(
     let commands_applied = changeset.commands.len();
 
     for cmd in &changeset.commands {
-        dispatch_command(store, cmd, &changeset.diagram_id)?;
+        cmd.apply(store, &changeset.diagram_id)?;
     }
 
     let projection =
@@ -152,6 +156,11 @@ pub fn apply_to_store(
 }
 
 /// Run the apply pipeline, opening a new `LbugStore` internally.
+///
+/// Concrete `LbugStore` is constructed here because the lockfile lives
+/// in `.lbdb` and only `LbugStore::open` knows how to acquire the
+/// `fs2` flock. Once the store is open and initialised, the rest of
+/// the pipeline operates on `&mut dyn GraphStore`.
 pub fn apply_changeset(
     project_dir: &Path,
     changeset: ChangeSet,
@@ -159,8 +168,7 @@ pub fn apply_changeset(
 ) -> Result<ApplyReport> {
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
-    store.init()
-        .context("graph init (apply prerequisite)")?;
+    store.init().context("graph init (apply prerequisite)")?;
     apply_to_store(&mut store, changeset)
 }
 
@@ -169,8 +177,7 @@ fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
     let schema: serde_json::Value =
         serde_json::from_str(&CHANGESET_SCHEMA).context("parse embedded changeset schema")?;
 
-    let validator =
-        jsonschema::validator_for(&schema).context("compile changeset schema")?;
+    let validator = jsonschema::validator_for(&schema).context("compile changeset schema")?;
 
     let instance: serde_json::Value =
         serde_json::from_str(changeset_json).context("parse changeset JSON")?;
@@ -192,88 +199,13 @@ fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
 }
 
 /// Dispatch a single `Command` to the appropriate `GraphStore` method.
-fn dispatch_command(store: &mut LbugStore, cmd: &Command, diagram_id: &str) -> Result<()> {
-    match cmd {
-        Command::MoveMember {
-            member_id,
-            element_id,
-            x,
-            y,
-        } => {
-            let member = ViewMember {
-                id: member_id.clone(),
-                diagram_id: diagram_id.to_string(),
-                element_id: element_id.clone(),
-                label: String::new(),
-                x: *x,
-                y: *y,
-                collapsed: false,
-                props: serde_json::json!({}),
-                created_at: None,
-                updated_at: None,
-            };
-            store
-                .put_view_member(&member)
-                .with_context(|| format!("put_view_member for {member_id}"))?;
-            // Link to the element (checks element existence)
-            if let Err(e) = store.link_renders(member_id, element_id) {
-                if e.to_string().contains("element not found") {
-                    bail!(
-                        "element not found: {} (cannot move-member a non-existent element)",
-                        element_id
-                    );
-                }
-                return Err(e).context("link_renders");
-            }
-            // Link to the diagram
-            store
-                .link_member_of(member_id, diagram_id)
-                .with_context(|| format!("link_member_of for {member_id}"))?;
-        }
-
-        Command::SetLabel { member_id, label } => {
-            // Fetch existing member, update label, re-put
-            let members = store
-                .get_view_members(diagram_id)
-                .with_context(|| format!("get_view_members for set-label"))?;
-            let existing = members
-                .iter()
-                .find(|m| m.id == *member_id)
-                .with_context(|| format!("member not found: {member_id}"))?;
-            let mut updated = existing.clone();
-            updated.label = label.clone();
-            store
-                .put_view_member(&updated)
-                .with_context(|| format!("put_view_member for set-label {member_id}"))?;
-        }
-
-        Command::CollapseGroup {
-            group_id,
-            member_ids,
-        } => {
-            let group = ViewGroup {
-                id: group_id.clone(),
-                diagram_id: diagram_id.to_string(),
-                label: String::new(),
-                collapsed: true,
-                props: serde_json::json!({}),
-                created_at: None,
-                updated_at: None,
-            };
-            store
-                .put_view_group(&group)
-                .with_context(|| format!("put_view_group for {group_id}"))?;
-            // Link each member into the group
-            for member_id in member_ids {
-                store
-                    .link_group_contains(group_id, member_id)
-                    .with_context(|| {
-                        format!("link_group_contains for ({group_id}, {member_id})")
-                    })?;
-            }
-        }
-    }
-    Ok(())
+///
+/// Thin wrapper around [`Command::apply`] — kept as a public function
+/// for tests that want to exercise dispatch in isolation. New code
+/// should call `cmd.apply(store, diagram_id)?` directly.
+#[cfg(test)]
+fn dispatch_command(store: &mut dyn GraphStore, cmd: &Command, diagram_id: &str) -> Result<()> {
+    cmd.apply(store, diagram_id)
 }
 
 /// Re-export the view slice to recompute the deterministic `base_revision`.
@@ -321,9 +253,7 @@ pub fn assert_command_types_match_schema() {
     for item in oneof {
         // Each item is { "$ref": "#/$defs/Name" } — resolve the $ref
         if let Some(ref_path) = item["$ref"].as_str() {
-            let def_name = ref_path
-                .strip_prefix("#/$defs/")
-                .unwrap_or(ref_path);
+            let def_name = ref_path.strip_prefix("#/$defs/").unwrap_or(ref_path);
             let def = defs
                 .get(def_name)
                 .expect(&format!("$defs.{} must exist", def_name));
@@ -437,27 +367,32 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:orders";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
-        store.put_view_member(&ViewMember {
-            id: "vm:container:orders:el:1".into(),
-            diagram_id: diagram_id.into(),
-            element_id: "el:1".into(),
-            label: "Old Label".into(),
-            x: 100,
-            y: 200,
-            collapsed: false,
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_view_member(&ViewMember {
+                id: "vm:container:orders:el:1".into(),
+                diagram_id: diagram_id.into(),
+                element_id: "el:1".into(),
+                label: "Old Label".into(),
+                x: 100,
+                y: 200,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let cmd = Command::SetLabel {
             member_id: "vm:container:orders:el:1".into(),
@@ -466,7 +401,10 @@ mod tests {
         dispatch_command(&mut store, &cmd, diagram_id).unwrap();
 
         let members = store.get_view_members(diagram_id).unwrap();
-        let m = members.iter().find(|m| m.id == "vm:container:orders:el:1").unwrap();
+        let m = members
+            .iter()
+            .find(|m| m.id == "vm:container:orders:el:1")
+            .unwrap();
         assert_eq!(m.label, "New Label");
     }
 
@@ -475,21 +413,88 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:orders";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let cmd = Command::SetLabel {
             member_id: "vm:container:orders:el:999".into(),
             label: "Should Fail".into(),
         };
         let err = dispatch_command(&mut store, &cmd, diagram_id).unwrap_err();
-        assert!(err.to_string().contains("member not found"));
+        // After T6 (atomic update_view_member_label), the bail!() in
+        // the GraphStore impl is wrapped by `with_context` in
+        // `Command::apply`, so the error chain is:
+        //   [0] update_view_member_label for {member_id}
+        //   [1] member not found: {member_id}
+        // `err.to_string()` only returns the topmost message; check
+        // the whole chain for the underlying "member not found" cause.
+        assert!(
+            err.chain()
+                .any(|c| c.to_string().contains("member not found")),
+            "expected chain to contain 'member not found', got: {err:?}"
+        );
+    }
+
+    // W-DV2-C2 regression: set_label must use the atomic
+    // update_view_member_label path. After the refactor, a single
+    // MATCH ... SET ... RETURN replaces the read-modify-write. This
+    // test proves the new path persists the label through a round-trip
+    // get_view_members call.
+    #[test]
+    fn set_label_atomic_path_persists_through_round_trip() {
+        let (mut store, _tmp) = make_test_store();
+        let diagram_id = "container:orders";
+
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+
+        store
+            .put_view_member(&ViewMember {
+                id: "vm:container:orders:el:1".into(),
+                diagram_id: diagram_id.into(),
+                element_id: "el:1".into(),
+                label: "Old Label".into(),
+                x: 100,
+                y: 200,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+
+        // Direct call to the new atomic method
+        store
+            .update_view_member_label("vm:container:orders:el:1", "Atomic New Label")
+            .unwrap();
+
+        // Verify round-trip: label persisted
+        let members = store.get_view_members(diagram_id).unwrap();
+        let m = members
+            .iter()
+            .find(|m| m.id == "vm:container:orders:el:1")
+            .unwrap();
+        assert_eq!(m.label, "Atomic New Label");
+        assert_eq!(m.x, 100, "x preserved by atomic update (not RMW)");
+        assert_eq!(m.y, 200, "y preserved by atomic update (not RMW)");
     }
 
     #[test]
@@ -497,14 +502,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:svc";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         let cmd = Command::CollapseGroup {
             group_id: "vg:container:svc:group:1".into(),
@@ -516,11 +524,14 @@ mod tests {
         dispatch_command(&mut store, &cmd, diagram_id).unwrap();
 
         // Verify group was created via raw query
-        let rows = store.query(
-            "MATCH (g:ViewGroup {id: 'vg:container:svc:group:1'}) RETURN g.id, g.collapsed;"
-        ).unwrap();
+        let rows = store
+            .query("MATCH (g:ViewGroup {id: 'vg:container:svc:group:1'}) RETURN g.id, g.collapsed;")
+            .unwrap();
         assert_eq!(rows.len(), 1, "ViewGroup should exist");
-        let collapsed = rows[0].get("g.collapsed").and_then(|c| c.as_bool()).unwrap();
+        let collapsed = rows[0]
+            .get("g.collapsed")
+            .and_then(|c| c.as_bool())
+            .unwrap();
         assert!(collapsed, "group should be collapsed");
     }
 
@@ -529,14 +540,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:be";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         // Create an Element node so link_renders finds it.
         // Uses the pattern from graph.rs: CREATE with required fields.
@@ -553,7 +567,10 @@ mod tests {
         dispatch_command(&mut store, &cmd, diagram_id).unwrap();
 
         let members = store.get_view_members(diagram_id).unwrap();
-        let m = members.iter().find(|mm| mm.id == "vm:container:be:el:api").unwrap();
+        let m = members
+            .iter()
+            .find(|mm| mm.id == "vm:container:be:el:api")
+            .unwrap();
         assert_eq!(m.x, 240);
         assert_eq!(m.y, 160);
     }
@@ -563,14 +580,17 @@ mod tests {
         let (mut store, _tmp) = make_test_store();
         let diagram_id = "container:be";
 
-        store.put_diagram(&Diagram {
-            id: diagram_id.into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: diagram_id.into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
 
         // No element seeded — link_renders will fail
         let cmd = Command::MoveMember {

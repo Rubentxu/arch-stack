@@ -4,16 +4,16 @@
 //! `LbugStore::open` calls, tests use `apply_to_store` (which accepts a
 //! pre-opened store) so seeding and apply share the same session.
 
-use std::fs::OpenOptions;
 use fs2::FileExt;
+use std::fs::OpenOptions;
 
 use tempfile::TempDir;
 
+use archctl::clock::FixedClock;
 use archctl::diagram::changeset_schema::CHANGESET_SCHEMA;
 use archctl::diagram::changeset_types::{ChangeSet, CHANGESET_COMMAND_TYPES};
-use archctl::clock::FixedClock;
 use archctl::diagram::view_types::Diagram;
-use archctl::store::{GraphStore, LbugStore};
+use archctl::store::{DiagramOps, GraphStore, LbugStore};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Schema consistency (pure unit test — no DB needed)
@@ -35,9 +35,7 @@ fn changeset_command_types_match_schema_onedef() {
     let mut schema_types: Vec<&str> = Vec::new();
     for item in oneof {
         if let Some(ref_path) = item["$ref"].as_str() {
-            let def_name = ref_path
-                .strip_prefix("#/$defs/")
-                .unwrap_or(ref_path);
+            let def_name = ref_path.strip_prefix("#/$defs/").unwrap_or(ref_path);
             let def = defs
                 .get(def_name)
                 .expect(&format!("$defs.{} must exist", def_name));
@@ -81,7 +79,11 @@ fn schema_accepts_valid_changeset() {
         serde_json::from_str(CHANGESET_SCHEMA).expect("CHANGESET_SCHEMA is valid JSON");
     let validator = jsonschema::validator_for(&schema).unwrap();
     let result = validator.validate(&changeset);
-    assert!(result.is_ok(), "valid changeset should pass schema: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "valid changeset should pass schema: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -99,7 +101,10 @@ fn schema_rejects_unknown_command_type() {
         serde_json::from_str(CHANGESET_SCHEMA).expect("CHANGESET_SCHEMA is valid JSON");
     let validator = jsonschema::validator_for(&schema).unwrap();
     let result = validator.validate(&changeset);
-    assert!(result.is_err(), "unknown command type should fail schema validation");
+    assert!(
+        result.is_err(),
+        "unknown command type should fail schema validation"
+    );
 }
 
 #[test]
@@ -114,7 +119,10 @@ fn schema_rejects_missing_commands_field() {
         serde_json::from_str(CHANGESET_SCHEMA).expect("CHANGESET_SCHEMA is valid JSON");
     let validator = jsonschema::validator_for(&schema).unwrap();
     let result = validator.validate(&changeset);
-    assert!(result.is_err(), "missing commands field should fail schema validation");
+    assert!(
+        result.is_err(),
+        "missing commands field should fail schema validation"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -131,15 +139,18 @@ fn stale_base_revision_is_rejected() {
     store.init().unwrap();
 
     // Seed diagram with a known revision
-    let correct_revision = "blake3:abcd000000000000000000000000000000000000000000000000000000000000ab".to_string();
-    store.put_diagram(&Diagram {
-        id: "container:api".into(),
-        revision: correct_revision.clone(),
-        selector: "container:api".into(),
-        props: serde_json::json!({}),
-        created_at: None,
-        updated_at: None,
-    }).unwrap();
+    let correct_revision =
+        "blake3:abcd000000000000000000000000000000000000000000000000000000000000ab".to_string();
+    store
+        .put_diagram(&Diagram {
+            id: "container:api".into(),
+            revision: correct_revision.clone(),
+            selector: "container:api".into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
 
     // Apply with wrong baseRevision but a valid command structure.
     // We include a move-member command; it will fail with "element not found"
@@ -147,15 +158,14 @@ fn stale_base_revision_is_rejected() {
     let changeset = ChangeSet {
         schema_version: "1.0".to_string(),
         diagram_id: "container:api".into(),
-        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-        commands: vec![
-            archctl::diagram::changeset_types::Command::MoveMember {
-                member_id: "vm:container:api:el:ghost".into(),
-                element_id: "el:ghost".into(),
-                x: 100,
-                y: 200,
-            },
-        ],
+        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
+        commands: vec![archctl::diagram::changeset_types::Command::MoveMember {
+            member_id: "vm:container:api:el:ghost".into(),
+            element_id: "el:ghost".into(),
+            x: 100,
+            y: 200,
+        }],
     };
 
     let result = archctl::diagram::apply::apply_to_store(&mut store, changeset);
@@ -185,14 +195,17 @@ fn concurrent_apply_is_blocked_by_db_lock() {
     {
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
-        store.put_diagram(&Diagram {
-            id: "container:x".into(),
-            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            selector: "container:x".into(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        }).unwrap();
+        store
+            .put_diagram(&Diagram {
+                id: "container:x".into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: "container:x".into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
     }
 
     // Hold an exclusive flock on the .lbdb file
@@ -208,7 +221,8 @@ fn concurrent_apply_is_blocked_by_db_lock() {
     let changeset = ChangeSet {
         schema_version: "1.0".to_string(),
         diagram_id: "container:x".into(),
-        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
         commands: vec![],
     };
 
@@ -244,7 +258,8 @@ fn unsupported_schema_version_is_rejected() {
     let changeset = ChangeSet {
         schema_version: "99.0".to_string(),
         diagram_id: "container:orders".into(),
-        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
         commands: vec![],
     };
 
@@ -274,7 +289,8 @@ fn empty_commands_array_is_rejected() {
     let changeset = ChangeSet {
         schema_version: "1.0".to_string(),
         diagram_id: "container:orders".into(),
-        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        base_revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
         commands: vec![],
     };
 

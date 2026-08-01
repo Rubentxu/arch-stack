@@ -14,13 +14,17 @@ use serde::{Deserialize, Serialize};
 /// Single source of truth shared by the apply parser and the schema
 /// round-trip test. Adding a new command requires updating both this
 /// const and the schema's `$defs.Command.oneOf`.
-pub const CHANGESET_COMMAND_TYPES: &[&str] =
-    &["move-member", "collapse-group", "set-label"];
+pub const CHANGESET_COMMAND_TYPES: &[&str] = &["move-member", "collapse-group", "set-label"];
 
 /// A command in a ChangeSet.
 ///
 /// The `#[serde(tag = "type")]` form emits `"type": "..."` as the
 /// discriminator, matching the schema's `oneOf` + `const` pattern.
+///
+/// The apply logic for each variant lives in [`Command::apply`]. Adding
+/// a new variant requires touching: this enum, [`CHANGESET_COMMAND_TYPES`],
+/// the schema's `$defs.Command.oneOf`, and the `apply` match arm. The
+/// centralisation in `apply` reduces per-variant touchpoints from 6 → 4.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Command {
@@ -59,6 +63,100 @@ pub enum Command {
         /// New display label (max 256 chars per schema).
         label: String,
     },
+}
+
+impl Command {
+    /// Apply this command to `store`, scoped to `diagram_id`.
+    ///
+    /// The match arm lives here (not in `apply::dispatch_command`) so
+    /// each variant's apply logic travels with the data definition. The
+    /// dispatcher collapses to `cmd.apply(store, diagram_id)?`.
+    ///
+    /// Implementation note: this couples `Command` to the `GraphStore`
+    /// port. The trade-off is accepted because the alternative (a
+    /// `CommandExecutor` trait per variant) triples the surface area for
+    /// marginal benefit — the port is already small and stable.
+    pub fn apply(
+        &self,
+        store: &mut dyn crate::store::GraphStore,
+        diagram_id: &str,
+    ) -> anyhow::Result<()> {
+        use crate::diagram::view_types::{ViewGroup, ViewMember};
+        use anyhow::{anyhow, Context};
+
+        match self {
+            Command::MoveMember {
+                member_id,
+                element_id,
+                x,
+                y,
+            } => {
+                let member = ViewMember {
+                    id: member_id.clone(),
+                    diagram_id: diagram_id.to_string(),
+                    element_id: element_id.clone(),
+                    label: String::new(),
+                    x: *x,
+                    y: *y,
+                    collapsed: false,
+                    props: serde_json::json!({}),
+                    created_at: None,
+                    updated_at: None,
+                };
+                store
+                    .put_view_member(&member)
+                    .with_context(|| format!("put_view_member for {member_id}"))?;
+                // Link to the element (checks element existence)
+                if let Err(e) = store.link_renders(member_id, element_id) {
+                    if e.to_string().contains("element not found") {
+                        return Err(anyhow!(
+                            "element not found: {} (cannot move-member a non-existent element)",
+                            element_id
+                        ));
+                    }
+                    return Err(e).context("link_renders");
+                }
+                // Link to the diagram
+                store
+                    .link_member_of(member_id, diagram_id)
+                    .with_context(|| format!("link_member_of for {member_id}"))?;
+                Ok(())
+            }
+
+            Command::SetLabel { member_id, label } => {
+                store
+                    .update_view_member_label(member_id, label)
+                    .with_context(|| format!("update_view_member_label for {member_id}"))?;
+                Ok(())
+            }
+
+            Command::CollapseGroup {
+                group_id,
+                member_ids,
+            } => {
+                let group = ViewGroup {
+                    id: group_id.clone(),
+                    diagram_id: diagram_id.to_string(),
+                    label: String::new(),
+                    collapsed: true,
+                    props: serde_json::json!({}),
+                    created_at: None,
+                    updated_at: None,
+                };
+                store
+                    .put_view_group(&group)
+                    .with_context(|| format!("put_view_group for {group_id}"))?;
+                for member_id in member_ids {
+                    store
+                        .link_group_contains(group_id, member_id)
+                        .with_context(|| {
+                            format!("link_group_contains for ({group_id}, {member_id})")
+                        })?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 /// A batch of view-level edits to apply to a persisted Diagram.
@@ -102,9 +200,11 @@ mod tests {
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let round_tripped: Command = serde_json::from_str(&json).unwrap();
-        assert!(matches!(round_tripped, Command::MoveMember { member_id, element_id, x: 240, y: 160 }
-            if member_id == "vm:el:1" && element_id == "el:1"
-        ));
+        assert!(
+            matches!(round_tripped, Command::MoveMember { member_id, element_id, x: 240, y: 160 }
+                if member_id == "vm:el:1" && element_id == "el:1"
+            )
+        );
     }
 
     #[test]
