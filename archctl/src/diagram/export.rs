@@ -266,15 +266,25 @@ mod tests {
                 Ok(Vec::new())
             }
         }
+    }
+
+    // Sub-trait impls (see diagram_queries.rs for rationale).
+    impl crate::store::EvidenceOps for MockGraphStore {
         fn put_evidence(&mut self, _: &[crate::evidence::Evidence]) -> anyhow::Result<usize> { unimplemented!() }
         fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+        fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
+        fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
+        fn list_evidence_by_status(&self, _: crate::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+    }
+
+    impl crate::store::SourceOps for MockGraphStore {
         fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> { unimplemented!() }
         fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> { unimplemented!() }
         fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
         fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
-        fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
-        fn list_evidence_by_status(&self, _: crate::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+    }
+
+    impl crate::store::DiagramOps for MockGraphStore {
         fn put_diagram(&mut self, _: &crate::diagram::view_types::Diagram) -> anyhow::Result<()> { unimplemented!() }
         fn get_diagram(&self, _: &str) -> anyhow::Result<crate::diagram::view_types::Diagram> { unimplemented!() }
         fn put_view_member(&mut self, _: &crate::diagram::view_types::ViewMember) -> anyhow::Result<()> { unimplemented!() }

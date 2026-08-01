@@ -30,7 +30,7 @@ use crate::diagram::hash::base_revision;
 use crate::diagram::view_types::{Diagram, ViewGroup, ViewMember};
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
-use crate::store::{GraphStore, LbugStore};
+use crate::store::{DiagramOps, GraphStore, LbugStore};
 
 /// Report from a successful apply operation.
 #[derive(Debug)]

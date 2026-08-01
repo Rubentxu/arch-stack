@@ -54,41 +54,15 @@ use crate::migrations;
 use crate::row::{Cell, Row};
 use crate::source::SourceArtifact;
 
-/// The persistence port.
+/// Evidence persistence operations — the domain side of the port.
 ///
-/// Every method corresponds to a capability the domain needs:
-/// - `init` — apply the canonical schema and create the bootstrap marker.
-/// - `stat` — return element/relation/evidence counts for `doctor`.
-/// - `query` — execute an arbitrary Cypher read query (used by
-///   `archctl graph query` and the neighbours traversal).
-/// - `put_evidence` — MERGE each evidence row by `id` (idempotent).
-/// - `list_evidence` — return evidence rows, optionally filtered by
-///   path prefix (used by `archctl evidence list`).
-pub trait GraphStore: Send + Sync {
-    /// Open or create a store rooted at `project_dir`. Each adapter
-    /// decides what file (or set of files) lives there.
-    fn open(project_dir: &Path) -> Result<Self>
-    where
-        Self: Sized;
-
-    /// Apply the schema if it has not been applied yet. Idempotent —
-    /// safe to call repeatedly; the canonical marker file under
-    /// `.archctl-schema` is the source of truth for "already bootstrapped".
-    fn init(&mut self) -> Result<()>;
-
-    /// Counts per label group. Returned as a struct, not as Cypher
-    /// strings, so the caller does not need to know the underlying
-    /// schema details.
-    fn stat(&self) -> Result<GraphStat>;
-
-    /// Execute a Cypher read query and return rows as typed
-    /// [`Row`] values. Columns preserve the engine's RETURN order.
-    /// The adapter is responsible for translating driver-specific
-    /// value types into [`Cell`] — the domain never sees
-    /// `serde_json::Value` (use [`Cell::to_json`] at the formatter
-    /// edge if JSON output is needed).
-    fn query(&self, cypher: &str) -> Result<Vec<Row>>;
-
+/// Covers `archctl evidence *` commands: draft, list, lifecycle transitions,
+/// and status-filtered queries. Source/evaluation artefact persistence
+/// lives in `SourceOps`; diagram projection persistence lives in `DiagramOps`.
+///
+/// ISP benefit: a mock that needs only evidence semantics can implement
+/// just this sub-trait instead of the full 16-method `GraphStore`.
+pub trait EvidenceOps: Send + Sync {
     /// Persist a batch of evidence rows. Each row is MERGEd by `id`,
     /// so repeat calls are idempotent (no duplicate rows).
     /// Returns the number of rows written.
@@ -101,6 +75,41 @@ pub trait GraphStore: Send + Sync {
     /// `e.end_line`, `e.path`.
     fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>>;
 
+    /// Idempotent on already-`Accepted` (returns Ok, no new Evaluation).
+    /// Errors if the evidence does not exist.
+    /// Errors if the evidence is `Superseded` (must reinstate first).
+    /// Side effect (D4): creates Evaluation node + EVALUATES edge
+    /// (best-effort audit; Evaluation write failure does NOT roll back
+    /// the status flip).
+    fn accept_evidence(
+        &mut self,
+        evidence_id: &str,
+        clock: &dyn Clock,
+    ) -> Result<()>;
+
+    /// Errors if the evidence does not exist.
+    /// The caller is responsible for creating the replacement via
+    /// `put_evidence` BEFORE invoking this. No Evaluation node is created.
+    fn supersede_evidence(&mut self, old_evidence_id: &str) -> Result<()>;
+
+    /// Returns the same column set as `list_evidence`:
+    /// `e.id, e.kind, e.claim, e.start_line, e.end_line, e.path`.
+    /// The `e.props` column is fetched for filtering but dropped from
+    /// returned rows. Filters in Rust (D6 — no native JSON WHERE in lbug).
+    /// When `path` is `Some(p)`, only rows with `e.path = p` are returned.
+    /// When `path` is `None`, caps at 100 rows (consistent with `list_evidence`).
+    fn list_evidence_by_status(
+        &self,
+        status: EvidenceStatus,
+        path: Option<&str>,
+    ) -> Result<Vec<Row>>;
+}
+
+/// Source/evaluation artefact persistence — `archctl source *` and
+/// `archctl evaluation *` commands. The EXTRACTED_FROM and EVALUATES
+/// edges are minted here because they are tightly coupled to the
+/// node writes they annotate.
+pub trait SourceOps: Send + Sync {
     /// MERGE a SourceArtifact node by `id`. Idempotent on the
     /// identity `(relative_path, content_hash)` (D2). MUST NOT
     /// create edges — edge creation is `link_extracted_from`'s job.
@@ -128,42 +137,12 @@ pub trait GraphStore: Send + Sync {
         evaluation_id: &str,
         evidence_id: &str,
     ) -> Result<()>;
+}
 
-    /// Promote Evidence from `Drafted` to `Accepted`.
-    ///
-    /// Idempotent on already-`Accepted` (returns Ok, no new Evaluation).
-    /// Errors if the evidence does not exist.
-    /// Errors if the evidence is `Superseded` (must reinstate first).
-    /// Side effect (D4): creates Evaluation node + EVALUATES edge
-    /// (best-effort audit; Evaluation write failure does NOT roll back
-    /// the status flip).
-    fn accept_evidence(
-        &mut self,
-        evidence_id: &str,
-        clock: &dyn Clock,
-    ) -> Result<()>;
-
-    /// Mark Evidence as `Superseded`. Idempotent on already-`Superseded`.
-    ///
-    /// Errors if the evidence does not exist.
-    /// The caller is responsible for creating the replacement via
-    /// `put_evidence` BEFORE invoking this. No Evaluation node is created.
-    fn supersede_evidence(&mut self, old_evidence_id: &str) -> Result<()>;
-
-    /// List evidence rows filtered by lifecycle status (D5).
-    ///
-    /// Returns the same column set as `list_evidence`:
-    /// `e.id, e.kind, e.claim, e.start_line, e.end_line, e.path`.
-    /// The `e.props` column is fetched for filtering but dropped from
-    /// returned rows. Filters in Rust (D6 — no native JSON WHERE in lbug).
-    /// When `path` is `Some(p)`, only rows with `e.path = p` are returned.
-    /// When `path` is `None`, caps at 100 rows (consistent with `list_evidence`).
-    fn list_evidence_by_status(
-        &self,
-        status: EvidenceStatus,
-        path: Option<&str>,
-    ) -> Result<Vec<Row>>;
-
+/// Diagram projection persistence — `archctl diagram export/apply`.
+/// Covers Diagram, ViewMember, ViewGroup nodes and their edges.
+/// Backed by schema v3 (see `003_view_nodes.cypher`).
+pub trait DiagramOps: Send + Sync {
     /// MERGE a Diagram node by `id`. Idempotent — re-running with the
     /// same id and a different revision updates in place.
     fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()>;
@@ -191,6 +170,44 @@ pub trait GraphStore: Send + Sync {
     fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>>;
 }
 
+/// The persistence port — superset of all three sub-traits.
+///
+/// Methods:
+/// - `open` — adapter factory (returns `Self`).
+/// - `init` — apply the canonical schema and create the bootstrap marker.
+/// - `stat` — return element/relation/evidence counts for `doctor`.
+/// - `query` — execute an arbitrary Cypher read query (used by
+///   `archctl graph query` and the neighbours traversal).
+///
+/// Domain-specific methods live in the sub-traits `EvidenceOps`,
+/// `SourceOps`, and `DiagramOps`. Functions that need only a subset can
+/// take `&mut dyn EvidenceOps` (or whichever) instead of the full
+/// `&mut dyn GraphStore`. This is the ISP benefit of the split.
+pub trait GraphStore: EvidenceOps + SourceOps + DiagramOps {
+    /// Open or create a store rooted at `project_dir`. Each adapter
+    /// decides what file (or set of files) lives there.
+    fn open(project_dir: &Path) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Apply the schema if it has not been applied yet. Idempotent —
+    /// safe to call repeatedly; the canonical marker file under
+    /// `.archctl-schema` is the source of truth for "already bootstrapped".
+    fn init(&mut self) -> Result<()>;
+
+    /// Counts per label group. Returned as a struct, not as Cypher
+    /// strings, so the caller does not need to know the underlying
+    /// schema details.
+    fn stat(&self) -> Result<GraphStat>;
+
+    /// Execute a Cypher read query and return rows as typed
+    /// [`Row`] values. Columns preserve the engine's RETURN order.
+    /// The adapter is responsible for translating driver-specific
+    /// value types into [`Cell`] — the domain never sees
+    /// `serde_json::Value` (use [`Cell::to_json`] at the formatter
+    /// edge if JSON output is needed).
+    fn query(&self, cypher: &str) -> Result<Vec<Row>>;
+}
 /// Factory: pick the concrete adapter the CLI requested. Today only
 /// `lbug` exists; tomorrow this is where the `--store sparrowdb`
 /// branch lives.
@@ -348,7 +365,9 @@ impl GraphStore for LbugStore {
         tracing::debug!(%cypher, "graph query");
         run_query(&session.conn, cypher)
     }
+}
 
+impl EvidenceOps for LbugStore {
     fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<usize> {
         use tracing::warn;
 
@@ -442,110 +461,6 @@ impl GraphStore for LbugStore {
                 .to_string(),
         };
         self.query(&cypher)
-    }
-
-    fn put_source(&mut self, source: &SourceArtifact) -> Result<()> {
-        let session = self.session_mut()?;
-        let id = crate::graph::validate_identifier(&source.id)
-            .context("source id failed validation")?;
-        let rel_path = crate::graph::validate_identifier(&source.relative_path)
-            .context("source relative_path failed validation")?;
-        let lang = crate::graph::validate_identifier(&source.language)
-            .context("source language failed validation")?;
-        let kind = crate::graph::validate_identifier(&source.kind)
-            .context("source kind failed validation")?;
-        let props_json =
-            serde_json::to_string(&source.props).context("serialize source props")?;
-        let safe_props = props_json.replace('\'', "\\'");
-        let safe_ch = source.content_hash.replace('\'', "\\'");
-        let commit_str = source
-            .commit_hash
-            .as_deref()
-            .unwrap_or("");
-
-        let cypher = format!(
-            "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
-             s.kind = '{kind}', \
-             s.relative_path = '{rel_path}', \
-             s.language = '{lang}', \
-             s.content_hash = '{safe_ch}', \
-             s.commit_hash = '{commit_str}', \
-             s.generated = {generated}, \
-             s.props = '{safe_props}';",
-            generated = source.generated,
-        );
-        session.conn.query(&cypher).with_context(|| {
-            format!("persist SourceArtifact {id}")
-        })?;
-        Ok(())
-    }
-
-    fn put_evaluation(&mut self, evaluation: &Evaluation) -> Result<()> {
-        let session = self.session_mut()?;
-        let id = crate::graph::validate_identifier(&evaluation.id)
-            .context("evaluation id failed validation")?;
-        let target_eid = crate::graph::validate_identifier(&evaluation.target_evidence_id)
-            .context("evaluation target_evidence_id failed validation")?;
-        let criterion = crate::graph::validate_identifier(&evaluation.criterion)
-            .context("evaluation criterion failed validation")?;
-        let evaluator = crate::graph::validate_identifier(&evaluation.evaluator)
-            .context("evaluation evaluator failed validation")?;
-        let props_json =
-            serde_json::to_string(&evaluation.props).context("serialize evaluation props")?;
-        let safe_props = props_json.replace('\'', "\\'");
-        let safe_ea = evaluation.evaluated_at.replace('\'', "\\'");
-        let ea_cypher = if safe_ea.is_empty() || safe_ea.len() > 64 {
-            "timestamp('1970-01-01T00:00:00Z')".to_string()
-        } else {
-            format!("timestamp('{safe_ea}')")
-        };
-
-        let cypher = format!(
-            "MERGE (ev:Evaluation {{id: '{id}'}}) SET \
-             ev.target_evidence_id = '{target_eid}', \
-             ev.criterion = '{criterion}', \
-             ev.passed = {passed}, \
-             ev.evaluator = '{evaluator}', \
-             ev.evaluated_at = {ea_cypher}, \
-             ev.props = '{safe_props}';",
-            passed = evaluation.passed,
-        );
-        session.conn.query(&cypher).with_context(|| {
-            format!("persist Evaluation {id}")
-        })?;
-        Ok(())
-    }
-
-    fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
-        let eid = crate::graph::validate_identifier(evidence_id)
-            .context("link_extracted_from: evidence_id failed validation")?;
-        let sid = crate::graph::validate_identifier(source_id)
-            .context("link_extracted_from: source_id failed validation")?;
-        link_with_merge_fallback(
-            &session.conn,
-            "Evidence",
-            &eid,
-            "EXTRACTED_FROM",
-            "SourceArtifact",
-            &sid,
-        )
-    }
-
-    fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
-        let evid = crate::graph::validate_identifier(evaluation_id)
-            .context("link_evaluates: evaluation_id failed validation")?;
-        let eid = crate::graph::validate_identifier(evidence_id)
-            .context("link_evaluates: evidence_id failed validation")?;
-        link_with_merge_fallback(
-            &session.conn,
-            "Evaluation",
-            &evid,
-            "EVALUATES",
-            "Evidence",
-            &eid,
-        )
     }
 
     fn accept_evidence(
@@ -713,7 +628,115 @@ impl GraphStore for LbugStore {
 
         Ok(filtered)
     }
+}
 
+impl SourceOps for LbugStore {
+    fn put_source(&mut self, source: &SourceArtifact) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&source.id)
+            .context("source id failed validation")?;
+        let rel_path = crate::graph::validate_identifier(&source.relative_path)
+            .context("source relative_path failed validation")?;
+        let lang = crate::graph::validate_identifier(&source.language)
+            .context("source language failed validation")?;
+        let kind = crate::graph::validate_identifier(&source.kind)
+            .context("source kind failed validation")?;
+        let props_json =
+            serde_json::to_string(&source.props).context("serialize source props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let safe_ch = source.content_hash.replace('\'', "\\'");
+        let commit_str = source
+            .commit_hash
+            .as_deref()
+            .unwrap_or("");
+
+        let cypher = format!(
+            "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
+             s.kind = '{kind}', \
+             s.relative_path = '{rel_path}', \
+             s.language = '{lang}', \
+             s.content_hash = '{safe_ch}', \
+             s.commit_hash = '{commit_str}', \
+             s.generated = {generated}, \
+             s.props = '{safe_props}';",
+            generated = source.generated,
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("persist SourceArtifact {id}")
+        })?;
+        Ok(())
+    }
+
+    fn put_evaluation(&mut self, evaluation: &Evaluation) -> Result<()> {
+        let session = self.session_mut()?;
+        let id = crate::graph::validate_identifier(&evaluation.id)
+            .context("evaluation id failed validation")?;
+        let target_eid = crate::graph::validate_identifier(&evaluation.target_evidence_id)
+            .context("evaluation target_evidence_id failed validation")?;
+        let criterion = crate::graph::validate_identifier(&evaluation.criterion)
+            .context("evaluation criterion failed validation")?;
+        let evaluator = crate::graph::validate_identifier(&evaluation.evaluator)
+            .context("evaluation evaluator failed validation")?;
+        let props_json =
+            serde_json::to_string(&evaluation.props).context("serialize evaluation props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let safe_ea = evaluation.evaluated_at.replace('\'', "\\'");
+        let ea_cypher = if safe_ea.is_empty() || safe_ea.len() > 64 {
+            "timestamp('1970-01-01T00:00:00Z')".to_string()
+        } else {
+            format!("timestamp('{safe_ea}')")
+        };
+
+        let cypher = format!(
+            "MERGE (ev:Evaluation {{id: '{id}'}}) SET \
+             ev.target_evidence_id = '{target_eid}', \
+             ev.criterion = '{criterion}', \
+             ev.passed = {passed}, \
+             ev.evaluator = '{evaluator}', \
+             ev.evaluated_at = {ea_cypher}, \
+             ev.props = '{safe_props}';",
+            passed = evaluation.passed,
+        );
+        session.conn.query(&cypher).with_context(|| {
+            format!("persist Evaluation {id}")
+        })?;
+        Ok(())
+    }
+
+    fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let eid = crate::graph::validate_identifier(evidence_id)
+            .context("link_extracted_from: evidence_id failed validation")?;
+        let sid = crate::graph::validate_identifier(source_id)
+            .context("link_extracted_from: source_id failed validation")?;
+        link_with_merge_fallback(
+            &session.conn,
+            "Evidence",
+            &eid,
+            "EXTRACTED_FROM",
+            "SourceArtifact",
+            &sid,
+        )
+    }
+
+    fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()> {
+        let session = self.session_mut()?;
+        let evid = crate::graph::validate_identifier(evaluation_id)
+            .context("link_evaluates: evaluation_id failed validation")?;
+        let eid = crate::graph::validate_identifier(evidence_id)
+            .context("link_evaluates: evidence_id failed validation")?;
+        link_with_merge_fallback(
+            &session.conn,
+            "Evaluation",
+            &evid,
+            "EVALUATES",
+            "Evidence",
+            &eid,
+        )
+    }
+}
+
+impl DiagramOps for LbugStore {
     fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()> {
         let session = self.session_mut()?;
         let id = crate::graph::validate_identifier(&diagram.id)

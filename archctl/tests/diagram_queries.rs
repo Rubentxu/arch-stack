@@ -13,7 +13,7 @@ use archctl::diagram::queries::{
     query_elements, query_evidence_for_versions, query_semantic_edges, query_version_props,
 };
 use archctl::row::{Cell, Row};
-use archctl::store::GraphStore;
+use archctl::store::{DiagramOps, EvidenceOps, GraphStore, SourceOps};
 
 /// Build a Row from a flat list of (column, value) pairs.
 fn row_from_pairs(pairs: Vec<(&str, Cell)>) -> Row {
@@ -200,61 +200,38 @@ impl GraphStore for TinyGraphStore {
         }
     }
 
-    fn put_evidence(&mut self, _: &[archctl::evidence::Evidence]) -> anyhow::Result<usize> {
-        unimplemented!()
-    }
-    fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> {
-        unimplemented!()
-    }
-    fn put_source(&mut self, _: &archctl::source::SourceArtifact) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn put_evaluation(&mut self, _: &archctl::evaluation::Evaluation) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn accept_evidence(&mut self, _: &str, _: &dyn archctl::clock::Clock) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn list_evidence_by_status(
-        &self,
-        _: archctl::evidence::EvidenceStatus,
-        _: Option<&str>,
-    ) -> anyhow::Result<Vec<Row>> {
-        unimplemented!()
-    }
-    fn put_diagram(&mut self, _: &archctl::diagram::view_types::Diagram) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn get_diagram(&self, _: &str) -> anyhow::Result<archctl::diagram::view_types::Diagram> {
-        unimplemented!()
-    }
-    fn put_view_member(&mut self, _: &archctl::diagram::view_types::ViewMember) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn put_view_group(&mut self, _: &archctl::diagram::view_types::ViewGroup) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-    fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<archctl::diagram::view_types::ViewMember>> {
-        unimplemented!()
-    }
+}
+
+// Sub-trait impls — these exist purely so `GraphStore for TinyGraphStore`
+// is satisfied (GraphStore: EvidenceOps + SourceOps + DiagramOps). Each
+// method delegates to the same `unimplemented!()` body. They live in
+// separate blocks because Rust requires at most one impl block per
+// trait per type, and the methods above are already part of the
+// `impl GraphStore for TinyGraphStore` block.
+impl EvidenceOps for TinyGraphStore {
+    fn put_evidence(&mut self, _: &[archctl::evidence::Evidence]) -> anyhow::Result<usize> { unimplemented!() }
+    fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+    fn accept_evidence(&mut self, _: &str, _: &dyn archctl::clock::Clock) -> anyhow::Result<()> { unimplemented!() }
+    fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn list_evidence_by_status(&self, _: archctl::evidence::EvidenceStatus, _: Option<&str>) -> anyhow::Result<Vec<Row>> { unimplemented!() }
+}
+
+impl SourceOps for TinyGraphStore {
+    fn put_source(&mut self, _: &archctl::source::SourceArtifact) -> anyhow::Result<()> { unimplemented!() }
+    fn put_evaluation(&mut self, _: &archctl::evaluation::Evaluation) -> anyhow::Result<()> { unimplemented!() }
+    fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+}
+
+impl DiagramOps for TinyGraphStore {
+    fn put_diagram(&mut self, _: &archctl::diagram::view_types::Diagram) -> anyhow::Result<()> { unimplemented!() }
+    fn get_diagram(&self, _: &str) -> anyhow::Result<archctl::diagram::view_types::Diagram> { unimplemented!() }
+    fn put_view_member(&mut self, _: &archctl::diagram::view_types::ViewMember) -> anyhow::Result<()> { unimplemented!() }
+    fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn put_view_group(&mut self, _: &archctl::diagram::view_types::ViewGroup) -> anyhow::Result<()> { unimplemented!() }
+    fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> { unimplemented!() }
+    fn get_view_members(&self, _: &str) -> anyhow::Result<Vec<archctl::diagram::view_types::ViewMember>> { unimplemented!() }
 }
 
 // SCN-050: query_elements filtered by category returns only matching nodes

@@ -13,7 +13,7 @@ use archctl::diagram::changeset_schema::CHANGESET_SCHEMA;
 use archctl::diagram::changeset_types::{ChangeSet, CHANGESET_COMMAND_TYPES};
 use archctl::clock::FixedClock;
 use archctl::diagram::view_types::Diagram;
-use archctl::store::{GraphStore, LbugStore};
+use archctl::store::{DiagramOps, GraphStore, LbugStore};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Schema consistency (pure unit test — no DB needed)
