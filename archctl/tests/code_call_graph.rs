@@ -3,21 +3,6 @@
 //! These tests use real filesystem + direct tree-sitter extraction against synthetic TempDir fixtures.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
-
-use tempfile::TempDir;
-
-// ─── Fixture helpers ────────────────────────────────────────────────────────────
-
-/// Write a file to a project directory, creating parent dirs as needed.
-fn write(project: &Path, rel: &str, content: &str) {
-    let path = project.join(rel);
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    fs::write(&path, content).expect("write temp file");
-}
 
 // ─── Integration tests ─────────────────────────────────────────────────────────
 
