@@ -95,7 +95,7 @@ pueda consumir.
 
 **Pivot v2.4:** Promovido a prioridad 1. M11 ahora incluye:
 - **Call graph extraction** (via tree-sitter / LSP) — `archctl code call-graph` ✅ shipped v0.8.0
-- **Sequence diagram generation** (call chain extraction, async flow tracking) — `archctl code sequence` ⏳ PR2 → v0.9.0
+- **Sequence diagram generation** (call chain extraction, async flow tracking) — `archctl code sequence` ✅ shipped v0.9.0
 - **C4 Dynamic** (relationships at runtime, opcional via OpenTelemetry)
 
 Output: tres comandos CLI que se renderizan en `archview` como proyecciones del workbench.
@@ -302,7 +302,7 @@ Incluye:
 | `m9-archctl-export-apply` (PR1 + PR2) | `feat/m9-archctl-export-apply-foundation` → `feat/m9-archctl-export-apply` (merged to main via --no-ff) | `f8c4101` | **Cerrado** ✅ · tag `v0.6.0` |
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
 | `m8-c4-boundary-inference` | `feat/m8-c4-boundary-inference` (merged to main via --no-ff) | `2c6e4e1` | **Cerrado** ✅ · tag `v0.7.0` |
-| `m11-call-graph-sequence` (PR1) | `feat/m11-call-graph` + `fix/m11-call-graph-tsg-rules` (merged to main via --no-ff) | `2d7a9e9` | **Cerrado** ✅ · tags `v0.8.0` + `v0.8.1` · PR2 (`archctl code sequence`) → v0.9.0 |
+| `m11-call-graph-sequence` (PR1 + PR2) | `feat/m11-call-graph` + `fix/m11-call-graph-tsg-rules` + `feat/m11-sequence` (merged to main via --no-ff) | `4dd7211` | **Cerrado** ✅ · tags `v0.8.0`, `v0.8.1`, `v0.9.0` |
 | `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
 | `roadmap-pivot-v2.5` (cognitive layer) | direct commits (no PR — 3 ADRs nuevos) | pendiente | **En curso** · tag diferido al M22 → 1.x |
 

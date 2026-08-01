@@ -24,6 +24,7 @@ editable = [
   "archctl/src/code/call_rules/rust.tsg",
   "archctl/src/code/call_rules/typescript.tsg",
   "archctl/src/code/call_rules/python.tsg",
+  "archctl/src/code/sequence.rs",
 ]
 
 public_symbols = [
@@ -50,6 +51,12 @@ public_symbols = [
   "MessageKind",
   "CallGraphError",
   "CALL_GRAPH_REPORT_SCHEMA",
+  "project_sequence",
+  "SequenceReport",
+  "Interaction",
+  "FromSelector",
+  "SequenceError",
+  "SEQUENCE_REPORT_SCHEMA",
 ]
 
 must_hold = [
@@ -75,6 +82,10 @@ must_hold = [
   "pub struct CallGraphReport",
   "pub struct FunctionNode",
   "pub struct CallEdge",
+  "pub fn project_sequence",
+  "pub struct SequenceReport",
+  "pub struct Interaction",
+  "pub const SEQUENCE_REPORT_SCHEMA",
 ]
 
 must_not_contain = [
@@ -82,4 +93,4 @@ must_not_contain = [
   "reqwest",
 ]
 
-minimum_tests = 20
+minimum_tests = 25
