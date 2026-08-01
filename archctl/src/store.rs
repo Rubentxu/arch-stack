@@ -522,27 +522,14 @@ impl GraphStore for LbugStore {
             .context("link_extracted_from: evidence_id failed validation")?;
         let sid = crate::graph::validate_identifier(source_id)
             .context("link_extracted_from: source_id failed validation")?;
-
-        // Q2: Try MERGE on the REL TABLE first. If lbug 0.18.3 rejects
-        // MERGE on a REL TABLE, fall back to a MATCH + single CREATE
-        // (idempotent: if the edge already exists the CREATE is a no-op).
-        let primary = format!(
-            "MERGE (e:Evidence {{id: '{eid}'}})-[:EXTRACTED_FROM]->(s:SourceArtifact {{id: '{sid}'}});"
-        );
-        let result = session.conn.query(&primary);
-        if result.is_err() {
-            // Q2 fallback: find the nodes, then CREATE the edge if they exist.
-            // This is safe and idempotent: if the edge already exists, a second
-            // CREATE on the same edge is a no-op in lbug's single-graph mode.
-            let fallback = format!(
-                "MATCH (e:Evidence {{id: '{eid}'}}), (s:SourceArtifact {{id: '{sid}'}}) \
-                 CREATE (e)-[:EXTRACTED_FROM]->(s);"
-            );
-            session.conn.query(&fallback).with_context(|| {
-                format!("link_extracted_from fallback for ({eid}, {sid})")
-            })?;
-        }
-        Ok(())
+        link_with_merge_fallback(
+            &session.conn,
+            "Evidence",
+            &eid,
+            "EXTRACTED_FROM",
+            "SourceArtifact",
+            &sid,
+        )
     }
 
     fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()> {
@@ -551,22 +538,14 @@ impl GraphStore for LbugStore {
             .context("link_evaluates: evaluation_id failed validation")?;
         let eid = crate::graph::validate_identifier(evidence_id)
             .context("link_evaluates: evidence_id failed validation")?;
-
-        // Try MERGE on the REL TABLE first; fall back to MATCH + CREATE if needed.
-        let primary = format!(
-            "MERGE (ev:Evaluation {{id: '{evid}'}})-[:EVALUATES]->(e:Evidence {{id: '{eid}'}});"
-        );
-        let result = session.conn.query(&primary);
-        if result.is_err() {
-            let fallback = format!(
-                "MATCH (ev:Evaluation {{id: '{evid}'}}), (e:Evidence {{id: '{eid}'}}) \
-                 CREATE (ev)-[:EVALUATES]->(e);"
-            );
-            session.conn.query(&fallback).with_context(|| {
-                format!("link_evaluates fallback for ({evid}, {eid})")
-            })?;
-        }
-        Ok(())
+        link_with_merge_fallback(
+            &session.conn,
+            "Evaluation",
+            &evid,
+            "EVALUATES",
+            "Evidence",
+            &eid,
+        )
     }
 
     fn accept_evidence(
@@ -840,24 +819,14 @@ impl GraphStore for LbugStore {
             .context("link_member_of: member_id failed validation")?;
         let did = crate::graph::validate_identifier(diagram_id)
             .context("link_member_of: diagram_id failed validation")?;
-
-        // ADR-017 §"Nota técnica": MERGE on REL TABLE is rejected by lbug 0.18.3.
-        // Fall back to MATCH + CREATE (idempotent: if edge exists, second CREATE is no-op).
-        let primary = format!(
-            "MATCH (vm:ViewMember {{id: '{mid}'}}), (d:Diagram {{id: '{did}'}}) \
-             MERGE (vm)-[:MEMBER_OF]->(d);"
-        );
-        let result = session.conn.query(&primary);
-        if result.is_err() {
-            let fallback = format!(
-                "MATCH (vm:ViewMember {{id: '{mid}'}}), (d:Diagram {{id: '{did}'}}) \
-                 CREATE (vm)-[:MEMBER_OF]->(d);"
-            );
-            session.conn.query(&fallback).with_context(|| {
-                format!("link_member_of fallback for ({mid}, {did})")
-            })?;
-        }
-        Ok(())
+        link_with_merge_fallback(
+            &session.conn,
+            "ViewMember",
+            &mid,
+            "MEMBER_OF",
+            "Diagram",
+            &did,
+        )
     }
 
     fn link_renders(&mut self, member_id: &str, element_id: &str) -> Result<()> {
@@ -866,8 +835,8 @@ impl GraphStore for LbugStore {
         let eid = crate::graph::validate_identifier(element_id)
             .context("link_renders: element_id failed validation")?;
 
-        // ADR-017 §"Nota técnica": MERGE on REL TABLE rejected by lbug 0.18.3.
-        // Check element existence first (immutable borrow of self).
+        // Pre-check element existence (semantic constraint, separate from
+        // the link's MERGE-on-REL plumbing).
         let elem_rows = self.query(&format!(
             "MATCH (e:Element {{id: '{eid}'}}) RETURN e.id;"
         ))?;
@@ -875,23 +844,15 @@ impl GraphStore for LbugStore {
             anyhow::bail!("element not found: {eid}");
         }
 
-        // Now acquire mutable session for the edge write.
         let session = self.session_mut()?;
-        let primary = format!(
-            "MATCH (vm:ViewMember {{id: '{mid}'}}), (e:Element {{id: '{eid}'}}) \
-             MERGE (vm)-[:RENDERS]->(e);"
-        );
-        let result = session.conn.query(&primary);
-        if result.is_err() {
-            let fallback = format!(
-                "MATCH (vm:ViewMember {{id: '{mid}'}}), (e:Element {{id: '{eid}'}}) \
-                 CREATE (vm)-[:RENDERS]->(e);"
-            );
-            session.conn.query(&fallback).with_context(|| {
-                format!("link_renders fallback for ({mid}, {eid})")
-            })?;
-        }
-        Ok(())
+        link_with_merge_fallback(
+            &session.conn,
+            "ViewMember",
+            &mid,
+            "RENDERS",
+            "Element",
+            &eid,
+        )
     }
 
     fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()> {
@@ -928,23 +889,14 @@ impl GraphStore for LbugStore {
             .context("link_group_contains: group_id failed validation")?;
         let mid = crate::graph::validate_identifier(member_id)
             .context("link_group_contains: member_id failed validation")?;
-
-        // ADR-017 §"Nota técnica": MERGE on REL TABLE rejected by lbug 0.18.3.
-        let primary = format!(
-            "MATCH (vg:ViewGroup {{id: '{gid}'}}), (vm:ViewMember {{id: '{mid}'}}) \
-             MERGE (vg)-[:GROUP_CONTAINS]->(vm);"
-        );
-        let result = session.conn.query(&primary);
-        if result.is_err() {
-            let fallback = format!(
-                "MATCH (vg:ViewGroup {{id: '{gid}'}}), (vm:ViewMember {{id: '{mid}'}}) \
-                 CREATE (vg)-[:GROUP_CONTAINS]->(vm);"
-            );
-            session.conn.query(&fallback).with_context(|| {
-                format!("link_group_contains fallback for ({gid}, {mid})")
-            })?;
-        }
-        Ok(())
+        link_with_merge_fallback(
+            &session.conn,
+            "ViewGroup",
+            &gid,
+            "GROUP_CONTAINS",
+            "ViewMember",
+            &mid,
+        )
     }
 
     fn get_view_members(&self, diagram_id: &str) -> Result<Vec<crate::diagram::view_types::ViewMember>> {
@@ -1039,6 +991,40 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
     let (conn, db) = crate::graph::create_db_session(project_dir)?;
     Ok(LbugSession { conn, _db: db })
+}
+
+/// Create a relationship edge between two existing nodes, with MERGE-then-CREATE fallback.
+///
+/// lbug 0.18.3 rejects MERGE on a REL TABLE (ADR-017 §"Nota técnica").
+/// When that happens we fall back to MATCH + CREATE — the CREATE is
+/// idempotent in lbug's single-graph mode (a second CREATE on an existing
+/// edge is a no-op).
+///
+/// All four arguments (`from_label`, `from_id`, `rel_type`, `to_label`,
+/// `to_id`) are caller-validated identifiers. Errors from the fallback
+/// path are wrapped with a label-rich context so the caller's intent is
+/// visible at the error site.
+fn link_with_merge_fallback(
+    conn: &lbug::Connection,
+    from_label: &str,
+    from_id: &str,
+    rel_type: &str,
+    to_label: &str,
+    to_id: &str,
+) -> Result<()> {
+    let primary = format!(
+        "MERGE (a:{from_label} {{id: '{from_id}'}})-[:{rel_type}]->(b:{to_label} {{id: '{to_id}'}});"
+    );
+    if conn.query(&primary).is_err() {
+        let fallback = format!(
+            "MATCH (a:{from_label} {{id: '{from_id}'}}), (b:{to_label} {{id: '{to_id}'}}) \
+             CREATE (a)-[:{rel_type}]->(b);"
+        );
+        conn.query(&fallback).with_context(|| {
+            format!("link {rel_type} fallback for ({from_label}:{from_id}, {to_label}:{to_id})")
+        })?;
+    }
+    Ok(())
 }
 
 
