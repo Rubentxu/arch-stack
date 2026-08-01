@@ -1,0 +1,40 @@
+# scope: benchmark
+#
+# Criterion bench harness for archctl-side hot paths. Validates
+# ADR-019 (Performance budget) on the producer side.
+id = "benchmark"
+version = "0.1.0"
+description = "criterion bench harness for archctl-side hot paths (M20 ADR-019 validation)"
+editable = [
+  "archctl/benches/common/mod.rs",
+  "archctl/benches/export_pipeline.rs",
+  "archctl/benches/apply_pipeline.rs",
+  "archctl/benches/query_pipeline.rs",
+]
+
+public_symbols = [
+  "seed_small",
+  "seed_medium",
+  "seed_large",
+]
+
+must_hold = [
+  "pub fn seed_small",
+  "pub fn seed_medium",
+  "pub fn seed_large",
+  "criterion_group",
+  "criterion_main",
+  "pub struct Dataset",
+  "pub struct ElementRow",
+  "pub struct RelationRow",
+]
+
+must_not_contain = [
+  "use archctl::main",
+  "std::process::exit",
+  "tokio::",
+  "async fn",
+]
+
+[tests]
+minimum_tests = 0
