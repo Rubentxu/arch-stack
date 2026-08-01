@@ -4,6 +4,7 @@ pub mod call_graph;
 pub mod c4_discover;
 pub mod call_rules;
 pub mod output;
+pub mod sequence;
 pub mod strategies;
 
 // Public re-exports

@@ -91,6 +91,7 @@ pub enum CallKind {
 pub enum MessageKind {
     SyncCall,
     AsyncCall,
+    Return,
 }
 
 /// Per-project metadata. Mirrors c4_discover::ProjectMeta shape.
