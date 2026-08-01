@@ -1,0 +1,70 @@
+; ─── TypeScript function declarations → graph nodes ───────────────────────────
+
+; Named function declaration: function foo() { ... }
+(function_declaration
+  name: (identifier) @fname) @fdef
+{
+  node fn_node
+  attr (fn_node) node_kind = "function"
+  attr (fn_node) name = (source-text @fname)
+  attr (fn_node) language = "typescript"
+  attr (fn_node) syntax = @fdef
+}
+
+; Arrow function: const foo = () => { ... }
+(variable_declarator
+  name: (identifier) @vname
+  value: (arrow_function) @afunc) @vdecl
+{
+  node arrow_node
+  attr (arrow_node) node_kind = "closure"
+  attr (arrow_node) name = (source-text @vname)
+  attr (arrow_node) language = "typescript"
+  attr (arrow_node) syntax = @afunc
+}
+
+; Function expression: const foo = function() { ... }
+(variable_declarator
+  name: (identifier) @vname
+  value: (function_expression) @fexpr) @vdecl
+{
+  node fn_expr_node
+  attr (fn_expr_node) node_kind = "closure"
+  attr (fn_expr_node) name = (source-text @vname)
+  attr (fn_expr_node) language = "typescript"
+  attr (fn_expr_node) syntax = @fexpr
+}
+
+; Class method: class Foo { bar() { ... } }
+(method_definition
+  name: (property_identifier) @mname) @mdef
+{
+  node method_node
+  attr (method_node) node_kind = "method"
+  attr (method_node) name = (source-text @mname)
+  attr (method_node) language = "typescript"
+  attr (method_node) syntax = @mdef
+}
+
+; ─── Call nodes (edges resolved via syntax parent chain in Rust) ─────────────────
+
+; Direct call: foo(...)
+(call_expression
+  function: (identifier) @callee) @call
+{
+  node call_node
+  attr (call_node) node_kind = "call"
+  attr (call_node) callee = (source-text @callee)
+  attr (call_node) syntax = @call
+}
+
+; await async call: await foo()
+(await_expression
+  argument: (call_expression
+    function: (identifier) @acallee) @acall) @await
+{
+  node await_call_node
+  attr (await_call_node) node_kind = "async_call"
+  attr (await_call_node) callee = (source-text @acallee)
+  attr (await_call_node) syntax = @await
+}

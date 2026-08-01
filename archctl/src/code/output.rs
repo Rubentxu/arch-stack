@@ -1,6 +1,9 @@
 //! JSON serialization + human table formatting for discover reports.
 
+use std::collections::BTreeMap;
+
 use crate::code::c4_discover::DiscoverReport;
+use crate::code::call_graph::{CallGraphReport, FunctionNode, Language};
 
 /// Print a human-readable table of discovered Containers grouped by strategy.
 pub fn print_human_table(report: &DiscoverReport) {
@@ -35,5 +38,44 @@ pub fn print_human_table(report: &DiscoverReport) {
             println!("    ✓ {}    {}", container.canonical_key, line);
         }
         println!();
+    }
+}
+
+/// Print a human-readable table of call-graph nodes grouped by language.
+pub fn print_call_graph_table(report: &CallGraphReport) {
+    println!(
+        "Call graph ({} nodes, {} edges, {} errors, {} ms)",
+        report.nodes.len(),
+        report.edges.len(),
+        report.errors.len(),
+        report.project.duration_ms
+    );
+
+    // Group nodes by language
+    let mut by_lang: BTreeMap<Language, Vec<&FunctionNode>> = BTreeMap::new();
+    for node in &report.nodes {
+        by_lang
+            .entry(node.language)
+            .or_default()
+            .push(node);
+    }
+
+    for (lang, nodes) in &by_lang {
+        println!("  {lang:?}: {} function(s)", nodes.len());
+        for node in &**nodes {
+            let fq = if node.fq_name.is_empty() {
+                &node.name
+            } else {
+                &node.fq_name
+            };
+            println!("    ✓ {}  {}:{}  (conf {:.2})", fq, node.file, node.line, node.confidence);
+        }
+    }
+
+    if !report.errors.is_empty() {
+        println!("\nErrors ({}):", report.errors.len());
+        for err in &report.errors {
+            println!("  [{}] {}: {}", err.strategy, err.path, err.message);
+        }
     }
 }

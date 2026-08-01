@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/call-graph-report.schema.json",
+  "title": "Call Graph Report",
+  "description": "archctl code call-graph output (schemaVersion 1.0)",
+  "type": "object",
+  "required": ["schemaVersion", "project", "nodes", "edges", "errors"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "project": {
+      "type": "object",
+      "required": ["root", "filesScanned", "languages", "durationMs"],
+      "properties": {
+        "root": { "type": "string" },
+        "filesScanned": { "type": "integer", "minimum": 0 },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canonicalKey", "kind", "language", "file", "line", "name", "confidence"],
+        "properties": {
+          "canonicalKey": { "type": "string", "pattern": "^[a-z]+:.+:[^:]+:[0-9]+$" },
+          "kind": { "enum": ["Function", "Method", "Closure"] },
+          "language": { "enum": ["Rust", "TypeScript", "Python"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "name": { "type": "string" },
+          "fqName": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "parent": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canonicalKey", "caller", "callee", "file", "line", "kind", "messageKind", "confidence"],
+        "properties": {
+          "canonicalKey": { "type": "string" },
+          "caller": { "type": "string" },
+          "callee": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "kind": { "enum": ["DirectCall", "MethodCall", "ChainedCall"] },
+          "messageKind": { "enum": ["SyncCall", "AsyncCall"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["strategy", "path", "message"],
+        "properties": {
+          "strategy": { "type": "string" },
+          "path": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}
