@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/call-graph-report.schema.json",
+  "title": "Call Graph Report",
+  "description": "Stub — full schema in T1.8",
+  "type": "object"
+}

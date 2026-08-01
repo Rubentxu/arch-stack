@@ -7,6 +7,11 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// JSON Schema for CallGraphReport (JSON Schema 2020-12).
+/// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
+pub const CALL_GRAPH_REPORT_SCHEMA: &str =
+    include_str!("../../../schemas/call-graph-report.schema.json");
+
 // ─── Carrier types ────────────────────────────────────────────────────────────
 
 /// A function/method/closure extracted from source code.
