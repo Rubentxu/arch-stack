@@ -1,0 +1,84 @@
+; ─── TypeScript function declarations → graph nodes ───────────────────────────
+
+; Named function declaration: function foo() { ... }
+(function_declaration
+  name: (identifier) @fname) @fdef
+{
+  node fn_node
+  attr (fn_node) node_kind = "function"
+  attr (fn_node) name = (source-text @fname)
+  attr (fn_node) language = "typescript"
+  attr (fn_node) syntax = @fdef
+  attr (fn_node) start_line = (start-row @fdef)
+}
+
+; Arrow function: const foo = () => { ... }
+(variable_declarator
+  name: (identifier) @vname
+  value: (arrow_function) @afunc) @vdecl
+{
+  node arrow_node
+  attr (arrow_node) node_kind = "closure"
+  attr (arrow_node) name = (source-text @vname)
+  attr (arrow_node) language = "typescript"
+  attr (arrow_node) syntax = @afunc
+  attr (arrow_node) start_line = (start-row @afunc)
+}
+
+; Function expression: const foo = function() { ... }
+(variable_declarator
+  name: (identifier) @vname
+  value: (function_expression) @fexpr) @vdecl
+{
+  node fn_expr_node
+  attr (fn_expr_node) node_kind = "closure"
+  attr (fn_expr_node) name = (source-text @vname)
+  attr (fn_expr_node) language = "typescript"
+  attr (fn_expr_node) syntax = @fexpr
+  attr (fn_expr_node) start_line = (start-row @fexpr)
+}
+
+; Class method: class Foo { bar() { ... } }
+(method_definition
+  name: (property_identifier) @mname) @mdef
+{
+  node method_node
+  attr (method_node) node_kind = "method"
+  attr (method_node) name = (source-text @mname)
+  attr (method_node) language = "typescript"
+  attr (method_node) syntax = @mdef
+  attr (method_node) start_line = (start-row @mdef)
+}
+
+; ─── Call expressions → graph edges ────────────────────────────────────────────
+
+; Direct call: foo(...)
+(call_expression
+  function: (identifier) @callee) @call
+{
+  edge caller -> @callee
+  attr (edge) call_kind = "direct_call"
+  attr (edge) message_kind = "sync_call"
+  attr (edge) start_line = (start-row @call)
+}
+
+; Method call: obj.method(...)
+(method_declaration
+  body: (statement_block) @body) @mdecl
+{
+  node method_body_node
+  attr (method_body_node) node_kind = "method_body"
+  attr (method_body_node) syntax = @body
+  attr (method_body_node) start_line = (start-row @body)
+}
+
+; await async call: await foo()
+(await_expression
+  argument: (call_expression
+    function: (identifier) @acallee) @acall) @await
+{
+  edge caller -> @acallee
+  attr (edge) call_kind = "direct_call"
+  attr (edge) message_kind = "async_call"
+  attr (edge) start_line = (start-row @await)
+}

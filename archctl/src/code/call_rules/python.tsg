@@ -1,0 +1,71 @@
+; ─── Python function definitions → graph nodes ──────────────────────────────────
+
+; Module-level function: def foo(): ...
+(function_definition
+  name: (identifier) @fname) @fdef
+{
+  node fn_node
+  attr (fn_node) node_kind = "function"
+  attr (fn_node) name = (source-text @fname)
+  attr (fn_node) language = "python"
+  attr (fn_node) syntax = @fdef
+  attr (fn_node) start_line = (start-row @fdef)
+}
+
+; Class method: class Foo: def bar(self): ...
+(class_definition
+  body: (block
+    (function_definition
+      name: (identifier) @mname
+      parameters: (parameters) @params) @mdef) @cbody) @cdef
+{
+  node method_node
+  attr (method_node) node_kind = "method"
+  attr (method_node) name = (source-text @mname)
+  attr (method_node) language = "python"
+  attr (method_node) syntax = @mdef
+  attr (method_node) start_line = (start-row @mdef)
+}
+
+; Lambda: f = lambda x: x + 1
+(lambda_expression
+  parameters: (lambda_parameters) @lparams) @ldef
+{
+  node lambda_node
+  attr (lambda_node) node_kind = "closure"
+  attr (lambda_node) name = "<lambda>"
+  attr (lambda_node) language = "python"
+  attr (lambda_node) syntax = @ldef
+  attr (lambda_node) start_line = (start-row @ldef)
+}
+
+; ─── Call expressions → graph edges ────────────────────────────────────────────
+
+; Direct call: foo()
+(call
+  function: (identifier) @callee) @call
+{
+  edge caller -> @callee
+  attr (edge) call_kind = "direct_call"
+  attr (edge) message_kind = "sync_call"
+  attr (edge) start_line = (start-row @call)
+}
+
+; Method call: obj.method()
+(call
+  function: (attribute
+    object: (_) @obj
+    attribute: (identifier) @attr) @method) @mcall
+{
+  edge caller -> @attr
+  attr (edge) call_kind = "method_call"
+  attr (edge) message_kind = "sync_call"
+  attr (edge) start_line = (start-row @mcall)
+}
+
+; Async call via asyncio.run(): asyncio.run(coro())
+(identifier) @id @idel
+{
+  node id_node
+  attr (id_node) name = (source-text @id)
+}

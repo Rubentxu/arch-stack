@@ -1,0 +1,77 @@
+; ─── Rust function definitions → graph nodes ────────────────────────────────────
+
+; Free function: fn foo() { ... }
+(function_item
+  name: (identifier) @fname
+  body: (_) @fbody) @fdef
+{
+  node fn_node
+  attr (fn_node) node_kind = "function"
+  attr (fn_node) name = (source-text @fname)
+  attr (fn_node) language = "rust"
+  attr (fn_node) syntax = @fdef
+  attr (fn_node) start_line = (start-row @fdef)
+}
+
+; Impl block method: impl Foo { fn bar() { ... } }
+(impl_item
+  type: (type_identifier) @itype
+  body: (declaration_list
+    (function_item
+      name: (identifier) @mname
+      body: (_) @mbody) @mdef) @mimpl)
+{
+  node method_node
+  attr (method_node) node_kind = "method"
+  attr (method_node) name = (source-text @mname)
+  attr (method_node) language = "rust"
+  attr (method_node) parent = (source-text @itype)
+  attr (method_node) syntax = @mdef
+  attr (method_node) start_line = (start-row @mdef)
+}
+
+; Closure expression: let x = |a, b| { a + b }
+(closure_expression
+  parameters: (closure_parameters) @params
+  body: (_) @cbody) @cdef
+{
+  node closure_node
+  attr (closure_node) node_kind = "closure"
+  attr (closure_node) name = "<closure>"
+  attr (closure_node) language = "rust"
+  attr (closure_node) syntax = @cdef
+  attr (closure_node) start_line = (start-row @cdef)
+}
+
+; ─── Call expressions → graph edges ────────────────────────────────────────────
+
+; Direct function call: foo(...)
+(call_expression
+  function: (identifier) @callee) @call
+{
+  edge caller -> @callee
+  attr (edge) call_kind = "direct_call"
+  attr (edge) message_kind = "sync_call"
+  attr (edge) start_line = (start-row @call)
+}
+
+; Method call: obj.method(...)
+(method_call_expression
+  method: (field_identifier) @mcallee) @mcall
+{
+  edge caller -> @mcallee
+  attr (edge) call_kind = "method_call"
+  attr (edge) message_kind = "sync_call"
+  attr (edge) start_line = (start-row @mcall)
+}
+
+; Async call wrapped in await: await foo()
+(await_expression
+  argument: (call_expression
+    function: (identifier) @acallee) @acall) @await
+{
+  edge caller -> @acallee
+  attr (edge) call_kind = "direct_call"
+  attr (edge) message_kind = "async_call"
+  attr (edge) start_line = (start-row @await)
+}

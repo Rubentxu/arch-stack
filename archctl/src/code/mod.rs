@@ -1,6 +1,7 @@
-//! Deterministic code analysis: C4 boundary inference + future call graph.
+//! Deterministic code analysis: C4 boundary inference + call graph extraction.
 
 pub mod c4_discover;
+pub mod call_rules;
 pub mod output;
 pub mod strategies;
 
