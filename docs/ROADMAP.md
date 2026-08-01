@@ -512,3 +512,35 @@ Incluye:
   - **ADR-023 (action proposal + policy engine)**: ActionProposal estructurado (goal + command + capabilities + approval + evidence esperada + rollback); Policy Engine con reglas TOML editables; MCP gateway como única frontera de ejecución; audit log inmutable en el grafo; HITL UI en `archview`.
   - **ROADMAP v2.5**: M18 (reactive runtime) reposicionado como substrate de la cognitive layer. M21 (cognitive foundation) + M22 (agent catalog v1) + M23 (action proposal + policy) añadidos al roadmap 1.x.
 - **Próximo candidato**: PR2 (m9-archctl-export-apply v0.6.0) → commit pendiente, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench → M17 (archview workbench scaffold) → M20 (performance validation) → M21-M23 (cognitive layer 1.x).
+
+## Cycle cerrado — `m11-call-graph-sequence` (PR1 + PR2)
+
+- **Fecha**: 2026-08-01
+- **Branch**: `feat/m11-call-graph` + `fix/m11-call-graph-tsg-rules` + `feat/m11-sequence` (merged to main via --no-ff)
+- **Tag**: `v0.8.0` (`2d7a9e9`), `v0.8.1` (`cd7ba27`), `v0.9.0` (`f2ca194`)
+- **Verdict**: verify PASS → fix cycle PASS → release v0.8.0 → bug fix → release v0.8.1 → release v0.9.0
+- **Commits**: 21 across 3 PRs (PR1: 12 commits → v0.8.0; fix: 6 commits → v0.8.1; PR2: 9 commits → v0.9.0)
+- **Tests**: 235 passing (vs 222 baseline, +13 across all 3 releases)
+- **Output**: `archctl code call-graph` (PR1 → v0.8.0) via tree-sitter-graph; bug-fixed via direct tree-sitter walk (v0.8.1) after `basemind-tree-sitter-graph` 0.12 rejected TSG rule patterns; `archctl code sequence` (PR2 → v0.9.0) via BFS over persisted call edges. Three bounded contexts: `code/call_graph.rs`, `code/sequence.rs`, `code/c4_discover.rs` (added in earlier cycle). New manifest `manifests/code.toml` extended for each. New schemas `call-graph-report.schema.json` and `sequence-report.schema.json`.
+- **Carried debt** (deferred to refactor-m9-debt-cleanup): none — M11 cycle closed clean.
+
+## Cycle cerrado — `refactor-m9-debt-cleanup`
+
+- **Fecha**: 2026-08-01
+- **Branch**: `refactor/m9-debt-cleanup` (merged to main via --no-ff)
+- **Tag**: `v0.9.1` (`f287594`)
+- **Verdict**: verify PASS · debt-verify PASS_WITH_WARNINGS (0 CRIT, 0 HIGH) · archive PASS
+- **Commits**: 9 (6 refactor + 2 style + 1 docs)
+- **Tests**: 260 passing (vs 259 baseline; +1 new atomic round-trip test)
+- **Output**: 6 carryover debt items from `m9-archctl-export-apply` PR2 closed:
+  - **W-DV-3** (open_lbug_session duplication) — extracted `graph::create_db_session`; `open_session` and `open_lbug_session` delegate.
+  - **W-DV-4** (GraphStore trait bloat, 16 methods) — split into 3 sub-traits: `EvidenceOps` (5), `SourceOps` (4), `DiagramOps` (9 incl. new `update_view_member_label`). `GraphStore: EvidenceOps + SourceOps + DiagramOps` super-trait pattern; `GraphStore` keeps only `open/init/stat/query` directly.
+  - **W-DV-5** (3× link_* MERGE+fallback) — extracted `link_with_merge_fallback` helper; applied to 5 sites (`link_extracted_from`, `link_evaluates`, `link_member_of`, `link_renders`, `link_group_contains`).
+  - **W-DV2-A1** (DIP regression in `dispatch_command`) — `apply_to_store` and `dispatch_command` now take `&mut dyn GraphStore`.
+  - **W-DV2-A3** (OCP shotgun for `Command` variants) — added `Command::apply` inherent method on the enum; `dispatch_command` reduced to `#[cfg(test)]` thin wrapper.
+  - **W-DV2-C2** (RMW brittleness in `SetLabel`) — atomic `MATCH ... SET ... RETURN` Cypher via new `update_view_member_label` GraphStore method; lbug 0.18.3 silently returns 0 rows so an explicit `result.next().is_some()` check + `bail!("member not found: {id}")` preserves the old RMW error contract.
+- **Files changed**: 8 (998 ins / 726 del). Net +272 LOC. Increase driven by T3 (4 doc comments on sub-traits) and T5 (Command::apply body inline).
+- **Carried forward** (non-blocking): 4 WARN items in `sddk/refactor-m9-debt-cleanup/debt-report.md` (OE-W1 ISP not yet realized; CP-W1 Filesystem port bypassed in `create_db_session`; CP-W2 atomic label uses ambient `chrono::Utc::now()` instead of injected `Clock`; CP-W3 `Command::apply` still requires full `GraphStore` super-trait). All are maintainability/testability follow-ups; no functional blocker.
+- **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview workbench scaffold, prioridad 1) o cleanup de los 4 WARN carried (CP-W1 + CP-W2 son port-seam hygiene, fácil cerrar).
+
+> `refactor-m9-debt-cleanup`: 6 carryover debt items from `m9-archctl-export-apply` PR2 closed via 6 refactor commits + 2 style + 1 docs. `GraphStore` restructured into 3 sub-traits (ISP benefit unlocked); `Command::apply` method on enum (OCP win); atomic `update_view_member_label` replaces RMW (W-DV2-C2). 260 tests passing without behavioural change. Patch tag `v0.9.1`. Archivado en `sddk/refactor-m9-debt-cleanup/archive-report.md`.
