@@ -1018,7 +1018,8 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
 }
 
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
-    let (conn, db) = crate::graph::create_db_session(project_dir)?;
+    let (conn, db) =
+        crate::graph::create_db_session(&crate::graph::database_path(project_dir))?;
     Ok(LbugSession { conn, _db: db })
 }
 
