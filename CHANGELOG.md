@@ -4,6 +4,29 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.11.0] — 2026-08-01
+
+### Security
+- **`archctl render` no longer POSTs to a remote URL.** The `--kroki-url` flag is removed. The `reqwest` dependency is dropped (-19 transitive deps). `archctl` cannot reach the network at runtime. Closes audit finding F1 (`docs/audits/2026-08-01-archctl-adr-vs-impl.md`).
+
+### Added
+- **Custom Structurizr DSL → SVG renderer** (`archctl/src/render/structurizr.rs`). Pure-Rust implementation using `petgraph 0.6` for graph data structure + Sugiyama-style layered layout, and `svg 0.14` for document emission. Supports the C4 subset: `person`, `softwareSystem`, `container`, and `src -> dst` relations. Anything outside the C4 subset yields an explicit parse error with the offending token.
+
+### Changed
+- `archctl render <file.dsl>` works **without** network access. Output is a real SVG (no kroki error page).
+- Format detection now recognises `.mmd` as Mermaid (previously fell into Structurizr branch — wrong).
+- `RenderFormat` enum adds `Mermaid` variant.
+
+### Deferred
+- **PlantUML rendering** — `plantuml-little 1.2026.2-4` (ADR-012 prescribed crate) requires `libgraphviz` at build time via the `graphviz-anywhere` transitive dependency. Vendor strategy (system package vs. prebuilt static lib vs. build-from-source) is a separate decision. Calling `archctl render` on `.puml`/`.iuml`/`.wsd` files yields a clear "not yet wired" error pointing at this follow-up.
+- **Mermaid rendering** — `merman 0.8.0-alpha.3` (ADR-012 prescribed crate) has the same graphviz blocker. Calling `archctl render` on `.mmd` files yields the same deferred error.
+
+### Notes
+- Minor bump because the public surface changed (new `RenderKind` enum, removed `--kroki-url` flag). Zero new runtime dependencies; `petgraph 0.6` and `svg 0.14` are added.
+- 263 tests passing (260 baseline + 3 new structurizr tests).
+- Doctor `--scopes render` reports 0 findings.
+- Smoke test: `archctl render /tmp/diagram.dsl` on a 4-node DSL with 3 relations produces a 1.5 KB SVG with correct layered layout (Customer → Web App → API → Database, viewBox `0 0 220 520`).
+
 ## [v0.10.0] — 2026-08-01
 
 ### Added
