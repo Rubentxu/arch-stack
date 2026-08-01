@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::code::c4_discover::DiscoverReport;
 use crate::code::call_graph::{CallGraphReport, FunctionNode, Language};
+use crate::code::sequence::SequenceReport;
 
 /// Print a human-readable table of discovered Containers grouped by strategy.
 pub fn print_human_table(report: &DiscoverReport) {
@@ -76,6 +77,38 @@ pub fn print_call_graph_table(report: &CallGraphReport) {
         println!("\nErrors ({}):", report.errors.len());
         for err in &report.errors {
             println!("  [{}] {}: {}", err.strategy, err.path, err.message);
+        }
+    }
+}
+
+/// Print a human-readable sequence table.
+pub fn print_sequence_table(report: &SequenceReport) {
+    println!(
+        "Sequence from {:?} ({} interactions, {} ms)",
+        report.from,
+        report.interactions.len(),
+        report.duration_ms
+    );
+    if report.cyclic {
+        println!("  ⚠ cyclic (some callees were already visited)");
+    }
+    if report.truncated {
+        println!(
+            "  ⚠ truncated (hit max-interactions cap; {} total reachable)",
+            report.total_reachable
+        );
+    }
+    for i in &report.interactions {
+        println!(
+            "  {:3}. [d{}] {} → {} ({:?})",
+            i.order_key,
+            i.depth,
+            i.sender,
+            i.receiver,
+            i.message_kind
+        );
+        if let (Some(f), Some(l)) = (&i.file, &i.line) {
+            println!("        at {}:{}", f.display(), l);
         }
     }
 }

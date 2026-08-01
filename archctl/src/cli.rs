@@ -191,6 +191,27 @@ pub enum CodeAction {
         #[arg(long)]
         depth: Option<u32>,
     },
+    /// Project a call chain into an ordered interaction list (read-only).
+    Sequence {
+        /// Project directory to scan. Defaults to the current working directory.
+        #[arg(long, default_value = ".")]
+        cwd: PathBuf,
+        /// Selector for the starting function (name, file:line, or canonical key).
+        #[arg(long, value_parser = parse_from_selector)]
+        from: crate::code::sequence::FromSelector,
+        /// Maximum call-depth to traverse (default: 5).
+        #[arg(long, default_value_t = 5)]
+        depth: u32,
+        /// Maximum number of interactions to return (default: 500).
+        #[arg(long)]
+        max_interactions: Option<u32>,
+        /// Emit machine-readable JSON to stdout.
+        #[arg(long)]
+        json: bool,
+        /// Accepted but ignored — sequence is read-only (spec SCN-217).
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -433,6 +454,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     crate::code::output::print_call_graph_table(&report);
                 }
                 Ok(0)
+            }
+            CodeAction::Sequence { cwd, from, depth, max_interactions, json, apply } => {
+                if apply {
+                    eprintln!("warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges");
+                }
+                code_sequence_cmd(&cwd, from, depth, max_interactions, json)
             }
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
@@ -953,6 +980,56 @@ fn diagram_apply_cmd(
             &report.new_revision[..12],
         );
     }
+    Ok(0)
+}
+
+/// Parse a --from selector string into a FromSelector.
+fn parse_from_selector(s: &str) -> Result<crate::code::sequence::FromSelector, String> {
+    use crate::code::sequence::FromSelector;
+
+    // "file:path/to/file.rs:42" format
+    if let Some(rest) = s.strip_prefix("file:") {
+        let parts: Vec<&str> = rest.split(':').collect();
+        if parts.len() != 2 {
+            return Err(format!("invalid file:line selector: {s}"));
+        }
+        let line: u32 = parts[1].parse().map_err(|_| format!("invalid line: {}", parts[1]))?;
+        Ok(FromSelector::ByFileLine {
+            file: std::path::PathBuf::from(parts[0]),
+            line,
+        })
+    } else if s.contains("::") || (s.starts_with("rust:") || s.starts_with("typescript:") || s.starts_with("python:")) {
+        // Looks like a canonical key: "rust:src/lib.rs:foo:42"
+        Ok(FromSelector::ByCanonicalKey {
+            canonical_key: s.to_string(),
+        })
+    } else {
+        // By name
+        Ok(FromSelector::ByName {
+            name: s.to_string(),
+        })
+    }
+}
+
+fn code_sequence_cmd(
+    cwd: &std::path::Path,
+    from: crate::code::sequence::FromSelector,
+    depth: u32,
+    max_interactions: Option<u32>,
+    json: bool,
+) -> Result<i32> {
+    use crate::code::output::print_sequence_table;
+    use crate::code::sequence::project_sequence;
+
+    let report = project_sequence(cwd, from, depth, max_interactions)
+        .map_err(|e| anyhow::anyhow!("sequence projection failed: {e}"))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_sequence_table(&report);
+    }
+
     Ok(0)
 }
 
