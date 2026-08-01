@@ -27,10 +27,14 @@ use crate::diagram::changeset_schema::CHANGESET_SCHEMA;
 use crate::diagram::changeset_types::{ChangeSet, Command, CHANGESET_COMMAND_TYPES};
 use crate::diagram::export_types::Projection;
 use crate::diagram::hash::base_revision;
-use crate::diagram::view_types::{Diagram, ViewMember};
+use crate::diagram::view_types::Diagram;
+#[cfg(test)]
+use crate::diagram::view_types::ViewMember;
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
-use crate::store::{DiagramOps, GraphStore, LbugStore};
+use crate::store::{GraphStore, LbugStore};
+#[cfg(test)]
+use crate::store::DiagramOps;
 
 /// Report from a successful apply operation.
 #[derive(Debug)]
