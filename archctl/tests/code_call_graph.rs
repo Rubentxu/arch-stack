@@ -1,11 +1,6 @@
 //! Integration tests for the call-graph extraction engine.
 //!
-//! These tests use real filesystem + TSG extraction against synthetic TempDir fixtures.
-//!
-//! NOTE: The TSG rules in `call_rules/{rust,typescript,python}.tsg` contain query
-//! patterns (e.g., "method_call_expression") that are invalid in basemind-tree-sitter-graph 0.12.
-//! As a result, extraction currently produces errors and empty node/edge sets.
-//! These tests document the expected behavior once the TSG rules are fixed.
+//! These tests use real filesystem + direct tree-sitter extraction against synthetic TempDir fixtures.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -84,12 +79,3 @@ fn test_call_graph_error_serialize() {
     assert!(json.contains("TSG parse error"));
     assert!(json.contains("rust"));
 }
-
-// NOTE: The following tests are skipped because they require working TSG extraction.
-// Once the TSG rule files are fixed (pre-existing issue), they can be enabled.
-//
-// #[test]
-// fn test_cli_call_graph_json_output_validates_schema() { ... }
-// fn test_cli_call_graph_apply_persists_to_graph() { ... }
-// fn test_cli_call_graph_lang_filter() { ... }
-// fn test_cli_call_graph_dry_run_no_writes() { ... }
