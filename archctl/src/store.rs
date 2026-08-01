@@ -1037,16 +1037,7 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
 }
 
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
-    use anyhow::Context;
-    let path = crate::graph::database_path(project_dir);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("mkdir {}", parent.display()))?;
-    }
-    let db = lbug::Database::new(&path, lbug::SystemConfig::default().buffer_pool_size(crate::graph::BUFFER_POOL_SIZE).max_db_size(crate::graph::BUFFER_POOL_SIZE))
-        .with_context(|| format!("open database at {}", path.display()))?;
-    let conn = lbug::Connection::new(&db).context("create connection")?;
-    let conn: lbug::Connection<'static> = unsafe { std::mem::transmute(conn) };
+    let (conn, db) = crate::graph::create_db_session(project_dir)?;
     Ok(LbugSession { conn, _db: db })
 }
 
