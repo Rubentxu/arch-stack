@@ -1,11 +1,6 @@
 //! Integration tests for the call-graph extraction engine.
 //!
-//! These tests use real filesystem + TSG extraction against synthetic TempDir fixtures.
-//!
-//! NOTE: The TSG rules in `call_rules/{rust,typescript,python}.tsg` contain query
-//! patterns (e.g., "method_call_expression") that are invalid in basemind-tree-sitter-graph 0.12.
-//! As a result, extraction currently produces errors and empty node/edge sets.
-//! These tests document the expected behavior once the TSG rules are fixed.
+//! These tests use real filesystem + direct tree-sitter extraction against synthetic TempDir fixtures.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -13,16 +8,10 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-// ─── Fixture helpers ────────────────────────────────────────────────────────────
-
-/// Write a file to a project directory, creating parent dirs as needed.
-fn write(project: &Path, rel: &str, content: &str) {
-    let path = project.join(rel);
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    fs::write(&path, content).expect("write temp file");
-}
+use archctl::Row;
+use archctl::code::call_graph::{self, Language};
+use archctl::filesystem::SystemFilesystem;
+use archctl::store::{GraphStore, LbugStore};
 
 // ─── Integration tests ─────────────────────────────────────────────────────────
 
@@ -85,11 +74,73 @@ fn test_call_graph_error_serialize() {
     assert!(json.contains("rust"));
 }
 
-// NOTE: The following tests are skipped because they require working TSG extraction.
-// Once the TSG rule files are fixed (pre-existing issue), they can be enabled.
-//
-// #[test]
-// fn test_cli_call_graph_json_output_validates_schema() { ... }
-// fn test_cli_call_graph_apply_persists_to_graph() { ... }
-// fn test_cli_call_graph_lang_filter() { ... }
-// fn test_cli_call_graph_dry_run_no_writes() { ... }
+// ─── Regression: apply round-trips to graph store ─────────────────────────────────
+
+/// Write a file to a temp project directory, creating parent dirs as needed.
+fn write(project: &Path, rel: &str, content: &str) {
+    let path = project.join(rel);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, content).expect("write temp file");
+}
+
+#[test]
+fn test_call_graph_apply_persists_elements_and_evidences() {
+    // Smoke fixture: caller() calls helper() and other_helper()
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+
+    write(
+        project,
+        "Cargo.toml",
+        r#"[package]
+name = "smoke"
+version = "0.1.0"
+edition = "2021"
+"#,
+    );
+    write(
+        project,
+        "src/lib.rs",
+        "pub fn caller() { helper(); other_helper(); }\n\
+         pub fn helper() {}\n\
+         pub fn other_helper() {}\n",
+    );
+
+    // Extract call graph
+    let fs = SystemFilesystem;
+    let report =
+        call_graph::extract(project, &[Language::Rust], None, &fs).expect("extract must succeed");
+    assert_eq!(report.nodes.len(), 3, "expected 3 function nodes");
+    assert_eq!(report.edges.len(), 2, "expected 2 call edges");
+
+    // Apply to graph store
+    let r = call_graph::apply(project, &report, &SystemFilesystem).expect("apply must succeed");
+    assert_eq!(r.elements_written, 3, "should write 3 elements");
+    assert_eq!(r.relations_written, 2, "should write 2 relations");
+    assert_eq!(r.evidences_written, 2, "should write 2 evidences");
+
+    // Verify Element rows persisted via LbugStore query
+    let mut store = LbugStore::open(project).expect("store must open");
+    store.init().expect("store must init");
+
+    let elements: Vec<Row> = store
+        .query("MATCH (e:Element) WHERE e.kind_id = 'code.function' RETURN count(e) AS cnt;")
+        .expect("element count query must succeed");
+    let cnt = elements[0]
+        .get("cnt")
+        .and_then(|c| c.as_i64())
+        .expect("count must be i64");
+    assert_eq!(cnt, 3, "expected 3 code.function Element rows");
+
+    // Verify Evidence rows with derived classification persisted
+    let evidences: Vec<Row> = store
+        .query("MATCH (ev:Evidence {classification: 'derived'}) RETURN count(ev) AS cnt;")
+        .expect("evidence count query must succeed");
+    let ev_cnt = evidences[0]
+        .get("cnt")
+        .and_then(|c| c.as_i64())
+        .expect("evidence count must be i64");
+    assert!(ev_cnt >= 2, "expected at least 2 derived Evidence rows");
+}

@@ -4,6 +4,16 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.8.1] — 2026-08-01
+
+### Fixed
+- `archctl code call-graph` extraction was non-functional in v0.8.0 due to TSG rule patterns incompatible with `basemind-tree-sitter-graph` 0.12. Now uses direct tree-sitter call-edge walk (verified against a smoke fixture: 3 functions + 2 call edges extracted correctly).
+- 5 clippy warnings + 10+ fmt diffs in `call_graph.rs` resolved.
+
+### Notes
+- Patch bump from v0.8.0. No DDL change. Zero new deps.
+- TSG rule files in `archctl/src/code/call_rules/*.tsg` remain as compiled design artifacts (Phase 2 / future use).
+
 ## [v0.8.0] — 2026-08-01
 
 ### Added

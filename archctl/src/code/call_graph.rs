@@ -12,15 +12,9 @@ use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Parser, Tree};
-use tree_sitter_graph::ast::File as TsgFile;
-use tree_sitter_graph::functions::Functions;
-use tree_sitter_graph::graph::Graph;
-use tree_sitter_graph::{ExecutionConfig, NoCancellation, Variables};
 
 use crate::filesystem::Filesystem;
 use crate::store::GraphStore;
-
-use super::call_rules;
 
 /// JSON Schema for CallGraphReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -74,7 +68,9 @@ pub enum FunctionKind {
     Closure,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Rust,
@@ -179,7 +175,9 @@ pub fn extract(
         if !path.is_file() {
             continue;
         }
-        let Some(ext) = path.extension() else { continue };
+        let Some(ext) = path.extension() else {
+            continue;
+        };
         let ext_str = ext.to_string_lossy().to_lowercase();
         let (lang, lang_label) = match ext_str.as_str() {
             "rs" => (Some(Language::Rust), "rust"),
@@ -200,6 +198,7 @@ pub fn extract(
     let mut all_nodes: Vec<FunctionNode> = Vec::new();
     let mut all_edges: Vec<CallEdge> = Vec::new();
     let mut errors: Vec<ExtractError> = Vec::new();
+    let files_scanned = files_to_process.len() as u64;
 
     for (rel_path, lang, lang_label) in files_to_process {
         let abs_path = cwd.join(&rel_path);
@@ -213,12 +212,6 @@ pub fn extract(
                 });
                 continue;
             }
-        };
-
-        let tsg_src = match lang {
-            Language::Rust => call_rules::RUST_TSG,
-            Language::TypeScript => call_rules::TYPESCRIPT_TSG,
-            Language::Python => call_rules::PYTHON_TSG,
         };
 
         let support_lang = match lang {
@@ -250,50 +243,30 @@ pub fn extract(
             }
         };
 
-        // Execute TSG rules
-        let tsg_file = match TsgFile::from_str(ts_lang, tsg_src) {
-            Ok(f) => f,
-            Err(e) => {
-                errors.push(ExtractError {
-                    strategy: lang_label.clone(),
-                    path: rel_path.to_string_lossy().to_string(),
-                    message: format!("TSG parse error: {e}"),
-                });
-                continue;
-            }
-        };
-        let functions = Functions::stdlib();
-        let globals = Variables::new();
-        let config = ExecutionConfig::new(&functions, &globals);
-        let graph = match tsg_file.execute(&tree, &source, &config, &NoCancellation) {
-            Ok(g) => g,
-            Err(e) => {
-                errors.push(ExtractError {
-                    strategy: lang_label.clone(),
-                    path: rel_path.to_string_lossy().to_string(),
-                    message: format!("TSG execution error: {e}"),
-                });
-                continue;
-            }
-        };
-
         let file_str = rel_path.to_string_lossy().to_string();
 
-        // Extract function definitions from TSG graph nodes
-        extract_function_definitions(&graph, &source, lang, &file_str, &mut all_nodes);
+        // Extract function definitions via direct tree-sitter walk
+        extract_function_definitions(&tree, &source, lang, &file_str, &mut all_nodes);
 
         // Extract call edges via direct tree-sitter walk
-        extract_call_edges(&tree, &source, lang, &file_str, &all_nodes, &mut all_edges, depth_limit);
+        extract_call_edges(
+            &tree,
+            &source,
+            lang,
+            &file_str,
+            &all_nodes,
+            &mut all_edges,
+            depth_limit,
+        );
     }
 
     let duration_ms = start.elapsed().as_millis() as u64;
-    let files_scanned = all_nodes.len() as u64; // approx
 
     Ok(CallGraphReport {
         schema_version: "1.0".to_string(),
         project: ProjectMeta {
             root,
-            files_scanned: files_scanned,
+            files_scanned,
             languages: lang_counts,
             duration_ms,
         },
@@ -303,71 +276,335 @@ pub fn extract(
     })
 }
 
-/// Walk TSG graph nodes and create FunctionNode records.
+/// Walk tree-sitter tree to extract function/method/closure definitions.
 fn extract_function_definitions(
-    graph: &Graph<'_>,
-    _source: &str,
+    tree: &Tree,
+    source: &str,
     lang: Language,
     file: &str,
     nodes: &mut Vec<FunctionNode>,
 ) {
-    for node_ref in graph.iter_nodes() {
-        let graph_node = &graph[node_ref];
-        let Some(kind_val) = graph_node.attributes.get("node_kind") else { continue };
-        let Ok(kind_str) = kind_val.as_str() else { continue };
-        let node_kind = match kind_str {
-            "function" => FunctionKind::Function,
-            "method" => FunctionKind::Method,
-            "closure" => FunctionKind::Closure,
-            _ => continue, // skip call nodes
-        };
+    let root = tree.root_node();
+    find_function_definitions(root, source, lang, file, None, nodes);
+}
 
-        let name = graph_node
-            .attributes
-            .get("name")
-            .and_then(|v| v.as_str().ok())
-            .unwrap_or("<unknown>")
-            .to_string();
+/// Recursively walk tree-sitter nodes to find function/method/closure definitions.
+fn find_function_definitions<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+    nodes: &mut Vec<FunctionNode>,
+) {
+    let kind = node.kind();
 
-        // Get syntax node for byte range
-        let line: u32 = if let Some(syntax_val) = graph_node.attributes.get("syntax") {
-            if let Ok(sn_ref) = syntax_val.as_syntax_node_ref() {
-                let ts_node = &graph[sn_ref];
-                (ts_node.start_position().row + 1) as u32
-            } else {
-                0
+    match lang {
+        Language::Rust => {
+            if kind == "function_item" {
+                if let Some(fn_node) = extract_rust_function(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                // Don't recurse into function body to avoid double-counting nested functions
+                return;
+            } else if kind == "impl_item" {
+                // Extract methods from impl block
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i as u32)
+                        && child.kind() == "function_item"
+                        && let Some(fn_node) =
+                            extract_rust_function(child, source, lang, file, parent_key)
+                    {
+                        nodes.push(fn_node);
+                    }
+                }
+                // Don't recurse into impl body further
+                return;
+            } else if kind == "closure_expression" {
+                if let Some(fn_node) = extract_rust_closure(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                // Don't recurse into closure body
+                return;
             }
-        } else {
-            0
-        };
-
-        let fq_name = name.clone(); // MVP: fq_name = name
-        let confidence = match lang {
-            Language::Rust => 0.90,
-            Language::TypeScript => 0.85,
-            Language::Python => 0.80,
-        };
-
-        let parent = graph_node
-            .attributes
-            .get("parent")
-            .and_then(|v| v.as_str().ok())
-            .map(|s| s.to_string());
-
-        let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-
-        nodes.push(FunctionNode {
-            canonical_key,
-            kind: node_kind,
-            language: lang,
-            file: file.to_string(),
-            line,
-            name,
-            fq_name,
-            confidence,
-            parent,
-        });
+        }
+        Language::TypeScript => {
+            if kind == "function_declaration" {
+                if let Some(fn_node) = extract_ts_function(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "method_definition" {
+                if let Some(fn_node) = extract_ts_method(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "arrow_function" {
+                if let Some(fn_node) = extract_ts_arrow(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                return;
+            }
+        }
+        Language::Python => {
+            if kind == "function_definition" {
+                // Check if this is a method (inside a class) or standalone function
+                let is_method = parent_key.is_some();
+                if let Some(fn_node) =
+                    extract_python_function(node, source, lang, file, parent_key, is_method)
+                {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "class_definition" {
+                // Recurse into class body to find methods
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i as u32)
+                        && child.kind() == "block"
+                    {
+                        for j in 0..child.child_count() {
+                            if let Some(grandchild) = child.child(j as u32)
+                                && grandchild.kind() == "function_definition"
+                                && let Some(fn_node) = extract_python_function(
+                                    grandchild, source, lang, file, parent_key,
+                                    true, // is_method
+                                )
+                            {
+                                nodes.push(fn_node);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+        }
     }
+
+    // Recurse into children
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32) {
+            find_function_definitions(child, source, lang, file, parent_key, nodes);
+        }
+    }
+}
+
+fn extract_rust_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    _parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    // Get function name from identifier child
+    let mut name = String::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "identifier"
+        {
+            name = source
+                .get(child.start_byte()..child.end_byte())?
+                .to_string();
+            break;
+        }
+    }
+    if name.is_empty() {
+        return None;
+    }
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.90;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Function,
+        language: lang,
+        file: file.to_string(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: None,
+    })
+}
+
+fn extract_rust_closure(
+    node: tree_sitter::Node,
+    _source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    let line = (node.start_position().row + 1) as u32;
+    let name = format!("closure@{}", line);
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.90;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Closure,
+        language: lang,
+        file: file.to_string(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: parent_key.map(|s| s.to_string()),
+    })
+}
+
+fn extract_ts_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    _parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    let mut name = String::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "identifier"
+        {
+            name = source
+                .get(child.start_byte()..child.end_byte())?
+                .to_string();
+            break;
+        }
+    }
+    if name.is_empty() {
+        return None;
+    }
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.85;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Function,
+        language: lang,
+        file: file.to_string(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: None,
+    })
+}
+
+fn extract_ts_method(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    _parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    let mut name = String::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "property_identifier"
+        {
+            name = source
+                .get(child.start_byte()..child.end_byte())?
+                .to_string();
+            break;
+        }
+    }
+    if name.is_empty() {
+        return None;
+    }
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.85;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Method,
+        language: lang,
+        file: file.to_string(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: None,
+    })
+}
+
+fn extract_ts_arrow(
+    node: tree_sitter::Node,
+    _source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    let line = (node.start_position().row + 1) as u32;
+    let name = format!("arrow@{}", line);
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.85;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Closure,
+        language: lang,
+        file: file.to_string(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: parent_key.map(|s| s.to_string()),
+    })
+}
+
+fn extract_python_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    _parent_key: Option<&str>,
+    is_method: bool,
+) -> Option<FunctionNode> {
+    let mut name = String::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "identifier"
+        {
+            name = source
+                .get(child.start_byte()..child.end_byte())?
+                .to_string();
+            break;
+        }
+    }
+    if name.is_empty() {
+        return None;
+    }
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.80;
+    let kind = if is_method {
+        FunctionKind::Method
+    } else {
+        FunctionKind::Function
+    };
+
+    Some(FunctionNode {
+        canonical_key,
+        kind,
+        language: lang,
+        file: file.to_string(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: None,
+    })
 }
 
 /// Walk tree-sitter tree to find call expressions and resolve enclosing function.
@@ -401,32 +638,64 @@ fn find_call_expressions<'tree>(
             if kind == "call_expression" {
                 if let Some(callee) = extract_callee_from_call(node, source) {
                     let line = (node.start_position().row + 1) as u32;
-                    edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::DirectCall, MessageKind::SyncCall));
+                    edges.push(make_call_edge(
+                        nodes,
+                        lang,
+                        file,
+                        &callee,
+                        line,
+                        CallKind::DirectCall,
+                        MessageKind::SyncCall,
+                    ));
                 }
             } else if kind == "method_call_expression" {
                 if let Some(callee) = extract_method_callee(node, source) {
                     let line = (node.start_position().row + 1) as u32;
-                    edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::MethodCall, MessageKind::SyncCall));
+                    edges.push(make_call_edge(
+                        nodes,
+                        lang,
+                        file,
+                        &callee,
+                        line,
+                        CallKind::MethodCall,
+                        MessageKind::SyncCall,
+                    ));
                 }
             } else if kind == "await_expression" {
                 // Look for call_expression inside await
                 for i in 0..node.child_count() {
                     let child = node.child(i as u32).unwrap();
-                    if child.kind() == "call_expression" {
-                        if let Some(callee) = extract_callee_from_call(child, source) {
-                            let line = (node.start_position().row + 1) as u32;
-                            edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::DirectCall, MessageKind::AsyncCall));
-                        }
+                    if child.kind() == "call_expression"
+                        && let Some(callee) = extract_callee_from_call(child, source)
+                    {
+                        let line = (node.start_position().row + 1) as u32;
+                        edges.push(make_call_edge(
+                            nodes,
+                            lang,
+                            file,
+                            &callee,
+                            line,
+                            CallKind::DirectCall,
+                            MessageKind::AsyncCall,
+                        ));
                     }
                 }
             }
         }
         Language::TypeScript => {
-            if kind == "call_expression" {
-                if let Some(callee) = extract_ts_callee(node, source) {
-                    let line = (node.start_position().row + 1) as u32;
-                    edges.push(make_call_edge(nodes, lang, file, &callee, line, CallKind::DirectCall, MessageKind::SyncCall));
-                }
+            if kind == "call_expression"
+                && let Some(callee) = extract_ts_callee(node, source)
+            {
+                let line = (node.start_position().row + 1) as u32;
+                edges.push(make_call_edge(
+                    nodes,
+                    lang,
+                    file,
+                    &callee,
+                    line,
+                    CallKind::DirectCall,
+                    MessageKind::SyncCall,
+                ));
             }
         }
         Language::Python => {
@@ -434,8 +703,20 @@ fn find_call_expressions<'tree>(
                 let (callee, is_method) = extract_python_callee(node, source);
                 if !callee.is_empty() {
                     let line = (node.start_position().row + 1) as u32;
-                    let call_kind = if is_method { CallKind::MethodCall } else { CallKind::DirectCall };
-                    edges.push(make_call_edge(nodes, lang, file, &callee, line, call_kind, MessageKind::SyncCall));
+                    let call_kind = if is_method {
+                        CallKind::MethodCall
+                    } else {
+                        CallKind::DirectCall
+                    };
+                    edges.push(make_call_edge(
+                        nodes,
+                        lang,
+                        file,
+                        &callee,
+                        line,
+                        call_kind,
+                        MessageKind::SyncCall,
+                    ));
                 }
             }
         }
@@ -453,7 +734,11 @@ fn extract_callee_from_call(node: tree_sitter::Node, source: &str) -> Option<Str
     for i in 0..node.child_count() {
         let child = node.child(i as u32).unwrap();
         if child.kind() == "identifier" {
-            return Some(source.get(child.start_byte()..child.end_byte())?.to_string());
+            return Some(
+                source
+                    .get(child.start_byte()..child.end_byte())?
+                    .to_string(),
+            );
         }
     }
     None
@@ -463,7 +748,11 @@ fn extract_method_callee(node: tree_sitter::Node, source: &str) -> Option<String
     for i in 0..node.child_count() {
         let child = node.child(i as u32).unwrap();
         if child.kind() == "field_identifier" {
-            return Some(source.get(child.start_byte()..child.end_byte())?.to_string());
+            return Some(
+                source
+                    .get(child.start_byte()..child.end_byte())?
+                    .to_string(),
+            );
         }
     }
     None
@@ -473,7 +762,11 @@ fn extract_ts_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
     for i in 0..node.child_count() {
         let child = node.child(i as u32).unwrap();
         if child.kind() == "identifier" {
-            return Some(source.get(child.start_byte()..child.end_byte())?.to_string());
+            return Some(
+                source
+                    .get(child.start_byte()..child.end_byte())?
+                    .to_string(),
+            );
         }
     }
     None
@@ -487,12 +780,21 @@ fn extract_python_callee(node: tree_sitter::Node, source: &str) -> (String, bool
             for i in 0..child.child_count() {
                 let c2 = child.child(i as u32).unwrap();
                 if c2.kind() == "identifier" {
-                    let name = source.get(c2.start_byte()..c2.end_byte()).unwrap_or("").to_string();
+                    let name = source
+                        .get(c2.start_byte()..c2.end_byte())
+                        .unwrap_or("")
+                        .to_string();
                     return (name, true);
                 }
             }
         } else if child.kind() == "identifier" {
-            return (source.get(child.start_byte()..child.end_byte()).unwrap_or("").to_string(), false);
+            return (
+                source
+                    .get(child.start_byte()..child.end_byte())
+                    .unwrap_or("")
+                    .to_string(),
+                false,
+            );
         }
     }
     (String::new(), false)
@@ -522,7 +824,14 @@ fn make_call_edge(
         Language::Python => 0.80,
     };
 
-    let canonical_key = format!("{}:{}:{}→{}:{}", lang_label(&lang), file, caller, callee, line);
+    let canonical_key = format!(
+        "{}:{}:{}→{}:{}",
+        lang_label(&lang),
+        file,
+        caller,
+        callee,
+        line
+    );
 
     CallEdge {
         canonical_key,
@@ -593,7 +902,7 @@ fn write_function_element(
     };
     let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
     let name_escaped = escape_cypher_string(&node.name);
-    let fq_name_escaped = escape_cypher_string(&node.fq_name);
+    let id = format!("cg:{}", node.canonical_key);
     let cypher = format!(
         "MERGE (e:Element {{id: '{id}'}}) SET \
          e.kind_id = '{kind_id}', \
@@ -602,25 +911,22 @@ fn write_function_element(
          e.current_name = '{name_escaped}', \
          e.current_status = 'active', \
          e.current_confidence = {confidence}, \
-         e.current_version_id = '{version_id}', \
-         e.props = '{{\"fq_name\": \"{fq_name_escaped}\"}}';",
-        id = format!("cg:{}", node.canonical_key),
+         e.current_version_id = '{version_id}';",
+        id = id,
         kind_id = kind_id,
         canonical_key_escaped = canonical_key_escaped,
         name_escaped = name_escaped,
-        fq_name_escaped = fq_name_escaped,
         confidence = node.confidence,
         version_id = version_id,
     );
-    store.query(&cypher).with_context(|| format!("write_function_element {}", node.canonical_key))?;
+    store
+        .query(&cypher)
+        .with_context(|| format!("write_function_element {}", node.canonical_key))?;
     Ok(())
 }
 
 /// Write the ElementVersion node for a FunctionNode.
-fn write_function_version(
-    store: &mut dyn GraphStore,
-    node: &FunctionNode,
-) -> Result<String> {
+fn write_function_version(store: &mut dyn GraphStore, node: &FunctionNode) -> Result<String> {
     let version_props = serde_json::json!({
         "kind": format!("{:?}", node.kind).to_lowercase(),
         "language": lang_label(&node.language),
@@ -628,8 +934,12 @@ fn write_function_version(
         "call_graph_schema_version": "1.0",
     });
     let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-    let version_id = format!("cgv:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+    let version_id = format!(
+        "cgv:{}",
+        blake3::hash(version_props_str.as_bytes()).to_hex()
+    );
     let version_props_escaped = escape_cypher_string(&version_props_str);
+    let element_id = format!("cg:{}", node.canonical_key);
 
     let cypher = format!(
         "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
@@ -640,12 +950,14 @@ fn write_function_version(
          v.confidence = {confidence}, \
          v.props = '{props}';",
         version_id = version_id,
-        element_id = format!("cg:{}", node.canonical_key),
+        element_id = element_id,
         name = escape_cypher_string(&node.name),
         confidence = node.confidence,
         props = version_props_escaped,
     );
-    store.query(&cypher).with_context(|| format!("write_function_version {}", node.canonical_key))?;
+    store
+        .query(&cypher)
+        .with_context(|| format!("write_function_version {}", node.canonical_key))?;
     Ok(version_id)
 }
 
@@ -664,7 +976,9 @@ fn link_function_edges(
         element_id = element_id,
         version_id = version_id,
     );
-    store.query(&cypher1).with_context(|| "link current_version")?;
+    store
+        .query(&cypher1)
+        .with_context(|| "link current_version")?;
 
     // VERSION_OF: ElementVersion → Element
     let cypher2 = format!(
@@ -728,7 +1042,10 @@ fn write_call_edge(
     let _ = store.query(&cypher);
 
     // Write Evidence for this call edge
-    let evidence_id = format!("ev:{}", blake3::hash(edge.canonical_key.as_bytes()).to_hex());
+    let evidence_id = format!(
+        "ev:{}",
+        blake3::hash(edge.canonical_key.as_bytes()).to_hex()
+    );
     let evidence_props = serde_json::json!({
         "file_refs": [format!("{}:{}", edge.file, edge.line)],
         "status": "Drafted",
@@ -742,16 +1059,21 @@ fn write_call_edge(
         "MERGE (ev:Evidence {{id: '{ev_id}'}}) SET \
          ev.kind = 'structural', \
          ev.claim = 'call-graph edge', \
+         ev.classification = 'derived', \
+         ev.confidence = {confidence}, \
          ev.props = '{props}', \
          ev.start_line = {line}, \
          ev.end_line = {line}, \
-         ev.file = '{file}';",
+         ev.path = '{file}';",
         ev_id = evidence_id,
         props = ev_props_escaped,
+        confidence = edge.confidence,
         line = edge.line,
         file = file_escaped,
     );
-    store.query(&cypher_ev).with_context(|| format!("write_call_evidence {}", evidence_id))?;
+    store
+        .query(&cypher_ev)
+        .with_context(|| format!("write_call_evidence {}", evidence_id))?;
 
     // Link Evidence to SourceArtifact
     let cypher_sa = format!(
@@ -785,17 +1107,20 @@ pub fn apply(
 ) -> Result<ApplyReport, CallGraphError> {
     use crate::store::open_default;
 
-    let mut store = open_default(project_dir)
-        .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
-    store.init().context("graph init (call_graph apply)").map_err(CallGraphError::GraphWrite)?;
+    let mut store =
+        open_default(project_dir).map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
+    store
+        .init()
+        .context("graph init (call_graph apply)")
+        .map_err(CallGraphError::GraphWrite)?;
 
     // Seed MetaType rows for code.function, code.method, code.closure
     // and Predicate row for code.calls
     let seed_metatypes = r#"
-        MERGE (mt:MetaType {id: 'code.function'}) ON CREATE SET mt.label = 'Function', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (mt:MetaType {id: 'code.method'}) ON CREATE SET mt.label = 'Method', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (mt:MetaType {id: 'code.closure'}) ON CREATE SET mt.label = 'Closure', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (p:Predicate {id: 'code.calls'}) ON CREATE SET p.label = 'calls', p.namespace = 'code'
+        MERGE (mt:MetaType {id: 'code.function'}) ON CREATE SET mt.name = 'Function', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (mt:MetaType {id: 'code.method'}) ON CREATE SET mt.name = 'Method', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (mt:MetaType {id: 'code.closure'}) ON CREATE SET mt.name = 'Closure', mt.namespace = 'code', mt.category = 'structure'
+        MERGE (p:Predicate {id: 'code.calls'}) ON CREATE SET p.name = 'calls', p.namespace = 'code'
         RETURN 1;
     "#;
     let seed_result = store.query(seed_metatypes);
@@ -895,7 +1220,9 @@ fn write_source_artifact_for_file(store: &mut dyn GraphStore, file: &str) -> Res
          s.generated = false, \
          s.props = '{{}}';"
     );
-    store.query(&cypher).with_context(|| format!("put_source_artifact {id}"))?;
+    store
+        .query(&cypher)
+        .with_context(|| format!("put_source_artifact {id}"))?;
     Ok(id)
 }
 
@@ -988,11 +1315,4 @@ mod tests {
         assert!(json.contains("\"elements_written\":5"));
         assert!(json.contains("\"seed_writes\":1"));
     }
-
-    // NOTE: smoke tests for extract() are skipped because the TSG rules in
-    // call_rules/{rust,typescript,python}.tsg use query patterns (e.g.,
-    // "method_call_expression") that are not valid in basemind-tree-sitter-graph 0.12.
-    // This is a pre-existing issue with the TSG rule files committed in T1.4.
-    // The extraction will produce errors and empty nodes until the TSG rules are fixed.
 }
-
