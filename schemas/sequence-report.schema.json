@@ -1,1 +1,42 @@
-{ "placeholder": true }
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/sequence-report.schema.json",
+  "title": "Sequence Report",
+  "description": "archctl code sequence output (schemaVersion 1.0)",
+  "type": "object",
+  "required": ["schemaVersion", "from", "interactions", "cyclic", "truncated", "totalReachable"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "from": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["by_name", "by_file_line", "by_canonical_key"] },
+        "name": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "canonical_key": { "type": "string" }
+      }
+    },
+    "interactions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["order_key", "sender", "receiver", "message_kind", "depth"],
+        "properties": {
+          "order_key": { "type": "integer", "minimum": 1 },
+          "sender": { "type": "string" },
+          "receiver": { "type": "string" },
+          "message_kind": { "enum": ["sync_call", "async_call", "return"] },
+          "depth": { "type": "integer", "minimum": 0 },
+          "file": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"], "minimum": 1 }
+        }
+      }
+    },
+    "cyclic": { "type": "boolean" },
+    "truncated": { "type": "boolean" },
+    "totalReachable": { "type": "integer", "minimum": 0 },
+    "durationMs": { "type": "integer", "minimum": 0 }
+  }
+}
