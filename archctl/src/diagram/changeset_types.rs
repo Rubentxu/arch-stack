@@ -21,6 +21,11 @@ pub const CHANGESET_COMMAND_TYPES: &[&str] =
 ///
 /// The `#[serde(tag = "type")]` form emits `"type": "..."` as the
 /// discriminator, matching the schema's `oneOf` + `const` pattern.
+///
+/// The apply logic for each variant lives in [`Command::apply`]. Adding
+/// a new variant requires touching: this enum, [`CHANGESET_COMMAND_TYPES`],
+/// the schema's `$defs.Command.oneOf`, and the `apply` match arm. The
+/// centralisation in `apply` reduces per-variant touchpoints from 6 → 4.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Command {
@@ -59,6 +64,109 @@ pub enum Command {
         /// New display label (max 256 chars per schema).
         label: String,
     },
+}
+
+impl Command {
+    /// Apply this command to `store`, scoped to `diagram_id`.
+    ///
+    /// The match arm lives here (not in `apply::dispatch_command`) so
+    /// each variant's apply logic travels with the data definition. The
+    /// dispatcher collapses to `cmd.apply(store, diagram_id)?`.
+    ///
+    /// Implementation note: this couples `Command` to the `GraphStore`
+    /// port. The trade-off is accepted because the alternative (a
+    /// `CommandExecutor` trait per variant) triples the surface area for
+    /// marginal benefit — the port is already small and stable.
+    pub fn apply(
+        &self,
+        store: &mut dyn crate::store::GraphStore,
+        diagram_id: &str,
+    ) -> anyhow::Result<()> {
+        use anyhow::{anyhow, Context};
+        use crate::diagram::view_types::{ViewGroup, ViewMember};
+
+        match self {
+            Command::MoveMember {
+                member_id,
+                element_id,
+                x,
+                y,
+            } => {
+                let member = ViewMember {
+                    id: member_id.clone(),
+                    diagram_id: diagram_id.to_string(),
+                    element_id: element_id.clone(),
+                    label: String::new(),
+                    x: *x,
+                    y: *y,
+                    collapsed: false,
+                    props: serde_json::json!({}),
+                    created_at: None,
+                    updated_at: None,
+                };
+                store
+                    .put_view_member(&member)
+                    .with_context(|| format!("put_view_member for {member_id}"))?;
+                // Link to the element (checks element existence)
+                if let Err(e) = store.link_renders(member_id, element_id) {
+                    if e.to_string().contains("element not found") {
+                        return Err(anyhow!(
+                            "element not found: {} (cannot move-member a non-existent element)",
+                            element_id
+                        ));
+                    }
+                    return Err(e).context("link_renders");
+                }
+                // Link to the diagram
+                store
+                    .link_member_of(member_id, diagram_id)
+                    .with_context(|| format!("link_member_of for {member_id}"))?;
+                Ok(())
+            }
+
+            Command::SetLabel { member_id, label } => {
+                let members = store
+                    .get_view_members(diagram_id)
+                    .with_context(|| format!("get_view_members for set-label"))?;
+                let existing = members
+                    .iter()
+                    .find(|m| m.id == *member_id)
+                    .with_context(|| format!("member not found: {member_id}"))?;
+                let mut updated = existing.clone();
+                updated.label = label.clone();
+                store
+                    .put_view_member(&updated)
+                    .with_context(|| format!("put_view_member for set-label {member_id}"))?;
+                Ok(())
+            }
+
+            Command::CollapseGroup {
+                group_id,
+                member_ids,
+            } => {
+                let group = ViewGroup {
+                    id: group_id.clone(),
+                    diagram_id: diagram_id.to_string(),
+                    label: String::new(),
+                    collapsed: true,
+                    props: serde_json::json!({}),
+                    created_at: None,
+                    updated_at: None,
+                };
+                store
+                    .put_view_group(&group)
+                    .with_context(|| format!("put_view_group for {group_id}"))?;
+                for member_id in member_ids {
+                    store
+                        .link_group_contains(group_id, member_id)
+                        .with_context(|| {
+                            format!("link_group_contains for ({group_id}, {member_id})")
+                        })?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 /// A batch of view-level edits to apply to a persisted Diagram.

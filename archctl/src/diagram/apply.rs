@@ -30,7 +30,7 @@ use crate::diagram::hash::base_revision;
 use crate::diagram::view_types::{Diagram, ViewGroup, ViewMember};
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
-use crate::store::{GraphStore, LbugStore};
+use crate::store::{DiagramOps, GraphStore, LbugStore};
 
 /// Report from a successful apply operation.
 #[derive(Debug)]
@@ -132,7 +132,7 @@ pub fn apply_to_store(
     let commands_applied = changeset.commands.len();
 
     for cmd in &changeset.commands {
-        dispatch_command(store, cmd, &changeset.diagram_id)?;
+        cmd.apply(store, &changeset.diagram_id)?;
     }
 
     let projection =
@@ -203,91 +203,12 @@ fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
 
 /// Dispatch a single `Command` to the appropriate `GraphStore` method.
 ///
-/// Takes `&mut dyn GraphStore` so the dispatch table works against any
-/// port adapter. The trait object unlocks test mocks driving the apply
-/// pipeline without spinning up a real LadybugDB session.
+/// Thin wrapper around [`Command::apply`] — kept as a public function
+/// for tests that want to exercise dispatch in isolation. New code
+/// should call `cmd.apply(store, diagram_id)?` directly.
+#[cfg(test)]
 fn dispatch_command(store: &mut dyn GraphStore, cmd: &Command, diagram_id: &str) -> Result<()> {
-    match cmd {
-        Command::MoveMember {
-            member_id,
-            element_id,
-            x,
-            y,
-        } => {
-            let member = ViewMember {
-                id: member_id.clone(),
-                diagram_id: diagram_id.to_string(),
-                element_id: element_id.clone(),
-                label: String::new(),
-                x: *x,
-                y: *y,
-                collapsed: false,
-                props: serde_json::json!({}),
-                created_at: None,
-                updated_at: None,
-            };
-            store
-                .put_view_member(&member)
-                .with_context(|| format!("put_view_member for {member_id}"))?;
-            // Link to the element (checks element existence)
-            if let Err(e) = store.link_renders(member_id, element_id) {
-                if e.to_string().contains("element not found") {
-                    bail!(
-                        "element not found: {} (cannot move-member a non-existent element)",
-                        element_id
-                    );
-                }
-                return Err(e).context("link_renders");
-            }
-            // Link to the diagram
-            store
-                .link_member_of(member_id, diagram_id)
-                .with_context(|| format!("link_member_of for {member_id}"))?;
-        }
-
-        Command::SetLabel { member_id, label } => {
-            // Fetch existing member, update label, re-put
-            let members = store
-                .get_view_members(diagram_id)
-                .with_context(|| format!("get_view_members for set-label"))?;
-            let existing = members
-                .iter()
-                .find(|m| m.id == *member_id)
-                .with_context(|| format!("member not found: {member_id}"))?;
-            let mut updated = existing.clone();
-            updated.label = label.clone();
-            store
-                .put_view_member(&updated)
-                .with_context(|| format!("put_view_member for set-label {member_id}"))?;
-        }
-
-        Command::CollapseGroup {
-            group_id,
-            member_ids,
-        } => {
-            let group = ViewGroup {
-                id: group_id.clone(),
-                diagram_id: diagram_id.to_string(),
-                label: String::new(),
-                collapsed: true,
-                props: serde_json::json!({}),
-                created_at: None,
-                updated_at: None,
-            };
-            store
-                .put_view_group(&group)
-                .with_context(|| format!("put_view_group for {group_id}"))?;
-            // Link each member into the group
-            for member_id in member_ids {
-                store
-                    .link_group_contains(group_id, member_id)
-                    .with_context(|| {
-                        format!("link_group_contains for ({group_id}, {member_id})")
-                    })?;
-            }
-        }
-    }
-    Ok(())
+    cmd.apply(store, diagram_id)
 }
 
 /// Re-export the view slice to recompute the deterministic `base_revision`.
