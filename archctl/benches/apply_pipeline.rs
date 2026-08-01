@@ -74,7 +74,7 @@ fn bench_apply_move_member_medium(c: &mut Criterion) {
 }
 
 #[allow(dead_code)]
-    fn bench_apply_chained_commands_large(c: &mut Criterion) {
+fn bench_apply_chained_commands_large(c: &mut Criterion) {
     // 100-command batch on 10k-node store takes ~30s per iter due to
     // bulk seed cost. Run as a separate group with reduced sample size
     // so criterion's smoke mode doesn't blow the time budget.

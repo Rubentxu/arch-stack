@@ -44,7 +44,7 @@ fn bench_query_semantic_edges_medium(c: &mut Criterion) {
 }
 
 #[allow(dead_code)]
-    fn bench_query_evidence_filter_large(c: &mut Criterion) {
+fn bench_query_evidence_filter_large(c: &mut Criterion) {
     // Evidence filter on a 10k-node store takes ~30s per iter due to
     // the bulk seed cost — criterion's default 100-sample budget blows
     // past the 60s smoke-test ceiling. Disable by default; enable
