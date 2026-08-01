@@ -19,6 +19,11 @@ editable = [
   "archctl/src/code/strategies/npm.rs",
   "archctl/src/code/strategies/dockerfile.rs",
   "archctl/src/code/strategies/helm.rs",
+  "archctl/src/code/call_graph.rs",
+  "archctl/src/code/call_rules/mod.rs",
+  "archctl/src/code/call_rules/rust.tsg",
+  "archctl/src/code/call_rules/typescript.tsg",
+  "archctl/src/code/call_rules/python.tsg",
 ]
 
 public_symbols = [
@@ -35,6 +40,16 @@ public_symbols = [
   "Strategy",
   "register_strategies",
   "DISCOVER_REPORT_SCHEMA",
+  "extract",
+  "CallGraphReport",
+  "FunctionNode",
+  "CallEdge",
+  "FunctionKind",
+  "Language",
+  "CallKind",
+  "MessageKind",
+  "CallGraphError",
+  "CALL_GRAPH_REPORT_SCHEMA",
 ]
 
 must_hold = [
@@ -56,6 +71,10 @@ must_hold = [
   "confidence",
   "merged_from",
   "file_refs",
+  "pub fn extract(",
+  "pub struct CallGraphReport",
+  "pub struct FunctionNode",
+  "pub struct CallEdge",
 ]
 
 must_not_contain = [
@@ -63,4 +82,4 @@ must_not_contain = [
   "reqwest",
 ]
 
-minimum_tests = 8
+minimum_tests = 20
