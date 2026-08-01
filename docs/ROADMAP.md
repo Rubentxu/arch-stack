@@ -562,3 +562,35 @@ Incluye:
 - **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview scaffold, prioridad 1).
 
 > `refactor/store-port-seams`: 4 WARN items from prior cycle's debt audit closed via 3 refactor commits. `MemoryFilesystem` test isolation now works correctly. Apply pipeline narrowed to `DiagramOps` sub-trait. Ambient `chrono::Utc::now()` removed from update path. 260 tests passing without behavioural change. Patch tag `v0.9.2`. Archivado en `sddk/refactor-store-port-seams/archive-report.md`.
+
+## Cycle cerrado — `m20-benchmark-suite` (v0.10.0)
+
+- **Fecha**: 2026-08-01
+- **Branch**: `m20-benchmark-suite` (merged to main via --no-ff)
+- **Tag**: `v0.10.0` (`e64f7f9`)
+- **Verdict**: verify PASS · doctor benchmark+diagram+store 0 findings
+- **Commits**: 6 (5 cycle + 1 style)
+- **Tests**: 260 passing (baseline preservado)
+- **Output**: M20 first slice — archctl-side bench harness + 3 deterministic fixtures + doctor scope gate + docs.
+  - **`archctl/benches/`**: 3 cargo bench binaries (export_pipeline, apply_pipeline, query_pipeline) with 7 active + 2 gated bench functions.
+  - **`benchmarks/datasets/`**: `small-100.json` (65 KB), `medium-1k.json` (660 KB), `large-10k.json` (6.6 MB) — deterministic generation via Python script (`random.seed(0xC0DE0001)`).
+  - **`manifests/benchmark.toml`**: doctor scope gate for the bench harness. Validates public symbols (`seed_small/_medium/_large`) and must_hold invariants (the dataset serde structs + criterion_group/criterion_main macros).
+  - **`benchmarks/README.md`**: user-facing documentation (layout, how to run, baseline measurements, ADR-019 budget mapping, follow-ups).
+- **Baseline measurements** (--quick on mid-range dev machine):
+  - export_query_elements_small:  ~380 ms (100 nodes)
+  - export_query_semantic_edges_medium:  ~2.8 s (1k nodes, 2.5k rels)
+  - export_base_revision_hash:  ~570 µs (100-node blake3)
+  - apply_set_label_small:  ~370 ms (100 nodes)
+  - apply_move_member_medium:  ~2.9 s (1k nodes)
+  - query_count_elements_small:  ~360 ms (100 nodes)
+  - query_semantic_edges_medium:  ~2.8 s (1k nodes, 2.5k rels)
+- **New dev-dep**: `criterion = "0.5"` (html_reports). ~20 transitive dev-deps (plotters, walkdir, etc.) — all dev-only, never in the release binary.
+- **Follow-ups** (documented in `benchmarks/README.md`):
+  - Seed-cost decomposition: split seed from measurement loop (medium benches are seed-cost dominated).
+  - Full `run_export` bench: requires ElementVersion + SUPPORTED_BY + Evidence seed.
+  - Cold-start bench: `cargo run archctl --version` to first output byte.
+  - RSS measurement: peak memory during 10k-node query.
+  - CI gate workflow: GH Actions (out of repo scope per AGENTS.md).
+- **Próximo candidato**: M17.0 archview scaffold (PRIORIDAD 1) o M12 class-diagram UML (PRIORIDAD 2) o un ciclo de cleanup de los follow-ups (seed-cost decomposition).
+
+> `m20-benchmark-suite`: M20 first slice — archctl-side bench harness + 3 deterministic datasets + doctor scope gate + docs. ADR-019 producer-side budget is now measurable; consumer-side (archview TTFP, pan/zoom) belongs in M17. 260 tests passing without behavioural change. Minor tag `v0.10.0` (new feature surface: bench harness). Archivado en `sddk/m20-benchmark-suite/verify-report.md`.
