@@ -1015,7 +1015,7 @@ fn write_call_edge(
     edge: &CallEdge,
     src_element_id: &str,
     sa_id: &str,
-    version_id: &str,
+    _version_id: &str, // NOTE: version_id not persisted on SEMANTIC_EDGE (not a declared property in lbug schema)
 ) -> Result<()> {
     let rel_id = format!("rel:{}", edge.canonical_key);
     let rel_props = serde_json::json!({
@@ -1036,22 +1036,21 @@ fn write_call_edge(
     //
     // Use MERGE to avoid duplicates; set properties unconditionally.
     let callee_escaped = escape_cypher_string(&edge.callee);
+    // Include all properties in MERGE so lbug accepts them (lbug requires relationship
+    // properties to be declared in the MERGE pattern, not added via SET afterward).
+    // NOTE: version_id is NOT a declared property on SEMANTIC_EDGE in lbug's schema
+    // (only relation_id, predicate_id, active, order_key, props are declared).
+    // We omit it from the MERGE; the Evidence node tracks version lineage instead.
     let cypher = format!(
         "MATCH (src:Element {{id: '{src_id}'}}) \
          OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
          WITH src, tgt \
          WHERE tgt IS NOT NULL \
-         MERGE (src)-[r:SEMANTIC_EDGE]->(tgt) \
-         SET r.relation_id = '{rel_id}', \
-         r.predicate_id = 'code.calls', \
-         r.props = '{props}', \
-         r.active = true, \
-         r.version_id = '{version_id}';",
+         MERGE (src)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}', predicate_id: 'code.calls', props: '{props}', active: true}}]->(tgt);",
         src_id = src_element_id,
         callee = callee_escaped,
         rel_id = rel_id,
         props = rel_props_escaped,
-        version_id = version_id,
     );
     // Note: errors are silently ignored (matches prior behavior for MVP)
     let _ = store.query(&cypher);

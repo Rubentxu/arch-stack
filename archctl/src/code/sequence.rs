@@ -159,12 +159,15 @@ fn project_sequence_with_store(
 
         // Find outgoing edges from this node via SEMANTIC_EDGE (the Element→Element
         // relationship table that carries props including message_kind).
+        // NOTE: write_call_edge matches source by Element.id = 'cg:{canonical_key}',
+        // so we use id here for consistency (both id and canonical_key are set on the element).
+        let src_id = format!("cg:{}", node_key);
         let cypher = format!(
-            "MATCH (src:Element {{canonical_key: '{}'}})-[r:SEMANTIC_EDGE]->(tgt:Element) \
+            "MATCH (src:Element {{id: '{src_id}'}})-[r:SEMANTIC_EDGE]->(tgt:Element) \
              RETURN tgt.canonical_key AS receiver, tgt.current_name AS receiver_name, \
              COALESCE(r.props, '{{}}') AS rel_props \
              ORDER BY tgt.canonical_key",
-            escape_cypher_string(&node_key)
+            src_id = src_id,
         );
 
         let rows = store
