@@ -74,7 +74,7 @@ pub enum FunctionKind {
     Closure,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Rust,
