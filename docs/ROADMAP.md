@@ -672,3 +672,19 @@ Razones:
 - **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview scaffold, prioridad 1, repo separado) o cleanup del bench seed-decomposition (true amortization via `BatchSize::PerBatch(N)`).
 
 > `m9-relations-decision`: closes 7 of 9 audit findings (F2, F3, F4, F5, F6, F7, M1, M2, M3, M5). F1 (security, kroki POST) was closed in v0.11.0. Combined with v0.11.0, all 9 audit findings + 5 doc drifts from the 2026-08-01 audit are resolved. Patch tag `v0.12.0` (no new feature surface; docs + 1-line stat fix + bench harness).
+
+## Cycle cerrado — `refactor/bench-seed-decomposition` (v0.12.1)
+
+- **Fecha**: 2026-08-02
+- **Branch**: `refactor/bench-seed-decomposition` (merged to main via --no-ff)
+- **Tag**: `v0.12.1` (merge commit)
+- **Verdict**: verify PASS · 3 commits · 263 tests preserved
+- **Output**: closes audit finding M5 follow-up (true amortization via `BatchSize::NumIterations(N)`).
+  - **T1 (`export_pipeline.rs`)**: `bench_query_elements_small` + `bench_query_semantic_edges_medium` converted from `iter(|| { seed... })` to `iter_batched(seed, routine, NumIterations(10))`. `export_query_semantic_edges_medium` now measures ~16ms (was ~2.8s with seed dominating).
+  - **T2 (`query_pipeline.rs`)**: same pattern applied to `query_count_elements_small` + `query_semantic_edges_medium`. `query_semantic_edges_medium` now measures ~18ms (was ~2.8s).
+  - **T3 (`apply_pipeline.rs`)**: `bench_apply_chained_commands_large` (dead-code) converted to `iter_batched(NumIterations(5))`. Same-store re-apply is safe because SetLabel is idempotent on `label` and `updated_at` writes were dropped in v0.9.2 (CP-W2).
+- **Files changed**: 3 (all in `archctl/benches/`) + CHANGELOG + ROADMAP.
+- **Audit status**: 2026-08-01 audit is now **100% closed** (F1 closed in v0.11.0; F2–F7 + M1–M3 + M5 closed in v0.12.0; M5 follow-up closed in v0.12.1).
+
+> `refactor/bench-seed-decomposition`: closes M5 seed-cost decomposition follow-up. Patch tag `v0.12.1` (no behavior change in library; bench harness only). True amortization: seed runs once per batch of N measured iters instead of once per iter.
+
