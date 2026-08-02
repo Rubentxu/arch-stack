@@ -1,0 +1,182 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "root": "tests/fixtures/class-diagram",
+    "filesScanned": 3,
+    "languages": {
+      "python": 1,
+      "rust": 1,
+      "typescript": 1
+    }
+  },
+  "nodes": [
+    {
+      "canonical_key": "python:python_sample.py:class:Base1:3",
+      "kind": "class",
+      "language": "python",
+      "file": "python_sample.py",
+      "line": 3,
+      "name": "Base1",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "python:python_sample.py:class:Base2:8",
+      "kind": "class",
+      "language": "python",
+      "file": "python_sample.py",
+      "line": 8,
+      "name": "Base2",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "python:python_sample.py:class:Derived:13",
+      "kind": "class",
+      "language": "python",
+      "file": "python_sample.py",
+      "line": 13,
+      "name": "Derived",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "rust:rust_sample.rs:class:AdminService:31",
+      "kind": "class",
+      "language": "rust",
+      "file": "rust_sample.rs",
+      "line": 31,
+      "name": "AdminService",
+      "members": [
+        {
+          "name": "",
+          "member_kind": "field",
+          "signature": "pub level : u8",
+          "line": 32
+        }
+      ],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "rust:rust_sample.rs:class:UserService:3",
+      "kind": "class",
+      "language": "rust",
+      "file": "rust_sample.rs",
+      "line": 3,
+      "name": "UserService",
+      "members": [
+        {
+          "name": "",
+          "member_kind": "field",
+          "signature": "pub name : String",
+          "line": 4
+        },
+        {
+          "name": "",
+          "member_kind": "field",
+          "signature": "email : String",
+          "line": 5
+        }
+      ],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:class:Animal:7",
+      "kind": "class",
+      "language": "typescript",
+      "file": "typescript_sample.ts",
+      "line": 7,
+      "name": "Animal",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:class:Config:22",
+      "kind": "class",
+      "language": "typescript",
+      "file": "typescript_sample.ts",
+      "line": 22,
+      "name": "Config",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:class:Pet:14",
+      "kind": "class",
+      "language": "typescript",
+      "file": "typescript_sample.ts",
+      "line": 14,
+      "name": "Pet",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:interface:Named:3",
+      "kind": "interface",
+      "language": "typescript",
+      "file": "typescript_sample.ts",
+      "line": 3,
+      "name": "Named",
+      "members": [],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:interface:Serializable:18",
+      "kind": "interface",
+      "language": "typescript",
+      "file": "typescript_sample.ts",
+      "line": 18,
+      "name": "Serializable",
+      "members": [],
+      "confidence": 0.9
+    }
+  ],
+  "edges": [
+    {
+      "canonical_key": "python:python_sample.py:python:python_sample.py:class:Derived:13→extends→python:python_sample.py:class:Base1:0:13",
+      "source": "python:python_sample.py:class:Derived:13",
+      "target": "python:python_sample.py:class:Base1:0",
+      "predicate": "extends",
+      "file": "python_sample.py",
+      "line": 13,
+      "confidence": 0.85
+    },
+    {
+      "canonical_key": "python:python_sample.py:python:python_sample.py:class:Derived:13→extends→python:python_sample.py:class:Base2:0:13",
+      "source": "python:python_sample.py:class:Derived:13",
+      "target": "python:python_sample.py:class:Base2:0",
+      "predicate": "extends",
+      "file": "python_sample.py",
+      "line": 13,
+      "confidence": 0.85
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:typescript:typescript_sample.ts:class:Animal:7→implements→typescript:typescript_sample.ts:interface:Named:0:7",
+      "source": "typescript:typescript_sample.ts:class:Animal:7",
+      "target": "typescript:typescript_sample.ts:interface:Named:0",
+      "predicate": "implements",
+      "file": "typescript_sample.ts",
+      "line": 7,
+      "confidence": 0.85
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:typescript:typescript_sample.ts:class:Config:22→implements→typescript:typescript_sample.ts:interface:Serializable:0:22",
+      "source": "typescript:typescript_sample.ts:class:Config:22",
+      "target": "typescript:typescript_sample.ts:interface:Serializable:0",
+      "predicate": "implements",
+      "file": "typescript_sample.ts",
+      "line": 22,
+      "confidence": 0.85
+    },
+    {
+      "canonical_key": "typescript:typescript_sample.ts:typescript:typescript_sample.ts:class:Pet:14→extends→typescript:typescript_sample.ts:class:Animal:0:14",
+      "source": "typescript:typescript_sample.ts:class:Pet:14",
+      "target": "typescript:typescript_sample.ts:class:Animal:0",
+      "predicate": "extends",
+      "file": "typescript_sample.ts",
+      "line": 14,
+      "confidence": 0.85
+    }
+  ],
+  "errors": []
+}

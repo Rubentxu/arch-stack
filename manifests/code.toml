@@ -25,6 +25,7 @@ editable = [
   "archctl/src/code/call_rules/typescript.tsg",
   "archctl/src/code/call_rules/python.tsg",
   "archctl/src/code/sequence.rs",
+  "archctl/src/code/class_diagram.rs",
 ]
 
 public_symbols = [
@@ -57,6 +58,17 @@ public_symbols = [
   "FromSelector",
   "SequenceError",
   "SEQUENCE_REPORT_SCHEMA",
+  "run_class_diagram",
+  "ClassDiagramReport",
+  "ClassNode",
+  "ClassEdge",
+  "ClassMember",
+  "TypeKind",
+  "ClassEdgeKind",
+  "Language",
+  "ClassDiagramError",
+  "ClassDiagramOptions",
+  "CLASS_DIAGRAM_REPORT_SCHEMA",
 ]
 
 must_hold = [
@@ -86,6 +98,16 @@ must_hold = [
   "pub struct SequenceReport",
   "pub struct Interaction",
   "pub const SEQUENCE_REPORT_SCHEMA",
+  "pub fn run_class_diagram",
+  "pub struct ClassDiagramReport",
+  "pub struct ClassNode",
+  "pub struct ClassEdge",
+  "pub struct ClassMember",
+  "pub enum TypeKind",
+  "pub enum ClassEdgeKind",
+  "pub const CLASS_DIAGRAM_REPORT_SCHEMA",
+  "class-diagram projection deterministic (golden test)",
+  "ADR-019 class-diagram p99 < 2s for < 10k nodes (bench)",
 ]
 
 must_not_contain = [
@@ -93,4 +115,4 @@ must_not_contain = [
   "reqwest",
 ]
 
-minimum_tests = 25
+minimum_tests = 270

@@ -215,6 +215,25 @@ pub enum CodeAction {
         #[arg(long)]
         apply: bool,
     },
+    /// Extract UML class diagram from source files (Rust, TypeScript, Python).
+    ClassDiagram {
+        /// Project directory to scan. Defaults to the current working directory.
+        #[arg(long, default_value = ".")]
+        cwd: PathBuf,
+        /// Persist extracted nodes + edges to the graph store.
+        #[arg(long)]
+        apply: bool,
+        /// Emit machine-readable JSON to stdout.
+        #[arg(long)]
+        json: bool,
+        /// Comma-separated languages to process (rust, typescript, python).
+        /// If omitted, all MVP languages are processed.
+        #[arg(long, value_enum, value_delimiter = ',')]
+        lang: Vec<crate::code::class_diagram::Language>,
+        /// Selector: `file:<path>` or `module:<id>`, or omit for whole project.
+        #[arg(long)]
+        selector: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -506,10 +525,19 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 apply,
             } => {
                 if apply {
-                    eprintln!("warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges");
+                    eprintln!(
+                        "warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges"
+                    );
                 }
                 code_sequence_cmd(&cwd, from, depth, max_interactions, json)
             }
+            CodeAction::ClassDiagram {
+                cwd,
+                apply,
+                json,
+                lang,
+                selector,
+            } => code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref()),
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
     }
@@ -1171,6 +1199,61 @@ fn code_c4_discover_cmd(
                 }))?
             );
         }
+    }
+
+    Ok(0)
+}
+
+fn code_class_diagram_cmd(
+    cwd: &PathBuf,
+    apply: bool,
+    json: bool,
+    lang: &[crate::code::class_diagram::Language],
+    selector: Option<&str>,
+) -> Result<i32> {
+    use crate::code::class_diagram::{self, apply as class_diagram_apply};
+
+    let fs = filesystem::system_filesystem();
+    let opts = class_diagram::ClassDiagramOptions {
+        languages: lang.to_vec(),
+        selector: selector.map(String::from),
+    };
+
+    let report = match class_diagram::run_class_diagram(cwd, &opts, &*fs) {
+        Ok(r) => r,
+        Err(class_diagram::ClassDiagramError::UnknownSelector(s)) => {
+            eprintln!("error: unknown selector: {s} — supported forms: file:<path>");
+            return Ok(64);
+        }
+        Err(class_diagram::ClassDiagramError::FileNotFound(p)) => {
+            eprintln!("error: file not found: {p}");
+            return Ok(64);
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("class-diagram extraction failed: {e}"));
+        }
+    };
+
+    if apply {
+        let apply_report = class_diagram_apply(cwd, &report, &*fs)
+            .map_err(|e| anyhow::anyhow!("class-diagram apply failed: {e}"))?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&apply_report)?);
+        } else {
+            println!(
+                "Applied {} elements ({} skipped), {} relations ({} skipped), {} seed writes ({} ms).",
+                apply_report.elements_written,
+                apply_report.elements_skipped,
+                apply_report.relations_written,
+                apply_report.relations_skipped,
+                apply_report.seed_writes,
+                apply_report.duration_ms
+            );
+        }
+    } else if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        crate::code::output::print_class_diagram_table(&report);
     }
 
     Ok(0)

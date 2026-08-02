@@ -102,7 +102,7 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 
 ## M12 — Diagramas de clases UML (era M11) — **PRIORIDAD 2**
 
-**Pivot v2.4:** Promovido. Output: `archctl code class-diagram` (UML via LSP). Renderizado en `archview` como vista "class".
+**Pivot v2.4:** Promovido. Output: `archctl code class-diagram` (UML via tree-sitter CST walk, intra-file scaffold; LSP deferido a fase 2). Renderizado en `archview` como vista "class".
 
 ## M13 — Workbench actions (era M12) — **REDEFINIDO**
 
