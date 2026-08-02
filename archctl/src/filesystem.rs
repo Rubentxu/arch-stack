@@ -110,13 +110,11 @@ pub struct SystemFilesystem;
 
 impl Filesystem for SystemFilesystem {
     fn read_to_string(&self, path: &Path) -> Result<String> {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
     }
 
     fn write(&self, path: &Path, contents: &[u8]) -> Result<()> {
-        std::fs::write(path, contents)
-            .with_context(|| format!("writing {}", path.display()))
+        std::fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
     }
 
     fn create_dir_all(&self, path: &Path) -> Result<()> {
@@ -125,8 +123,7 @@ impl Filesystem for SystemFilesystem {
     }
 
     fn canonicalize(&self, path: &Path) -> Result<PathBuf> {
-        std::fs::canonicalize(path)
-            .with_context(|| format!("canonicalizing {}", path.display()))
+        std::fs::canonicalize(path).with_context(|| format!("canonicalizing {}", path.display()))
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<DirEntry>> {
@@ -134,8 +131,8 @@ impl Filesystem for SystemFilesystem {
             .with_context(|| format!("reading directory {}", path.display()))?;
         let mut out = Vec::new();
         for entry in entries {
-            let entry = entry
-                .with_context(|| format!("reading directory entry in {}", path.display()))?;
+            let entry =
+                entry.with_context(|| format!("reading directory entry in {}", path.display()))?;
             let path = entry.path();
             let kind = if path.is_dir() {
                 EntryKind::Dir
@@ -152,8 +149,7 @@ impl Filesystem for SystemFilesystem {
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e)
-                .with_context(|| format!("removing file {}", path.display())),
+            Err(e) => Err(e).with_context(|| format!("removing file {}", path.display())),
         }
     }
 
@@ -245,7 +241,10 @@ impl MemoryFilesystem {
                 cursor = parent.parent();
             }
         }
-        self.files.get_mut().unwrap().insert(path, contents.to_vec());
+        self.files
+            .get_mut()
+            .unwrap()
+            .insert(path, contents.to_vec());
         self
     }
 
@@ -298,7 +297,10 @@ impl Filesystem for MemoryFilesystem {
                 cursor = parent.parent();
             }
         }
-        self.files.write().unwrap().insert(path.to_path_buf(), contents.to_vec());
+        self.files
+            .write()
+            .unwrap()
+            .insert(path.to_path_buf(), contents.to_vec());
         self.write_log.write().unwrap().insert(path.to_path_buf());
         Ok(())
     }
@@ -334,21 +336,24 @@ impl Filesystem for MemoryFilesystem {
         let mut entries: Vec<DirEntry> = Vec::new();
         for (file_path, _) in files.iter() {
             if let Some(parent) = file_path.parent()
-                && parent == path {
-                    entries.push(DirEntry {
-                        path: file_path.clone(),
-                        kind: EntryKind::File,
-                    });
-                }
+                && parent == path
+            {
+                entries.push(DirEntry {
+                    path: file_path.clone(),
+                    kind: EntryKind::File,
+                });
+            }
         }
         for dir_path in dirs.iter() {
             if let Some(parent) = dir_path.parent()
-                && parent == path && dir_path != path {
-                    entries.push(DirEntry {
-                        path: dir_path.clone(),
-                        kind: EntryKind::Dir,
-                    });
-                }
+                && parent == path
+                && dir_path != path
+            {
+                entries.push(DirEntry {
+                    path: dir_path.clone(),
+                    kind: EntryKind::Dir,
+                });
+            }
         }
         Ok(entries)
     }
@@ -361,8 +366,7 @@ impl Filesystem for MemoryFilesystem {
     }
 
     fn exists(&self, path: &Path) -> bool {
-        self.files.read().unwrap().contains_key(path)
-            || self.dirs.read().unwrap().contains(path)
+        self.files.read().unwrap().contains_key(path) || self.dirs.read().unwrap().contains(path)
     }
 }
 
@@ -419,9 +423,7 @@ mod tests {
     #[test]
     fn memory_filesystem_read_to_string_err_not_found() {
         let fs = MemoryFilesystem::new();
-        let err = fs
-            .read_to_string("/does/not/exist".as_ref())
-            .unwrap_err();
+        let err = fs.read_to_string("/does/not/exist".as_ref()).unwrap_err();
         // anyhow's Display shows the context message, not the full chain.
         let msg = err.to_string();
         assert!(
@@ -433,8 +435,7 @@ mod tests {
     #[test]
     fn memory_filesystem_write_then_was_written_to() {
         let fs = MemoryFilesystem::new();
-        fs.write("/out/diagram.svg".as_ref(), b"<>")
-            .unwrap();
+        fs.write("/out/diagram.svg".as_ref(), b"<>").unwrap();
         assert!(fs.was_written_to("/out/diagram.svg".as_ref()));
         assert!(!fs.was_written_to("/never/touched".as_ref()));
     }
@@ -450,8 +451,7 @@ mod tests {
 
     #[test]
     fn memory_filesystem_exists_returns_true_for_file() {
-        let fs = MemoryFilesystem::new()
-            .with_file(PathBuf::from("/tmp/f"), b"");
+        let fs = MemoryFilesystem::new().with_file(PathBuf::from("/tmp/f"), b"");
         assert!(fs.exists("/tmp/f".as_ref()));
     }
 
@@ -478,8 +478,7 @@ mod tests {
 
     #[test]
     fn memory_filesystem_remove_file_is_idempotent() {
-        let fs = MemoryFilesystem::new()
-            .with_file(PathBuf::from("/tmp/f"), b"content");
+        let fs = MemoryFilesystem::new().with_file(PathBuf::from("/tmp/f"), b"content");
         fs.remove_file("/tmp/f".as_ref()).unwrap();
         assert!(!fs.exists("/tmp/f".as_ref()));
         // Second call is also Ok (idempotent).
@@ -494,9 +493,18 @@ mod tests {
         let entries = fs.read_dir("/dir".as_ref()).unwrap();
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().all(|e| e.kind == EntryKind::File));
-        let names: Vec<_> = entries.iter().map(|e| e.path.file_name().unwrap().to_str()).collect();
-        assert!(names.contains(&Some("file.txt")), "expected Some(\"file.txt\") in {names:?}");
-        assert!(names.contains(&Some("other.rs")), "expected Some(\"other.rs\") in {names:?}");
+        let names: Vec<_> = entries
+            .iter()
+            .map(|e| e.path.file_name().unwrap().to_str())
+            .collect();
+        assert!(
+            names.contains(&Some("file.txt")),
+            "expected Some(\"file.txt\") in {names:?}"
+        );
+        assert!(
+            names.contains(&Some("other.rs")),
+            "expected Some(\"other.rs\") in {names:?}"
+        );
     }
 
     #[test]
@@ -513,8 +521,7 @@ mod tests {
 
     #[test]
     fn memory_filesystem_canonicalize_returns_path_for_existing() {
-        let fs = MemoryFilesystem::new()
-            .with_file(PathBuf::from("/tmp/f"), b"content");
+        let fs = MemoryFilesystem::new().with_file(PathBuf::from("/tmp/f"), b"content");
         let canon = fs.canonicalize("/tmp/f".as_ref()).unwrap();
         assert_eq!(canon, PathBuf::from("/tmp/f"));
     }

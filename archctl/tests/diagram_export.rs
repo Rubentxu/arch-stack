@@ -15,9 +15,16 @@ fn export_no_project_graph_exits_nonzero() {
     // Run cargo from a directory without a Cargo.toml — the error should mention
     // that the project file/graph cannot be found.
     let result = assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "export",
-               "--output", tmpdir.path().join("bundle").to_str().unwrap(),
-               "container:test"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "export",
+            "--output",
+            tmpdir.path().join("bundle").to_str().unwrap(),
+            "container:test",
+        ])
         .current_dir(tmpdir.path()) // no Cargo.toml here
         .assert()
         .try_failure();
@@ -41,10 +48,17 @@ fn export_no_project_graph_json_error() {
     let tmpdir = TempDir::new().unwrap();
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "export",
-               "--json",
-               "--output", tmpdir.path().join("bundle").to_str().unwrap(),
-               "container:test"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "export",
+            "--json",
+            "--output",
+            tmpdir.path().join("bundle").to_str().unwrap(),
+            "container:test",
+        ])
         .current_dir(tmpdir.path())
         .assert()
         .failure();
@@ -57,9 +71,16 @@ fn export_output_parent_not_writable_exits_nonzero() {
     let nonexistent_output = "/this/path/does/not/exist/archctl-test-bundle";
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "export",
-               "--output", nonexistent_output,
-               "container:test"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "export",
+            "--output",
+            nonexistent_output,
+            "container:test",
+        ])
         .assert()
         .failure(); // Just check non-zero exit; error message varies by OS
 }
@@ -72,9 +93,16 @@ fn export_output_is_a_file_exits_nonzero() {
     fs::write(&file_path, "existing file").unwrap();
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "export",
-               "--output", file_path.to_str().unwrap(),
-               "container:test"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "export",
+            "--output",
+            file_path.to_str().unwrap(),
+            "container:test",
+        ])
         .assert()
         .failure();
 }

@@ -19,14 +19,14 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use jsonschema;
 
 use crate::clock::Clock;
 use crate::diagram::changeset_schema::CHANGESET_SCHEMA;
 #[cfg(test)]
 use crate::diagram::changeset_types::Command;
-use crate::diagram::changeset_types::{ChangeSet, CHANGESET_COMMAND_TYPES};
+use crate::diagram::changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet};
 use crate::diagram::export_types::Projection;
 use crate::diagram::hash::base_revision;
 use crate::diagram::view_types::Diagram;

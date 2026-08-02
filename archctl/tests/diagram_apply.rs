@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 use archctl::clock::FixedClock;
 use archctl::diagram::changeset_schema::CHANGESET_SCHEMA;
-use archctl::diagram::changeset_types::{ChangeSet, CHANGESET_COMMAND_TYPES};
+use archctl::diagram::changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet};
 use archctl::diagram::view_types::Diagram;
 use archctl::store::{DiagramOps, GraphStore, LbugStore};
 

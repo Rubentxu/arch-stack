@@ -360,7 +360,10 @@ impl GraphStore for LbugStore {
             // See F2 (m9-relations-decision) — relations live on the
             // SEMANTIC_EDGE REL TABLE; the reified SemanticRelation node
             // table is reserved for future use (ADR-009 deferral).
-            relations: count_match(&session.conn, "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)")?,
+            relations: count_match(
+                &session.conn,
+                "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)",
+            )?,
             evidence: count_match(&session.conn, "MATCH (:Evidence) RETURN count(*)")?,
             metatypes: count_match(&session.conn, "MATCH (:MetaType) RETURN count(*)")?,
             predicates: count_match(&session.conn, "MATCH (:Predicate) RETURN count(*)")?,
@@ -854,14 +857,7 @@ impl DiagramOps for LbugStore {
         }
 
         let session = self.session_mut()?;
-        link_with_merge_fallback(
-            &session.conn,
-            "ViewMember",
-            mid,
-            "RENDERS",
-            "Element",
-            eid,
-        )
+        link_with_merge_fallback(&session.conn, "ViewMember", mid, "RENDERS", "Element", eid)
     }
 
     fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()> {
@@ -909,7 +905,7 @@ impl DiagramOps for LbugStore {
         )
     }
 
-fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
+    fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
         let session = self.session_mut()?;
         let mid = crate::graph::validate_identifier(member_id)
             .context("update_view_member_label: member_id failed validation")?;
@@ -929,9 +925,10 @@ fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<(
              SET vm.label = '{safe_label}' \
              RETURN vm.id;"
         );
-        let mut result = session.conn.query(&cypher).with_context(|| {
-            format!("update_view_member_label: failed to update {mid}")
-        })?;
+        let mut result = session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("update_view_member_label: failed to update {mid}"))?;
         let updated = result.next().is_some();
         if !updated {
             anyhow::bail!("member not found: {mid}");
@@ -1017,9 +1014,10 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
         }
         Cell::String(s) => {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s)
-                && let Some(obj) = parsed.as_object() {
-                    return obj.clone();
-                }
+                && let Some(obj) = parsed.as_object()
+            {
+                return obj.clone();
+            }
         }
         Cell::Null => {}
         _ => {}
@@ -1028,8 +1026,7 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
 }
 
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
-    let (conn, db) =
-        crate::graph::create_db_session(&crate::graph::database_path(project_dir))?;
+    let (conn, db) = crate::graph::create_db_session(&crate::graph::database_path(project_dir))?;
     Ok(LbugSession { conn, _db: db })
 }
 
@@ -1086,14 +1083,10 @@ fn value_to_i64(v: &lbug::Value) -> i64 {
     }
 }
 
-// `result.next()` requires `&mut self` so `result` must be `mut`. The
-// `for row in result` idiom (which clippy suggests) breaks the lbug
-// QueryResult iterator semantics — reverts caused 9 test failures.
-#[allow(unused_mut)]
 fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
     use crate::row::{Cell, Row};
     use anyhow::Context;
-    let mut result = conn.query(cypher).context("execute query")?;
+    let result = conn.query(cypher).context("execute query")?;
     let columns = result.get_column_names();
     let mut rows = Vec::new();
     for row in result {

@@ -4,10 +4,10 @@
 //! is validated via `graph::validate_identifier` before interpolation (lbug
 //! 0.18.3 has no parameter binding).
 
-use anyhow::Context;
+use crate::diagram::export_types::EvidenceEntry;
 use crate::graph::validate_identifier;
 use crate::store::GraphStore;
-use crate::diagram::export_types::EvidenceEntry;
+use anyhow::Context;
 
 /// An element row from Query 1.
 #[derive(Debug)]
@@ -45,9 +45,7 @@ pub struct VersionPropsRow {
 /// Convert a Cell to a serde_json::Map (for Object variants).
 fn cell_to_json_map(cell: &crate::row::Cell) -> serde_json::Map<String, serde_json::Value> {
     let json = cell.to_json();
-    json.as_object()
-        .cloned()
-        .unwrap_or_default()
+    json.as_object().cloned().unwrap_or_default()
 }
 
 /// Extract a f64 from a Cell (via JSON conversion).
@@ -91,16 +89,42 @@ pub fn query_elements(
     rows.into_iter()
         .map(|r| {
             Ok(ElementRow {
-                id: r.get("e.id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                kind_id: r.get("e.kind_id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                category: r.get("e.category").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                canonical_key: r.get("e.canonical_key").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                current_name: r.get("e.current_name").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                current_status: r.get("e.current_status").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                current_confidence: r.get("e.current_confidence")
+                id: r
+                    .get("e.id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                kind_id: r
+                    .get("e.kind_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                category: r
+                    .get("e.category")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                canonical_key: r
+                    .get("e.canonical_key")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                current_name: r
+                    .get("e.current_name")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                current_status: r
+                    .get("e.current_status")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                current_confidence: r
+                    .get("e.current_confidence")
                     .and_then(cell_as_f64)
                     .unwrap_or(0.0),
-                current_version_id: r.get("e.current_version_id")
+                current_version_id: r
+                    .get("e.current_version_id")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
@@ -128,26 +152,34 @@ pub fn query_semantic_edges(
     let rows = store.query(&cypher).context("query_semantic_edges")?;
     rows.into_iter()
         .map(|r| {
-            let props = r.get("edge.props").map(cell_to_json_map).unwrap_or_default();
+            let props = r
+                .get("edge.props")
+                .map(cell_to_json_map)
+                .unwrap_or_default();
 
             Ok(SemanticEdgeRow {
-                relation_id: r.get("edge.relation_id")
+                relation_id: r
+                    .get("edge.relation_id")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
-                predicate_id: r.get("edge.predicate_id")
+                predicate_id: r
+                    .get("edge.predicate_id")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
-                source_id: r.get("source_id")
+                source_id: r
+                    .get("source_id")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
-                target_id: r.get("target_id")
+                target_id: r
+                    .get("target_id")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
-                order_key: r.get("edge.order_key")
+                order_key: r
+                    .get("edge.order_key")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
@@ -184,37 +216,66 @@ pub fn query_evidence_for_versions(
                 e.content_hash, e.observed_at;"
     );
 
-    let rows = store.query(&cypher).context("query_evidence_for_versions")?;
+    let rows = store
+        .query(&cypher)
+        .context("query_evidence_for_versions")?;
 
     rows.into_iter()
         .filter_map(|r| {
             // Filter to only Accepted evidence (status in props["status"])
             let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
 
-            let status = props
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let status = props.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
             if status != "accepted" {
                 return None;
             }
 
             Some(Ok(EvidenceEntry {
-                id: r.get("e.id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                kind: r.get("e.kind").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                claim: r.get("e.claim").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                path: r.get("e.path").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                start_line: r.get("e.start_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
-                end_line: r.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
-                tool_name: r.get("e.tool_name").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                tool_version: r.get("e.tool_version").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                rule_id: r.get("e.rule_id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                content_hash: r.get("e.content_hash")
+                id: r
+                    .get("e.id")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
-                observed_at: r.get("e.observed_at")
+                kind: r
+                    .get("e.kind")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                claim: r
+                    .get("e.claim")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                path: r
+                    .get("e.path")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                start_line: r.get("e.start_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
+                end_line: r.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
+                tool_name: r
+                    .get("e.tool_name")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                tool_version: r
+                    .get("e.tool_version")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                rule_id: r
+                    .get("e.rule_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                content_hash: r
+                    .get("e.content_hash")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                observed_at: r
+                    .get("e.observed_at")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
@@ -251,9 +312,18 @@ pub fn query_version_props(
             let props = r.get("v.props").map(cell_to_json_map).unwrap_or_default();
 
             Ok(VersionPropsRow {
-                id: r.get("v.id").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                name: r.get("v.name").and_then(|c| c.as_str()).map(|s| s.to_string()).unwrap_or_default(),
-                description: r.get("v.description")
+                id: r
+                    .get("v.id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                name: r
+                    .get("v.name")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                description: r
+                    .get("v.description")
                     .and_then(|c| c.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
@@ -281,7 +351,9 @@ mod tests {
     fn is_read_only_query_accepts_read_queries() {
         assert!(is_read_only_query("MATCH (e:Element) RETURN e.id"));
         assert!(is_read_only_query("MATCH (e:Element)-[r]->(f) RETURN e, f"));
-        assert!(is_read_only_query("MATCH (e:Element) WHERE e.id = 'foo' RETURN e"));
+        assert!(is_read_only_query(
+            "MATCH (e:Element) WHERE e.id = 'foo' RETURN e"
+        ));
     }
 
     #[test]

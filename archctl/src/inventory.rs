@@ -46,9 +46,7 @@ pub fn tree(root: &Path, max_depth: Option<usize>, max_entries: usize) -> Result
         let entry = entry.with_context(|| format!("walk {}", root.display()))?;
         count += 1;
         if count > max_entries {
-            anyhow::bail!(
-                "tree walk exceeded {max_entries} entries; narrow with --max-depth"
-            );
+            anyhow::bail!("tree walk exceeded {max_entries} entries; narrow with --max-depth");
         }
         out.push(to_entry(&entry, root)?);
     }
@@ -78,7 +76,12 @@ fn to_entry(de: &DirEntry, root: &Path) -> Result<Entry> {
     } else {
         None
     };
-    Ok(Entry { path: rel, kind, size_bytes, language })
+    Ok(Entry {
+        path: rel,
+        kind,
+        size_bytes,
+        language,
+    })
 }
 
 /// Language histogram: ordered map of `language -> (file_count, byte_count)`.
@@ -96,7 +99,11 @@ pub struct LanguageStat {
     pub bytes: u64,
 }
 
-pub fn languages(root: &Path, max_depth: Option<usize>, max_entries: usize) -> Result<LanguageSummary> {
+pub fn languages(
+    root: &Path,
+    max_depth: Option<usize>,
+    max_entries: usize,
+) -> Result<LanguageSummary> {
     let entries = tree(root, max_depth, max_entries)?;
     let mut summary = LanguageSummary::default();
     for e in entries {
@@ -125,9 +132,10 @@ pub fn supported_files(root: &Path, max_entries: usize) -> Result<Vec<(PathBuf, 
             continue;
         }
         if let Some(lang) = detect_language(Path::new(&e.path))
-            && crate::astgrep::Lang::from_label(lang).is_some() {
-                out.push((PathBuf::from(e.path), lang));
-            }
+            && crate::astgrep::Lang::from_label(lang).is_some()
+        {
+            out.push((PathBuf::from(e.path), lang));
+        }
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -139,7 +147,10 @@ pub fn supported_files(root: &Path, max_entries: usize) -> Result<Vec<(PathBuf, 
 /// can parse via the Lang enum).
 pub fn detect_language(path: &Path) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
-    let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
     let lang = match name.as_str() {
         "dockerfile" => "dockerfile",
         "makefile" => "makefile",
@@ -211,7 +222,9 @@ pub fn depends(manifest_path: Option<&Path>) -> Result<Metadata> {
     if let Some(p) = manifest_path {
         cmd.manifest_path(p);
     }
-    let metadata = cmd.exec().context("cargo_metadata exec failed — is this a Cargo project?")?;
+    let metadata = cmd
+        .exec()
+        .context("cargo_metadata exec failed — is this a Cargo project?")?;
     Ok(metadata)
 }
 
@@ -273,11 +286,7 @@ mod tests {
         std::fs::write(tmp.path().join("README.md"), "# proj").unwrap();
         std::fs::create_dir_all(tmp.path().join("node_modules/lib")).unwrap();
         std::fs::write(tmp.path().join("node_modules/lib/index.js"), "// noise").unwrap();
-        std::fs::write(
-            tmp.path().join(".gitignore"),
-            "node_modules/\ntarget/\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join(".gitignore"), "node_modules/\ntarget/\n").unwrap();
         tmp
     }
 
@@ -309,7 +318,10 @@ mod tests {
         assert_eq!(summary.languages.get("python").map(|s| s.files), Some(1));
         assert_eq!(summary.languages.get("java").map(|s| s.files), Some(1));
         assert_eq!(summary.languages.get("markdown").map(|s| s.files), Some(1));
-        assert!(!summary.languages.contains_key("javascript"), "node_modules ignored");
+        assert!(
+            !summary.languages.contains_key("javascript"),
+            "node_modules ignored"
+        );
     }
 
     #[test]

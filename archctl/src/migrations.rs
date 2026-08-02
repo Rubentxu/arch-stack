@@ -5,8 +5,8 @@
 //! strictly newer than the marker. Marker is written ONLY after all
 //! statements of a migration succeed — no partial marker bumps on failure.
 
-use std::path::Path;
 use anyhow::{Context, Result};
+use std::path::Path;
 
 use crate::filesystem::Filesystem;
 use crate::graph::Session;
@@ -42,10 +42,7 @@ pub const SCHEMA_MARKER_FILENAME: &str = ".archctl-schema";
 ///
 /// Returns `Ok(None)` if the marker is missing. Returns `Err` only on
 /// an I/O error other than "file not found".
-pub fn current_version(
-    marker_path: &Path,
-    fs: &dyn Filesystem,
-) -> Result<Option<String>> {
+pub fn current_version(marker_path: &Path, fs: &dyn Filesystem) -> Result<Option<String>> {
     if !fs.exists(marker_path) {
         return Ok(None);
     }
@@ -88,15 +85,12 @@ pub fn apply_pending(
         tracing::info!(version = %migration.version, "applying migration");
         let stmts = schema_statements(migration.cypher);
         for (i, stmt) in stmts.iter().enumerate() {
-            session
-                .conn
-                .query(stmt)
-                .with_context(|| {
-                    format!(
-                        "migration {} statement #{i} failed: {stmt}",
-                        migration.version
-                    )
-                })?;
+            session.conn.query(stmt).with_context(|| {
+                format!(
+                    "migration {} statement #{i} failed: {stmt}",
+                    migration.version
+                )
+            })?;
         }
         applied.push(migration.version.to_string());
     }
@@ -105,17 +99,9 @@ pub fn apply_pending(
     // registry if none were applied — preserves idempotency on already-
     // up-to-date graphs).
     if !applied.is_empty() {
-        let final_version = MIGRATIONS
-            .last()
-            .map(|m| m.version)
-            .unwrap_or("v1-initial");
+        let final_version = MIGRATIONS.last().map(|m| m.version).unwrap_or("v1-initial");
         fs.write(marker_path, final_version.as_bytes())
-            .with_context(|| {
-                format!(
-                    "write schema marker {}",
-                    marker_path.display()
-                )
-            })?;
+            .with_context(|| format!("write schema marker {}", marker_path.display()))?;
         tracing::info!(version = %final_version, "schema marker updated");
     }
 
@@ -208,9 +194,16 @@ mod tests {
         let session = open_session(&project, &fs).unwrap();
         let result = apply_pending(&session, &fs, &marker);
         // apply_pending returns Err because 002 replays on existing tables
-        assert!(result.is_err(), "expected error on replay of already-applied migration");
+        assert!(
+            result.is_err(),
+            "expected error on replay of already-applied migration"
+        );
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v1-initial", "marker must not be partially bumped");
+        assert_eq!(
+            text.trim(),
+            "v1-initial",
+            "marker must not be partially bumped"
+        );
     }
 
     #[test]
@@ -224,7 +217,10 @@ mod tests {
         // Call apply_pending on an already-v2 graph
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let result = apply_pending(&session, &fs, &marker).unwrap();
-        assert!(result.is_empty(), "expected no migrations applied, got {result:?}");
+        assert!(
+            result.is_empty(),
+            "expected no migrations applied, got {result:?}"
+        );
     }
 
     #[test]

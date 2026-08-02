@@ -27,11 +27,7 @@ pub trait Strategy: Send + Sync {
     /// Walk the project tree and emit Container candidates.
     /// Errors are captured by the caller into DiscoverReport.errors[],
     /// not propagated (graceful degradation per SCN-103).
-    fn detect(
-        &self,
-        project_root: &Path,
-        fs: &dyn Filesystem,
-    ) -> Result<Vec<ContainerCandidate>>;
+    fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>>;
 }
 
 /// Build the default set of MVP strategies: Cargo workspace, npm

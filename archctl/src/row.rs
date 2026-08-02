@@ -267,9 +267,9 @@ impl From<serde_json::Value> for Cell {
                 .unwrap_or(Cell::Null),
             Json::String(s) => Cell::String(s),
             Json::Array(items) => Cell::List(items.into_iter().map(Cell::from).collect()),
-            Json::Object(map) => Cell::Object(
-                map.into_iter().map(|(k, v)| (k, Cell::from(v))).collect(),
-            ),
+            Json::Object(map) => {
+                Cell::Object(map.into_iter().map(|(k, v)| (k, Cell::from(v))).collect())
+            }
         }
     }
 }
@@ -355,10 +355,7 @@ mod tests {
         let mut r = Row::new();
         r.push("a", 1i64);
         r.push("b", 2i64);
-        let pairs: Vec<(&str, i64)> = r
-            .iter()
-            .map(|(k, v)| (k, v.as_i64().unwrap()))
-            .collect();
+        let pairs: Vec<(&str, i64)> = r.iter().map(|(k, v)| (k, v.as_i64().unwrap())).collect();
         assert_eq!(pairs, vec![("a", 1), ("b", 2)]);
     }
 

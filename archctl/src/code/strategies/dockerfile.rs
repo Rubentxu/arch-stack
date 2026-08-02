@@ -22,14 +22,14 @@ const EXCLUDED_PATH_PREFIXES: &[&str] = &[
 pub struct DockerfilePerService;
 
 impl Strategy for DockerfilePerService {
-    fn id(&self) -> &'static str { "dockerfile" }
-    fn confidence(&self) -> f64 { 0.60 }
+    fn id(&self) -> &'static str {
+        "dockerfile"
+    }
+    fn confidence(&self) -> f64 {
+        0.60
+    }
 
-    fn detect(
-        &self,
-        project_root: &Path,
-        _fs: &dyn Filesystem,
-    ) -> Result<Vec<ContainerCandidate>> {
+    fn detect(&self, project_root: &Path, _fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let mut candidates = Vec::new();
         let walker = WalkBuilder::new(project_root)
             .standard_filters(true)
@@ -42,26 +42,34 @@ impl Strategy for DockerfilePerService {
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 continue;
             }
-            let file_name = path.file_name()
+            let file_name = path
+                .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or_default();
             let lower = file_name.to_ascii_lowercase();
             // Match: Dockerfile, Dockerfile.dev, Dockerfile.prod, *.dockerfile
-            if !(lower == "dockerfile" || lower.starts_with("dockerfile.")
-                || lower.ends_with(".dockerfile")) {
+            if !(lower == "dockerfile"
+                || lower.starts_with("dockerfile.")
+                || lower.ends_with(".dockerfile"))
+            {
                 continue;
             }
-            let rel_path = path.strip_prefix(project_root)
+            let rel_path = path
+                .strip_prefix(project_root)
                 .unwrap_or(path)
                 .to_string_lossy()
                 .replace('\\', "/");
 
             // Exclude fixture paths
-            if EXCLUDED_PATH_PREFIXES.iter().any(|p| rel_path.starts_with(p)) {
+            if EXCLUDED_PATH_PREFIXES
+                .iter()
+                .any(|p| rel_path.starts_with(p))
+            {
                 continue;
             }
 
-            let parent_dir = path.parent()
+            let parent_dir = path
+                .parent()
                 .and_then(|p| p.strip_prefix(project_root).ok())
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
@@ -71,10 +79,16 @@ impl Strategy for DockerfilePerService {
                 .map(String::from)
                 .unwrap_or_else(|| "root".to_string());
 
-            let canonical_key = format!("{}-{}",
+            let canonical_key = format!(
+                "{}-{}",
                 parent_name,
-                file_name.strip_suffix(".dockerfile").unwrap_or(file_name).trim_start_matches("Dockerfile.")
-            ).trim_end_matches('-').to_string();
+                file_name
+                    .strip_suffix(".dockerfile")
+                    .unwrap_or(file_name)
+                    .trim_start_matches("Dockerfile.")
+            )
+            .trim_end_matches('-')
+            .to_string();
 
             // Try to find LABEL org.opencontainers.image.title="..." in the file
             let (display_name, line) = find_label_or_default(file_name);

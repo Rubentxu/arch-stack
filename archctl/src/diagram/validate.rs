@@ -13,8 +13,8 @@ use std::path::Path;
 use anyhow::Context;
 use serde_json::Value;
 
-use crate::diagram::schema_embed::SCHEMA;
 use crate::diagram::export_types::{EvidenceBundle, Projection};
+use crate::diagram::schema_embed::SCHEMA;
 use crate::filesystem::Filesystem;
 
 /// Validation error with context.
@@ -40,10 +40,7 @@ impl ValidationReport {
 ///
 /// Loads and validates each of the 5 required files, then checks internal
 /// consistency (evidence refs resolve, asset files present).
-pub fn run_validate(
-    bundle_dir: &Path,
-    fs: &dyn Filesystem,
-) -> anyhow::Result<ValidationReport> {
+pub fn run_validate(bundle_dir: &Path, fs: &dyn Filesystem) -> anyhow::Result<ValidationReport> {
     let manifest_path = bundle_dir.join("manifest.json");
     let projection_path = bundle_dir.join("projection.json");
     let evidence_path = bundle_dir.join("evidence.json");
@@ -53,8 +50,7 @@ pub fn run_validate(
     let mut errors = Vec::new();
 
     // 1. Load schema
-    let schema: Value = serde_json::from_str(SCHEMA)
-        .context("failed to parse embedded schema")?;
+    let schema: Value = serde_json::from_str(SCHEMA).context("failed to parse embedded schema")?;
 
     // 2. Validate manifest.json
     if !fs.exists(&manifest_path) {
@@ -128,7 +124,8 @@ pub fn run_validate(
 
     // 6. Consistency: evidence IDs referenced in nodes exist in evidence.json
     if let (Some(proj), Some(ev_bundle)) = (&projection, &evidence_bundle) {
-        let evidence_ids: HashSet<&str> = ev_bundle.evidence.iter().map(|e| e.id.as_str()).collect();
+        let evidence_ids: HashSet<&str> =
+            ev_bundle.evidence.iter().map(|e| e.id.as_str()).collect();
         for node in &proj.nodes {
             if let Some(ref refs) = node.evidence_refs {
                 for ref_id in refs {
@@ -179,11 +176,12 @@ fn validate_file_against_def(
     schema: &Value,
     def_name: &str,
 ) -> anyhow::Result<(), String> {
-    let content = fs.read_to_string(path)
+    let content = fs
+        .read_to_string(path)
         .map_err(|e| format!("read error: {}", e))?;
 
-    let instance: Value = serde_json::from_str(&content)
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+    let instance: Value =
+        serde_json::from_str(&content).map_err(|e| format!("JSON parse error: {}", e))?;
 
     // Build a schema that validates against the named $def
     let def_schema = build_schema_for_def(schema, def_name)
@@ -237,8 +235,8 @@ fn load_evidence_bundle(fs: &dyn Filesystem, path: &Path) -> anyhow::Result<Evid
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use crate::filesystem::MemoryFilesystem;
+    use std::path::PathBuf;
 
     use super::*;
 
@@ -247,7 +245,12 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let report = run_validate(PathBuf::from("/tmp/bundle").as_path(), &fs).unwrap();
         assert!(!report.is_valid());
-        assert!(report.errors.iter().any(|e| e.file == "manifest.json" && e.error.contains("not found")));
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.file == "manifest.json" && e.error.contains("not found"))
+        );
     }
 
     #[test]
@@ -270,9 +273,17 @@ mod tests {
         let schema: Value = serde_json::from_str(SCHEMA).unwrap();
         for def_name in ["Manifest", "Projection", "EvidenceBundle", "Styles"] {
             let def_schema = build_schema_for_def(&schema, def_name);
-            assert!(def_schema.is_some(), "definition '{}' should be found in schema", def_name);
+            assert!(
+                def_schema.is_some(),
+                "definition '{}' should be found in schema",
+                def_name
+            );
             let compiled = jsonschema::validator_for(def_schema.as_ref().unwrap());
-            assert!(compiled.is_ok(), "schema for '{}' should compile without errors", def_name);
+            assert!(
+                compiled.is_ok(),
+                "schema for '{}' should compile without errors",
+                def_name
+            );
         }
     }
 }

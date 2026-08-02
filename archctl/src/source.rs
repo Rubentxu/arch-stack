@@ -105,10 +105,7 @@ mod tests {
         let id1 = SourceArtifact::id_for("src/lib.rs", "sha256:abc123");
         let id2 = SourceArtifact::id_for("src/lib.rs", "sha256:abc123");
         assert_eq!(id1, id2, "same path+hash must produce same id");
-        assert!(
-            id1.starts_with("src:"),
-            "id must use src: prefix"
-        );
+        assert!(id1.starts_with("src:"), "id must use src: prefix");
     }
 
     #[test]
@@ -135,10 +132,7 @@ mod tests {
         assert_eq!(sa.kind, "source_file");
         assert!(!sa.generated);
         assert_eq!(sa.props["extractor"].as_str().unwrap(), "archctl:evidence");
-        assert_eq!(
-            sa.props["extractor_version"].as_str().unwrap(),
-            "0.1.0"
-        );
+        assert_eq!(sa.props["extractor_version"].as_str().unwrap(), "0.1.0");
         assert_eq!(
             sa.props["first_seen_at"].as_str().unwrap(),
             "2026-07-30T00:00:00Z"

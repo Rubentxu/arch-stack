@@ -145,7 +145,11 @@ mod tests {
         // Sanity: round-trip parses as UTC RFC3339. We do not pull in
         // a chrono::DateTime here — instead, just confirm length and
         // a fixed prefix shape (year-month-day T hour:min:sec).
-        assert_eq!(stamp.len(), 20, "expected YYYY-MM-DDTHH:MM:SSZ, got {stamp}");
+        assert_eq!(
+            stamp.len(),
+            20,
+            "expected YYYY-MM-DDTHH:MM:SSZ, got {stamp}"
+        );
         let bytes = stamp.as_bytes();
         assert_eq!(bytes[4], b'-');
         assert_eq!(bytes[7], b'-');

@@ -1,12 +1,12 @@
 pub mod astgrep;
 pub mod cli;
-pub mod code;
 pub mod clock;
+pub mod code;
 pub mod diagram;
 pub mod doctor;
 pub mod environment;
-pub mod evidence;
 pub mod evaluation;
+pub mod evidence;
 pub mod filesystem;
 pub mod graph;
 pub mod identity;
@@ -23,22 +23,36 @@ pub mod telemetry;
 pub mod tsg;
 pub mod xdg;
 
-pub use cli::{run, Cli, Command, DiagramAction, EvidenceAction, GraphAction, InventoryAction, ProjectAction, RenderFormat, SkillsAction};
-pub use clock::{fixed_clock, system_clock, Clock, FixedClock, SystemClock};
-pub use environment::{fixed_environment, system_environment, Environment, FixedEnvironment, SystemEnvironment};
-pub use filesystem::{system_filesystem, memory_filesystem, DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem};
-pub use graph::{database_path, init as graph_init, neighbours, open_session, query as graph_query, stat as graph_stat, validate_identifier, GraphStat};
-pub use row::{Cell, Row};
-pub use identity::{
-    blake_like, identity_summary, normalize_remote, portable_project_id, resolve_source_identity,
-    SourceIdentity,
+pub use cli::{
+    Cli, Command, DiagramAction, EvidenceAction, GraphAction, InventoryAction, ProjectAction,
+    RenderFormat, SkillsAction, run,
 };
-pub use project::{resolve_project, ProjectInfo};
-pub use scope::{check_all_scopes, check_scope, ScopeCheckReport, ScopeFinding, ScopeGate, ScopeManifest, ScopeSeverity};
-pub use source::SourceArtifact;
+pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
+pub use environment::{
+    Environment, FixedEnvironment, SystemEnvironment, fixed_environment, system_environment,
+};
 pub use evaluation::Evaluation;
-pub use skills::{
-    activate_skill, load_lock, sync_skill, sync_skills, verify_skills, SkillLockEntry, SkillMode,
-    SkillsLock, SyncReport, VerifyReport,
+pub use filesystem::{
+    DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem, memory_filesystem,
+    system_filesystem,
 };
-pub use xdg::{ensure_xdg, resolve_xdg, user_home, XdgLayout};
+pub use graph::{
+    GraphStat, database_path, init as graph_init, neighbours, open_session, query as graph_query,
+    stat as graph_stat, validate_identifier,
+};
+pub use identity::{
+    SourceIdentity, blake_like, identity_summary, normalize_remote, portable_project_id,
+    resolve_source_identity,
+};
+pub use project::{ProjectInfo, resolve_project};
+pub use row::{Cell, Row};
+pub use scope::{
+    ScopeCheckReport, ScopeFinding, ScopeGate, ScopeManifest, ScopeSeverity, check_all_scopes,
+    check_scope,
+};
+pub use skills::{
+    SkillLockEntry, SkillMode, SkillsLock, SyncReport, VerifyReport, activate_skill, load_lock,
+    sync_skill, sync_skills, verify_skills,
+};
+pub use source::SourceArtifact;
+pub use xdg::{XdgLayout, ensure_xdg, resolve_xdg, user_home};

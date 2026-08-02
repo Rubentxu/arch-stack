@@ -2,7 +2,7 @@ use crate::cli::CliContext;
 use crate::environment::Environment;
 use crate::filesystem::Filesystem;
 use crate::identity::{identity_summary, resolve_source_identity};
-use crate::scope::{check_all_scopes, render_report_line, ScopeCheckReport};
+use crate::scope::{ScopeCheckReport, check_all_scopes, render_report_line};
 use crate::xdg::{resolve_xdg, user_home};
 use std::process::Command;
 use tracing::{info, warn};
@@ -47,7 +47,10 @@ pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
         });
     }
 
-    findings.push(http_finding("renderer.structurizr", "http://localhost:18080/"));
+    findings.push(http_finding(
+        "renderer.structurizr",
+        "http://localhost:18080/",
+    ));
     findings.push(http_finding("renderer.plantuml", "http://localhost:18000/"));
     findings.push(binary_finding("opencode.cli", "opencode"));
     findings.push(binary_finding("archctl.cli", "archctl"));
@@ -64,7 +67,10 @@ pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
         println!("  [{tag}] {}: {}", f.id, f.detail);
     }
     println!("  sourceIdentity: {}", identity_summary(&identity));
-    let failed = findings.iter().filter(|f| f.severity == Severity::Fail).count();
+    let failed = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Fail)
+        .count();
     if failed > 0 {
         warn!(failures = failed, "doctor detected failures");
         println!("DOCTOR: FAIL");
@@ -78,7 +84,16 @@ pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
 
 fn http_finding(id: &str, url: &str) -> Finding {
     let probe = Command::new("curl")
-        .args(["-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url])
+        .args([
+            "-sS",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "--max-time",
+            "2",
+            url,
+        ])
         .output();
     let ok = match probe {
         Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).trim().starts_with('2'),
@@ -86,7 +101,11 @@ fn http_finding(id: &str, url: &str) -> Finding {
     };
     Finding {
         id: id.to_string(),
-        detail: if ok { format!("reachable ({url})") } else { format!("not reachable ({url})") },
+        detail: if ok {
+            format!("reachable ({url})")
+        } else {
+            format!("not reachable ({url})")
+        },
         severity: if ok { Severity::Ok } else { Severity::Warn },
     }
 }
@@ -115,7 +134,11 @@ fn binary_finding(id: &str, name: &str) -> Finding {
 /// Designed to be called from `archctl doctor --check-scope` but is
 /// Run scope gates for specific scope IDs, or all scopes if `scope_ids`
 /// is empty.  If a scope ID is not found, it is silently skipped.
-pub fn check_scope(cwd: &std::path::Path, scope_ids: Vec<String>, fs: &dyn Filesystem) -> Result<i32, anyhow::Error> {
+pub fn check_scope(
+    cwd: &std::path::Path,
+    scope_ids: Vec<String>,
+    fs: &dyn Filesystem,
+) -> Result<i32, anyhow::Error> {
     let manifests_dir = cwd.join("manifests");
     if !manifests_dir.exists() {
         println!("(no manifests/ directory at {})", cwd.display());

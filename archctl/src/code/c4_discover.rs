@@ -104,8 +104,8 @@ pub fn discover(
     let start = Instant::now();
 
     // Walk the project tree once for inventory metadata.
-    let tree = crate::inventory::tree(project_root, Some(8), 50_000)
-        .context("walk project tree")?;
+    let tree =
+        crate::inventory::tree(project_root, Some(8), 50_000).context("walk project tree")?;
     let files_scanned = tree.len() as u64;
     let mut languages: BTreeMap<String, u64> = BTreeMap::new();
     for entry in &tree {
@@ -149,10 +149,8 @@ pub fn discover(
             if !existing.merged_from.contains(&strategy_id) {
                 existing.merged_from.push(strategy_id.clone());
             }
-            let existing_files: Vec<String> = existing.evidences
-                .iter()
-                .map(|e| e.file.clone())
-                .collect();
+            let existing_files: Vec<String> =
+                existing.evidences.iter().map(|e| e.file.clone()).collect();
             for ev in candidate_evidences {
                 if !existing_files.contains(&ev.file) {
                     existing.evidences.push(ev);
@@ -160,14 +158,17 @@ pub fn discover(
             }
         } else {
             // Insert new container
-            by_key.insert(canonical_key.clone(), Container {
-                canonical_key,
-                name,
-                strategy: strategy_id.clone(),
-                confidence,
-                merged_from: vec![strategy_id],
-                evidences: candidate_evidences,
-            });
+            by_key.insert(
+                canonical_key.clone(),
+                Container {
+                    canonical_key,
+                    name,
+                    strategy: strategy_id.clone(),
+                    confidence,
+                    merged_from: vec![strategy_id],
+                    evidences: candidate_evidences,
+                },
+            );
         }
     }
 
@@ -236,7 +237,9 @@ fn write_element(
         confidence = container.confidence,
         version_id = version_id,
     );
-    store.query(&cypher).with_context(|| format!("put_element {element_id}"))?;
+    store
+        .query(&cypher)
+        .with_context(|| format!("put_element {element_id}"))?;
     Ok(())
 }
 
@@ -253,10 +256,11 @@ fn write_element_version(
         "merged_from": container.merged_from,
         "discovery_schema_version": "1.0",
     });
-    let version_props_str = serde_json::to_string(&version_props)
-        .unwrap_or_default();
-    let version_id =
-        format!("blake3:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+    let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+    let version_id = format!(
+        "blake3:{}",
+        blake3::hash(version_props_str.as_bytes()).to_hex()
+    );
     let version_props_escaped = escape_cypher_string(&version_props_str);
     let name_escaped = escape_cypher_string(&container.name);
 
@@ -274,7 +278,8 @@ fn write_element_version(
         confidence = container.confidence,
         version_props_escaped = version_props_escaped,
     );
-    store.query(&cypher)
+    store
+        .query(&cypher)
         .with_context(|| format!("put_element_version {version_id}"))?;
     Ok(version_id)
 }
@@ -311,10 +316,7 @@ fn link_element_edges(
 
 /// Write a SourceArtifact node (deduplicated by file path).
 /// Returns the source_artifact_id.
-fn write_source_artifact(
-    store: &mut dyn GraphStore,
-    file: &str,
-) -> Result<String> {
+fn write_source_artifact(store: &mut dyn GraphStore, file: &str) -> Result<String> {
     let id = format!("src:{}", blake3::hash(file.as_bytes()).to_hex());
     let path_escaped = escape_cypher_string(file);
     let cypher = format!(
@@ -326,7 +328,8 @@ fn write_source_artifact(
          s.generated = false, \
          s.props = '{{}}';"
     );
-    store.query(&cypher)
+    store
+        .query(&cypher)
         .with_context(|| format!("put_source_artifact {id}"))?;
     Ok(id)
 }
@@ -342,10 +345,8 @@ fn write_evidence(
 ) -> Result<()> {
     let evidence_id = format!(
         "ev:{}",
-        blake3::hash(
-            format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes()
-        )
-        .to_hex()
+        blake3::hash(format!("{}:{}:{}", element_id, evidence.file, evidence.line).as_bytes())
+            .to_hex()
     );
 
     let evidence_props = serde_json::json!({
@@ -400,7 +401,8 @@ fn write_evidence(
         "MATCH (v:ElementVersion {{id: '{version_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
          MERGE (v)-[:SUPPORTED_BY]->(ev);"
     );
-    store.query(&link_ev_cypher)
+    store
+        .query(&link_ev_cypher)
         .with_context(|| format!("link SUPPORTED_BY {version_id} → {evidence_id}"))?;
 
     // EXTRACTED_FROM: Evidence → SourceArtifact
@@ -408,7 +410,8 @@ fn write_evidence(
         "MATCH (ev:Evidence {{id: '{evidence_id}'}}), (s:SourceArtifact {{id: '{sa_id}'}}) \
          MERGE (ev)-[:EXTRACTED_FROM]->(s);"
     );
-    store.query(&link_cypher)
+    store
+        .query(&link_cypher)
         .with_context(|| format!("link EXTRACTED_FROM {evidence_id} → {sa_id}"))?;
 
     Ok(())
@@ -438,8 +441,8 @@ pub fn apply(
 ) -> Result<ApplyReport> {
     use crate::store::open_default;
 
-    let mut store = open_default(project_dir)
-        .map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
+    let mut store =
+        open_default(project_dir).map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
     store.init().context("graph init (c4 discover apply)")?;
 
     // Seed mt.container MetaType if it doesn't exist
@@ -484,7 +487,14 @@ pub fn apply(
                 id
             };
 
-            write_evidence(&mut *store, &element_id, &version_id, &sa_id, evidence, &container.strategy)?;
+            write_evidence(
+                &mut *store,
+                &element_id,
+                &version_id,
+                &sa_id,
+                evidence,
+                &container.strategy,
+            )?;
             evidences_written += 1;
         }
     }
@@ -521,9 +531,17 @@ mod tests {
     }
 
     impl Strategy for MockStrategy {
-        fn id(&self) -> &'static str { self.id }
-        fn confidence(&self) -> f64 { self.confidence }
-        fn detect(&self, _project_root: &Path, _fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn confidence(&self) -> f64 {
+            self.confidence
+        }
+        fn detect(
+            &self,
+            _project_root: &Path,
+            _fs: &dyn Filesystem,
+        ) -> Result<Vec<ContainerCandidate>> {
             Ok(Vec::new())
         }
     }
@@ -532,7 +550,8 @@ mod tests {
     fn merge_two_strategies_same_canonical_key() {
         // SCN-140: two strategies infer the same canonical_key
         let fs = MemoryFilesystem::new();
-        let clock: &dyn crate::clock::Clock = &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
+        let clock: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
         let tmp = tempfile::tempdir().unwrap();
 
         let candidates: Vec<ContainerCandidate> = vec![
@@ -563,18 +582,22 @@ mod tests {
         ];
 
         #[derive(Clone)]
-        struct InjectStrategy { candidates: Vec<ContainerCandidate> }
+        struct InjectStrategy {
+            candidates: Vec<ContainerCandidate>,
+        }
         impl Strategy for InjectStrategy {
-            fn id(&self) -> &'static str { "inject" }
-            fn confidence(&self) -> f64 { 1.0 }
+            fn id(&self) -> &'static str {
+                "inject"
+            }
+            fn confidence(&self) -> f64 {
+                1.0
+            }
             fn detect(&self, _: &Path, _: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
                 Ok(self.candidates.clone())
             }
         }
 
-        let strategies: Vec<Box<dyn Strategy>> = vec![
-            Box::new(InjectStrategy { candidates }),
-        ];
+        let strategies: Vec<Box<dyn Strategy>> = vec![Box::new(InjectStrategy { candidates })];
 
         let report = discover(tmp.path(), &strategies, &fs, clock).unwrap();
         assert_eq!(report.discovered.len(), 1);
@@ -593,7 +616,8 @@ mod tests {
     #[test]
     fn merge_preserves_evidences_from_both() {
         let fs = MemoryFilesystem::new();
-        let clock: &dyn crate::clock::Clock = &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
+        let clock: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
         let tmp = tempfile::tempdir().unwrap();
 
         let candidates = vec![
@@ -625,10 +649,16 @@ mod tests {
 
         // Inject candidates via a custom strategy
         #[derive(Clone)]
-        struct InjectStrategy { candidates: Vec<ContainerCandidate> }
+        struct InjectStrategy {
+            candidates: Vec<ContainerCandidate>,
+        }
         impl Strategy for InjectStrategy {
-            fn id(&self) -> &'static str { "inject" }
-            fn confidence(&self) -> f64 { 1.0 }
+            fn id(&self) -> &'static str {
+                "inject"
+            }
+            fn confidence(&self) -> f64 {
+                1.0
+            }
             fn detect(&self, _: &Path, _: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
                 Ok(self.candidates.clone())
             }
@@ -650,38 +680,58 @@ mod tests {
     #[test]
     fn merge_orders_by_canonical_key_deterministically() {
         let fs = MemoryFilesystem::new();
-        let clock: &dyn crate::clock::Clock = &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
+        let clock: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
         let tmp = tempfile::tempdir().unwrap();
 
         #[derive(Clone)]
-        struct InjectStrategy { keys: Vec<String> }
+        struct InjectStrategy {
+            keys: Vec<String>,
+        }
         impl Strategy for InjectStrategy {
-            fn id(&self) -> &'static str { "inject" }
-            fn confidence(&self) -> f64 { 1.0 }
+            fn id(&self) -> &'static str {
+                "inject"
+            }
+            fn confidence(&self) -> f64 {
+                1.0
+            }
             fn detect(&self, _: &Path, _: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
-                Ok(self.keys.iter().map(|k| ContainerCandidate {
-                    canonical_key: k.clone(),
-                    name: k.clone(),
-                    strategy: "test".to_string(),
-                    confidence: 1.0,
-                    evidences: vec![],
-                }).collect())
+                Ok(self
+                    .keys
+                    .iter()
+                    .map(|k| ContainerCandidate {
+                        canonical_key: k.clone(),
+                        name: k.clone(),
+                        strategy: "test".to_string(),
+                        confidence: 1.0,
+                        evidences: vec![],
+                    })
+                    .collect())
             }
         }
 
-        let strategies: Vec<Box<dyn Strategy>> = vec![
-            Box::new(InjectStrategy { keys: vec!["zebra".to_string(), "apple".to_string(), "mango".to_string()] }),
-        ];
+        let strategies: Vec<Box<dyn Strategy>> = vec![Box::new(InjectStrategy {
+            keys: vec![
+                "zebra".to_string(),
+                "apple".to_string(),
+                "mango".to_string(),
+            ],
+        })];
 
         let report = discover(tmp.path(), &strategies, &fs, clock).unwrap();
-        let keys: Vec<_> = report.discovered.iter().map(|c| c.canonical_key.clone()).collect();
+        let keys: Vec<_> = report
+            .discovered
+            .iter()
+            .map(|c| c.canonical_key.clone())
+            .collect();
         assert_eq!(keys, vec!["apple", "mango", "zebra"]);
     }
 
     #[test]
     fn no_strategies_returns_empty_report() {
         let fs = MemoryFilesystem::new();
-        let clock: &dyn crate::clock::Clock = &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
+        let clock: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
         let tmp = tempfile::tempdir().unwrap();
         let strategies: Vec<Box<dyn Strategy>> = vec![];
         let report = discover(tmp.path(), &strategies, &fs, clock).unwrap();
@@ -691,11 +741,19 @@ mod tests {
 
     #[test]
     fn schema_is_valid_json() {
-        let parsed: serde_json::Value =
-            serde_json::from_str(DISCOVER_REPORT_SCHEMA).expect("DISCOVER_REPORT_SCHEMA must be valid JSON");
-        assert_eq!(parsed["$schema"].as_str().unwrap(), "https://json-schema.org/draft/2020-12/schema");
+        let parsed: serde_json::Value = serde_json::from_str(DISCOVER_REPORT_SCHEMA)
+            .expect("DISCOVER_REPORT_SCHEMA must be valid JSON");
+        assert_eq!(
+            parsed["$schema"].as_str().unwrap(),
+            "https://json-schema.org/draft/2020-12/schema"
+        );
         assert_eq!(parsed["type"].as_str().unwrap(), "object");
-        assert_eq!(parsed["properties"]["schemaVersion"]["const"].as_str().unwrap(), "1.0");
+        assert_eq!(
+            parsed["properties"]["schemaVersion"]["const"]
+                .as_str()
+                .unwrap(),
+            "1.0"
+        );
     }
 
     #[test]
@@ -728,10 +786,14 @@ mod tests {
             }],
             "errors": []
         });
-        let validator = jsonschema::validator_for(&jsonschema)
-            .expect("schema must be valid JSON Schema");
+        let validator =
+            jsonschema::validator_for(&jsonschema).expect("schema must be valid JSON Schema");
         let result = validator.validate(&report);
-        assert!(result.is_ok(), "valid report must pass schema: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "valid report must pass schema: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -810,8 +872,14 @@ mod tests {
 
         // Second apply — skips the existing canonical_key
         let r2 = apply(project, &report, &fs).unwrap();
-        assert_eq!(r2.elements_skipped, 1, "second apply must skip existing canonical_key");
-        assert_eq!(r2.elements_written, 0, "second apply must not write duplicates");
+        assert_eq!(
+            r2.elements_skipped, 1,
+            "second apply must skip existing canonical_key"
+        );
+        assert_eq!(
+            r2.elements_written, 0,
+            "second apply must not write duplicates"
+        );
     }
 
     // ─── CRIT-1 regression: real Container round-trip against schema ───────────
@@ -870,10 +938,10 @@ mod tests {
         };
 
         // Round-trip: Rust struct → JSON string → parsed Value
-        let json_str = serde_json::to_string(&report)
-            .expect("DiscoverReport must serialise to JSON");
-        let parsed: serde_json::Value = serde_json::from_str(&json_str)
-            .expect("JSON must be parseable");
+        let json_str =
+            serde_json::to_string(&report).expect("DiscoverReport must serialise to JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).expect("JSON must be parseable");
 
         // Validate against the embedded schema
         let schema_val: serde_json::Value = serde_json::from_str(DISCOVER_REPORT_SCHEMA)
@@ -881,6 +949,10 @@ mod tests {
         let validator = jsonschema::validator_for(&schema_val)
             .expect("DISCOVER_REPORT_SCHEMA must be a valid JSON Schema");
         let result = validator.validate(&parsed);
-        assert!(result.is_ok(), "real Container must pass schema validation: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "real Container must pass schema validation: {:?}",
+            result.err()
+        );
     }
 }

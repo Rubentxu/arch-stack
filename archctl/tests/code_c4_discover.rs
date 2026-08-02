@@ -31,63 +31,99 @@ fn write(project: &Path, rel: &str, content: &str) {
 }
 
 fn make_cargo_workspace(project: &Path) {
-    write(project, "Cargo.toml", r#"[workspace]
+    write(
+        project,
+        "Cargo.toml",
+        r#"[workspace]
 members = ["libs/auth", "libs/shared", "services/api"]
 resolver = "2"
-"#);
-    write(project, "libs/auth/Cargo.toml", r#"[package]
+"#,
+    );
+    write(
+        project,
+        "libs/auth/Cargo.toml",
+        r#"[package]
 name = "auth"
 version = "0.1.0"
 edition = "2021"
 description = "Authentication library"
-"#);
+"#,
+    );
     write(project, "libs/auth/src/lib.rs", "pub fn login() {}");
-    write(project, "libs/shared/Cargo.toml", r#"[package]
+    write(
+        project,
+        "libs/shared/Cargo.toml",
+        r#"[package]
 name = "shared"
 version = "0.1.0"
 edition = "2021"
 description = "Shared utilities"
-"#);
+"#,
+    );
     write(project, "libs/shared/src/lib.rs", "pub fn utils() {}");
-    write(project, "services/api/Cargo.toml", r#"[package]
+    write(
+        project,
+        "services/api/Cargo.toml",
+        r#"[package]
 name = "api"
 version = "0.1.0"
 edition = "2021"
 description = "HTTP API service"
-"#);
+"#,
+    );
     write(project, "services/api/src/main.rs", "fn main() {}");
 }
 
 fn make_npm_workspace(project: &Path) {
-    write(project, "package.json", r#"{
+    write(
+        project,
+        "package.json",
+        r#"{
   "name": "monorepo",
   "version": "1.0.0",
   "workspaces": ["packages/web", "packages/shared"]
 }
-"#);
-    write(project, "packages/web/package.json", r#"{
+"#,
+    );
+    write(
+        project,
+        "packages/web/package.json",
+        r#"{
   "name": "@monorepo/web",
   "version": "1.0.0"
 }
-"#);
-    write(project, "packages/shared/package.json", r#"{
+"#,
+    );
+    write(
+        project,
+        "packages/shared/package.json",
+        r#"{
   "name": "@monorepo/shared",
   "version": "1.0.0"
 }
-"#);
+"#,
+    );
 }
 
 fn make_dockerfile_repo(project: &Path) {
     // "Real" service Dockerfile (should be detected)
-    write(project, "services/api/Dockerfile", "FROM rust:1.75\nWORKDIR /app\n");
+    write(
+        project,
+        "services/api/Dockerfile",
+        "FROM rust:1.75\nWORKDIR /app\n",
+    );
     // Examples Dockerfile (should be excluded)
     write(project, "examples/test/Dockerfile", "FROM alpine:latest\n");
 }
 
 fn make_helm_repo(project: &Path) {
-    write(project, "charts/api/Chart.yaml", r#"name: api
+    write(
+        project,
+        "charts/api/Chart.yaml",
+        r#"name: api
 version: "0.1.0"
-"#);
+"#,
+    );
     write(project, "charts/api/values.yaml", "replicaCount: 2\n");
 }
 
@@ -188,8 +224,7 @@ fn dockerfile_integration() {
     let project = tmp.path();
     make_dockerfile_repo(project);
 
-    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> =
-        vec![dockerfile_strategy()];
+    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> = vec![dockerfile_strategy()];
     let fs = archctl::filesystem::MemoryFilesystem::new();
     let clock: &dyn archctl::clock::Clock =
         &archctl::clock::FixedClock::new("2025-01-01T00:00:00Z");
@@ -211,7 +246,9 @@ fn dockerfile_integration() {
     );
     // services/api/Dockerfile should be detected
     assert!(
-        all_paths.iter().any(|p| p.contains("services/api/Dockerfile")),
+        all_paths
+            .iter()
+            .any(|p| p.contains("services/api/Dockerfile")),
         "services/api/Dockerfile should be detected; got {:?}",
         all_paths
     );
@@ -288,8 +325,12 @@ fn cross_strategy_merge_integration() {
         candidates: Vec<ContainerCandidate>,
     }
     impl archctl::code::strategies::Strategy for InjectStrategy {
-        fn id(&self) -> &'static str { "inject" }
-        fn confidence(&self) -> f64 { 1.0 }
+        fn id(&self) -> &'static str {
+            "inject"
+        }
+        fn confidence(&self) -> f64 {
+            1.0
+        }
         fn detect(
             &self,
             _: &Path,
@@ -308,7 +349,11 @@ fn cross_strategy_merge_integration() {
     let report = archctl::code::c4_discover::discover(project, &strategies, &fs, clock)
         .expect("discover must succeed");
 
-    assert_eq!(report.discovered.len(), 1, "should merge into one container");
+    assert_eq!(
+        report.discovered.len(),
+        1,
+        "should merge into one container"
+    );
     let c = &report.discovered[0];
     assert_eq!(c.canonical_key, "auth-svc");
     // Highest confidence wins
@@ -331,7 +376,9 @@ fn cross_strategy_merge_integration() {
 
 #[test]
 fn apply_idempotent_integration() {
-    use archctl::code::c4_discover::{Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta};
+    use archctl::code::c4_discover::{
+        Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
+    };
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
@@ -363,9 +410,12 @@ fn apply_idempotent_integration() {
     let fs = archctl::filesystem::MemoryFilesystem::new();
 
     // First apply — writes the element
-    let r1 = archctl::code::c4_discover::apply(project, &report, &fs)
-        .expect("first apply must succeed");
-    assert_eq!(r1.elements_written, 1, "first apply should write the element");
+    let r1 =
+        archctl::code::c4_discover::apply(project, &report, &fs).expect("first apply must succeed");
+    assert_eq!(
+        r1.elements_written, 1,
+        "first apply should write the element"
+    );
 
     // Second apply — skips the existing canonical_key
     let r2 = archctl::code::c4_discover::apply(project, &report, &fs)
@@ -374,7 +424,10 @@ fn apply_idempotent_integration() {
         r2.elements_skipped, 1,
         "second apply must skip the existing canonical_key"
     );
-    assert_eq!(r2.elements_written, 0, "second apply must not write duplicates");
+    assert_eq!(
+        r2.elements_written, 0,
+        "second apply must not write duplicates"
+    );
 }
 
 // ─── SCN-160: JSON schema round-trip — CRIT-1 regression test ───────────────
@@ -382,7 +435,7 @@ fn apply_idempotent_integration() {
 #[test]
 fn json_roundtrip_against_schema() {
     use archctl::code::c4_discover::{
-        Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta, DISCOVER_REPORT_SCHEMA,
+        Container, DISCOVER_REPORT_SCHEMA, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
     };
 
     // Build a real DiscoverReport with all EvidenceKind variants
@@ -434,10 +487,9 @@ fn json_roundtrip_against_schema() {
     };
 
     // Round-trip: Rust struct → JSON string → parsed Value
-    let json_str = serde_json::to_string(&report)
-        .expect("DiscoverReport must serialise to JSON");
-    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("JSON must be parseable");
+    let json_str = serde_json::to_string(&report).expect("DiscoverReport must serialise to JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).expect("JSON must be parseable");
 
     // Validate against the embedded schema
     let schema_val: serde_json::Value = serde_json::from_str(DISCOVER_REPORT_SCHEMA)
@@ -456,7 +508,9 @@ fn json_roundtrip_against_schema() {
 
 #[test]
 fn apply_roundtrip_to_export() {
-    use archctl::code::c4_discover::{Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta};
+    use archctl::code::c4_discover::{
+        Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
+    };
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
@@ -487,8 +541,7 @@ fn apply_roundtrip_to_export() {
 
     let fs = archctl::filesystem::MemoryFilesystem::new();
 
-    let r = archctl::code::c4_discover::apply(project, &report, &fs)
-        .expect("apply must succeed");
+    let r = archctl::code::c4_discover::apply(project, &report, &fs).expect("apply must succeed");
     assert_eq!(r.elements_written, 1, "should write exactly one element");
     assert_eq!(r.elements_skipped, 0);
     assert!(r.evidences_written >= 1);

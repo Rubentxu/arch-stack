@@ -19,13 +19,8 @@ pub static DEPLOYMENT_ICON: &[u8] = include_bytes!("icons/deployment.png");
 
 /// All canonical C4 icon filenames (without path). Single source of truth shared
 /// by `run_export` (which writes them) and `run_validate` (which requires them).
-pub const CANONICAL_C4_ICONS: &[&str] = &[
-    "context",
-    "container",
-    "component",
-    "dynamic",
-    "deployment",
-];
+pub const CANONICAL_C4_ICONS: &[&str] =
+    &["context", "container", "component", "dynamic", "deployment"];
 
 /// Returns the icon bytes for the given C4 element type, or `None` if not one of
 /// the 5 canonical C4 levels (context/container/component/dynamic/deployment).

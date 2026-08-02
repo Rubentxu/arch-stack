@@ -116,7 +116,12 @@ pub fn project_sequence(
         .map_err(|e| SequenceError::GraphReadFailed(anyhow::anyhow!("store init failed: {e}")))?;
 
     // Delegate to the store-based implementation
-    let report = project_sequence_with_store(&store as &dyn GraphStore, from, depth_limit, max_interactions)?;
+    let report = project_sequence_with_store(
+        &store as &dyn GraphStore,
+        from,
+        depth_limit,
+        max_interactions,
+    )?;
 
     Ok(SequenceReport {
         schema_version: "1.0".to_string(),
@@ -244,10 +249,7 @@ fn project_sequence_with_store(
 }
 
 /// Resolve a FromSelector to a canonical_key.
-fn resolve_selector(
-    store: &dyn GraphStore,
-    from: &FromSelector,
-) -> Result<String, SequenceError> {
+fn resolve_selector(store: &dyn GraphStore, from: &FromSelector) -> Result<String, SequenceError> {
     let cypher = match from {
         FromSelector::ByName { name } => format!(
             "MATCH (e:Element) WHERE e.current_name = '{}' AND e.kind_id IN ['code.function', 'code.method', 'code.closure'] RETURN e.canonical_key AS ck ORDER BY e.canonical_key LIMIT 2",
@@ -293,38 +295,41 @@ fn resolve_selector(
 fn parse_message_kind_from_row(row: &crate::row::Row) -> MessageKind {
     // Try to extract from rel_props JSON: { "message_kind": "sync_call" | "async_call" | "return" }
     if let Some(props_cell) = row.get("rel_props")
-        && let Some(props_str) = props_cell.as_str() {
-            // Props are stored as escaped JSON string
-            let unescaped = props_str.replace("\\'", "'");
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped)
-                && let Some(msg_kind) = parsed.get("message_kind").and_then(|v| v.as_str()) {
-                    return match msg_kind {
-                        "async_call" => MessageKind::AsyncCall,
-                        "return" => MessageKind::Return,
-                        _ => MessageKind::SyncCall,
-                    };
-                }
+        && let Some(props_str) = props_cell.as_str()
+    {
+        // Props are stored as escaped JSON string
+        let unescaped = props_str.replace("\\'", "'");
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped)
+            && let Some(msg_kind) = parsed.get("message_kind").and_then(|v| v.as_str())
+        {
+            return match msg_kind {
+                "async_call" => MessageKind::AsyncCall,
+                "return" => MessageKind::Return,
+                _ => MessageKind::SyncCall,
+            };
         }
+    }
     MessageKind::SyncCall
 }
 
 /// Extract file and line from a row's rel_props JSON.
 fn extract_location_from_row(row: &crate::row::Row) -> (Option<PathBuf>, Option<u32>) {
     if let Some(props_cell) = row.get("rel_props")
-        && let Some(props_str) = props_cell.as_str() {
-            let unescaped = props_str.replace("\\'", "'");
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped) {
-                let file = parsed
-                    .get("file")
-                    .and_then(|v| v.as_str())
-                    .map(PathBuf::from);
-                let line = parsed
-                    .get("line")
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as u32);
-                return (file, line);
-            }
+        && let Some(props_str) = props_cell.as_str()
+    {
+        let unescaped = props_str.replace("\\'", "'");
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped) {
+            let file = parsed
+                .get("file")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from);
+            let line = parsed
+                .get("line")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
+            return (file, line);
         }
+    }
     (None, None)
 }
 
@@ -551,7 +556,10 @@ mod tests {
         assert_eq!(report.interactions[0].order_key, 1);
         assert_eq!(report.interactions[1].order_key, 2);
         // Order keys should be unique
-        assert_ne!(report.interactions[0].order_key, report.interactions[1].order_key);
+        assert_ne!(
+            report.interactions[0].order_key,
+            report.interactions[1].order_key
+        );
     }
 
     // ─── New tests for T18 ───────────────────────────────────────────────────
@@ -625,7 +633,7 @@ mod tests {
         let interactions = [i1, i2, i3];
         assert_eq!(
             interactions.iter().map(|i| i.order_key).collect::<Vec<_>>(),
-            vec![1, 2, 3]
+            [1, 2, 3]
         );
     }
 
@@ -634,7 +642,9 @@ mod tests {
         // Serialize and deserialize a SequenceReport; assert equality
         let report = SequenceReport {
             schema_version: "1.0".into(),
-            from: FromSelector::ByName { name: "main".into() },
+            from: FromSelector::ByName {
+                name: "main".into(),
+            },
             interactions: vec![Interaction {
                 order_key: 1,
                 sender: "main".into(),
@@ -668,4 +678,3 @@ mod tests {
         assert_eq!(escape_cypher_string("a'b'c"), "a\\'b\\'c");
     }
 }
-

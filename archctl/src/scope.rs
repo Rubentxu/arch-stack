@@ -67,18 +67,18 @@ pub struct ScopeManifest {
     pub cargo_dir: Option<String>,
 }
 
-
-
 impl ScopeManifest {
     /// Load a single manifest by its scope id (without extension).
     /// Looks under `<project_root>/manifests/<id>.toml`.
     pub fn load(project_root: &Path, scope_id: &str, fs: &dyn Filesystem) -> Result<Self> {
-        let path = project_root.join(MANIFESTS_DIR).join(format!("{scope_id}.toml"));
+        let path = project_root
+            .join(MANIFESTS_DIR)
+            .join(format!("{scope_id}.toml"));
         let text = fs
             .read_to_string(&path)
             .with_context(|| format!("read manifest {}", path.display()))?;
-        let manifest: ScopeManifest = toml::from_str(&text)
-            .with_context(|| format!("parse manifest {}", path.display()))?;
+        let manifest: ScopeManifest =
+            toml::from_str(&text).with_context(|| format!("parse manifest {}", path.display()))?;
         Ok(manifest)
     }
 
@@ -137,7 +137,10 @@ impl ScopeCheckReport {
 
     /// True iff no finding has `Severity::Fail`.
     pub fn passed(&self) -> bool {
-        !self.findings.iter().any(|f| matches!(f.severity, ScopeSeverity::Fail))
+        !self
+            .findings
+            .iter()
+            .any(|f| matches!(f.severity, ScopeSeverity::Fail))
     }
 }
 
@@ -355,9 +358,7 @@ pub fn gate_must_hold_invariants(
         if !all_text.contains(invariant) {
             findings.push(ScopeFinding {
                 gate: ScopeGate::MustHoldInvariantsHold,
-                message: format!(
-                    "invariant not found in scope source: {invariant:?}"
-                ),
+                message: format!("invariant not found in scope source: {invariant:?}"),
                 severity: ScopeSeverity::Fail,
             });
         }
@@ -393,9 +394,7 @@ pub fn gate_must_not_contain_invariants(
         if all_text.contains(forbidden) {
             findings.push(ScopeFinding {
                 gate: ScopeGate::MustNotContainAbsent,
-                message: format!(
-                    "forbidden string found in scope source: {forbidden:?}"
-                ),
+                message: format!("forbidden string found in scope source: {forbidden:?}"),
                 severity: ScopeSeverity::Fail,
             });
         }
@@ -606,17 +605,14 @@ fn parse_test_pass_count(stdout: &str) -> Option<u64> {
             // rest looks like " 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
             let mut tokens = rest.split_whitespace();
             if let Some(count) = tokens.next()
-                && let Ok(n) = count.parse::<u64>() {
-                    total += n;
-                    seen_any = true;
-                }
+                && let Ok(n) = count.parse::<u64>()
+            {
+                total += n;
+                seen_any = true;
+            }
         }
     }
-    if seen_any {
-        Some(total)
-    } else {
-        None
-    }
+    if seen_any { Some(total) } else { None }
 }
 
 /// Run every gate for a single scope. The test-count gate is
@@ -758,9 +754,21 @@ minimum_tests = 60
     fn load_all_returns_every_manifest_sorted() {
         let tmp = fixture();
         let fs = system_fs();
-        write_manifest(tmp.path(), "zeta", "id=\"zeta\"\nversion=\"0.1.0\"\ndescription=\"z\"\n");
-        write_manifest(tmp.path(), "alpha", "id=\"alpha\"\nversion=\"0.1.0\"\ndescription=\"a\"\n");
-        write_manifest(tmp.path(), "mid", "id=\"mid\"\nversion=\"0.1.0\"\ndescription=\"m\"\n");
+        write_manifest(
+            tmp.path(),
+            "zeta",
+            "id=\"zeta\"\nversion=\"0.1.0\"\ndescription=\"z\"\n",
+        );
+        write_manifest(
+            tmp.path(),
+            "alpha",
+            "id=\"alpha\"\nversion=\"0.1.0\"\ndescription=\"a\"\n",
+        );
+        write_manifest(
+            tmp.path(),
+            "mid",
+            "id=\"mid\"\nversion=\"0.1.0\"\ndescription=\"m\"\n",
+        );
         let all = ScopeManifest::load_all(tmp.path(), &fs).unwrap();
         let ids: Vec<&str> = all.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, vec!["alpha", "mid", "zeta"]);
@@ -894,7 +902,11 @@ minimum_tests = 60
     fn gate_must_not_contain_fails_when_text_present() {
         let tmp = fixture();
         let fs = system_fs();
-        make_source_file(tmp.path(), "lib.rs", "use std::fs::{self};\npub fn x() {}\n");
+        make_source_file(
+            tmp.path(),
+            "lib.rs",
+            "use std::fs::{self};\npub fn x() {}\n",
+        );
         let m = ScopeManifest {
             id: "demo".into(),
             version: "0.1.0".into(),
@@ -969,11 +981,7 @@ minimum_tests = 0
         assert!(!r.passed());
         // 3 gates fire: editable_files, public_symbols, must_hold.
         assert_eq!(r.findings.len(), 3);
-        let gates: std::collections::BTreeSet<_> = r
-            .findings
-            .iter()
-            .map(|f| f.gate)
-            .collect();
+        let gates: std::collections::BTreeSet<_> = r.findings.iter().map(|f| f.gate).collect();
         assert!(gates.contains(&ScopeGate::EditableFilesExist));
         assert!(gates.contains(&ScopeGate::PublicSymbolsExist));
         assert!(gates.contains(&ScopeGate::MustHoldInvariantsHold));
@@ -982,7 +990,10 @@ minimum_tests = 0
     #[test]
     fn render_report_line_is_stable() {
         let mut report = ScopeCheckReport::ok("demo");
-        assert_eq!(render_report_line(&report), "[OK  ] scope demo (0 findings)");
+        assert_eq!(
+            render_report_line(&report),
+            "[OK  ] scope demo (0 findings)"
+        );
         report.findings.push(ScopeFinding {
             gate: ScopeGate::EditableFilesExist,
             message: "missing".into(),
@@ -1036,7 +1047,10 @@ description = "y"
     fn gate_names_are_stable_strings() {
         assert_eq!(ScopeGate::EditableFilesExist.name(), "editable_files_exist");
         assert_eq!(ScopeGate::PublicSymbolsExist.name(), "public_symbols_exist");
-        assert_eq!(ScopeGate::MustHoldInvariantsHold.name(), "must_hold_invariants");
+        assert_eq!(
+            ScopeGate::MustHoldInvariantsHold.name(),
+            "must_hold_invariants"
+        );
         assert_eq!(ScopeGate::TestCountMeetsMinimum.name(), "test_count");
         // also: used as a BTreeMap key somewhere later
         let mut m: BTreeMap<ScopeGate, u32> = BTreeMap::new();

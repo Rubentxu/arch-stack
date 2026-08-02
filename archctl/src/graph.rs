@@ -244,14 +244,22 @@ fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
     Ok(rows)
 }
 
-pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8, fs: &dyn Filesystem) -> Result<Vec<Json>> {
+pub fn neighbours(
+    project_dir: &Path,
+    element_id: &str,
+    depth: u8,
+    fs: &dyn Filesystem,
+) -> Result<Vec<Json>> {
     let id = validate_identifier(element_id)?;
     let depth = depth.clamp(1, 4) as i64;
     let cypher = format!(
         "MATCH (e:Element {{id: '{id}'}})-[*1..{depth}]-(n) RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
     if depth > 2 {
-        warn!(depth, "graph traversal depth > 2 may be slow on large graphs");
+        warn!(
+            depth,
+            "graph traversal depth > 2 may be slow on large graphs"
+        );
     }
     let session = open_session(project_dir, fs)?;
     debug!(%cypher, "graph neighbours");
@@ -277,7 +285,12 @@ mod tests {
             .conn
             .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
             .unwrap();
-        let rows = query(&project, "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;", &fs).unwrap();
+        let rows = query(
+            &project,
+            "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["m.id"], "mt.system");
         assert_eq!(rows[0]["m.name"], "system");

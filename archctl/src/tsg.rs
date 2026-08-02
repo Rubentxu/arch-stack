@@ -19,6 +19,7 @@
 //! Both paths produce identical `Evidence` rows so the persistence layer
 //! (graph::put_evidence) does not care which one ran.
 
+use crate::Filesystem;
 use anyhow::{Context, Result};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
@@ -27,7 +28,6 @@ use tree_sitter::Parser as TsParser;
 use tree_sitter_graph::ast::File as TsgFile;
 use tree_sitter_graph::functions::Functions;
 use tree_sitter_graph::{ExecutionConfig, NoCancellation, Variables};
-use crate::Filesystem;
 
 /// Outcome of executing a TSG file against a single source document.
 /// Each `Evidence` row maps 1:1 to a `(node, ...)` block in the TSG.
@@ -133,7 +133,15 @@ pub fn extract_with_rules(
                 continue;
             }
         };
-        let out = execute(rules, lang, rel_path.to_str().unwrap_or("<bad-path>"), &source, claim, kind, clock)?;
+        let out = execute(
+            rules,
+            lang,
+            rel_path.to_str().unwrap_or("<bad-path>"),
+            &source,
+            claim,
+            kind,
+            clock,
+        )?;
         combined.graph_node_count += out.graph_node_count;
         combined.graph_edge_count += out.graph_edge_count;
         combined.evidence.extend(out.evidence);
@@ -162,7 +170,8 @@ mod tests {
     fn load_and_execute_rust_function_rule() {
         let rules = load_rules(SupportLang::Rust, RUST_FN_RULES).expect("parse TSG");
         let src = "fn alpha() {}\nfn beta(x: i32) -> i32 { x }\n";
-        let clock: &dyn crate::clock::Clock = &crate::clock::FixedClock::new("2026-07-30T00:00:00Z");
+        let clock: &dyn crate::clock::Clock =
+            &crate::clock::FixedClock::new("2026-07-30T00:00:00Z");
         let out = execute(
             &rules,
             SupportLang::Rust,
@@ -196,16 +205,18 @@ mod tests {
         assert!(out.evidence.iter().all(|e| e.tool_version == TOOL_VERSION));
         // Injected Clock port: deterministic timestamp, no SystemClock
         // races against the test runner.
-        assert!(out
-            .evidence
-            .iter()
-            .all(|e| e.observed_at == "2026-07-30T00:00:00Z"));
+        assert!(
+            out.evidence
+                .iter()
+                .all(|e| e.observed_at == "2026-07-30T00:00:00Z")
+        );
         // Byte ranges should be non-zero and within source.
         let src_len = src.len() as u64;
-        assert!(out
-            .evidence
-            .iter()
-            .all(|e| e.end_byte.unwrap_or(0) <= src_len));
+        assert!(
+            out.evidence
+                .iter()
+                .all(|e| e.end_byte.unwrap_or(0) <= src_len)
+        );
     }
 
     #[test]

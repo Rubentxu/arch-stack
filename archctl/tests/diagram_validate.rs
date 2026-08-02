@@ -68,10 +68,26 @@ fn write_valid_bundle(dir: &TempDir) {
     let evidence = valid_evidence();
     let styles = valid_styles();
 
-    fs::write(dir.path().join("manifest.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
-    fs::write(dir.path().join("projection.json"), serde_json::to_string_pretty(&projection).unwrap()).unwrap();
-    fs::write(dir.path().join("evidence.json"), serde_json::to_string_pretty(&evidence).unwrap()).unwrap();
-    fs::write(dir.path().join("styles.json"), serde_json::to_string_pretty(&styles).unwrap()).unwrap();
+    fs::write(
+        dir.path().join("manifest.json"),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("projection.json"),
+        serde_json::to_string_pretty(&projection).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("evidence.json"),
+        serde_json::to_string_pretty(&evidence).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("styles.json"),
+        serde_json::to_string_pretty(&styles).unwrap(),
+    )
+    .unwrap();
 
     let assets = dir.path().join("assets");
     fs::create_dir_all(&assets).unwrap();
@@ -87,7 +103,14 @@ fn validate_valid_bundle_exits_zero() {
     write_valid_bundle(&tmpdir);
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "validate", tmpdir.path().to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "validate",
+            tmpdir.path().to_str().unwrap(),
+        ])
         .assert()
         .success()
         .stdout(predicates::str::contains("is valid"));
@@ -100,7 +123,15 @@ fn validate_valid_bundle_json_output_exits_zero() {
     write_valid_bundle(&tmpdir);
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "validate", "--json", tmpdir.path().to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "validate",
+            "--json",
+            tmpdir.path().to_str().unwrap(),
+        ])
         .assert()
         .success();
 }
@@ -113,7 +144,14 @@ fn validate_missing_manifest_exits_nonzero() {
     fs::remove_file(tmpdir.path().join("manifest.json")).unwrap();
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "validate", tmpdir.path().to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "validate",
+            tmpdir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure()
         .stdout(predicates::str::contains("manifest.json"))
@@ -128,7 +166,14 @@ fn validate_missing_evidence_exits_nonzero() {
     fs::remove_file(tmpdir.path().join("evidence.json")).unwrap();
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "validate", tmpdir.path().to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "validate",
+            tmpdir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure()
         .stdout(predicates::str::contains("evidence.json"))
@@ -149,7 +194,14 @@ fn validate_malformed_projection_nodes_wrong_type() {
     .unwrap();
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "validate", tmpdir.path().to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "validate",
+            tmpdir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure()
         .stdout(predicates::str::contains("projection.json"))
@@ -179,7 +231,14 @@ fn validate_projection_node_invalid_type() {
     .unwrap();
 
     assert_cmd::Command::new("cargo")
-        .args(["run", "--quiet", "--", "diagram", "validate", tmpdir.path().to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "diagram",
+            "validate",
+            tmpdir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure()
         .stdout(predicates::str::contains("projection.json"))

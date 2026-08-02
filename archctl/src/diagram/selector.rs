@@ -4,8 +4,8 @@
 //! - `c4-kind` ∈ {context, container, component, dynamic, deployment}
 //! - `scope` ∈ {`*` (all), or an identifier string}
 
-use std::fmt;
 use crate::graph::validate_identifier;
+use std::fmt;
 
 /// Parse a view selector string.
 ///
@@ -79,9 +79,9 @@ impl ViewSelector {
         let s = s.trim();
 
         // Must contain a ':'
-        let colon_pos = s.find(':').ok_or_else(|| {
-            anyhow::anyhow!("view selector must contain ':' (got: {s})")
-        })?;
+        let colon_pos = s
+            .find(':')
+            .ok_or_else(|| anyhow::anyhow!("view selector must contain ':' (got: {s})"))?;
 
         if colon_pos == 0 {
             anyhow::bail!("view selector must have a C4 kind before ':'");

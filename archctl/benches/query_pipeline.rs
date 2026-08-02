@@ -13,7 +13,7 @@
 //! Run with: `cargo bench --bench query_pipeline`
 //! Quick smoke: `cargo bench --bench query_pipeline -- --quick`
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 mod common;
 use common::{seed_medium, seed_small};
