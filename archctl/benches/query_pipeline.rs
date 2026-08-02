@@ -6,6 +6,10 @@
 //! - semantic-edge traversal (medium)
 //! - evidence path filter (large)
 //!
+//! The two enabled benches use `iter_batched(NumIterations(10))` so the
+//! `seed_*` cost is amortized 10× per batch. Closes audit M5
+//! follow-up (seed-cost decomposition).
+//!
 //! Run with: `cargo bench --bench query_pipeline`
 //! Quick smoke: `cargo bench --bench query_pipeline -- --quick`
 
@@ -18,28 +22,34 @@ use archctl::store::GraphStore;
 
 fn bench_query_count_small(c: &mut Criterion) {
     c.bench_function("query_count_elements_small", |b| {
-        b.iter(|| {
-            let (store, _tmp) = seed_small();
-            let rows = store
-                .query("MATCH (e:Element) RETURN count(e) AS n;")
-                .expect("count query");
-            criterion::black_box(rows);
-        });
+        b.iter_batched(
+            seed_small,
+            |(store, _tmp)| {
+                let rows = store
+                    .query("MATCH (e:Element) RETURN count(e) AS n;")
+                    .expect("count query");
+                criterion::black_box(rows);
+            },
+            criterion::BatchSize::NumIterations(10),
+        );
     });
 }
 
 fn bench_query_semantic_edges_medium(c: &mut Criterion) {
     c.bench_function("query_semantic_edges_medium", |b| {
-        b.iter(|| {
-            let (store, _tmp) = seed_medium();
-            let rows = store
-                .query(
-                    "MATCH (a:Element)-[r:SEMANTIC_EDGE]->(b:Element) \
-                     RETURN a.id AS src_id, r.relation_id AS rel_id, b.id AS tgt_id LIMIT 1000;",
-                )
-                .expect("semantic edges query");
-            criterion::black_box(rows);
-        });
+        b.iter_batched(
+            seed_medium,
+            |(store, _tmp)| {
+                let rows = store
+                    .query(
+                        "MATCH (a:Element)-[r:SEMANTIC_EDGE]->(b:Element) \
+                         RETURN a.id AS src_id, r.relation_id AS rel_id, b.id AS tgt_id LIMIT 1000;",
+                    )
+                    .expect("semantic edges query");
+                criterion::black_box(rows);
+            },
+            criterion::BatchSize::NumIterations(10),
+        );
     });
 }
 
