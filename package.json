@@ -1,0 +1,33 @@
+{
+  "name": "archview",
+  "version": "0.14.0",
+  "private": true,
+  "type": "module",
+  "description": "Code Knowledge Graph Workbench — consumes archctl bundles",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write \"src/**/*.{ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,json,md}\""
+  },
+  "dependencies": {
+    "@antv/g6": "^5.0.50",
+    "solid-js": "^1.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.11.0",
+    "vitest": "^2.1.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

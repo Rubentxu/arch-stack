@@ -1,0 +1,197 @@
+/* archview — minimal MVP styles. Will be replaced with a design
+ * system in M17.1+. */
+
+:root {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --bg-alt: #161b22;
+  --bg-elev: #1c2128;
+  --fg: #e6edf3;
+  --fg-muted: #8d96a0;
+  --accent: #5b8def;
+  --error: #f85149;
+  --border: #30363d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.topbar h1 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.bundle-loader {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  align-items: center;
+}
+
+.bundle-loader button {
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.bundle-loader button:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.bundle-loader input {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 0.875rem;
+  font-family: monospace;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas {
+  flex: 1;
+  position: relative;
+  background: var(--bg);
+}
+
+.empty-canvas {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+}
+
+.sidebar {
+  width: 320px;
+  background: var(--bg-alt);
+  border-left: 1px solid var(--border);
+  padding: 1rem;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-header h2 {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0 0 0.5rem 0;
+}
+
+dl.bundle-meta, dl.node-meta {
+  margin: 0 0 1rem 0;
+  font-size: 0.8125rem;
+}
+
+dl.bundle-meta dt, dl.node-meta dt {
+  color: var(--fg-muted);
+  margin-top: 0.25rem;
+}
+
+dl.bundle-meta dd, dl.node-meta dd {
+  margin: 0;
+  font-family: monospace;
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem 0;
+}
+
+h4 {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  margin: 1rem 0 0.5rem 0;
+}
+
+.empty {
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+.evidence-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.evidence-list li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.evidence-list code {
+  font-family: monospace;
+}
+
+.confidence {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
+.error {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--error);
+  color: white;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  max-width: 400px;
+}

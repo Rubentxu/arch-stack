@@ -1,0 +1,113 @@
+/**
+ * Sidebar — shows evidence for the selected node + bundle metadata.
+ * Evidence pointers come from the `meta` of the GraphNode (extracted
+ * from archctl bundles).
+ */
+
+import { For, Show, type Component } from "solid-js";
+import type { GraphNode } from "../bundle/loader";
+
+export interface SidebarProps {
+  node: GraphNode | null;
+  bundleMeta: {
+    source: string;
+    schemaVersion: string;
+    loadedAt: string;
+    rawKind: string;
+  } | null;
+}
+
+export const Sidebar: Component<SidebarProps> = (props) => {
+  return (
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h2>Bundle</h2>
+        <Show when={props.bundleMeta}>
+          {(meta) => (
+            <dl class="bundle-meta">
+              <dt>source</dt>
+              <dd>{meta().source}</dd>
+              <dt>schemaVersion</dt>
+              <dd>{meta().schemaVersion}</dd>
+              <dt>rawKind</dt>
+              <dd>{meta().rawKind}</dd>
+              <dt>loadedAt</dt>
+              <dd>{meta().loadedAt}</dd>
+            </dl>
+          )}
+        </Show>
+      </header>
+
+      <section class="sidebar-selection">
+        <Show
+          when={props.node}
+          fallback={
+            <p class="empty">Select a node to inspect its evidence.</p>
+          }
+        >
+          {(node) => (
+            <div class="node-detail">
+              <h3>{node().label}</h3>
+              <dl class="node-meta">
+                <dt>kind</dt>
+                <dd>{node().kind}</dd>
+                <Show when={node().language}>
+                  <dt>language</dt>
+                  <dd>{node().language}</dd>
+                </Show>
+                <Show when={node().file}>
+                  <dt>file</dt>
+                  <dd>
+                    <code>{node().file}:{node().line ?? "?"}</code>
+                  </dd>
+                </Show>
+              </dl>
+              <h4>Evidence</h4>
+              <ul class="evidence-list">
+                <For each={extractEvidence(node())}>
+                  {(ev) => (
+                    <li>
+                      <code>{ev.file}:{ev.line}</code>
+                      <span class="confidence">confidence: {ev.confidence}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </div>
+          )}
+        </Show>
+      </section>
+    </aside>
+  );
+};
+
+interface EvidenceRef {
+  file: string;
+  line: number | string;
+  confidence: number | string;
+}
+
+function extractEvidence(node: GraphNode): EvidenceRef[] {
+  const meta = node.meta ?? {};
+  const refs: EvidenceRef[] = [];
+  if (Array.isArray(meta.evidence_refs)) {
+    for (const ref of meta.evidence_refs) {
+      if (typeof ref === "object" && ref !== null) {
+        const r = ref as Record<string, unknown>;
+        refs.push({
+          file: String(r.file ?? node.file ?? "?"),
+          line: String(r.line ?? "?"),
+          confidence: String(r.confidence ?? "?"),
+        });
+      }
+    }
+  }
+  if (refs.length === 0 && node.file) {
+    refs.push({
+      file: node.file,
+      line: node.line ?? "?",
+      confidence: "?",
+    });
+  }
+  return refs;
+}

@@ -1,0 +1,28 @@
+# Editor / OS
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# OS
+Thumbs.db
+
+# Test
+coverage/
+.nyc_output/

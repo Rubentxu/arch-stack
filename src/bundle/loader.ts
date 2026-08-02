@@ -1,0 +1,303 @@
+/**
+ * Bundle loader — consumes JSON bundles emitted by `archctl`.
+ *
+ * Supported bundle shapes (per `archctl` schemas):
+ * - `call-graph` → `archctl/code/call-graph-report.schema.json`
+ * - `sequence` → `archctl/code/sequence-report.schema.json`
+ * - `class-diagram` → `archctl/schemas/class-diagram-report.schema.json`
+ * - `c4` → `archctl/diagram/projection.schema.json`
+ *
+ * The loader is intentionally schema-tolerant: it accepts any
+ * JSON object that has either `nodes`+`edges` or `elements`+`relations`
+ * shape, and normalizes to a uniform `GraphBundle` for the renderer.
+ */
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: string;
+  language?: string;
+  file?: string;
+  line?: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  kind?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface GraphBundle {
+  schemaVersion: string;
+  source: string;
+  loadedAt: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  /** Bundle shape that produced this normalized bundle. */
+  rawKind: "call-graph" | "sequence" | "class-diagram" | "c4" | "unknown";
+}
+
+/**
+ * Load a bundle from a JSON path. Works for both `file://` URLs
+ * (via the open-file dialog) and `http://localhost:18080/samples/...`
+ * (via the dev server).
+ */
+export async function loadBundle(url: string): Promise<GraphBundle> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `failed to load bundle from ${url}: HTTP ${response.status}`,
+    );
+  }
+  const raw = (await response.json()) as Record<string, unknown>;
+  return normalizeBundle(raw, url);
+}
+
+/**
+ * Normalize an arbitrary bundle JSON into the uniform `GraphBundle`
+ * shape. The detection is based on the presence of `schemaVersion`
+ * and the per-domain shape discriminators (`interactions` for
+ * sequence, `nodes`+`edges` for the rest).
+ */
+export function normalizeBundle(
+  raw: Record<string, unknown>,
+  source: string,
+): GraphBundle {
+  const schemaVersion = stringOr(raw.schemaVersion, "unknown");
+  const rawKind = detectKind(raw);
+
+  let nodes: GraphNode[] = [];
+  let edges: GraphEdge[] = [];
+
+  switch (rawKind) {
+    case "call-graph":
+      nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
+        callGraphNodeToNode,
+      );
+      edges = (raw.edges as Record<string, unknown>[] | undefined ?? []).map(
+        callGraphEdgeToEdge,
+      );
+      break;
+    case "sequence":
+      // Sequence bundles nest interactions → extract callee pairs.
+      nodes = extractSequenceNodes(raw);
+      edges = extractSequenceEdges(raw);
+      break;
+    case "class-diagram":
+      nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
+        classDiagramNodeToNode,
+      );
+      edges = (raw.edges as Record<string, unknown>[] | undefined ?? []).map(
+        classDiagramEdgeToEdge,
+      );
+      break;
+    case "c4":
+      // C4 bundle uses `elements` + `relations` per the projection schema.
+      nodes = (raw.elements as Record<string, unknown>[] | undefined ?? []).map(
+        c4ElementToNode,
+      );
+      edges = (raw.relations as Record<string, unknown>[] | undefined ?? []).map(
+        c4RelationToEdge,
+      );
+      break;
+    default:
+      // Fallback: try `nodes`+`edges` keys with lenient typing.
+      nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
+        genericToNode,
+      );
+      edges = (raw.edges as Record<string, unknown>[] | undefined ?? []).map(
+        genericToEdge,
+      );
+  }
+
+  return {
+    schemaVersion,
+    source,
+    loadedAt: new Date().toISOString(),
+    nodes,
+    edges,
+    rawKind,
+  };
+}
+
+function detectKind(raw: Record<string, unknown>): GraphBundle["rawKind"] {
+  if (Array.isArray(raw.interactions)) return "sequence";
+  if (Array.isArray(raw.nodes) && Array.isArray(raw.edges)) {
+    const firstNode = raw.nodes[0] as Record<string, unknown> | undefined;
+    if (firstNode && typeof firstNode.kind === "string") {
+      if (
+        ["class", "interface", "trait", "enum"].includes(firstNode.kind) ||
+        (firstNode.language && typeof firstNode.language === "string")
+      ) {
+        return "class-diagram";
+      }
+      if (firstNode.kind === "function" || firstNode.kind === "method") {
+        return "call-graph";
+      }
+    }
+    return "unknown";
+  }
+  if (Array.isArray(raw.elements) && Array.isArray(raw.relations)) {
+    return "c4";
+  }
+  return "unknown";
+}
+
+// -- per-shape normalizers -------------------------------------------------
+
+function callGraphNodeToNode(n: Record<string, unknown>): GraphNode {
+  return {
+    id: stringOr(n.id, ""),
+    label: stringOr(n.name, "?"),
+    kind: stringOr(n.kind, "function"),
+    language: stringOrUndefined(n.language),
+    file: stringOrUndefined(n.file),
+    line: numberOrUndefined(n.line),
+    meta: { ...n },
+  };
+}
+
+function callGraphEdgeToEdge(e: Record<string, unknown>): GraphEdge {
+  return {
+    id: stringOr(e.id, `${e.source}->${e.target}`),
+    source: stringOr(e.source, ""),
+    target: stringOr(e.target, ""),
+    kind: stringOrUndefined(e.kind),
+    label: stringOrUndefined(e.kind),
+    meta: { ...e },
+  };
+}
+
+function classDiagramNodeToNode(n: Record<string, unknown>): GraphNode {
+  return {
+    id: stringOr(n.canonical_key, ""),
+    label: stringOr(n.name, "?"),
+    kind: stringOr(n.kind, "class"),
+    language: stringOrUndefined(n.language),
+    file: stringOrUndefined(n.file),
+    line: numberOrUndefined(n.line),
+    meta: { ...n },
+  };
+}
+
+function classDiagramEdgeToEdge(e: Record<string, unknown>): GraphEdge {
+  return {
+    id: stringOr(e.canonical_key, `${e.source}->${e.target}`),
+    source: stringOr(e.source, ""),
+    target: stringOr(e.target, ""),
+    kind: stringOr(e.predicate, "unknown"),
+    label: stringOr(e.predicate, ""),
+    meta: { ...e },
+  };
+}
+
+function c4ElementToNode(e: Record<string, unknown>): GraphNode {
+  return {
+    id: stringOr(e.id, ""),
+    label: stringOr(e.name, "?"),
+    kind: stringOr(e.kind, "Element"),
+    language: undefined,
+    file: undefined,
+    line: undefined,
+    meta: { ...e },
+  };
+}
+
+function c4RelationToEdge(e: Record<string, unknown>): GraphEdge {
+  return {
+    id: `${e.source}->${e.target}`,
+    source: stringOr(e.source, ""),
+    target: stringOr(e.target, ""),
+    kind: stringOr(e.predicate_id, "unknown"),
+    label: stringOr(e.predicate_id, ""),
+    meta: { ...e },
+  };
+}
+
+function extractSequenceNodes(raw: Record<string, unknown>): GraphNode[] {
+  const map = new Map<string, GraphNode>();
+  for (const i of raw.interactions as Record<string, unknown>[] ?? []) {
+    for (const side of ["caller", "callee"] as const) {
+      const ref = i[side] as Record<string, unknown> | undefined;
+      if (!ref) continue;
+      const fn = ref.name as string | undefined;
+      if (!fn) continue;
+      const file = ref.file as string | undefined;
+      const key = `${file ?? ""}:${fn}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          label: `${fn}`,
+          kind: "function",
+          file,
+          line: ref.line as number | undefined,
+        });
+      }
+    }
+  }
+  return [...map.values()];
+}
+
+function extractSequenceEdges(raw: Record<string, unknown>): GraphEdge[] {
+  const edges: GraphEdge[] = [];
+  let order = 0;
+  for (const i of raw.interactions as Record<string, unknown>[] ?? []) {
+    const caller = i.caller as Record<string, unknown> | undefined;
+    const callee = i.callee as Record<string, unknown> | undefined;
+    if (!caller || !callee) continue;
+    const cn = caller.name as string | undefined;
+    const dn = callee.name as string | undefined;
+    if (!cn || !dn) continue;
+    const cf = caller.file as string | undefined;
+    const df = callee.file as string | undefined;
+    const source = `${cf ?? ""}:${cn}`;
+    const target = `${df ?? ""}:${dn}`;
+    edges.push({
+      id: `${order++}-${source}->${target}`,
+      source,
+      target,
+      kind: stringOrUndefined(i.message_kind),
+      label: stringOr(i.label, `${cn}→${dn}`),
+      meta: { order: i.order, line: i.line },
+    });
+  }
+  return edges;
+}
+
+function genericToNode(n: Record<string, unknown>): GraphNode {
+  return {
+    id: stringOr(n.id, ""),
+    label: stringOr(n.name, stringOr(n.label, "?")),
+    kind: stringOr(n.kind, "unknown"),
+    meta: { ...n },
+  };
+}
+
+function genericToEdge(e: Record<string, unknown>): GraphEdge {
+  return {
+    id: stringOr(e.id, `${e.source}->${e.target}`),
+    source: stringOr(e.source, ""),
+    target: stringOr(e.target, ""),
+    kind: stringOrUndefined(e.kind),
+    label: stringOr(e.kind, undefined),
+    meta: { ...e },
+  };
+}
+
+// -- helpers --------------------------------------------------------------
+
+function stringOr(v: unknown, fallback: string): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function stringOrUndefined(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function numberOrUndefined(v: unknown): number | undefined {
+  return typeof v === "number" ? v : undefined;
+}
