@@ -13,6 +13,12 @@
 //! criterion's quick mode allows. The components above are the bulk of
 //! the budget-relevant cost.
 //!
+//! All seeded benches use `iter_batched(NumIterations(10))` so the
+//! `seed_*` cost is amortized 10× (setup runs once per batch of 10
+//! measured iters instead of once per iter). This closes audit M5:
+//! ADR-019 `export p99 <2s for <10k` was inflated by seed cost
+//! dominating the measurement loop.
+//!
 //! Run with: `cargo bench --bench export_pipeline`
 //! Quick smoke: `cargo bench --bench export_pipeline -- --quick`
 
@@ -27,21 +33,28 @@ use archctl::diagram::queries::{query_elements, query_semantic_edges};
 
 fn bench_query_elements_small(c: &mut Criterion) {
     c.bench_function("export_query_elements_small", |b| {
-        b.iter(|| {
-            let (store, _tmp) = seed_small();
-            let elements = query_elements(&store, "container", None).expect("query_elements");
-            criterion::black_box(elements);
-        });
+        b.iter_batched(
+            seed_small,
+            |(store, _tmp)| {
+                let elements = query_elements(&store, "container", None).expect("query_elements");
+                criterion::black_box(elements);
+            },
+            criterion::BatchSize::NumIterations(10),
+        );
     });
 }
 
 fn bench_query_semantic_edges_medium(c: &mut Criterion) {
     c.bench_function("export_query_semantic_edges_medium", |b| {
-        b.iter(|| {
-            let (store, _tmp) = seed_medium();
-            let edges = query_semantic_edges(&store, "container").expect("query_semantic_edges");
-            criterion::black_box(edges);
-        });
+        b.iter_batched(
+            seed_medium,
+            |(store, _tmp)| {
+                let edges =
+                    query_semantic_edges(&store, "container").expect("query_semantic_edges");
+                criterion::black_box(edges);
+            },
+            criterion::BatchSize::NumIterations(10),
+        );
     });
 }
 
