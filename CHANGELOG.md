@@ -3,6 +3,33 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.0] — 2026-08-02 — M17.2 call graph view
+
+### Added
+- **CallGraphView**: `src/views/CallGraphView.tsx` renders call-graph
+  and sequence bundles with focus-driven BFS expansion. Focus node
+  selector, direction (callees / callers / both), depth 1-5 with
+  +/− controls.
+- **Async flow visualization**: edges tagged `AsyncCall` get a
+  distinct orange treatment vs the default blue (SyncCall) via
+  `.kind-sync` / `.kind-async` CSS classes.
+- **Blast radius counter** in the sidebar: shows total reachable
+  functions at the current depth + direction. Emitted via `onStats`
+  prop from CallGraphView.
+- **App.tsx Switch routing**: call-graph and sequence bundles route
+  to CallGraphView. C4 still routes to C4View. Other shapes fall
+  through to GraphView (M17.0).
+- **Sample bundle**: `public/samples/call-graph-deep.json` — 6 nodes
+  (server, handle_request, auth, query_db, log, metric) + 7 edges.
+  Used to verify blast radius expansion.
+- **Tests**: 8 → 14. New coverage: BFS diamond expansion
+  (1 level, 2 levels, dedup, terminate early), direction symmetry
+  (callees, callers, both), async flow preservation.
+
+### Refs
+- Cycle: `m17.2-archview-callgraph`
+- ROADMAP M17.2 (post-v0.13.0 stabilization plan F2.2)
+
 ## [v0.15.0] — 2026-08-02 — M17.1 C4 semantic zoom
 
 ### Added
