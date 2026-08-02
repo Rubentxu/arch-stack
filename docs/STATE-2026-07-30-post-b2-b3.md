@@ -2,7 +2,7 @@
 
 > Snapshot de cierre tras implementar bloques B2 (manifest + gates)
 > y B3 (SourceOrigin en Evidence y TSG) del plan de mejoras
-> propuesto en `docs/ADR-016-activegraph-packs-investigacion.md`.
+> propuesto en `docs/adr/ADR-016-activegraph-packs-investigacion.md`.
 >
 > El snapshot anterior (`snapshot/pre-activegraph-investigation`,
 > `aa171cd`) sigue siendo válido como punto de retorno previo a la
@@ -216,7 +216,7 @@ no se rompe con cwd vacío).
   sites de stamping (ast-grep + TSG).
 - `manifests/evidence.toml`, `manifests/store.toml`,
   `manifests/tsg.toml` — ejemplos a copiar para nuevos scopes.
-- `docs/ADR-016-activegraph-packs-investigacion.md` — plan
+- `docs/adr/ADR-016-activegraph-packs-investigacion.md` — plan
   completo con los 3 bloques propuestos.
 
 ## Comandos de recuperación

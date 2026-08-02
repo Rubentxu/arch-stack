@@ -37,7 +37,7 @@ projection; the graph is the source of truth.
      "exclude_kinds": ["c4.container", "c4.component", "uml.class", "uml.operation"]
    }
    ```
-5. `archctl diagram put <spec>` then `archctl diagram materialize
+5. archctl diagram put ... (deferred — no current subcommand) then `archctl diagram materialize
    <view-id>`.
 6. Render with `archctl render <materialized.dsl>` (Structurizr, local
    Structurizr CLI / Lite).

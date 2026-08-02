@@ -23,7 +23,7 @@ diagram.
 3. Filter: drop classes with zero relationships inside the scope,
    unless they are interfaces declared as public contracts.
 4. Resolve attributes and operations:
-   `archctl class members <class-id>`.
+   archctl class members ... (deferred — no current subcommand).
 5. Build the class spec:
    ```json
    {

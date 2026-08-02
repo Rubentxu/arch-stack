@@ -109,7 +109,10 @@ pub fn stat(project_dir: &Path, fs: &dyn Filesystem) -> Result<GraphStat> {
     let conn = &session.conn;
     Ok(GraphStat {
         elements: count_match(conn, "MATCH (:Element) RETURN count(*)")?,
-        relations: count_match(conn, "MATCH (:SemanticRelation) RETURN count(*)")?,
+        // See F2 (m9-relations-decision) — relations live on the
+        // SEMANTIC_EDGE REL TABLE; the reified SemanticRelation node
+        // table is reserved for future use (ADR-009 deferral).
+        relations: count_match(conn, "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)")?,
         evidence: count_match(conn, "MATCH (:Evidence) RETURN count(*)")?,
         metatypes: count_match(conn, "MATCH (:MetaType) RETURN count(*)")?,
         predicates: count_match(conn, "MATCH (:Predicate) RETURN count(*)")?,

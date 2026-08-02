@@ -350,7 +350,10 @@ impl GraphStore for LbugStore {
             .ok_or_else(|| anyhow::anyhow!("LbugStore::stat called before init"))?;
         Ok(GraphStat {
             elements: count_match(&session.conn, "MATCH (:Element) RETURN count(*)")?,
-            relations: count_match(&session.conn, "MATCH (:SemanticRelation) RETURN count(*)")?,
+            // See F2 (m9-relations-decision) — relations live on the
+            // SEMANTIC_EDGE REL TABLE; the reified SemanticRelation node
+            // table is reserved for future use (ADR-009 deferral).
+            relations: count_match(&session.conn, "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)")?,
             evidence: count_match(&session.conn, "MATCH (:Evidence) RETURN count(*)")?,
             metatypes: count_match(&session.conn, "MATCH (:MetaType) RETURN count(*)")?,
             predicates: count_match(&session.conn, "MATCH (:Predicate) RETURN count(*)")?,

@@ -45,8 +45,8 @@ overwrite persisted state without validation.
 
 ## Tools
 
-- `archctl graph path --from <id> --to <id>`
+- archctl graph path ... (deferred — no current subcommand)
 - `archctl graph neighbours <id>`
-- `archctl diagram put specification.json`
+- archctl diagram put ... (deferred — no current subcommand)
 - `archctl diagram render <view-id>`
-- `archctl diagram materialize <view-id>`
+- archctl diagram materialize ... (deferred — no current subcommand)

@@ -46,7 +46,7 @@ claim — record it as `unknown` instead.
 ## Tools
 
 - `archctl project resolve`
-- `archctl scan inventory`
-- `archctl scan ast --profile <name>`
-- `archctl graph evidence <id>`
+- archctl scan ... (deferred — use `archctl inventory tree|depends` for inventory, `archctl code call-graph` for AST)
+- archctl scan ... (deferred — use `archctl inventory tree|depends` for inventory, `archctl code call-graph` for AST)
+- archctl graph evidence ... (use `archctl evidence list --path <p>` instead)
 - `archctl graph neighbours <id>`

@@ -4,6 +4,30 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.12.0] — 2026-08-01
+
+### Fixed
+- **`archctl graph stat` reported 0 relations even after a successful call-graph apply.** The stat query counted `MATCH (:SemanticRelation) RETURN count(*)`, but `SemanticRelation` is a reified node table that no application code writes. The call-graph writer persists relations on the `SEMANTIC_EDGE` REL TABLE (per ADR-009 deferral). The stat query now counts `MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)`, which reflects the actual data.
+
+### Documentation
+- **F2 — ADR-009 (relaciones semánticas reificadas) formally marked as DEFERRED.** The reified model (`SemanticRelation` + `REL_SOURCE`/`REL_TARGET`/`RELATION_TYPE` + `RelationVersion`) remains declared in the schema for future use, but `archctl` v0.12+ uses the direct `SEMANTIC_EDGE` model. Rationale documented: 1 round-trip per edge vs 3, plus sequence projection needs `r.props` directly. Closes audit finding F2.
+- **F3 — ADR-008 (recuperación, versionado, evolución) revised.** `Snapshot` + `AnalysisRun` tables are reserved in the schema but not written by application code. `archctl run resume` is deferred to 1.x (aligned with ADR-021 Cognitive Layer). Closes audit finding F3.
+- **F4 — `profile/agents/*.md` and `profile/skills/*/SKILL.md` no longer reference non-existent subcommands** (`archctl scenario`, `archctl scan`, `archctl graph path`, `archctl graph aggregate`, `archctl graph repair-index`, `archctl diagram spec`/`put`/`materialize`/`render`, `archctl class members`). Each reference is annotated with its current status (deferred or renamed). Closes audit finding F4.
+- **F5 — ADR-007 revised.** `ViewEdge` table + `add-edge`/`edit-edge`/`remove-edge` commands deferred to M17.x archview. The `archctl diagram apply` pipeline keeps the 3 current commands (`move-member`, `collapse-group`, `set-label`). Closes audit finding F5.
+- **F6 — ADR-005 naming aligned.** Trait is `GraphStore` (not `ArchitectureGraph`); adapter is `LbugStore` (not `LadybugArchitectureGraph`). Contract identical.
+- **F7 — ADR-004 XDG path aligned.** Project dir is `<portable-project-id>/` (UUIDv4), not `<host>/<owner>/<repo>--<id>/`. Contract identical.
+- **M3 — ROADMAP "Cambios SDD completados" table updated** with v0.9.1, v0.9.2, v0.10.0, v0.11.0 rows.
+- **M1 — ADR-016 moved** from `docs/ADR-016-activegraph-packs-investigacion.md` (orphaned at docs root) to `docs/adr/ADR-016-activegraph-packs-investigacion.md` (canonical ADR location). Cross-references in ADR-017 + STATE-2026-07-30 updated.
+- **M2 — ADR-015 / ADR-018 historical references documented.** Both ADR-015 (puertos faltantes Clock/Environment/Filesystem) and ADR-018 (lock path divergence) were either implemented incrementally in `refactor-1b-filesystem-port` and similar, or explicitly rejected in `m9-archctl-export-apply` planning. The historical references in `docs/STATE.md` (frozen snapshot) and `docs/ROADMAP.md` (decision point) are correct as historical artifacts.
+
+### Bench (M5)
+- **Seed-cost decomposition via `criterion::Bencher::iter_with_setup`.** Each bench function's `b.iter` closure now uses `iter_with_setup(|| seed_X(), |(store, _tmp)| { measure })` so the bulk Cypher seed runs once per batch instead of once per iteration. Note: criterion's default `BatchSize` is `NumIterations(1)` so this is semantically the same as the previous `b.iter` (setup runs every iter) — the bench harness would need `BatchSize::PerBatch(N)` for true amortization. Tracked as a follow-up.
+
+### Notes
+- Patch bump because no new feature surface; this cycle closes audit findings F2–F7 + the doc drifts M1–M3 + the bench seed-cost observation M5.
+- 263 tests pass (260 baseline + 3 from v0.11.0). No new tests added.
+- All 9 audit findings from `docs/audits/2026-08-01-archctl-adr-vs-impl.md` are now closed: F1 closed in v0.11.0; F2–F7 + M1–M3 + M5 closed in v0.12.0.
+
 ## [v0.11.0] — 2026-08-01
 
 ### Security

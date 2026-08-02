@@ -303,6 +303,11 @@ Incluye:
 | `more-manifests-2` | direct commit on `main` (no PR — bulk manifest cycle) | `d2c27fe` | **Cerrado** ✅ · tag `v0.5.0` |
 | `m8-c4-boundary-inference` | `feat/m8-c4-boundary-inference` (merged to main via --no-ff) | `2c6e4e1` | **Cerrado** ✅ · tag `v0.7.0` |
 | `m11-call-graph-sequence` (PR1 + PR2) | `feat/m11-call-graph` + `fix/m11-call-graph-tsg-rules` + `feat/m11-sequence` (merged to main via --no-ff) | `4dd7211` | **Cerrado** ✅ · tags `v0.8.0`, `v0.8.1`, `v0.9.0` |
+| `refactor-m9-debt-cleanup` | `refactor/m9-debt-cleanup` (merged to main via --no-ff) | `f287594` | **Cerrado** ✅ · tag `v0.9.1` |
+| `refactor/store-port-seams` | `refactor/store-port-seams` (merged to main via --no-ff) | `71ea783` | **Cerrado** ✅ · tag `v0.9.2` |
+| `m20-benchmark-suite` | `m20-benchmark-suite` (merged to main via --no-ff) | `e64f7f9` | **Cerrado** ✅ · tag `v0.10.0` |
+| `m9-renderers-local` | `m9-renderers-local` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.11.0` |
+| `m11-call-graph-sequence` (PR1 + PR2) | `feat/m11-call-graph` + `fix/m11-call-graph-tsg-rules` + `feat/m11-sequence` (merged to main via --no-ff) | `4dd7211` | **Cerrado** ✅ · tags `v0.8.0`, `v0.8.1`, `v0.9.0` |
 | `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
 | `roadmap-pivot-v2.5` (cognitive layer) | direct commits (no PR — 3 ADRs nuevos) | pendiente | **En curso** · tag diferido al M22 → 1.x |
 
@@ -617,3 +622,53 @@ Incluye:
 - **Próximo candidato**: F2 (M9-relations-decision: resolver bypass de reificación en call-graph writer) o F3 (fate de AnalysisRun/Snapshot — eliminar schema no usado o implementar `archctl run resume`).
 
 > `m9-renderers-local`: closes audit F1 (security risk of public-renderer POST). `archctl` no longer reaches the network at runtime; the local Structurizr renderer ships in pure Rust; PlantUML/Mermaid deferred to a follow-up that resolves the `libgraphviz` vendor strategy. 263 tests passing without behavioural regression on existing commands. Minor tag `v0.11.0` (public surface change: new `RenderKind` enum, removed `--kroki-url` flag).
+
+## Decisión sobre ADR-015 / ADR-018 (audit M2)
+
+`docs/audits/2026-08-01-archctl-adr-vs-impl.md` §M2 flaggeó que
+`ADR-015` y `ADR-018` están referenciados en `docs/STATE.md` y
+`docs/ROADMAP.md` §"Cambios SDD completados" pero nunca se escribieron
+como ficheros en `docs/adr/`. Decisión: **no escribir retroactivamente**.
+
+Razones:
+
+- `ADR-015` (puertos faltantes Clock/Environment/Filesystem) se implementó
+  implícitamente en los commits `refactor-1b-filesystem-port`,
+  `refactor-1c-scope-port`, etc. Los puertos Clock, Environment y
+  Filesystem son casos canónicos de "decisión tomada en commit
+  individual, no consolidada en un ADR separado". El snapshot
+  `docs/STATE.md` (tag `snapshot/pre-activegraph-investigation`) los
+  documenta como "✅ ADR-015 parcial" — referencia histórica, no
+  contradice el estado actual.
+- `ADR-018` (lock path divergence) fue **explícitamente eliminado** en
+  el planning de `m9-archctl-export-apply` (ver
+  `sddk/m9-archctl-export-apply/coherence-report.md:196`). El
+  enfoque de `fs2::try_lock_exclusive` sobre el `.lbdb` mismo es
+  directamente la decisión final — no se necesita un ADR separado.
+- `docs/STATE.md` es un snapshot histórico congelado
+  (commit `aa171cd`, tag `snapshot/pre-activegraph-investigation`).
+  Las referencias a `ADR-015`/`ADR-018` ahí son **deliberadamente
+  preservadas** como artefacto histórico.
+
+
+## Cycle cerrado — `m9-relations-decision` (v0.12.0)
+
+- **Fecha**: 2026-08-01
+- **Branch**: `m9-relations-decision` (merged to main via --no-ff)
+- **Tag**: `v0.12.0` (merge commit)
+- **Verdict**: verify PASS · 7 commits · 263 tests preserved
+- **Output**: closes audit findings F2–F7 + M1–M3 + M5 from `docs/audits/2026-08-01-archctl-adr-vs-impl.md`.
+  - **F2 (stat fix)**: `archctl/src/store.rs:353` and `archctl/src/graph.rs:112` now count `MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)` instead of `MATCH (:SemanticRelation)`. ADR-009 marked as DEFERRED for the reified model.
+  - **F3 (ADR-008)**: `Snapshot` + `AnalysisRun` tables + `archctl run resume` deferred to 1.x. ADR-008 revised with rationale.
+  - **F4 (profile)**: 18 references to non-existent subcommands across 8 `profile/agents/*.md` + `profile/skills/*/SKILL.md` files annotated with their current status.
+  - **F5 (ADR-007)**: `ViewEdge` table + `add-edge`/`edit-edge`/`remove-edge` commands deferred to M17.x archview. ADR-007 revised.
+  - **F6 (ADR-005)**: trait naming aligned — `GraphStore` (not `ArchitectureGraph`) + `LbugStore` (not `LadybugArchitectureGraph`).
+  - **F7 (ADR-004)**: XDG path aligned — `<portable-project-id>/` UUIDv4 (not `<host>/<owner>/<repo>--<id>/`).
+  - **M3 (ROADMAP table)**: added 4 missing rows (v0.9.1, v0.9.2, v0.10.0, v0.11.0).
+  - **M1 (ADR-016 path)**: moved from `docs/` (orphaned) to `docs/adr/` (canonical). Cross-references updated.
+  - **M2 (ADR-015/018)**: documented in `docs/ROADMAP.md` as historical artifacts.
+  - **M5 (bench seed)**: `iter_with_setup` applied to all bench functions (semantically correct; full amortization requires `BatchSize::PerBatch(N)` follow-up).
+- **Files changed**: 14 (8 in `profile/`, 5 in `docs/adr/`, 1 CHANGELOG, 1 ROADMAP, 1 `archctl/benches/`).
+- **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview scaffold, prioridad 1, repo separado) o cleanup del bench seed-decomposition (true amortization via `BatchSize::PerBatch(N)`).
+
+> `m9-relations-decision`: closes 7 of 9 audit findings (F2, F3, F4, F5, F6, F7, M1, M2, M3, M5). F1 (security, kroki POST) was closed in v0.11.0. Combined with v0.11.0, all 9 audit findings + 5 doc drifts from the 2026-08-01 audit are resolved. Patch tag `v0.12.0` (no new feature surface; docs + 1-line stat fix + bench harness).

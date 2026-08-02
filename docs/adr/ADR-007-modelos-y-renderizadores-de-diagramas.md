@@ -1,8 +1,9 @@
 # ADR-007 — Diagramas como proyecciones del grafo + split render estático / viewer ortogonal
 
-**Estado:** Aceptado (sustituido por [ADR-013](ADR-013-viewer-ortogonal.md) en la sección de rendering)
+**Estado:** Aceptado (sustituido por [ADR-013](ADR-013-viewer-ortogonal.md) en la sección de rendering; **ViewEdge diferido** — revisado 2026-08-01, ver `docs/audits/2026-08-01-archctl-adr-vs-impl.md` §F5)
 **Fecha:** 29 de julio de 2026
 **Última revisión:** 31 de julio de 2026 (pivot a Code Knowledge Graph Workbench; ver [ADR-020](ADR-020-renderer-stack.md) para el stack performance-first)
+**Última revisión (F5):** 1 de agosto de 2026
 **Refuerza:** ADR-005 (LadybugDB como grafo canónico), ADR-013 (viewer ortogonal)
 
 ## Contexto
@@ -96,3 +97,44 @@ Un diagrama debe ser:
 | Modo interactivo | referencia | ✓ (archview) |
 | Cambio visual → grafo | referencia a `archctl diagram apply` | ✓ (ChangeSet) |
 | Bundle contract | referencia a schema versionado | ✓ (formato y JSON schema) |
+
+## Revisión (1 de agosto de 2026) — **ViewEdge diferido**
+
+`docs/audits/2026-08-01-archctl-adr-vs-impl.md` §F5 flaggeó que el schema
+de view-persistence (003_view_nodes.cypher) declara solo
+`Diagram`, `ViewMember`, `ViewGroup` y sus edges `MEMBER_OF`,
+`RENDERS`, `GROUP_CONTAINS`. La `view.edge` (overrides a nivel de
+arista) declarada en este ADR (§Vista persistida) **no está
+implementada**.
+
+Decisión: **diferir `ViewEdge` a 1.x (M17.x archview)**.
+
+Razones:
+
+- La pipeline `archctl diagram apply` actual tiene solo 3 commands:
+  `move-member`, `collapse-group`, `set-label`. No hay
+  `add-edge` / `edit-edge` / `remove-edge`. Implementar `ViewEdge`
+  requiere:
+  - nueva `ViewEdge` table + rel table (`VIEW_EDGE` o similar)
+  - 3 nuevos commands en `Command` enum
+  - nuevos métodos en `GraphStore::put_view_edge` /
+    `link_view_edge` / `unlink_view_edge`
+  - expansión de `Command::apply()` para los 3 nuevos variants
+  - schema migration (v4)
+- El caso de uso principal de `ViewEdge` (decoradores, badges,
+  highlighting de aristas en el workbench) es de **archview**, no
+  de `archctl`. El bundle que `archctl diagram export` produce
+  incluye los miembros con sus `r.props` (decoradores planos);
+  archview puede extender visualmente sin requerir el row
+  `ViewEdge` en el grafo canónico.
+- El costo de implementar + mantener `ViewEdge` no compensa
+  mientras el `archctl diagram apply` cubre los 3 escenarios
+  principales (mover, colapsar, etiquetar).
+
+### Cuándo revocar esta deferral
+
+- `archview` necesita **filtros persistentes sobre aristas** (no solo
+  decoradores; ej. "ocultar todas las relaciones con confianza < 0.5
+  en esta vista").
+- El equipo decide implementar un editor visual completo (M17+).
+
