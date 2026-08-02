@@ -82,15 +82,15 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.17.0`** (verified — pnpm test 17/17 + build OK)
+- **Tag**: **`v0.18.0`** (verified — pnpm test 19/19 + build OK)
 - **Status**:
   - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
   - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
-  - M17.2 call graph view (v0.16.0): focus + BFS + blast radius +
-    async flow visualization
-  - M17.3 sequence diagram view (v0.17.0): lifelines + interaction
-    rows with SyncCall/AsyncCall/Reply arrow styles
-- **Próximo**: M17.4 class diagram view (UML with composition/aggregation).
+  - M17.2 call graph view (v0.16.0): focus + BFS + blast radius
+  - M17.3 sequence diagram view (v0.17.0): lifelines + arrows
+  - M17.4 class diagram view (v0.18.0): UML compartments + extends/
+    implements/composes
+- **Próximo**: M17.5 package diagram view (dependencias, ciclos, cohesión).
 
 ## Archivos clave para retomar
 
