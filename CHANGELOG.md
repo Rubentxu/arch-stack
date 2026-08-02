@@ -3,6 +3,32 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.0] — 2026-08-02 — M17.4 class diagram view
+
+### Added
+- **ClassDiagramView**: `src/views/ClassDiagramView.tsx` renders
+  class-diagram bundles as UML class diagrams. Each class /
+  interface / trait / enum is a card with three compartments:
+    1. Header: stereotype (`<<interface>>` / `<<trait>>` /
+       `<<enum>>`) + class name + language + file:line
+    2. Attributes (`member_kind == "field"`)
+    3. Methods (`member_kind == "fn"` or `"method"`)
+  Relations panel at the bottom groups edges by predicate:
+  `extends` (blue), `implements` (orange), `composes` (red).
+- **App.tsx Switch routing**: class-diagram bundles go to
+  `ClassDiagramView` (more specific than fallback GraphView).
+- **Sample bundle**: `public/samples/class-diagram-rich.json` —
+  6 elements (Drawable, Serializable interfaces; Shape, Circle,
+  AuditEntry classes; Loggable trait) + 5 edges exercising all
+  3 predicate styles.
+- **Tests**: 17 → 19. New coverage: `members[]` preserved in node
+  meta for the diagram render, extends/implements/composes
+  predicates distinguished.
+
+### Refs
+- Cycle: `m17.4-archview-class-diagram`
+- ROADMAP M17.4 (post-v0.13.0 stabilization plan F2.2)
+
 ## [v0.17.0] — 2026-08-02 — M17.3 sequence diagram view
 
 ### Added
