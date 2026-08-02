@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# pre-commit hook — trunk-base workflow enforcement.
+#
+# Runs scripts/fmt-staged.sh in check mode on every commit. Exits 1
+# if any staged .rs file has rustfmt drift, blocking the commit.
+#
+# The fmt-staged.sh script uses `rustfmt` directly on staged files
+# (not `cargo fmt`) to avoid the workspace-wide over-reach gotcha.
+# See AGENTS.md "Code Style" section for the rationale.
+#
+# Bypass with `git commit --no-verify` only after human review.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [ -x "scripts/fmt-staged.sh" ]; then
+    scripts/fmt-staged.sh
+else
+    echo "pre-commit: scripts/fmt-staged.sh not found or not executable; skipping rustfmt check"
+fi
