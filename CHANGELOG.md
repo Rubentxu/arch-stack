@@ -4,6 +4,17 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.12.1] — 2026-08-02
+
+### Bench (M5 follow-up)
+- **Seed-cost decomposition via `iter_batched(NumIterations(N))`.** All seeded benches now use `iter_batched(seed_X, |(store, _tmp)| { measure }, BatchSize::NumIterations(10))` (or 5 for the large dead-code bench). The bulk Cypher seed runs once per batch of N measured iters instead of once per iter. After this change, `export_query_semantic_edges_medium` measures ~16ms (was ~2.8s) — the actual query cost, not the seed cost. Closes audit finding M5 (seed-cost decomposition follow-up from `docs/audits/2026-08-01-archctl-adr-vs-impl.md`).
+
+### Notes
+- Patch bump because no behavior change in the library — bench harness only.
+- 263 tests pass (baseline preserved). No new tests added (bench harness is dev-only).
+- Doctor scope `benchmark` reports 0 findings.
+- M5 fully closed: audit 2026-08-01 is now 100% closed (F1–F7 + M1–M3 + M5).
+
 ## [v0.12.0] — 2026-08-01
 
 ### Fixed

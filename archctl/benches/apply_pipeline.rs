@@ -6,6 +6,12 @@
 //! - single MoveMember command (validates DiagramOps dispatch)
 //! - 100-command batch on large dataset (validates sustained throughput)
 //!
+//! The two enabled benches use `iter_with_setup` to exclude seed cost
+//! from timing. The disabled `bench_apply_chained_commands_large`
+//! uses `iter_batched(NumIterations(5))` so the bulk 10k-node seed
+//! runs once per batch instead of once per iter (closes audit M5
+//! seed-cost decomposition).
+//!
 //! Run with: `cargo bench --bench apply_pipeline`
 //! Quick smoke: `cargo bench --bench apply_pipeline -- --quick`
 
@@ -14,7 +20,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 mod common;
 use common::{seed_large, seed_medium, seed_small};
 
-use archctl::diagram::changeset_types::{ChangeSet, Command};
+use archctl::diagram::changeset_types::Command;
 use archctl::diagram::view_types::Diagram;
 use archctl::store::DiagramOps;
 
@@ -79,42 +85,47 @@ fn bench_apply_move_member_medium(c: &mut Criterion) {
 
 #[allow(dead_code)]
 fn bench_apply_chained_commands_large(c: &mut Criterion) {
-    // 100-command batch on 10k-node store takes ~30s per iter due to
-    // bulk seed cost. Run as a separate group with reduced sample size
-    // so criterion's smoke mode doesn't blow the time budget.
+    // 100-command batch on 10k-node store: the bulk Cypher seed takes
+    // ~30s, so amortize via iter_batched(NumIterations(5)). Setup runs
+    // once per batch of 5 measured iters; routine applies the same 10
+    // SetLabel commands against the same store per batch. SetLabel is
+    // idempotent on `label` and `updated_at` writes were dropped in
+    // v0.9.2 (CP-W2), so re-applying is safe and measures the same
+    // hot-path cost.
     let mut group = c.benchmark_group("apply_chained_commands_large");
     group.sample_size(10);
     group.measurement_time(std::time::Duration::from_secs(120));
     group.bench_function("apply_chained_commands_large", |b| {
-        b.iter(|| {
-            let (mut store, _tmp) = seed_large();
-            store
-                .put_diagram(&Diagram {
-                    id: "container:test".into(),
-                    revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-                    selector: "container:test".into(),
-                    props: serde_json::json!({}),
-                    created_at: None,
-                    updated_at: None,
-                })
-                .unwrap();
-            let commands: Vec<Command> = (1..=10)
-                .map(|i| Command::SetLabel {
-                    member_id: format!("vm:container:test:el:{i}"),
-                    label: format!("Bench Label {i}"),
-                })
-                .collect();
-            let changeset = ChangeSet {
-                schema_version: "1.0".into(),
-                diagram_id: "container:test".into(),
-                base_revision:
-                    "blake3:0000000000000000000000000000000000000000000000000000000000000000".into(),
-                commands,
-            };
-            for cmd in &changeset.commands {
-                let _ = cmd.apply(&mut store, &changeset.diagram_id);
-            }
-        });
+        b.iter_batched(
+            || {
+                let (mut store, _tmp) = seed_large();
+                store
+                    .put_diagram(&Diagram {
+                        id: "container:test".into(),
+                        revision:
+                            "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                                .into(),
+                        selector: "container:test".into(),
+                        props: serde_json::json!({}),
+                        created_at: None,
+                        updated_at: None,
+                    })
+                    .unwrap();
+                let commands: Vec<Command> = (1..=10)
+                    .map(|i| Command::SetLabel {
+                        member_id: format!("vm:container:test:el:{i}"),
+                        label: format!("Bench Label {i}"),
+                    })
+                    .collect();
+                (store, commands)
+            },
+            |(mut store, commands)| {
+                for cmd in &commands {
+                    let _ = cmd.apply(&mut store, "container:test");
+                }
+            },
+            criterion::BatchSize::NumIterations(5),
+        );
     });
     group.finish();
 }
