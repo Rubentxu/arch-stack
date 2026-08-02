@@ -634,3 +634,158 @@ dd.multiline {
   margin: 0;
   font-family: monospace;
 }
+
+/* ─── SequenceView (M17.3) ──────────────────────────────── */
+
+.sequence-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 1.5rem;
+  gap: 1rem;
+}
+
+.sequence-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.sequence-header p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8125rem;
+}
+
+.sequence-grid {
+  display: grid;
+  gap: 0.5rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1rem;
+  font-family: monospace;
+  font-size: 0.8125rem;
+}
+
+.sequence-participant-header {
+  display: flex;
+  justify-content: center;
+  align-items: end;
+  padding: 0 0 0.5rem 0;
+  border-bottom: 2px solid var(--border);
+}
+
+.participant-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.participant-label:hover {
+  border-color: var(--accent);
+}
+
+.participant-name {
+  font-weight: 600;
+}
+
+.participant-file {
+  font-size: 0.6875rem;
+  color: var(--fg-muted);
+}
+
+.sequence-row-meta {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--fg-muted);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+}
+
+.sequence-step {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.sequence-order {
+  font-family: monospace;
+}
+
+.sequence-row {
+  padding: 0.5rem 0;
+}
+
+.arrow-row {
+  display: grid;
+  gap: 0.25rem;
+  align-items: center;
+  min-height: 1.5rem;
+}
+
+.arrow-source,
+.arrow-target {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+.arrow-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.5rem;
+}
+
+.arrow-line-stem {
+  flex: 1;
+  height: 2px;
+  background: var(--accent);
+}
+
+.kind-async .arrow-line-stem {
+  background: repeating-linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  height: 2px;
+}
+
+.kind-reply .arrow-line-stem {
+  background: var(--fg-muted);
+  height: 1px;
+}
+
+.arrow-head {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--accent);
+  margin-left: -1px;
+}
+
+.kind-reply .arrow-head {
+  display: none;
+}
+
+.arrow-label {
+  position: absolute;
+  top: -1.1rem;
+  font-size: 0.6875rem;
+  color: var(--fg);
+  background: var(--bg-alt);
+  padding: 0 0.25rem;
+  white-space: nowrap;
+}

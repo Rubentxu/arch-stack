@@ -2,7 +2,8 @@
  * App shell — top bar with bundle loader, main canvas, sidebar.
  *
  * Renders different views depending on the bundle shape:
- * - call-graph / sequence → CallGraphView (focus + BFS, M17.2)
+ * - sequence → SequenceView (lifelines + arrows, M17.3)
+ * - call-graph → CallGraphView (focus + BFS, M17.2)
  * - class-diagram → GraphView (G6 canvas, M17.0)
  * - C4 → C4View (hierarchical with drill-down, M17.1)
  */
@@ -13,6 +14,7 @@ import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
 import { Sidebar, type SidebarStats } from "./components/Sidebar";
 import { C4View } from "./views/C4View";
 import { CallGraphView } from "./views/CallGraphView";
+import { SequenceView } from "./views/SequenceView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -22,6 +24,10 @@ const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
     label: "Sample call-graph (deep, 5 nodes)",
     url: "/samples/call-graph-deep.json",
+  },
+  {
+    label: "Sample sequence diagram",
+    url: "/samples/sequence.json",
   },
   {
     label: "Sample class-diagram (rust)",
@@ -92,6 +98,18 @@ export const App: Component = () => {
                   nodes={b().nodes}
                   edges={b().edges}
                   selectedId={selected()?.id ?? null}
+                  onSelect={(id) => {
+                    const node = id
+                      ? b().nodes.find((n) => n.id === id) ?? null
+                      : null;
+                    setSelected(node);
+                  }}
+                />
+              </Match>
+              <Match when={b().rawKind === "sequence"}>
+                <SequenceView
+                  nodes={b().nodes}
+                  interactions={b().interactions ?? []}
                   onSelect={(id) => {
                     const node = id
                       ? b().nodes.find((n) => n.id === id) ?? null

@@ -42,6 +42,14 @@ export interface GraphEdge {
   meta?: Record<string, unknown>;
 }
 
+export interface SequenceInteraction {
+  order: number;
+  label?: string;
+  message_kind?: string;
+  caller: { name?: string; file?: string; line?: number };
+  callee: { name?: string; file?: string; line?: number };
+}
+
 export interface GraphBundle {
   schemaVersion: string;
   source: string;
@@ -50,6 +58,11 @@ export interface GraphBundle {
   edges: GraphEdge[];
   /** Bundle shape that produced this normalized bundle. */
   rawKind: "call-graph" | "sequence" | "class-diagram" | "c4" | "unknown";
+  /**
+   * Original interactions, only populated for `rawKind === "sequence"`.
+   * SequenceView uses this to render lifelines + arrows in time order.
+   */
+  interactions?: SequenceInteraction[];
 }
 
 /**
@@ -83,6 +96,7 @@ export function normalizeBundle(
 
   let nodes: GraphNode[] = [];
   let edges: GraphEdge[] = [];
+  let interactions: SequenceInteraction[] | undefined;
 
   switch (rawKind) {
     case "call-graph":
@@ -94,9 +108,14 @@ export function normalizeBundle(
       );
       break;
     case "sequence":
-      // Sequence bundles nest interactions → extract callee pairs.
+      // Sequence bundles nest interactions → extract callee pairs
+      // (for nodes/edges consistency) and preserve raw interactions
+      // (for the SequenceView timeline render).
       nodes = extractSequenceNodes(raw);
       edges = extractSequenceEdges(raw);
+      interactions = (raw.interactions as Record<string, unknown>[] ?? []).map(
+        normalizeInteraction,
+      );
       break;
     case "class-diagram":
       nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
@@ -132,6 +151,7 @@ export function normalizeBundle(
     nodes,
     edges,
     rawKind,
+    interactions,
   };
 }
 
@@ -297,6 +317,27 @@ function extractSequenceEdges(raw: Record<string, unknown>): GraphEdge[] {
     });
   }
   return edges;
+}
+
+/** Normalize a raw sequence interaction into the typed shape. */
+function normalizeInteraction(i: Record<string, unknown>): SequenceInteraction {
+  const caller = (i.caller ?? {}) as Record<string, unknown>;
+  const callee = (i.callee ?? {}) as Record<string, unknown>;
+  return {
+    order: typeof i.order === "number" ? i.order : 0,
+    label: stringOrUndefined(i.label),
+    message_kind: stringOrUndefined(i.message_kind),
+    caller: {
+      name: stringOrUndefined(caller.name),
+      file: stringOrUndefined(caller.file),
+      line: numberOrUndefined(caller.line),
+    },
+    callee: {
+      name: stringOrUndefined(callee.name),
+      file: stringOrUndefined(callee.file),
+      line: numberOrUndefined(callee.line),
+    },
+  };
 }
 
 function genericToNode(n: Record<string, unknown>): GraphNode {

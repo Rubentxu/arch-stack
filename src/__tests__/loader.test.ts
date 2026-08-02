@@ -241,3 +241,67 @@ describe("call-graph async flow (M17.2)", () => {
     expect(bundle.edges[0].kind).toBe("AsyncCall");
   });
 });
+
+describe("sequence bundle (M17.3)", () => {
+  it("preserves raw interactions on the bundle", () => {
+    const raw = {
+      schemaVersion: "1.0",
+      interactions: [
+        {
+          order: 1,
+          label: "a → b",
+          message_kind: "SyncCall",
+          caller: { name: "a", file: "lib.rs", line: 1 },
+          callee: { name: "b", file: "lib.rs", line: 5 },
+        },
+        {
+          order: 2,
+          label: "← result",
+          message_kind: "Reply",
+          caller: { name: "b", file: "lib.rs", line: 6 },
+          callee: { name: "a", file: "lib.rs", line: 2 },
+        },
+      ],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    expect(bundle.rawKind).toBe("sequence");
+    expect(bundle.interactions).toBeDefined();
+    expect(bundle.interactions).toHaveLength(2);
+    expect(bundle.interactions![0].order).toBe(1);
+    expect(bundle.interactions![0].message_kind).toBe("SyncCall");
+    expect(bundle.interactions![1].message_kind).toBe("Reply");
+  });
+
+  it("extracts participants as unique file:name pairs", () => {
+    // 4 interactions, 3 unique participants: a, b, c
+    const raw = {
+      schemaVersion: "1.0",
+      interactions: [
+        { order: 1, message_kind: "SyncCall", caller: { name: "a" }, callee: { name: "b" } },
+        { order: 2, message_kind: "SyncCall", caller: { name: "b" }, callee: { name: "c" } },
+        { order: 3, message_kind: "Reply",    caller: { name: "c" }, callee: { name: "b" } },
+        { order: 4, message_kind: "Reply",    caller: { name: "b" }, callee: { name: "a" } },
+      ],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    const keys = new Set(
+      bundle.interactions!.flatMap((i) => [
+        `${i.caller.file ?? ""}:${i.caller.name ?? "?"}`,
+        `${i.callee.file ?? ""}:${i.callee.name ?? "?"}`,
+      ]),
+    );
+    expect(keys.size).toBe(3);
+  });
+
+  it("handles interactions with missing optional fields", () => {
+    const raw = {
+      schemaVersion: "1.0",
+      interactions: [
+        { order: 1, message_kind: "SyncCall", caller: {}, callee: { name: "b" } },
+      ],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    expect(bundle.interactions![0].caller.name).toBeUndefined();
+    expect(bundle.interactions![0].callee.name).toBe("b");
+  });
+});

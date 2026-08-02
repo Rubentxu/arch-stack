@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "interactions": [
+    {
+      "order": 1,
+      "label": "handle_request()",
+      "message_kind": "SyncCall",
+      "caller": {
+        "name": "server::run",
+        "file": "src/server.rs",
+        "line": 10
+      },
+      "callee": {
+        "name": "server::handle_request",
+        "file": "src/server.rs",
+        "line": 25
+      }
+    },
+    {
+      "order": 2,
+      "label": "verify_token()",
+      "message_kind": "SyncCall",
+      "caller": {
+        "name": "server::handle_request",
+        "file": "src/server.rs",
+        "line": 30
+      },
+      "callee": {
+        "name": "auth::verify_token",
+        "file": "src/auth.rs",
+        "line": 5
+      }
+    },
+    {
+      "order": 3,
+      "label": "fetch()",
+      "message_kind": "AsyncCall",
+      "caller": {
+        "name": "auth::verify_token",
+        "file": "src/auth.rs",
+        "line": 12
+      },
+      "callee": {
+        "name": "db::query",
+        "file": "src/db.rs",
+        "line": 20
+      }
+    },
+    {
+      "order": 4,
+      "label": "← result",
+      "message_kind": "Reply",
+      "caller": {
+        "name": "db::query",
+        "file": "src/db.rs",
+        "line": 22
+      },
+      "callee": {
+        "name": "auth::verify_token",
+        "file": "src/auth.rs",
+        "line": 12
+      }
+    },
+    {
+      "order": 5,
+      "label": "← token_ok",
+      "message_kind": "Reply",
+      "caller": {
+        "name": "auth::verify_token",
+        "file": "src/auth.rs",
+        "line": 14
+      },
+      "callee": {
+        "name": "server::handle_request",
+        "file": "src/server.rs",
+        "line": 30
+      }
+    },
+    {
+      "order": 6,
+      "label": "query_db()",
+      "message_kind": "SyncCall",
+      "caller": {
+        "name": "server::handle_request",
+        "file": "src/server.rs",
+        "line": 32
+      },
+      "callee": {
+        "name": "db::query",
+        "file": "src/db.rs",
+        "line": 12
+      }
+    },
+    {
+      "order": 7,
+      "label": "← rows",
+      "message_kind": "Reply",
+      "caller": {
+        "name": "db::query",
+        "file": "src/db.rs",
+        "line": 14
+      },
+      "callee": {
+        "name": "server::handle_request",
+        "file": "src/server.rs",
+        "line": 32
+      }
+    }
+  ]
+}
