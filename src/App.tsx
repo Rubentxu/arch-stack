@@ -4,7 +4,7 @@
  * Renders different views depending on the bundle shape:
  * - sequence → SequenceView (lifelines + arrows, M17.3)
  * - call-graph → CallGraphView (focus + BFS, M17.2)
- * - class-diagram → GraphView (G6 canvas, M17.0)
+ * - class-diagram → ClassDiagramView (UML compartments, M17.4)
  * - C4 → C4View (hierarchical with drill-down, M17.1)
  */
 
@@ -15,6 +15,7 @@ import { Sidebar, type SidebarStats } from "./components/Sidebar";
 import { C4View } from "./views/C4View";
 import { CallGraphView } from "./views/CallGraphView";
 import { SequenceView } from "./views/SequenceView";
+import { ClassDiagramView } from "./views/ClassDiagramView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -32,6 +33,10 @@ const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
     label: "Sample class-diagram (rust)",
     url: "/samples/class-diagram.json",
+  },
+  {
+    label: "Sample class-diagram (rich, with traits + composition)",
+    url: "/samples/class-diagram-rich.json",
   },
   {
     label: "Sample C4 context",
@@ -133,6 +138,18 @@ export const App: Component = () => {
                     setSelected(node);
                   }}
                   onStats={setStats}
+                />
+              </Match>
+              <Match when={b().rawKind === "class-diagram"}>
+                <ClassDiagramView
+                  nodes={b().nodes}
+                  edges={b().edges}
+                  onSelect={(id) => {
+                    const node = id
+                      ? b().nodes.find((n) => n.id === id) ?? null
+                      : null;
+                    setSelected(node);
+                  }}
                 />
               </Match>
               <Match when={true}>

@@ -789,3 +789,201 @@ dd.multiline {
   padding: 0 0.25rem;
   white-space: nowrap;
 }
+
+/* ─── ClassDiagramView (M17.4) ───────────────────────────── */
+
+.class-diagram-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 1.5rem;
+  gap: 1.5rem;
+}
+
+.cd-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.cd-header p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8125rem;
+}
+
+.cd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.cd-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.1s;
+  display: flex;
+  flex-direction: column;
+}
+
+.cd-card:hover {
+  border-color: var(--accent);
+}
+
+.cd-kind-interface {
+  border-left: 3px solid #79b8ff;
+}
+
+.cd-kind-trait {
+  border-left: 3px solid #85e89d;
+}
+
+.cd-kind-enum {
+  border-left: 3px solid #ffab70;
+}
+
+.cd-kind-class {
+  border-left: 3px solid #f97583;
+}
+
+.cd-card-header {
+  background: var(--bg-elev);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
+.cd-stereotype {
+  display: block;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--fg-muted);
+}
+
+.cd-name {
+  margin: 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.cd-language {
+  display: inline-block;
+  font-size: 0.6875rem;
+  color: var(--fg-muted);
+  background: var(--bg);
+  padding: 0 0.4rem;
+  border-radius: 2px;
+  margin-right: 0.25rem;
+}
+
+.cd-file {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--fg-muted);
+  font-family: monospace;
+  margin-top: 0.25rem;
+}
+
+.cd-compartment {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.cd-compartment h4 {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0 0 0.25rem 0;
+}
+
+.cd-compartment ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.cd-compartment li {
+  padding: 0.1rem 0;
+  display: flex;
+  gap: 0.25rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.cd-member-name {
+  font-weight: 600;
+}
+
+.cd-member-sig {
+  color: var(--fg-muted);
+}
+
+.cd-relations {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+}
+
+.cd-relations h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.cd-relation-group {
+  margin-top: 0.5rem;
+}
+
+.cd-relation-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  margin: 0 0 0.25rem 0;
+}
+
+.cd-relation-group ul {
+  list-style: none;
+  padding: 0 0 0 1rem;
+  margin: 0;
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.cd-relation-group li {
+  padding: 0.1rem 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.cd-arrow-kind {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+.kind-extends {
+  background: #1f6feb33;
+  color: #79b8ff;
+}
+
+.kind-implements {
+  background: #d2992233;
+  color: #ffab70;
+}
+
+.kind-composes {
+  background: #f8514933;
+  color: #f97583;
+}

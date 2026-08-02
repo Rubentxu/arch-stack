@@ -305,3 +305,59 @@ describe("sequence bundle (M17.3)", () => {
     expect(bundle.interactions![0].callee.name).toBe("b");
   });
 });
+
+describe("class-diagram bundle (M17.4)", () => {
+  it("preserves members in node meta for the diagram view", () => {
+    const raw = {
+      schemaVersion: "1.0",
+      nodes: [
+        {
+          canonical_key: "rust:lib.rs:class:Foo:1",
+          name: "Foo",
+          kind: "class",
+          language: "rust",
+          file: "lib.rs",
+          line: 1,
+          members: [
+            { name: "x", member_kind: "field", signature: "i32", line: 2 },
+            { name: "new", member_kind: "fn", signature: "fn() -> Self", line: 4 },
+          ],
+        },
+      ],
+      edges: [],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    expect(bundle.rawKind).toBe("class-diagram");
+    expect(bundle.nodes[0].meta.members).toBeDefined();
+    expect(bundle.nodes[0].meta.members).toHaveLength(2);
+  });
+
+  it("distinguishes extends / implements / composes predicates", () => {
+    const raw = {
+      schemaVersion: "1.0",
+      nodes: [
+        { canonical_key: "a", name: "A", kind: "class" },
+        { canonical_key: "b", name: "B", kind: "class" },
+        { canonical_key: "c", name: "C", kind: "class" },
+      ],
+      edges: [
+        { canonical_key: "e1", source: "b", target: "a", predicate: "extends" },
+        {
+          canonical_key: "i1",
+          source: "c",
+          target: "a",
+          predicate: "implements",
+        },
+        {
+          canonical_key: "c1",
+          source: "c",
+          target: "b",
+          predicate: "composes",
+        },
+      ],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    const kinds = bundle.edges.map((e) => e.kind);
+    expect(kinds).toEqual(["extends", "implements", "composes"]);
+  });
+});
