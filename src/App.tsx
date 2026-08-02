@@ -3,7 +3,8 @@
  *
  * Renders different views depending on the bundle shape:
  * - sequence → SequenceView (lifelines + arrows, M17.3)
- * - call-graph → CallGraphView (focus + BFS, M17.2)
+ * - call-graph → PackageView (modules + cycles, M17.5)
+ *   (or CallGraphView if user prefers function-level — TBD)
  * - class-diagram → ClassDiagramView (UML compartments, M17.4)
  * - C4 → C4View (hierarchical with drill-down, M17.1)
  */
@@ -16,6 +17,7 @@ import { C4View } from "./views/C4View";
 import { CallGraphView } from "./views/CallGraphView";
 import { SequenceView } from "./views/SequenceView";
 import { ClassDiagramView } from "./views/ClassDiagramView";
+import { PackageView } from "./views/PackageView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -128,17 +130,33 @@ export const App: Component = () => {
                   b().rawKind === "call-graph" || b().rawKind === "sequence"
                 }
               >
-                <CallGraphView
-                  nodes={b().nodes}
-                  edges={b().edges}
-                  onSelect={(id) => {
-                    const node = id
-                      ? b().nodes.find((n) => n.id === id) ?? null
-                      : null;
-                    setSelected(node);
-                  }}
-                  onStats={setStats}
-                />
+                <Switch>
+                  <Match when={b().rawKind === "call-graph"}>
+                    <PackageView
+                      nodes={b().nodes}
+                      edges={b().edges}
+                      onSelect={(id) => {
+                        const node = id
+                          ? b().nodes.find((n) => n.id === id) ?? null
+                          : null;
+                        setSelected(node);
+                      }}
+                    />
+                  </Match>
+                  <Match when={b().rawKind === "sequence"}>
+                    <CallGraphView
+                      nodes={b().nodes}
+                      edges={b().edges}
+                      onSelect={(id) => {
+                        const node = id
+                          ? b().nodes.find((n) => n.id === id) ?? null
+                          : null;
+                        setSelected(node);
+                      }}
+                      onStats={setStats}
+                    />
+                  </Match>
+                </Switch>
               </Match>
               <Match when={b().rawKind === "class-diagram"}>
                 <ClassDiagramView

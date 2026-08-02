@@ -987,3 +987,117 @@ dd.multiline {
   background: #f8514933;
   color: #f97583;
 }
+
+/* ─── PackageView (M17.5) ───────────────────────────────── */
+
+.package-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 1.5rem;
+  gap: 1.5rem;
+}
+
+.pkg-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.pkg-header p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8125rem;
+}
+
+.pkg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.pkg-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.pkg-card:hover {
+  border-color: var(--accent);
+}
+
+.pkg-name {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9375rem;
+  font-family: monospace;
+}
+
+.pkg-stats {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.pkg-stats dt {
+  color: var(--fg-muted);
+}
+
+.pkg-stats dd {
+  margin: 0;
+  font-family: monospace;
+}
+
+.pkg-relations {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+}
+
+.pkg-relations h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0 0 0.5rem 0;
+}
+
+.pkg-relations ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: monospace;
+  font-size: 0.8125rem;
+}
+
+.pkg-relations li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pkg-relations li.is-cycle {
+  background: rgba(248, 81, 73, 0.1);
+  border-left: 3px solid #f85149;
+  padding-left: 0.5rem;
+}
+
+.pkg-arrow {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
+.weight-2 .pkg-arrow {
+  color: var(--accent);
+}
+
+.weight-3 .pkg-arrow {
+  color: #f97583;
+  font-weight: 600;
+}
