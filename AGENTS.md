@@ -396,7 +396,12 @@ cd archctl && cargo test --all-features && \
 ## Code Style
 
 - **Formatter**: `rustfmt` con `rustfmt.toml` defaults del proyecto
-  (si existe). Comando: `cargo fmt`.
+  (si existe). Comando: `cargo fmt` (workspace-wide) o
+  `rustfmt <file>` para un archivo específico.
+- **Gotcha `cargo fmt`**: `cargo fmt` y `cargo fmt -- <file>` formatean
+  **el workspace entero**, no el archivo pasado. Para format
+  incremental en archivos staged, usar `scripts/fmt-staged.sh` (check
+  mode por defecto, `--apply` para reformatear + re-stage).
 - **Check**: `cargo fmt --check` en pre-commit y CI.
 - **Linter**: `cargo clippy -- -D warnings` (todos los warnings son
   errores).
