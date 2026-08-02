@@ -19,12 +19,12 @@ path stored in the graph.
 # Required process
 
 1. Receive a scenario id (or `from`/`to` pair) from the orchestrator.
-2. `archctl scenario interactions <scenario-id>` to gather ordered
+2. archctl scenario ... (deferred — no current CLI subcommand) to gather ordered
    interactions.
 3. Optionally re-project:
-   `archctl scenario project <scenario-id> --level <level>`.
+   archctl scenario ... (deferred — no current CLI subcommand).
 4. Group technical calls into meaningful participants using
-   `archctl graph aggregate --by container`.
+   archctl graph aggregate ... (deferred — no current subcommand).
 5. Build the sequence spec:
    ```json
    {

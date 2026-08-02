@@ -42,6 +42,6 @@ about the graph.
 
 ## Tools
 
-- `archctl graph evidence <id>`
-- `archctl diagram validate <view-id>`
-- `archctl graph repair-index`
+- archctl graph evidence ... (use `archctl evidence list --path <p>` instead)
+- archctl diagram validate ... (deferred — no current subcommand)
+- archctl graph repair-index (deferred to 1.x per ADR-009)

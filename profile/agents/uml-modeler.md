@@ -43,7 +43,7 @@ graph. UML views are scoped; you never dump the entire repository.
 
 ## Tools
 
-- `archctl scenario interactions <id>`
-- `archctl scenario project <id> --level <component|class|operation>`
-- `archctl diagram put specification.json`
+- archctl scenario ... (deferred — no current CLI subcommand)
+- archctl scenario ... (deferred — no current CLI subcommand)
+- archctl diagram put ... (deferred — no current subcommand)
 - `archctl diagram render <view-id>`

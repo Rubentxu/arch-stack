@@ -20,7 +20,7 @@ run.
 
 1. Receive the `view-id` and the rendered artefact path.
 2. Re-derive the view spec from the graph:
-   `archctl diagram spec get <view-id>`.
+   archctl diagram spec ... (deferred — no current subcommand).
 3. Compare the render with the spec:
    - Every member in the spec is present in the render.
    - Every relationship in the spec is present and oriented correctly.
