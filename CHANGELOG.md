@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `composes` edges for same-file typed fields (e.g. `pub config: Config`
   inside `struct App`). The previously-ignored
   `test_class_diagram_same_file_composes` test now passes.
+- **F3.3 lbug-infra gap closed**: `archctl doctor --scopes` no longer hangs.
+  Replaced `cargo test --no-fail-fast` subprocess inside the test-count gate
+  with a fast `#[test]` annotation counter. The hang was caused by
+  integration tests like `code_sequence` that spawn `archctl code call-graph`
+  as subcommands — at `--test-threads=1` they still locked lbug sessions
+  for 60-90s. The annotation counter sub-second. Drift is caught by the
+  standard `cargo test` run before commit / CI.
 
 ### Changed
 - `EvidenceStatus::from_str` renamed to `parse_label` (avoids confusion with
@@ -24,11 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `&[sa.clone()]`.
 - `TsgOutput` initialization uses struct literal with `..Default::default()`
   (was: build default + reassign fields).
+- `gate_test_count_meets_minimum` reads `#[test]` annotations from
+  `src/` and `tests/` instead of running `cargo test` as a subprocess.
 
 ### Refs
 - Cycle: `refactor/clippy-fmt-cleanup`
-- Post-v0.13.0 stabilization plan F1 (obs-5524)
+- Post-v0.13.0 stabilization plan F1 + F3.3 (obs-5524)
 - Closes M12 debt-report W4 (`composes` edges deferred)
+- Closes lbug infra gap (STATE.md "Deuda bloqueante")
 
 ## [v0.13.0] — 2026-08-02 — M12 class-diagram extraction
 

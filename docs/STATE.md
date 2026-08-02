@@ -48,17 +48,19 @@
 
 | ID | Descripción | Bloquea gate | Estado |
 |---|---|---|---|
-| lbug infra gap | `doctor --scopes` hangs sin lbug service running | Sí — bloquea manifest gate runtime validation | `infra/lbug-service-dev` (Fase 3.3) — **única deuda bloqueante activa** |
 | Helper duplication | `apply_to_store` + `apply_diagram_to_store` comparten ~150 LOC | No | `refactor/extract-code-apply-helpers` (defer v0.14.x) |
+
+**Sin deuda bloqueante activa** — `doctor --scopes code` corre en <1s con 0 findings.
 
 **Cerrado en v0.13.1**:
 - W4 composes edges (F1.2) ✅
 - Pre-existing 56 clippy warnings (F1.1) ✅
 - Pre-existing 137 rustfmt violations across 48 files (F1.1) ✅
+- lbug infra gap (F3.3) ✅ — gate ahora cuenta `#[test]` annotations en lugar de ejecutar `cargo test`
 
 ## Plan vigente
 
-**Post-v0.13.0 stabilization plan** (obs-5524):
+**Post-v0.13.0 stabilization plan** (obs-5524): TODO CERRADO.
 
 ```
 Fase 1 ✅ v0.13.1 released (commit 7738b2d)
@@ -66,18 +68,18 @@ Fase 1 ✅ v0.13.1 released (commit 7738b2d)
 ├── F1.1 refactor/clippy-fmt-cleanup ✅
 └── F1.2 feat/code-class-diagram-composes ✅
 
-Fase 2 (1-2 días) ← en curso
-├── F2.1 roadmap M13-M15 trim decision
-├── F2.2 selección próximo ciclo grande (M17.0 archview)
-└── F2.3 audit manifests/code.toml coverage
+Fase 2 ✅
+├── F2.1 roadmap M13-M15 trim ✅
+├── F2.2 M17.0 archview designado como próximo ciclo grande ✅
+└── F2.3 audit manifests/code.toml coverage ✅
 
-Fase 3 (ongoing)
-├── F3.1 jurisprudence discoverable
-├── F3.2 fmt-staged.sh script + AGENTS.md nota
-└── F3.3 lbug service en CI
+Fase 3 ✅
+├── F3.1 jurisprudence discoverable (obs-5518) ✅
+├── F3.2 fmt-staged.sh + AGENTS.md nota + pre-commit hook ✅
+└── F3.3 lbug infra service ✅ (annotation counter, no cargo test subprocess)
 ```
 
-Post-Fase 1+2: arrancar M17.0 archview scaffold (separate repo, prioridad 1).
+Próximo ciclo: `M17.0 archview scaffold` (separate repo, prioridad 1, tag v0.14.0).
 
 ## Archivos clave para retomar
 
