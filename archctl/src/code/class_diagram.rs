@@ -6,7 +6,7 @@
 //! class-diagram projection deterministic (golden test)
 //! ADR-019 class-diagram p99 < 2s for < 10k nodes (bench)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -1139,6 +1139,123 @@ fn extract_edges(nodes: &[ClassNode], edges: &mut Vec<ClassEdge>) {
 
     edges.clear();
     edges.extend(resolved_edges);
+
+    // Synthesize `composes` edges from intra-file field types. Field
+    // members capture their type in the signature (e.g. `pub value: Foo`);
+    // if `Foo` resolves to another class in the same file, emit a
+    // composes edge. Per spec scenario "intra-file composes" (M12 spec).
+    emit_composes_edges(nodes, edges);
+}
+
+/// Extract the type token from a field signature like `pub value: Foo`
+/// or `pub count: Option<usize>`. Returns `None` for primitives, slices,
+/// arrays, references — only identifier-like types that could resolve
+/// to a same-file class.
+fn field_type_from_signature(sig: &str) -> Option<String> {
+    let s = sig.trim();
+    // Strip leading visibility/qualifier tokens: pub, pub(crate), etc.
+    let s = s
+        .strip_prefix("pub")
+        .or_else(|| s.strip_prefix("private"))
+        .unwrap_or(s)
+        .trim_start();
+    // Find the `:` that separates name from type
+    let colon_pos = s.rfind(':')?;
+    let type_part = s[colon_pos + 1..].trim();
+    if type_part.is_empty() {
+        return None;
+    }
+    // Reject primitive types and generic/slice/array/ref types — only
+    // plain identifier-like type names can resolve to a class.
+    if !type_part
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_alphabetic() || c == '_')
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let head = type_part
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .next()?;
+    if head.is_empty() {
+        return None;
+    }
+    Some(head.to_string())
+}
+
+/// Scan each ClassNode's field members. If the field's type resolves
+/// to another ClassNode in the same file, emit a `composes` edge.
+/// Idempotent: skips if an edge already exists between the same pair.
+fn emit_composes_edges(nodes: &[ClassNode], edges: &mut Vec<ClassEdge>) {
+    let mut name_to_key: BTreeMap<(Language, &str, &str), String> = BTreeMap::new();
+    for node in nodes {
+        name_to_key.insert(
+            (node.language, node.file.as_str(), node.name.as_str()),
+            node.canonical_key.clone(),
+        );
+    }
+
+    let mut seen: BTreeSet<(String, String)> = edges
+        .iter()
+        .map(|e| (e.source.clone(), e.target.clone()))
+        .collect();
+
+    for node in nodes {
+        for member in &node.members {
+            if member.member_kind != "field" {
+                continue;
+            }
+            let Some(field_type) = field_type_from_signature(&member.signature) else {
+                continue;
+            };
+            // Primitive types don't compose (would be noise)
+            if is_primitive_type(&field_type) {
+                continue;
+            }
+            let Some(target_key) =
+                name_to_key.get(&(node.language, node.file.as_str(), field_type.as_str()))
+            else {
+                continue;
+            };
+            let pair = (node.canonical_key.clone(), target_key.clone());
+            if seen.contains(&pair) {
+                continue;
+            }
+            seen.insert(pair);
+            edges.push(ClassEdge {
+                canonical_key: format!(
+                    "{}→composes→{}:{}",
+                    node.canonical_key, target_key, member.line
+                ),
+                source: node.canonical_key.clone(),
+                target: target_key.clone(),
+                predicate: ClassEdgeKind::Composes,
+                file: node.file.clone(),
+                line: member.line,
+                confidence: 0.85,
+            });
+        }
+    }
+}
+
+/// Primitive types we explicitly skip for composes edges. Covers
+/// Rust scalars + stdlib containers + common TS/Py primitives.
+fn is_primitive_type(t: &str) -> bool {
+    matches!(
+        t,
+        // Rust scalars
+        "bool" | "char" | "str" | "String"
+        | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+        | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+        | "f32" | "f64"
+        // Common stdlib types that aren't classes
+        | "Vec" | "Option" | "Result" | "Box" | "Rc" | "Arc" | "HashMap" | "HashSet"
+        | "BTreeMap" | "BTreeSet" | "Cell" | "RefCell"
+        // TS/Py primitives
+        | "number" | "string" | "boolean" | "any" | "unknown" | "void" | "null" | "undefined"
+        | "int" | "float" | "bytes" | "object"
+    )
 }
 
 impl ClassEdge {
