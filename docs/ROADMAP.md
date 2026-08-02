@@ -307,9 +307,9 @@ Incluye:
 | `refactor/store-port-seams` | `refactor/store-port-seams` (merged to main via --no-ff) | `71ea783` | **Cerrado** ✅ · tag `v0.9.2` |
 | `m20-benchmark-suite` | `m20-benchmark-suite` (merged to main via --no-ff) | `e64f7f9` | **Cerrado** ✅ · tag `v0.10.0` |
 | `m9-renderers-local` | `m9-renderers-local` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.11.0` |
-| `m11-call-graph-sequence` (PR1 + PR2) | `feat/m11-call-graph` + `fix/m11-call-graph-tsg-rules` + `feat/m11-sequence` (merged to main via --no-ff) | `4dd7211` | **Cerrado** ✅ · tags `v0.8.0`, `v0.8.1`, `v0.9.0` |
-| `roadmap-pivot-v2.4` (este cycle) | direct commits (no PR — 5 archivos) | pendiente | **En curso** · tag diferido al M9-v2.4 → v0.7.0 |
-| `roadmap-pivot-v2.5` (cognitive layer) | direct commits (no PR — 3 ADRs nuevos) | pendiente | **En curso** · tag diferido al M22 → 1.x |
+| `m9-relations-decision` | `m9-relations-decision` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.12.0` |
+| `refactor/bench-seed-decomposition` | `refactor/bench-seed-decomposition` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.12.1` |
+| `m12-class-diagram` | `feat/m12-class-diagram` (merged to main via --no-ff) | `9e665ee` | **Cerrado** ✅ · tag `v0.13.0` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -687,4 +687,20 @@ Razones:
 - **Audit status**: 2026-08-01 audit is now **100% closed** (F1 closed in v0.11.0; F2–F7 + M1–M3 + M5 closed in v0.12.0; M5 follow-up closed in v0.12.1).
 
 > `refactor/bench-seed-decomposition`: closes M5 seed-cost decomposition follow-up. Patch tag `v0.12.1` (no behavior change in library; bench harness only). True amortization: seed runs once per batch of N measured iters instead of once per iter.
+
+## Cycle cerrado — `m12-class-diagram` (v0.13.0)
+
+- **Fecha**: 2026-08-02
+- **Branch**: `feat/m12-class-diagram` (merged to main via --no-ff)
+- **Tag**: `v0.13.0` (`9e665ee`)
+- **Verdict**: verify PASS_WITH_WARNINGS · debt-verify PASS_WITH_WARNINGS (C1/C2/C3 all closed)
+- **Commits**: 20 (15 original + 3 C1/C2/C3 correction + 2 T7.3 C3)
+- **Tests**: 292 passing (vs 263 baseline, +29); 5 ignored (4 pre-existing + 1 M12 composes gap)
+- **Output**: `archctl code class-diagram` — tree-sitter CST walk for Rust/TypeScript/Python class extraction. `manifests/code.toml` extended with class_diagram public_symbols + must_hold gates. Schema `schemas/class-diagram-report.schema.json`. Criterion bench harness `benches/class_diagram_pipeline.rs`. 22/24 spec scenarios compliant (2 gaps: same-file composes edges deferred to `feat/code-class-diagram-composes`; `doctor --scopes code` blocked by pre-existing lbug infra gap).
+- **Key corrections**:
+  - **C1**: `must_hold` literal strings anchored as `//!` doc comments in `class_diagram.rs:6-7`
+  - **C2**: 14 new integration tests added (20/20 pass + 1 ignored)
+  - **C3**: `project.durationMs` removed from `ClassDiagramReport` — determinism test now 3/3 cold-cache PASS
+- **Deuda técnica diferida**: `refactor/extract-code-apply-helpers` (~150 LOC helper duplication); `refactor/clippy-fmt-cleanup` (57 clippy + 137 rustfmt pre-existing); `feat/code-class-diagram-composes` (composes edge emission); `fix/lbug-doctor-infra` (lbug service for doctor).
+- **Próximo candidato**: `sddk-release` (MANDATORY per AGENTS.md — no opt-in)
 
