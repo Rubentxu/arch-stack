@@ -3,6 +3,27 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.19.0] — 2026-08-02 — M17.5 package diagram view
+
+### Added
+- **PackageView**: `src/views/PackageView.tsx` — derived module
+  dependency diagram for call-graph bundles. Aggregates nodes by
+  file path (with `src/` directory pruning for Rust workspaces) to
+  derive packages. Inter-package edges computed by counting
+  cross-package call sites (weight = number of calls).
+- **Cycle detection** via DFS back-edges (color algorithm).
+  Cycles highlighted in red in the relations panel with `↺` arrow.
+- **App.tsx Switch routing**: call-graph bundles now go to
+  `PackageView` (high-level module view) by default. Sequence
+  bundles still go to `CallGraphView`. M17.5 is a derived view —
+  no new bundle shape required.
+- **Tests**: 19 → 21. New coverage: `packageForFile` derivation
+  (handles Rust `src/` convention), package edge aggregation.
+
+### Refs
+- Cycle: `m17.5-archview-packages`
+- ROADMAP M17.5 (post-v0.13.0 stabilization plan F2.2)
+
 ## [v0.18.0] — 2026-08-02 — M17.4 class diagram view
 
 ### Added
