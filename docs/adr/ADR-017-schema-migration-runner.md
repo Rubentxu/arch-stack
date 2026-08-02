@@ -3,7 +3,7 @@
 > **Ciclo:** `b1-source-evaluation-types`
 > **Estado:** Aceptado
 > **Fecha:** 2026-07-30
-> **Complementa:** [ADR-016 §Bloque B1](../ADR-016-activegraph-packs-investigacion.md) + [ADR-005](ADR-005-ladybugdb-grafo-canonico-y-evidencias.md)
+> **Complementa:** [ADR-016 §Bloque B1](ADR-016-activegraph-packs-investigacion.md) + [ADR-005](ADR-005-ladybugdb-grafo-canonico-y-evidencias.md)
 
 ## Problema
 
