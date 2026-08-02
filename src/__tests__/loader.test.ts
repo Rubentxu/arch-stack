@@ -1,6 +1,50 @@
 import { describe, it, expect } from "vitest";
 import { c4LevelForKind, normalizeBundle } from "../bundle/loader";
 
+/** BFS expansion logic (mirrors CallGraphView's levelGroups). */
+function expandLevels(
+  nodes: { id: string }[],
+  edges: { source: string; target: string }[],
+  focusId: string,
+  depth: number,
+  direction: "callees" | "callers" | "both",
+): { direction: "callees" | "callers"; depth: number; nodes: string[] }[] {
+  const result: {
+    direction: "callees" | "callers";
+    depth: number;
+    nodes: string[];
+  }[] = [];
+  const visited = new Set<string>([focusId]);
+  let frontier: string[] = [focusId];
+  for (let d = 1; d <= depth; d++) {
+    const next: string[] = [];
+    for (const nodeId of frontier) {
+      const forward =
+        direction === "callees" || direction === "both"
+          ? edges.filter((e) => e.source === nodeId).map((e) => e.target)
+          : [];
+      const backward =
+        direction === "callers" || direction === "both"
+          ? edges.filter((e) => e.target === nodeId).map((e) => e.source)
+          : [];
+      for (const t of [...forward, ...backward]) {
+        if (!visited.has(t)) {
+          visited.add(t);
+          next.push(t);
+        }
+      }
+    }
+    if (next.length === 0) break;
+    result.push({
+      direction: direction === "both" ? "callees" : direction,
+      depth: d,
+      nodes: next,
+    });
+    frontier = next;
+  }
+  return result;
+}
+
 describe("bundle loader", () => {
   it("normalizes a call-graph bundle", () => {
     const raw = {
@@ -132,5 +176,68 @@ describe("c4LevelForKind", () => {
   it("returns 0 for unknown kinds", () => {
     expect(c4LevelForKind("UnknownKind")).toBe(0);
     expect(c4LevelForKind("")).toBe(0);
+  });
+});
+
+describe("call-graph BFS expansion (M17.2)", () => {
+  // Diamond: a -> b, a -> c, b -> d, c -> d
+  const nodes = [
+    { id: "a" },
+    { id: "b" },
+    { id: "c" },
+    { id: "d" },
+  ];
+  const edges = [
+    { source: "a", target: "b" },
+    { source: "a", target: "c" },
+    { source: "b", target: "d" },
+    { source: "c", target: "d" },
+  ];
+
+  it("expands 1 level downstream", () => {
+    const levels = expandLevels(nodes, edges, "a", 1, "callees");
+    expect(levels).toHaveLength(1);
+    expect(levels[0].nodes.sort()).toEqual(["b", "c"]);
+  });
+
+  it("expands 2 levels downstream and dedupes d", () => {
+    const levels = expandLevels(nodes, edges, "a", 2, "callees");
+    expect(levels).toHaveLength(2);
+    expect(levels[0].nodes.sort()).toEqual(["b", "c"]);
+    expect(levels[1].nodes).toEqual(["d"]);
+  });
+
+  it("expands upstream", () => {
+    const levels = expandLevels(nodes, edges, "d", 2, "callers");
+    expect(levels[0].nodes.sort()).toEqual(["b", "c"]);
+    expect(levels[1].nodes).toEqual(["a"]);
+  });
+
+  it("expands both directions", () => {
+    const levels = expandLevels(nodes, edges, "b", 1, "both");
+    expect(levels[0].nodes.sort()).toEqual(["a", "d"]);
+  });
+
+  it("terminates early when frontier is exhausted", () => {
+    const levels = expandLevels(nodes, edges, "a", 5, "callees");
+    expect(levels).toHaveLength(2);
+  });
+});
+
+describe("call-graph async flow (M17.2)", () => {
+  it("distinguishes SyncCall vs AsyncCall edge kinds", () => {
+    const raw = {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "fn:a", name: "a", kind: "function" },
+        { id: "fn:b", name: "b", kind: "function" },
+      ],
+      edges: [
+        { id: "e1", source: "fn:a", target: "fn:b", kind: "AsyncCall" },
+      ],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    expect(bundle.rawKind).toBe("call-graph");
+    expect(bundle.edges[0].kind).toBe("AsyncCall");
   });
 });

@@ -2,20 +2,26 @@
  * App shell — top bar with bundle loader, main canvas, sidebar.
  *
  * Renders different views depending on the bundle shape:
- * - C4 bundles → C4View (hierarchical with drill-down, M17.1)
- * - All other bundles → GraphRenderer (G6 canvas, M17.0)
+ * - call-graph / sequence → CallGraphView (focus + BFS, M17.2)
+ * - class-diagram → GraphView (G6 canvas, M17.0)
+ * - C4 → C4View (hierarchical with drill-down, M17.1)
  */
 
 import { Match, Show, Switch, createSignal, type Component } from "solid-js";
 import { GraphRenderer } from "./renderer/g6";
 import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type SidebarStats } from "./components/Sidebar";
 import { C4View } from "./views/C4View";
+import { CallGraphView } from "./views/CallGraphView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
     label: "Sample call-graph (rust)",
     url: "/samples/call-graph.json",
+  },
+  {
+    label: "Sample call-graph (deep, 5 nodes)",
+    url: "/samples/call-graph-deep.json",
   },
   {
     label: "Sample class-diagram (rust)",
@@ -35,6 +41,7 @@ export const App: Component = () => {
   const [bundle, setBundle] = createSignal<GraphBundle | null>(null);
   const [selected, setSelected] = createSignal<GraphNode | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [stats, setStats] = createSignal<SidebarStats | undefined>(undefined);
 
   const handleLoad = async (url: string) => {
     setError(null);
@@ -42,6 +49,7 @@ export const App: Component = () => {
       const b = await loadBundle(url);
       setBundle(b);
       setSelected(null);
+      setStats(undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -92,6 +100,23 @@ export const App: Component = () => {
                   }}
                 />
               </Match>
+              <Match
+                when={
+                  b().rawKind === "call-graph" || b().rawKind === "sequence"
+                }
+              >
+                <CallGraphView
+                  nodes={b().nodes}
+                  edges={b().edges}
+                  onSelect={(id) => {
+                    const node = id
+                      ? b().nodes.find((n) => n.id === id) ?? null
+                      : null;
+                    setSelected(node);
+                  }}
+                  onStats={setStats}
+                />
+              </Match>
               <Match when={true}>
                 <GraphView
                   bundle={b()}
@@ -114,6 +139,7 @@ export const App: Component = () => {
                 }
               : null
           }
+          stats={stats()}
         />
       </main>
 

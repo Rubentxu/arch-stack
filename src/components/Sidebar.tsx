@@ -7,6 +7,15 @@
 import { For, Show, type Component } from "solid-js";
 import type { GraphNode } from "../bundle/loader";
 
+export interface SidebarStats {
+  /** Computed by the call-graph view: unique reachable functions. */
+  blastRadius?: number;
+  /** Max depth explored. */
+  depth?: number;
+  /** Current focus direction. */
+  direction?: "callees" | "callers" | "both";
+}
+
 export interface SidebarProps {
   node: GraphNode | null;
   bundleMeta: {
@@ -15,6 +24,7 @@ export interface SidebarProps {
     loadedAt: string;
     rawKind: string;
   } | null;
+  stats?: SidebarStats;
 }
 
 export const Sidebar: Component<SidebarProps> = (props) => {
@@ -39,6 +49,28 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       </header>
 
       <section class="sidebar-selection">
+        <Show when={props.stats?.blastRadius !== undefined}>
+          <div class="sidebar-stats">
+            <h3>Call graph stats</h3>
+            <dl>
+              <dt>blast radius</dt>
+              <dd>
+                <strong>{props.stats!.blastRadius}</strong> reachable
+                functions
+              </dd>
+              <Show when={props.stats?.depth !== undefined}>
+                <dt>depth</dt>
+                <dd>
+                  {props.stats!.depth}{" "}
+                  <span class="muted">
+                    ({props.stats?.direction})
+                  </span>
+                </dd>
+              </Show>
+            </dl>
+          </div>
+        </Show>
+
         <Show
           when={props.node}
           fallback={
