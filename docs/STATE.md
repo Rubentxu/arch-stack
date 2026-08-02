@@ -82,12 +82,13 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.15.0`** (verified — pnpm test 8/8 + build OK)
-- **Status**: M17.0 scaffold (v0.14.0) + M17.1 C4 semantic zoom (v0.15.0)
-  shipped. C4 bundles render hierarchically with drill-down
-  (Context → Container → Component). Other shapes use the
-  G6 5.x canvas (M17.0).
-- **Próximo**: M17.2 call graph view (1-N niveles + blast radius).
+- **Tag**: **`v0.16.0`** (verified — pnpm test 14/14 + build OK)
+- **Status**:
+  - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
+  - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
+  - M17.2 call graph view (v0.16.0): focus + BFS + blast radius +
+    async flow visualization
+- **Próximo**: M17.3 sequence diagram view (call chains, async flows).
 
 ## Archivos clave para retomar
 
