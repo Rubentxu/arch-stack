@@ -30,6 +30,7 @@
 | `v0.12.0` | 2026-08-01 | m9-relations-decision (audit F2-F7 + M1-M3 + M5) |
 | `v0.12.1` | 2026-08-02 | refactor/bench-seed-decomposition (audit M5 follow-up) |
 | `v0.13.0` | 2026-08-02 | M12 class-diagram extraction (tree-sitter CST walk) |
+| `v0.13.1` | 2026-08-02 | refactor/clippy-fmt-cleanup + composes edges (closes M12 W4) |
 
 ## Capacidades en backlog
 
@@ -45,26 +46,27 @@
 
 ## Deuda técnica activa
 
-| ID | Descripción | Bloquea gate | Follow-up cycle |
+| ID | Descripción | Bloquea gate | Estado |
 |---|---|---|---|
-| W4 | `composes` edges no emitidos (extractors capturan field types pero no resuelven a edges) | No bloquea — `#[ignore]` documentado | `feat/code-class-diagram-composes` (Fase 1.2) |
-| Pre-existing clippy | 56 warnings en `store.rs`, `code/sequence.rs`, `environment.rs`, `filesystem.rs`, `graph.rs`, `identity.rs`, `inventory.rs`, `scope.rs`, `tsg.rs`, `cli.rs`, tests/, benches/ | Sí — bloquea `cargo clippy -- -D warnings` | `refactor/clippy-fmt-cleanup` (Fase 1.1) |
-| Pre-existing rustfmt | 3 violations en `benches/{apply,export,query}_pipeline.rs` (import ordering) | Sí — bloquea `cargo fmt --check` | `refactor/clippy-fmt-cleanup` (Fase 1.1) |
-| lbug infra gap | `doctor --scopes` hangs sin lbug service running | Sí — bloquea manifest gate runtime validation | `infra/lbug-service-dev` (Fase 3.3) |
-| Helper duplication | `apply_to_store` + `apply_diagram_to_store` comparten ~150 LOC (apply + manifest + changeset merge) | No | `refactor/extract-code-apply-helpers` (defer v0.14.x) |
-| Composes edges deferred M12 | M12 spec expansion (composes edges in scope) without implementation | No | `feat/code-class-diagram-composes` (Fase 1.2) |
+| lbug infra gap | `doctor --scopes` hangs sin lbug service running | Sí — bloquea manifest gate runtime validation | `infra/lbug-service-dev` (Fase 3.3) — **única deuda bloqueante activa** |
+| Helper duplication | `apply_to_store` + `apply_diagram_to_store` comparten ~150 LOC | No | `refactor/extract-code-apply-helpers` (defer v0.14.x) |
+
+**Cerrado en v0.13.1**:
+- W4 composes edges (F1.2) ✅
+- Pre-existing 56 clippy warnings (F1.1) ✅
+- Pre-existing 137 rustfmt violations across 48 files (F1.1) ✅
 
 ## Plan vigente
 
 **Post-v0.13.0 stabilization plan** (obs-5524):
 
 ```
-Fase 1 (3-4 días)
-├── F1.3 branches + STATE.md + CONTEXT.md ← en curso
-├── F1.1 refactor/clippy-fmt-cleanup → v0.13.1
-└── F1.2 feat/code-class-diagram-composes → v0.13.1 (mismo tag)
+Fase 1 ✅ v0.13.1 released (commit 7738b2d)
+├── F1.3 branches + STATE.md ✅
+├── F1.1 refactor/clippy-fmt-cleanup ✅
+└── F1.2 feat/code-class-diagram-composes ✅
 
-Fase 2 (1-2 días)
+Fase 2 (1-2 días) ← en curso
 ├── F2.1 roadmap M13-M15 trim decision
 ├── F2.2 selección próximo ciclo grande (M17.0 archview)
 └── F2.3 audit manifests/code.toml coverage
