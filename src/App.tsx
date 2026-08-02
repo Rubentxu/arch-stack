@@ -7,9 +7,9 @@
  */
 
 import { createSignal, onCleanup, onMount, type Component } from "solid-js";
-import { GraphRenderer } from "../renderer/g6";
-import { loadBundle, type GraphBundle, type GraphNode } from "../bundle/loader";
-import { Sidebar } from "./Sidebar";
+import { GraphRenderer } from "./renderer/g6";
+import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
+import { Sidebar } from "./components/Sidebar";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {

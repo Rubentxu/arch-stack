@@ -26,3 +26,6 @@ Thumbs.db
 # Test
 coverage/
 .nyc_output/
+
+# pnpm build approvals (pnpm v11+)
+/.pnpm-approve-builds
