@@ -704,3 +704,16 @@ Razones:
 - **Deuda técnica diferida**: `refactor/extract-code-apply-helpers` (~150 LOC helper duplication); `refactor/clippy-fmt-cleanup` (57 clippy + 137 rustfmt pre-existing); `feat/code-class-diagram-composes` (composes edge emission); `fix/lbug-doctor-infra` (lbug service for doctor).
 - **Próximo candidato**: `sddk-release` (MANDATORY per AGENTS.md — no opt-in)
 
+
+
+## Cycle cerrado — `refactor/clippy-fmt-cleanup` (v0.13.1)
+
+- **Fecha**: 2026-08-02
+- **Branch**: `refactor/clippy-fmt-cleanup` (merged to main via --no-ff)
+- **Tag**: `v0.13.1` (`7738b2d`)
+- **Commits**: 4 (F1.3 STATE.md + F1.1 clippy + F1.1 rustfmt + F1.2 composes edges)
+- **Tests**: 254 passing (baseline preserved); 4 ignored (was 5; 1 composes test now passes)
+- **Validation gates (post-merge)**: cargo build exit 0, cargo test exit 0, `cargo clippy -- -D warnings` exit 0, `cargo fmt --check` exit 0
+- **Closes M12 W4**: composes edges emitted for same-file typed fields (e.g. `pub config: Config` inside `struct App`)
+- **Closes F1 of post-v0.13.0 stabilization plan** (obs-5524)
+- **Próximo candidato**: F2.1 (roadmap M13-M15 trim decision) → arrancar M17.0 archview scaffold (separate repo)

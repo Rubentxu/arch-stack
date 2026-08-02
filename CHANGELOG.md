@@ -4,6 +4,32 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.13.1] — 2026-08-02 — clippy-fmt cleanup + composes edges
+
+### Fixed
+- **56 pre-existing clippy warnings** resolved across the workspace.
+  `cargo clippy --quiet --all-targets -- -D warnings` now exits 0 (previously
+  blocked by accumulated debt since v0.6.0).
+- **Workspace-wide rustfmt normalization**. `cargo fmt --check` now exits 0
+  (previously blocked by import ordering in benches + accumulated drift).
+- **M12 W4 composes gap closed**: `archctl code class-diagram` now emits
+  `composes` edges for same-file typed fields (e.g. `pub config: Config`
+  inside `struct App`). The previously-ignored
+  `test_class_diagram_same_file_composes` test now passes.
+
+### Changed
+- `EvidenceStatus::from_str` renamed to `parse_label` (avoids confusion with
+  `std::str::FromStr`).
+- `evidence.put_with_source` uses `std::slice::from_ref` instead of
+  `&[sa.clone()]`.
+- `TsgOutput` initialization uses struct literal with `..Default::default()`
+  (was: build default + reassign fields).
+
+### Refs
+- Cycle: `refactor/clippy-fmt-cleanup`
+- Post-v0.13.0 stabilization plan F1 (obs-5524)
+- Closes M12 debt-report W4 (`composes` edges deferred)
+
 ## [v0.13.0] — 2026-08-02 — M12 class-diagram extraction
 
 ### Added
