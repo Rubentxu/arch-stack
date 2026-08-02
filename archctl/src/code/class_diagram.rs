@@ -677,25 +677,42 @@ fn extract_ts_class(
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32) {
             match child.kind() {
-                "identifier" => {
+                "identifier" | "type_identifier" => {
                     if name.is_empty() {
                         name = source[child.start_byte()..child.end_byte()].to_string();
                     }
                 }
-                "heritage_clause" => {
+                "class_heritage" => {
                     // class A extends B implements C, D
                     for j in 0..child.child_count() {
                         if let Some(hc) = child.child(j as u32) {
-                            let txt = source[hc.start_byte()..hc.end_byte()].to_string();
-                            if txt == "extends" {
-                                continue;
-                            }
-                            if hc.kind() == "identifier" {
-                                if extends_name.is_none() {
-                                    extends_name = Some(txt);
-                                } else {
-                                    implements_names.push(txt);
+                            match hc.kind() {
+                                "extends_clause" => {
+                                    // extends_clause has: "extends" keyword + identifier
+                                    for k in 0..hc.child_count() {
+                                        if let Some(id_node) = hc.child(k as u32) {
+                                            if id_node.kind() == "identifier" {
+                                                let txt = source[id_node.start_byte()..id_node.end_byte()].to_string();
+                                                if extends_name.is_none() {
+                                                    extends_name = Some(txt);
+                                                } else {
+                                                    implements_names.push(txt);
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
+                                "implements_clause" => {
+                                    // implements_clause has identifier(s) — TS uses type_identifier
+                                    for k in 0..hc.child_count() {
+                                        if let Some(id_node) = hc.child(k as u32) {
+                                            if id_node.kind() == "identifier" || id_node.kind() == "type_identifier" {
+                                                implements_names.push(source[id_node.start_byte()..id_node.end_byte()].to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -773,7 +790,7 @@ fn extract_ts_interface(node: tree_sitter::Node, source: &str, file: &str) -> Op
 
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32) {
-            if child.kind() == "identifier" && name.is_empty() {
+            if (child.kind() == "identifier" || child.kind() == "type_identifier") && name.is_empty() {
                 name = source[child.start_byte()..child.end_byte()].to_string();
             }
         }
@@ -966,9 +983,12 @@ fn extract_python_class(
                 "argument_list" => {
                     for j in 0..child.child_count() {
                         if let Some(arg) = child.child(j as u32) {
-                            let base_name = source[arg.start_byte()..arg.end_byte()].to_string().trim().to_string();
-                            if !base_name.is_empty() && base_name != "object" {
-                                bases.push(base_name);
+                            // Only capture identifier nodes, not punctuation
+                            if arg.kind() == "identifier" {
+                                let base_name = source[arg.start_byte()..arg.end_byte()].to_string().trim().to_string();
+                                if !base_name.is_empty() && base_name != "object" {
+                                    bases.push(base_name);
+                                }
                             }
                         }
                     }
@@ -1306,6 +1326,75 @@ mod tests {
         assert_eq!(escape_cypher_string("foo"), "foo");
         assert_eq!(escape_cypher_string("o'reilly"), "o\\'reilly");
         assert_eq!(escape_cypher_string(""), "");
+    }
+
+    #[test]
+    fn test_ts_class_kind() {
+        use tree_sitter::Parser;
+        use ast_grep_language::SupportLang;
+        let source = "class Animal {}";
+        let lang = SupportLang::TypeScript;
+        let ts_lang = lang.get_ts_language();
+        let mut parser = Parser::new();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut found_kinds = Vec::new();
+        fn walk(node: tree_sitter::Node, source: &str, found: &mut Vec<&str>) {
+            found.push(node.kind());
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i as u32) {
+                    walk(child, source, found);
+                }
+            }
+        }
+        walk(tree.root_node(), source, &mut found_kinds);
+        println!("TS kinds: {:?}", found_kinds);
+        assert!(found_kinds.contains(&"class_declaration"), "expected class_declaration in {:?}", found_kinds);
+    }
+
+    #[test]
+    fn test_ts_extraction() {
+        let source = "class Animal {}";
+        let ts_lang = ast_grep_language::SupportLang::TypeScript.get_ts_language();
+        let mut parser = Parser::new();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        super::extract_typescript(&tree, source, "foo.ts", &mut nodes, &mut edges);
+        assert!(!nodes.is_empty(), "expected nodes from TS extraction");
+        assert_eq!(nodes[0].name, "Animal");
+        assert_eq!(nodes[0].kind, TypeKind::Class);
+    }
+
+    #[test]
+    fn test_ts_extends_tree() {
+        let source = "class Dog extends Animal {}";
+        let ts_lang = ast_grep_language::SupportLang::TypeScript.get_ts_language();
+        let mut parser = Parser::new();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        super::extract_typescript(&tree, source, "foo.ts", &mut nodes, &mut edges);
+        assert!(!nodes.is_empty());
+        assert!(!edges.is_empty(), "expected extends edge");
+        assert_eq!(edges[0].predicate, ClassEdgeKind::Extends);
+    }
+
+    #[test]
+    fn test_ts_implements_tree() {
+        let source = "class Bar implements IFoo {}";
+        let ts_lang = ast_grep_language::SupportLang::TypeScript.get_ts_language();
+        let mut parser = Parser::new();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        super::extract_typescript(&tree, source, "foo.ts", &mut nodes, &mut edges);
+        assert!(!nodes.is_empty());
+        assert!(!edges.is_empty(), "expected implements edge");
+        assert_eq!(edges[0].predicate, ClassEdgeKind::Implements);
     }
 
     #[test]
