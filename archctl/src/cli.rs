@@ -1219,8 +1219,20 @@ fn code_class_diagram_cmd(
         selector: selector.map(String::from),
     };
 
-    let report = class_diagram::run_class_diagram(cwd, &opts, &*fs)
-        .map_err(|e| anyhow::anyhow!("class-diagram extraction failed: {e}"))?;
+    let report = match class_diagram::run_class_diagram(cwd, &opts, &*fs) {
+        Ok(r) => r,
+        Err(class_diagram::ClassDiagramError::UnknownSelector(s)) => {
+            eprintln!("error: unknown selector: {s} — supported forms: file:<path>");
+            return Ok(64);
+        }
+        Err(class_diagram::ClassDiagramError::FileNotFound(p)) => {
+            eprintln!("error: file not found: {p}");
+            return Ok(64);
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("class-diagram extraction failed: {e}"));
+        }
+    };
 
     if apply {
         let apply_report = class_diagram_apply(cwd, &report, &*fs)

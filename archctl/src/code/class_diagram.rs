@@ -166,6 +166,10 @@ pub struct ApplyReport {
 pub enum ClassDiagramError {
     #[error("graph write failed: {0}")]
     GraphWrite(#[from] anyhow::Error),
+    #[error("unknown selector: {0} — supported forms: file:<path>")]
+    UnknownSelector(String),
+    #[error("file not found: {0}")]
+    FileNotFound(String),
 }
 
 // ─── Options ─────────────────────────────────────────────────────────────────
@@ -189,6 +193,20 @@ pub fn run_class_diagram(
 ) -> Result<ClassDiagramReport, ClassDiagramError> {
     let start = Instant::now();
     let root = cwd.to_string_lossy().to_string();
+
+    // Validate selector before doing any work
+    if let Some(ref sel) = opts.selector {
+        if let Some(path) = sel.strip_prefix("file:") {
+            // Validate the selected file exists
+            let abs_path = cwd.join(path);
+            if !abs_path.is_file() {
+                return Err(ClassDiagramError::FileNotFound(path.to_string()));
+            }
+        } else {
+            // Unknown selector prefix — only `file:` is supported
+            return Err(ClassDiagramError::UnknownSelector(sel.clone()));
+        }
+    }
 
     // Collect files to process
     let mut files_to_process: Vec<(PathBuf, Language)> = Vec::new();
