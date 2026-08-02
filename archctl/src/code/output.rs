@@ -98,11 +98,10 @@ pub fn print_call_graph_table(report: &CallGraphReport) {
 /// Print a human-readable class-diagram table.
 pub fn print_class_diagram_table(report: &ClassDiagramReport) {
     println!(
-        "Class diagram ({} nodes, {} edges, {} errors, {} ms)",
+        "Class diagram ({} nodes, {} edges, {} errors)",
         report.nodes.len(),
         report.edges.len(),
-        report.errors.len(),
-        report.project.duration_ms
+        report.errors.len()
     );
 
     // Group nodes by language and kind

@@ -126,8 +126,6 @@ pub struct ProjectMeta {
     #[serde(rename = "filesScanned")]
     pub files_scanned: u64,
     pub languages: BTreeMap<String, u64>,
-    #[serde(rename = "durationMs")]
-    pub duration_ms: u64,
 }
 
 /// One per-file failure (graceful degradation). CLI exits 0.
@@ -191,7 +189,6 @@ pub fn run_class_diagram(
     opts: &ClassDiagramOptions,
     fs: &dyn Filesystem,
 ) -> Result<ClassDiagramReport, ClassDiagramError> {
-    let start = Instant::now();
     let root = cwd.to_string_lossy().to_string();
 
     // Validate selector before doing any work
@@ -317,15 +314,12 @@ pub fn run_class_diagram(
     all_nodes.sort_by(|a, b| a.canonical_key.cmp(&b.canonical_key));
     all_edges.sort_by(|a, b| a.canonical_key.cmp(&b.canonical_key));
 
-    let duration_ms = start.elapsed().as_millis() as u64;
-
     Ok(ClassDiagramReport {
         schema_version: "1.0".to_string(),
         project: ProjectMeta {
             root,
             files_scanned,
             languages: lang_counts,
-            duration_ms,
         },
         nodes: all_nodes,
         edges: all_edges,
