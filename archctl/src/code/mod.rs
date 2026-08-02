@@ -3,6 +3,7 @@
 pub mod call_graph;
 pub mod c4_discover;
 pub mod call_rules;
+pub mod class_diagram;
 pub mod output;
 pub mod sequence;
 pub mod strategies;
