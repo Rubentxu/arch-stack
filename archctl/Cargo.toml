@@ -60,3 +60,7 @@ harness = false
 [[bench]]
 name = "query_pipeline"
 harness = false
+
+[[bench]]
+name = "class_diagram_pipeline"
+harness = false
