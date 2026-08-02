@@ -2,6 +2,9 @@
 //!
 //! Direct tree-sitter CST walk per language (Rust, TypeScript, Python).
 //! Populates `uml.*` MetaTypes already declared in `metamodel-core.json`.
+//!
+//! class-diagram projection deterministic (golden test)
+//! ADR-019 class-diagram p99 < 2s for < 10k nodes (bench)
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
