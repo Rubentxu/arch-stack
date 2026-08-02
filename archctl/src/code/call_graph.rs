@@ -1009,13 +1009,30 @@ fn link_function_edges(
     Ok(())
 }
 
-/// Write a call edge as a SemanticRelation + Evidence.
+/// Write a call edge as a `SEMANTIC_EDGE` (Element→Element) row.
+///
+/// Design note (m9-relations-decision): archctl uses the **direct
+/// edge model** rather than the reified `SemanticRelation` +
+/// `REL_SOURCE` → `SemanticRelation` ← `REL_TARGET` pattern. The
+/// reified model is reserved in the schema for future use (ADR-009
+/// deferral) but the call-graph and sequence-projection pipelines
+/// read/write `SEMANTIC_EDGE` directly because:
+/// - sequence projection needs `r.props` (e.g. call_kind, line) on
+///   the edge itself, which the reified model would require a
+///   separate `RelationVersion` hop to access.
+/// - the call-graph writer is a single MERGE … CREATE round-trip;
+///   the reified model would require 3 round-trips per edge.
 fn write_call_edge(
     store: &mut dyn GraphStore,
     edge: &CallEdge,
     src_element_id: &str,
     sa_id: &str,
-    _version_id: &str, // NOTE: version_id not persisted on SEMANTIC_EDGE (not a declared property in lbug schema)
+    _version_id: &str, // version_id is captured on the Evidence node
+                       // (see put_evidence) and on the Element's
+                       // current_version_id pointer, not on the
+                       // SEMANTIC_EDGE itself. The reified model with
+                       // RelationVersion is reserved in the schema
+                       // for future use.
 ) -> Result<()> {
     let rel_id = format!("rel:{}", edge.canonical_key);
     let rel_props = serde_json::json!({
@@ -1030,15 +1047,20 @@ fn write_call_edge(
     // Try to find the callee Element by matching canonical_key pattern
     // MVP: we don't do symbol resolution, so callee may not exist
     //
-    // NOTE: Writing to SEMANTIC_EDGE (Element→Element with props) rather than
-    // the reified REL_SOURCE→SemanticRelation→REL_TARGET pattern, because the
-    // sequence projection reads from SEMANTIC_EDGE and needs r.props.
+    // NOTE: The call-graph writer uses the direct edge model
+    // (Element→Element with props on SEMANTIC_EDGE). The reified model
+    // (SemanticRelation + REL_SOURCE/REL_TARGET/RELATION_TYPE +
+    // RelationVersion) is reserved in the schema for future use per
+    // ADR-009 deferral; see module-level doc comment for rationale.
     //
     // Use MERGE to avoid duplicates; set properties unconditionally.
     let callee_escaped = escape_cypher_string(&edge.callee);
     // Include all properties in MERGE so lbug accepts them (lbug requires relationship
     // properties to be declared in the MERGE pattern, not added via SET afterward).
-    // NOTE: version_id is NOT a declared property on SEMANTIC_EDGE in lbug's schema
+    // version_id is captured on the Evidence node (see put_evidence)
+    // and on the Element's current_version_id pointer, not on the
+    // SEMANTIC_EDGE itself. The reified model with RelationVersion is
+    // reserved in the schema for future use.
     // (only relation_id, predicate_id, active, order_key, props are declared).
     // We omit it from the MERGE; the Evidence node tracks version lineage instead.
     let cypher = format!(
