@@ -4,6 +4,26 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.13.0] — 2026-08-02 — M12 class-diagram extraction
+
+### Added
+- `archctl code class-diagram <selector>` CLI subcommand.
+- Tree-sitter CST walk extractors for Rust (struct/enum/trait/impl), TypeScript (class/interface), Python (class).
+- Intra-file edges: `extends`, `implements`, `composes`.
+- Projection schema `schemas/class-diagram-report.schema.json` v1.0.
+- Bench harness `archctl/benches/class_diagram_pipeline.rs` (criterion, ADR-019 budget).
+- 7 new integration tests for class-diagram extraction.
+
+### Changed
+- Manifest gate `code`: `public_symbols` extended; `must_hold` includes projection determinism + ADR-019 budget.
+
+### Deferred (follow-up cycle)
+- Cross-file inheritance / type resolution (requires LSP or symbol table).
+- Composition / aggregation with cross-file type lookup.
+- LSP-based extraction (per ADR-012).
+
+Refs: cycle `m12-class-diagram`, PR (pending).
+
 ## [v0.12.1] — 2026-08-02
 
 ### Bench (M5 follow-up)
