@@ -3,6 +3,34 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.17.0] — 2026-08-02 — M17.3 sequence diagram view
+
+### Added
+- **SequenceView**: `src/views/SequenceView.tsx` renders sequence
+  bundles as UML sequence diagrams — participant header (lifelines)
+  + interaction rows in time order. Each row: source → arrow → target
+  with kind-specific styling:
+    - `SyncCall` — solid line + arrow head
+    - `AsyncCall` — dashed line (repeating-linear-gradient) + arrow head
+    - `Reply` — dotted line, no arrow head
+  Click on a participant to focus the corresponding node in sidebar.
+- **Loader preserves raw interactions**: `SequenceInteraction`
+  type + `interactions` field on `GraphBundle` for sequence bundles.
+  `normalizeInteraction` helper for schema-tolerant parsing.
+- **App.tsx Switch routing**: sequence bundles route to
+  `SequenceView` (more specific than call-graph's
+  `CallGraphView`).
+- **Sample bundle**: `public/samples/sequence.json` — 7 interactions
+  showing a request/response flow (server → handle_request → auth
+  → db → reply, with sync/async/reply message kinds).
+- **Tests**: 14 → 17. New coverage: raw interactions preserved,
+  unique participant extraction (file:name pair dedup), missing
+  optional fields handled.
+
+### Refs
+- Cycle: `m17.3-archview-sequence`
+- ROADMAP M17.3 (post-v0.13.0 stabilization plan F2.2)
+
 ## [v0.16.0] — 2026-08-02 — M17.2 call graph view
 
 ### Added
