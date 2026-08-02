@@ -79,7 +79,12 @@ Fase 3 ✅
 └── F3.3 lbug infra service ✅ (annotation counter, no cargo test subprocess)
 ```
 
-Próximo ciclo: `M17.0 archview scaffold` (separate repo, prioridad 1, tag v0.14.0).
+## Repo satelital: `archview`
+
+- **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
+- **Tag**: `v0.14.0-rc1` (final v0.14.0 pendiente de verificación `pnpm install && pnpm test`)
+- **Status**: M17.0 scaffold completo (bundle loader, G6 renderer, sidebar). 4 tests escritos, no ejecutados localmente.
+- **Próximo**: M17.1 semantic zoom C4.
 
 ## Archivos clave para retomar
 
