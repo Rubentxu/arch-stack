@@ -132,7 +132,7 @@ impl EvidenceStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_label(s: &str) -> Option<Self> {
         match s {
             "drafted" => Some(Self::Drafted),
             "accepted" => Some(Self::Accepted),
@@ -1076,7 +1076,7 @@ mod tests {
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
 
         // Run once
-        put_with_source(&project, &ev, Some(&[sa.clone()]), None, clock).unwrap();
+        put_with_source(&project, &ev, Some(std::slice::from_ref(&sa)), None, clock).unwrap();
         // Run again with same source
         put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
 

@@ -605,12 +605,11 @@ fn parse_test_pass_count(stdout: &str) -> Option<u64> {
         if let Some(rest) = line.strip_prefix("test result: ok.") {
             // rest looks like " 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
             let mut tokens = rest.split_whitespace();
-            if let Some(count) = tokens.next() {
-                if let Ok(n) = count.parse::<u64>() {
+            if let Some(count) = tokens.next()
+                && let Ok(n) = count.parse::<u64>() {
                     total += n;
                     seen_any = true;
                 }
-            }
         }
     }
     if seen_any {
@@ -934,8 +933,7 @@ test result: ok. 10 passed; 0 failed
         let tmp = fixture();
         let fs = system_fs();
         make_source_file(tmp.path(), "a.rs", "pub fn x() {}\n");
-        let body = format!(
-            r#"
+        let body = r#"
 id = "demo"
 version = "0.1.0"
 description = "x"
@@ -944,7 +942,7 @@ public_symbols = ["x"]
 must_hold = ["pub fn x"]
 minimum_tests = 0
 "#
-        );
+        .to_string();
         write_manifest(tmp.path(), "demo", &body);
         let m = ScopeManifest::load(tmp.path(), "demo", &fs).unwrap();
         // skip test-count gate to avoid recursing into `cargo test`

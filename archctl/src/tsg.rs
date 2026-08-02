@@ -75,9 +75,11 @@ pub fn execute(
         .execute(&tree, source, &config, &NoCancellation)
         .context("execute TSG rules")?;
 
-    let mut out = TsgOutput::default();
-    out.graph_node_count = graph.node_count();
-    out.graph_edge_count = graph.iter_nodes().map(|n| graph[n].edge_count()).sum();
+    let mut out = TsgOutput {
+        graph_node_count: graph.node_count(),
+        graph_edge_count: graph.iter_nodes().map(|n| graph[n].edge_count()).sum(),
+        ..Default::default()
+    };
 
     // Each graph node produced by the TSG becomes one evidence record.
     // The TSG must capture at least one syntax-node attribute per graph

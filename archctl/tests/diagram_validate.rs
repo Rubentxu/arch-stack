@@ -76,7 +76,7 @@ fn write_valid_bundle(dir: &TempDir) {
     let assets = dir.path().join("assets");
     fs::create_dir_all(&assets).unwrap();
     for icon in ["context", "container", "component", "dynamic", "deployment"] {
-        fs::write(assets.join(format!("{icon}.png")), &[0u8; 16]).unwrap();
+        fs::write(assets.join(format!("{icon}.png")), [0u8; 16]).unwrap();
     }
 }
 

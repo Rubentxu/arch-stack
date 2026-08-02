@@ -30,7 +30,7 @@ fn bench_apply_set_label_small(c: &mut Criterion) {
         // measures the apply path many times. Without this, the
         // 1k-node seed (~2.8s) dominates the apply cost (~370ms).
         b.iter_with_setup(
-            || seed_small(),
+            seed_small,
             |(mut store, _tmp)| {
                 store
                     .put_diagram(&Diagram {
@@ -57,7 +57,7 @@ fn bench_apply_set_label_small(c: &mut Criterion) {
 fn bench_apply_move_member_medium(c: &mut Criterion) {
     c.bench_function("apply_move_member_medium", |b| {
         b.iter_with_setup(
-            || seed_medium(),
+            seed_medium,
             |(mut store, _tmp)| {
                 store
                     .put_diagram(&Diagram {

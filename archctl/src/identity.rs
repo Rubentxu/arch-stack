@@ -107,22 +107,22 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
 
             let repository_id = blake_like(&format!("git|{remote}|{root_commit}"));
             let worktree_id = blake_like(&format!("worktree|{canonical_top}"));
-            return Ok(SourceIdentity::Git {
+            Ok(SourceIdentity::Git {
                 repository_id,
                 worktree_id,
                 root_commit,
                 toplevel: canonical_top,
                 remote,
-            });
+            })
         }
         Err(_) => {
             let canonical = safe_realpath(cwd, fs)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| cwd.to_string());
-            return Ok(SourceIdentity::Directory {
+            Ok(SourceIdentity::Directory {
                 directory_id: blake_like(&format!("dir|{canonical}")),
                 canonical_realpath: norm_dir(&canonical),
-            });
+            })
         }
     }
 }

@@ -170,7 +170,7 @@ pub fn find_by_kind<'a>(
 fn walk_collect<'a>(
     node: &Node<'a, StrDoc<Lang>>,
     kind: &str,
-    out: &mut Vec<NodeMatch<'a, StrDoc<Lang>>>,
+    _out: &mut Vec<NodeMatch<'a, StrDoc<Lang>>>,
 ) {
     if node.kind().as_ref() == kind {
         // Reuse the pattern matcher for kind-only queries by
@@ -183,7 +183,7 @@ fn walk_collect<'a>(
         debug!(kind, "kind match candidate");
     }
     for child in node.children() {
-        walk_collect(&child, kind, out);
+        walk_collect(&child, kind, _out);
     }
 }
 

@@ -333,24 +333,22 @@ impl Filesystem for MemoryFilesystem {
         let dirs = self.dirs.read().unwrap();
         let mut entries: Vec<DirEntry> = Vec::new();
         for (file_path, _) in files.iter() {
-            if let Some(parent) = file_path.parent() {
-                if parent == path {
+            if let Some(parent) = file_path.parent()
+                && parent == path {
                     entries.push(DirEntry {
                         path: file_path.clone(),
                         kind: EntryKind::File,
                     });
                 }
-            }
         }
         for dir_path in dirs.iter() {
-            if let Some(parent) = dir_path.parent() {
-                if parent == path && dir_path != path {
+            if let Some(parent) = dir_path.parent()
+                && parent == path && dir_path != path {
                     entries.push(DirEntry {
                         path: dir_path.clone(),
                         kind: EntryKind::Dir,
                     });
                 }
-            }
         }
         Ok(entries)
     }

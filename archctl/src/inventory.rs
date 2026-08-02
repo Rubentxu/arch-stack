@@ -124,11 +124,10 @@ pub fn supported_files(root: &Path, max_entries: usize) -> Result<Vec<(PathBuf, 
         if !matches!(e.kind, EntryKind::File) {
             continue;
         }
-        if let Some(lang) = detect_language(Path::new(&e.path)) {
-            if crate::astgrep::Lang::from_label(lang).is_some() {
+        if let Some(lang) = detect_language(Path::new(&e.path))
+            && crate::astgrep::Lang::from_label(lang).is_some() {
                 out.push((PathBuf::from(e.path), lang));
             }
-        }
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -310,7 +309,7 @@ mod tests {
         assert_eq!(summary.languages.get("python").map(|s| s.files), Some(1));
         assert_eq!(summary.languages.get("java").map(|s| s.files), Some(1));
         assert_eq!(summary.languages.get("markdown").map(|s| s.files), Some(1));
-        assert!(summary.languages.get("javascript").is_none(), "node_modules ignored");
+        assert!(!summary.languages.contains_key("javascript"), "node_modules ignored");
     }
 
     #[test]

@@ -38,10 +38,10 @@ fn changeset_command_types_match_schema_onedef() {
             let def_name = ref_path.strip_prefix("#/$defs/").unwrap_or(ref_path);
             let def = defs
                 .get(def_name)
-                .expect(&format!("$defs.{} must exist", def_name));
+                .unwrap_or_else(|| panic!("$defs.{} must exist", def_name));
             let type_val = def["properties"]["type"]["const"]
                 .as_str()
-                .expect(&format!("type const must be string in $defs.{}", def_name));
+                .unwrap_or_else(|| panic!("type const must be string in $defs.{}", def_name));
             schema_types.push(type_val);
         }
     }

@@ -3,7 +3,6 @@
 // SCN-030: Export with no project graph → exits non-zero with clear error.
 // SCN-031: Export with invalid --output (parent not writable) → exits non-zero.
 
-use predicates::prelude::PredicateBooleanExt;
 use std::fs;
 use tempfile::TempDir;
 

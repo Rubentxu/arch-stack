@@ -89,16 +89,14 @@ impl Environment for SystemEnvironment {
         // Windows fallbacks. We do not pre-canonicalise here — the
         // port returns whatever the OS says and lets the caller
         // decide whether to canonicalise.
-        if let Some(home) = std::env::var_os("HOME") {
-            if !home.is_empty() {
+        if let Some(home) = std::env::var_os("HOME")
+            && !home.is_empty() {
                 return Ok(PathBuf::from(home));
             }
-        }
-        if let Some(profile) = std::env::var_os("USERPROFILE") {
-            if !profile.is_empty() {
+        if let Some(profile) = std::env::var_os("USERPROFILE")
+            && !profile.is_empty() {
                 return Ok(PathBuf::from(profile));
             }
-        }
         if let (Some(drive), Some(path)) = (
             std::env::var_os("HOMEDRIVE"),
             std::env::var_os("HOMEPATH"),
@@ -201,6 +199,8 @@ pub fn fixed_environment() -> Arc<dyn Environment> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -240,7 +240,7 @@ mod tests {
         // the contract: calling it returns *some* path that exists.
         let env = SystemEnvironment;
         let cwd = env.current_dir().unwrap();
-        assert!(cwd.is_absolute() || cwd == PathBuf::from("."));
+        assert!(cwd.is_absolute() || cwd == Path::new("."));
     }
 
     #[test]

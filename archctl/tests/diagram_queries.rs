@@ -64,6 +64,7 @@ impl TinyGraphStore {
     }
 
     /// Extract category filter from a query_semantic_edges cypher string.
+    #[allow(dead_code)]
     fn extract_category_from_semantic_cypher(cypher: &str) -> String {
         Self::extract_quoted(cypher, "SRC.CATEGORY")
             .or_else(|| Self::extract_quoted(cypher, "SRC.CATEGORY"))
@@ -103,7 +104,7 @@ impl TinyGraphStore {
             }
             // Extract ID (alphanumeric with colon and dash)
             let end = current
-                .find(|c: char| c == ']' || c == ',' || c == ' ')
+                .find(|c: char| [']', ',', ' '].contains(&c))
                 .unwrap_or(current.len());
             let id = &current[..end];
             if !id.is_empty() {

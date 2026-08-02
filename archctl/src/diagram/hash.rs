@@ -82,7 +82,7 @@ fn sort_arrays_by_id(value: &mut serde_json::Value) {
         if indices.len() == arr.len() {
             indices.sort_by(|a, b| a.1.cmp(&b.1));
             let original = std::mem::take(arr);
-            for (_new_idx, (old_idx, _)) in indices.into_iter().enumerate() {
+            for (old_idx, _) in indices.into_iter() {
                 arr.push(original[old_idx].clone());
             }
         }

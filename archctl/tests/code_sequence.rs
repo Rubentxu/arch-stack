@@ -70,7 +70,7 @@ fn test_cli_sequence_after_call_graph() {
         serde_json::from_str(json_str).expect("valid JSON");
     assert_eq!(json["schemaVersion"], "1.0");
     assert!(
-        json["interactions"].as_array().unwrap().len() >= 1,
+        !json["interactions"].as_array().unwrap().is_empty(),
         "expected ≥1 interaction"
     );
 }

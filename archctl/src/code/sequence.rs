@@ -292,28 +292,26 @@ fn resolve_selector(
 /// Parse MessageKind from a row's rel_props JSON.
 fn parse_message_kind_from_row(row: &crate::row::Row) -> MessageKind {
     // Try to extract from rel_props JSON: { "message_kind": "sync_call" | "async_call" | "return" }
-    if let Some(props_cell) = row.get("rel_props") {
-        if let Some(props_str) = props_cell.as_str() {
+    if let Some(props_cell) = row.get("rel_props")
+        && let Some(props_str) = props_cell.as_str() {
             // Props are stored as escaped JSON string
             let unescaped = props_str.replace("\\'", "'");
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped) {
-                if let Some(msg_kind) = parsed.get("message_kind").and_then(|v| v.as_str()) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped)
+                && let Some(msg_kind) = parsed.get("message_kind").and_then(|v| v.as_str()) {
                     return match msg_kind {
                         "async_call" => MessageKind::AsyncCall,
                         "return" => MessageKind::Return,
                         _ => MessageKind::SyncCall,
                     };
                 }
-            }
         }
-    }
     MessageKind::SyncCall
 }
 
 /// Extract file and line from a row's rel_props JSON.
 fn extract_location_from_row(row: &crate::row::Row) -> (Option<PathBuf>, Option<u32>) {
-    if let Some(props_cell) = row.get("rel_props") {
-        if let Some(props_str) = props_cell.as_str() {
+    if let Some(props_cell) = row.get("rel_props")
+        && let Some(props_str) = props_cell.as_str() {
             let unescaped = props_str.replace("\\'", "'");
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&unescaped) {
                 let file = parsed
@@ -327,7 +325,6 @@ fn extract_location_from_row(row: &crate::row::Row) -> (Option<PathBuf>, Option<
                 return (file, line);
             }
         }
-    }
     (None, None)
 }
 
@@ -625,7 +622,7 @@ mod tests {
             file: None,
             line: None,
         };
-        let interactions = vec![i1, i2, i3];
+        let interactions = [i1, i2, i3];
         assert_eq!(
             interactions.iter().map(|i| i.order_key).collect::<Vec<_>>(),
             vec![1, 2, 3]

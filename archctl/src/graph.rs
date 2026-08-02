@@ -93,7 +93,7 @@ pub fn init(project_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
     let path = database_path(project_dir);
     fs.create_dir_all(project_dir)
         .with_context(|| format!("mkdir {}", project_dir.display()))?;
-    let session = open_session(&path.parent().unwrap_or(project_dir), fs)?;
+    let session = open_session(path.parent().unwrap_or(project_dir), fs)?;
     let marker = project_dir.join(SCHEMA_MARKER_FILENAME);
     let applied = migrations::apply_pending(&session, fs, &marker)?;
     if applied.is_empty() {
@@ -230,10 +230,10 @@ pub fn query(project_dir: &Path, cypher: &str, fs: &dyn Filesystem) -> Result<Ve
 }
 
 fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
-    let mut result = conn.query(cypher).context("execute query")?;
+    let result = conn.query(cypher).context("execute query")?;
     let columns = result.get_column_names();
     let mut rows = Vec::new();
-    while let Some(row) = result.next() {
+    for row in result {
         let mut obj = serde_json::Map::new();
         for (i, col) in columns.iter().enumerate() {
             let value = row.get(i).map(value_to_json).unwrap_or(Json::Null);
