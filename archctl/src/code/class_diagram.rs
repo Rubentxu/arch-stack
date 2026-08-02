@@ -218,12 +218,11 @@ pub fn run_class_diagram(
         let rel_str = rel.to_string_lossy().to_string();
 
         // Apply file: selector filter
-        if let Some(ref sel) = opts.selector {
-            if let Some(sel_path) = sel.strip_prefix("file:") {
-                if rel_str != sel_path {
-                    continue;
-                }
-            }
+        if let Some(ref sel) = opts.selector
+            && let Some(sel_path) = sel.strip_prefix("file:")
+            && rel_str != sel_path
+        {
+            continue;
         }
 
         files_to_process.push((rel.to_path_buf(), lang));
@@ -278,7 +277,9 @@ pub fn run_class_diagram(
         let file_str = rel_path.to_string_lossy().to_string();
 
         match lang {
-            Language::Rust => extract_rust(&tree, &source, &file_str, &mut all_nodes, &mut all_edges),
+            Language::Rust => {
+                extract_rust(&tree, &source, &file_str, &mut all_nodes, &mut all_edges)
+            }
             Language::TypeScript => {
                 extract_typescript(&tree, &source, &file_str, &mut all_nodes, &mut all_edges)
             }
@@ -364,16 +365,18 @@ fn find_rust_types<'tree>(
                         "type_declaration" => {
                             // `impl Trait for Type`
                             for j in 0..child.child_count() {
-                                if let Some(inner) = child.child(j as u32) {
-                                    if inner.kind() == "type_identifier" {
-                                        impl_type_name =
-                                            Some(source[inner.start_byte()..inner.end_byte()].to_string());
-                                    }
+                                if let Some(inner) = child.child(j as u32)
+                                    && inner.kind() == "type_identifier"
+                                {
+                                    impl_type_name = Some(
+                                        source[inner.start_byte()..inner.end_byte()].to_string(),
+                                    );
                                 }
                             }
                         }
                         "identifier" => {
-                            trait_name = Some(source[child.start_byte()..child.end_byte()].to_string());
+                            trait_name =
+                                Some(source[child.start_byte()..child.end_byte()].to_string());
                         }
                         "declaration" => {
                             // Skip trait bounds in impl
@@ -390,12 +393,15 @@ fn find_rust_types<'tree>(
 
             // Extract impl_item body methods
             for i in 0..node.child_count() {
-                if let Some(child) = node.child(i as u32) && child.kind() == "declaration" {
+                if let Some(child) = node.child(i as u32)
+                    && child.kind() == "declaration"
+                {
                     for j in 0..child.child_count() {
-                        if let Some(fn_item) = child.child(j as u32) && fn_item.kind() == "function_item" {
-                            if let Some(member) = extract_rust_method(fn_item, source) {
-                                members.push(member);
-                            }
+                        if let Some(fn_item) = child.child(j as u32)
+                            && fn_item.kind() == "function_item"
+                            && let Some(member) = extract_rust_method(fn_item, source)
+                        {
+                            members.push(member);
                         }
                     }
                 }
@@ -408,7 +414,10 @@ fn find_rust_types<'tree>(
                 let source_key = format!("rust:{}:class:{}:0", file, type_n);
                 // Only emit if both exist (deferred to edge resolution pass)
                 edges.push(ClassEdge {
-                    canonical_key: format!("rust:{}:{}→implements→{}:{}", file, source_key, target_key, impl_trait_line),
+                    canonical_key: format!(
+                        "rust:{}:{}→implements→{}:{}",
+                        file, source_key, target_key, impl_trait_line
+                    ),
                     source: source_key,
                     target: target_key,
                     predicate: ClassEdgeKind::Implements,
@@ -463,7 +472,9 @@ fn extract_rust_struct(node: tree_sitter::Node, source: &str, file: &str) -> Opt
                 }
                 "field_declaration_list" => {
                     for j in 0..child.child_count() {
-                        if let Some(field) = child.child(j as u32) && field.kind() == "field_declaration" {
+                        if let Some(field) = child.child(j as u32)
+                            && field.kind() == "field_declaration"
+                        {
                             let mut field_name = String::new();
                             let mut sig = String::new();
                             for k in 0..field.child_count() {
@@ -516,10 +527,8 @@ fn extract_rust_enum(node: tree_sitter::Node, source: &str, file: &str) -> Optio
         if let Some(child) = node.child(i as u32) {
             match child.kind() {
                 "visibility_modifier" => {}
-                "identifier" => {
-                    if name.is_empty() {
-                        name = source[child.start_byte()..child.end_byte()].to_string();
-                    }
+                "identifier" if name.is_empty() => {
+                    name = source[child.start_byte()..child.end_byte()].to_string();
                 }
                 _ => {}
             }
@@ -551,10 +560,8 @@ fn extract_rust_trait(node: tree_sitter::Node, source: &str, file: &str) -> Opti
         if let Some(child) = node.child(i as u32) {
             match child.kind() {
                 "visibility_modifier" => {}
-                "identifier" => {
-                    if name.is_empty() {
-                        name = source[child.start_byte()..child.end_byte()].to_string();
-                    }
+                "identifier" if name.is_empty() => {
+                    name = source[child.start_byte()..child.end_byte()].to_string();
                 }
                 _ => {}
             }
@@ -690,14 +697,16 @@ fn extract_ts_class(
                                 "extends_clause" => {
                                     // extends_clause has: "extends" keyword + identifier
                                     for k in 0..hc.child_count() {
-                                        if let Some(id_node) = hc.child(k as u32) {
-                                            if id_node.kind() == "identifier" {
-                                                let txt = source[id_node.start_byte()..id_node.end_byte()].to_string();
-                                                if extends_name.is_none() {
-                                                    extends_name = Some(txt);
-                                                } else {
-                                                    implements_names.push(txt);
-                                                }
+                                        if let Some(id_node) = hc.child(k as u32)
+                                            && id_node.kind() == "identifier"
+                                        {
+                                            let txt = source
+                                                [id_node.start_byte()..id_node.end_byte()]
+                                                .to_string();
+                                            if extends_name.is_none() {
+                                                extends_name = Some(txt);
+                                            } else {
+                                                implements_names.push(txt);
                                             }
                                         }
                                     }
@@ -705,10 +714,14 @@ fn extract_ts_class(
                                 "implements_clause" => {
                                     // implements_clause has identifier(s) — TS uses type_identifier
                                     for k in 0..hc.child_count() {
-                                        if let Some(id_node) = hc.child(k as u32) {
-                                            if id_node.kind() == "identifier" || id_node.kind() == "type_identifier" {
-                                                implements_names.push(source[id_node.start_byte()..id_node.end_byte()].to_string());
-                                            }
+                                        if let Some(id_node) = hc.child(k as u32)
+                                            && (id_node.kind() == "identifier"
+                                                || id_node.kind() == "type_identifier")
+                                        {
+                                            implements_names.push(
+                                                source[id_node.start_byte()..id_node.end_byte()]
+                                                    .to_string(),
+                                            );
                                         }
                                     }
                                 }
@@ -789,10 +802,11 @@ fn extract_ts_interface(node: tree_sitter::Node, source: &str, file: &str) -> Op
     let line = (node.start_position().row + 1) as u32;
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
-            if (child.kind() == "identifier" || child.kind() == "type_identifier") && name.is_empty() {
-                name = source[child.start_byte()..child.end_byte()].to_string();
-            }
+        if let Some(child) = node.child(i as u32)
+            && (child.kind() == "identifier" || child.kind() == "type_identifier")
+            && name.is_empty()
+        {
+            name = source[child.start_byte()..child.end_byte()].to_string();
         }
     }
 
@@ -818,10 +832,11 @@ fn extract_ts_enum(node: tree_sitter::Node, source: &str, file: &str) -> Option<
     let line = (node.start_position().row + 1) as u32;
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
-            if child.kind() == "identifier" && name.is_empty() {
-                name = source[child.start_byte()..child.end_byte()].to_string();
-            }
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "identifier"
+            && name.is_empty()
+        {
+            name = source[child.start_byte()..child.end_byte()].to_string();
         }
     }
 
@@ -847,10 +862,11 @@ fn extract_ts_type_alias(node: tree_sitter::Node, source: &str, file: &str) -> O
     let line = (node.start_position().row + 1) as u32;
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
-            if child.kind() == "type_identifier" && name.is_empty() {
-                name = source[child.start_byte()..child.end_byte()].to_string();
-            }
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "type_identifier"
+            && name.is_empty()
+        {
+            name = source[child.start_byte()..child.end_byte()].to_string();
         }
     }
 
@@ -985,7 +1001,10 @@ fn extract_python_class(
                         if let Some(arg) = child.child(j as u32) {
                             // Only capture identifier nodes, not punctuation
                             if arg.kind() == "identifier" {
-                                let base_name = source[arg.start_byte()..arg.end_byte()].to_string().trim().to_string();
+                                let base_name = source[arg.start_byte()..arg.end_byte()]
+                                    .to_string()
+                                    .trim()
+                                    .to_string();
                                 if !base_name.is_empty() && base_name != "object" {
                                     bases.push(base_name);
                                 }
@@ -1011,7 +1030,10 @@ fn extract_python_class(
     for base in &bases {
         let base_key = format!("python:{}:class:{}:0", file, base);
         edges.push(ClassEdge {
-            canonical_key: format!("python:{}:{}→extends→{}:{}", file, canonical_key, base_key, line),
+            canonical_key: format!(
+                "python:{}:{}→extends→{}:{}",
+                file, canonical_key, base_key, line
+            ),
             source: canonical_key.clone(),
             target: base_key,
             predicate: ClassEdgeKind::Extends,
@@ -1054,13 +1076,13 @@ fn extract_edges(nodes: &[ClassNode], edges: &mut Vec<ClassEdge>) {
             continue; // skip fully unresolved
         }
 
-        // Parse source: extract lang, file, kind, name
+        // Parse source: extract lang, file (kind/name re-extracted from source key below)
         let parts: Vec<&str> = edge.source.split(':').collect();
         if parts.len() >= 4 {
             let lang_str = parts[0];
             let file = parts[1];
-            let kind = parts[2];
-            let name = parts[3];
+            let _kind = parts[2];
+            let _name = parts[3];
 
             let lang = match lang_str {
                 "rust" => Language::Rust,
@@ -1073,13 +1095,13 @@ fn extract_edges(nodes: &[ClassNode], edges: &mut Vec<ClassEdge>) {
             let target_parts: Vec<&str> = edge.target.split(':').collect();
             if target_parts.len() >= 2 {
                 let target_name = target_parts[1];
-                if let Some(real_target) =
-                    name_to_key.get(&(lang, file, target_name))
-                {
+                if let Some(real_target) = name_to_key.get(&(lang, file, target_name)) {
                     resolved_edges.push(ClassEdge {
                         canonical_key: format!(
                             "{}:{}:{}→{}→{}:{}",
-                            lang_str, file, edge.source.split(':').nth(3).unwrap_or(""),
+                            lang_str,
+                            file,
+                            edge.source.split(':').nth(3).unwrap_or(""),
                             edge.predicate_tag(),
                             real_target.split(':').nth(3).unwrap_or(""),
                             edge.line
@@ -1121,19 +1143,6 @@ fn escape_cypher_string(s: &str) -> String {
     s.replace('\'', "\\'")
 }
 
-/// Pipe: pass a value through a function and return the result.
-trait Pipe<T> {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-        Self: Sized,
-    {
-        f(self)
-    }
-}
-
-impl<T> Pipe<T> for T {}
-
 /// Apply a class-diagram report to the graph store.
 pub fn apply(
     project_dir: &Path,
@@ -1150,7 +1159,7 @@ pub fn apply(
     let mut elements_skipped = 0;
     let mut relations_written = 0;
     let mut relations_skipped = 0;
-    let mut evidences_written = 0;
+    let evidences_written = 0;
     let mut seed_writes = 0;
 
     // Seed uml MetaTypes and Predicates
@@ -1252,7 +1261,7 @@ pub fn apply(
             ClassEdgeKind::Composes => "uml.composition",
         };
 
-        let canonical_key_escaped = escape_cypher_string(&edge.canonical_key);
+        let _canonical_key_escaped = escape_cypher_string(&edge.canonical_key);
         let source_id = format!("cd:{}", edge.source);
         let target_id = format!("cd:{}", edge.target);
         let rel_id = format!("cd:{}→{}", edge.source, edge.target);
@@ -1330,8 +1339,8 @@ mod tests {
 
     #[test]
     fn test_ts_class_kind() {
-        use tree_sitter::Parser;
         use ast_grep_language::SupportLang;
+        use tree_sitter::Parser;
         let source = "class Animal {}";
         let lang = SupportLang::TypeScript;
         let ts_lang = lang.get_ts_language();
@@ -1339,17 +1348,21 @@ mod tests {
         parser.set_language(&ts_lang).unwrap();
         let tree = parser.parse(source, None).unwrap();
         let mut found_kinds = Vec::new();
-        fn walk(node: tree_sitter::Node, source: &str, found: &mut Vec<&str>) {
+        fn walk(node: tree_sitter::Node, _source: &str, found: &mut Vec<&str>) {
             found.push(node.kind());
             for i in 0..node.child_count() {
                 if let Some(child) = node.child(i as u32) {
-                    walk(child, source, found);
+                    walk(child, _source, found);
                 }
             }
         }
         walk(tree.root_node(), source, &mut found_kinds);
         println!("TS kinds: {:?}", found_kinds);
-        assert!(found_kinds.contains(&"class_declaration"), "expected class_declaration in {:?}", found_kinds);
+        assert!(
+            found_kinds.contains(&"class_declaration"),
+            "expected class_declaration in {:?}",
+            found_kinds
+        );
     }
 
     #[test]

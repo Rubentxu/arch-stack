@@ -11,7 +11,7 @@
 
 use std::process::Command;
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 
 const RUST_FIXTURE: &str = r#"

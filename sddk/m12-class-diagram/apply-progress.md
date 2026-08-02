@@ -25,6 +25,8 @@
 | 11 | `b152412` | chore(manifests): finalize class_diagram gate values (T5.2) |
 | 12 | `bc2a7af` | docs(roadmap): drop LSP from M12 pivot (T5.3) |
 | 13 | `9c96cf7` | docs(changelog): add v0.13.0 entry — M12 class-diagram (T5.4) |
+| 14 | `4b58984` | docs(sddk): write m12-class-diagram apply-progress.md (T6.1) |
+| 15 | (pending) | chore(code): clippy + rustfmt cleanup of class_diagram.rs (T6.2) |
 
 ## Tasks Completed
 
@@ -69,12 +71,18 @@ cargo test --quiet
 
 # Lint
 cargo clippy --quiet -- -D warnings
-# Exit: 1 — PRE-EXISTING errors in src/tsg.rs, src/store.rs, src/code/class_diagram.rs
-# Not introduced by this cycle. Tracked separately.
+# Exit: 1 — 56 PRE-EXISTING warnings on main @ 8503cdc (src/store.rs, src/code/sequence.rs,
+# src/environment.rs, src/filesystem.rs, src/graph.rs, src/identity.rs, src/inventory.rs,
+# src/scope.rs, src/tsg.rs, src/cli.rs, tests/, benches/). Tracked as project debt.
+# M12 introduced 18 new warnings in class_diagram.rs that were cleaned up in T6.2
+# (commit pending — see §T6.2 below).
 
 # Format
 cargo fmt --check
-# Exit: 0 ✓
+# Exit: 1 — PRE-EXISTING rustfmt non-compliance in benches/{apply,export,query}_pipeline.rs
+# (import ordering). Tracked as project debt. M12-touched files (`class_diagram.rs`,
+# `cli.rs`, `code/mod.rs`, `code/output.rs`, `tests/code_class_diagram.rs`,
+# `benches/class_diagram_pipeline.rs`) all match rustfmt defaults.
 
 # Doctor (code scope)
 cargo run --bin archctl -- doctor --scopes code --cwd ..
@@ -108,6 +116,10 @@ Command: `cargo bench --bench class_diagram_pipeline -- --quick`
 ## Notes
 
 - The `doctor --scopes code` command hangs when lbug store is unavailable. This is an infrastructure issue, not a code issue. The manifest gate was verified manually by reading `manifests/code.toml`.
-- Clippy errors in `src/tsg.rs` and `src/code/class_diagram.rs` are pre-existing and unrelated to this cycle's changes.
+- **T6.2 — Clippy + rustfmt cleanup**: After T6.1 closed, an audit of clippy warnings revealed that M12 introduced 18 new warnings in `src/code/class_diagram.rs` (10× `collapsible_if`, 2× `collapsible_match`, 4× `unused_variables`/`mut`, 1× `dead_code` `Pipe` trait, 1× `only_used_in_recursion`). All 18 were fixed in T6.2:
+  - Auto-fixable `collapsible_if`/`collapsible_match` via `cargo clippy --fix`
+  - Manual: removed unused `Pipe` trait + impl (dead code), renamed `kind`/`name`/`canonical_key_escaped` to `_kind`/`_name`/`_canonical_key_escaped` (unused), removed `mut` from `evidences_written` (never mutated), renamed `walk` test helper param to `_source` (only used in recursion)
+  - Reverted `cargo fmt` over-reach that touched 54 unrelated files (known gotcha: `cargo fmt` formats the whole workspace, not just the file passed)
+  - Net result: 0 new clippy warnings, 0 new rustfmt violations introduced by M12
 - All 7 class_diagram integration tests now pass. Schema path fixed to `../schemas/class-diagram-report.schema.json` relative to `CARGO_MANIFEST_DIR` (archctl/).
 - Golden fixture `gold.json` generated from `rust_sample.rs` scan — deterministic (verified by determinism test after fix).

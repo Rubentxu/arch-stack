@@ -525,7 +525,9 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 apply,
             } => {
                 if apply {
-                    eprintln!("warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges");
+                    eprintln!(
+                        "warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges"
+                    );
                 }
                 code_sequence_cmd(&cwd, from, depth, max_interactions, json)
             }
@@ -535,9 +537,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 json,
                 lang,
                 selector,
-            } => {
-                code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref())
-            }
+            } => code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref()),
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
     }

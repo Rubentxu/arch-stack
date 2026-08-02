@@ -19,10 +19,19 @@ fn parse_class_diagram_output(output: &str) -> serde_json::Value {
 fn test_class_diagram_empty_project() {
     let tmp = TempDir::new().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_archctl"))
-        .args(["code", "class-diagram", "--cwd", tmp.path().to_str().unwrap()])
+        .args([
+            "code",
+            "class-diagram",
+            "--cwd",
+            tmp.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(String::from_utf8_lossy(&output.stdout).contains("Class diagram"));
 }
 
@@ -43,7 +52,10 @@ fn test_class_diagram_json_empty() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     let report = parse_class_diagram_output(&stdout);
-    assert!(report["nodes"].as_array().unwrap().is_empty(), "expected empty nodes");
+    assert!(
+        report["nodes"].as_array().unwrap().is_empty(),
+        "expected empty nodes"
+    );
 }
 
 /// Test Rust struct extraction produces a ClassNode.
@@ -236,8 +248,7 @@ pub struct Service {
 
     let report = parse_class_diagram_output(&stdout);
     let schema_bytes = fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../schemas/class-diagram-report.schema.json"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../schemas/class-diagram-report.schema.json"),
     )
     .unwrap();
     let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
