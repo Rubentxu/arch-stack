@@ -19,6 +19,17 @@ export interface GraphNode {
   language?: string;
   file?: string;
   line?: number;
+  /**
+   * C4 hierarchy level (1-4). Derived from `kind` for C4 bundles:
+   * 1 = Person / SoftwareSystem (Context level)
+   * 2 = Container
+   * 3 = Component
+   * 4 = Code (defer to M17.5+)
+   * Undefined for non-C4 bundles.
+   */
+  level?: number;
+  /** Parent element id (for C4 drill-down). */
+  parentId?: string;
   meta?: Record<string, unknown>;
 }
 
@@ -196,13 +207,16 @@ function classDiagramEdgeToEdge(e: Record<string, unknown>): GraphEdge {
 }
 
 function c4ElementToNode(e: Record<string, unknown>): GraphNode {
+  const kind = stringOr(e.kind, "Element");
   return {
     id: stringOr(e.id, ""),
     label: stringOr(e.name, "?"),
-    kind: stringOr(e.kind, "Element"),
+    kind,
     language: undefined,
     file: undefined,
     line: undefined,
+    level: c4LevelForKind(kind),
+    parentId: stringOrUndefined(e.parent),
     meta: { ...e },
   };
 }
@@ -216,6 +230,23 @@ function c4RelationToEdge(e: Record<string, unknown>): GraphEdge {
     label: stringOr(e.predicate_id, ""),
     meta: { ...e },
   };
+}
+
+/**
+ * Map a C4 element kind to its hierarchy level (1-4).
+ * Context = 1 (Person, SoftwareSystem)
+ * Container = 2
+ * Component = 3
+ * Code = 4 (defer to M17.5+ for code-level rendering)
+ * Unknown / Workspace = 0 (treat as out-of-band)
+ */
+export function c4LevelForKind(kind: string): number {
+  const k = kind.toLowerCase();
+  if (k === "person" || k === "softwaresystem" || k === "system") return 1;
+  if (k === "container" || k === "containerinstance" || k.endsWith(":container")) return 2;
+  if (k === "component" || k === "componentinstance" || k.endsWith(":component")) return 3;
+  if (k === "code" || k === "codeinstance" || k.endsWith(":code")) return 4;
+  return 0;
 }
 
 function extractSequenceNodes(raw: Record<string, unknown>): GraphNode[] {

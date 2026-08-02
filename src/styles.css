@@ -195,3 +195,177 @@ h4 {
   font-size: 0.875rem;
   max-width: 400px;
 }
+
+/* ─── C4 View (M17.1) ─────────────────────────────────────── */
+
+.c4-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 1.5rem;
+  gap: 1rem;
+}
+
+.c4-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.breadcrumb-root {
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.breadcrumb-root:disabled {
+  color: var(--fg-muted);
+  cursor: not-allowed;
+}
+
+.breadcrumb-sep {
+  color: var(--fg-muted);
+}
+
+.breadcrumb-current {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.c4-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.c4-level {
+  border-left: 3px solid var(--border);
+  padding-left: 1rem;
+}
+
+.c4-level-1 { border-left-color: #f97583; }
+.c4-level-2 { border-left-color: #ffab70; }
+.c4-level-3 { border-left-color: #79b8ff; }
+.c4-level-4 { border-left-color: #85e89d; }
+
+.c4-level-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0 0 0.5rem 0;
+}
+
+.c4-element-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.c4-element {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.c4-element:hover {
+  border-color: var(--accent);
+}
+
+.c4-element.selected {
+  border-color: var(--accent);
+  background: rgba(91, 141, 239, 0.1);
+}
+
+.c4-element-name {
+  font-weight: 600;
+}
+
+.c4-element-tech {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+.c4-element-desc {
+  font-size: 0.8125rem;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.c4-drill-hint {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-top: 0.25rem;
+}
+
+.c4-relations {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+}
+
+.c4-relations h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0 0 0.5rem 0;
+}
+
+.c4-relations ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.c4-relations li {
+  padding: 0.25rem 0;
+  font-family: monospace;
+}
+
+.c4-relations code {
+  background: var(--bg);
+  padding: 0 0.25rem;
+  border-radius: 2px;
+}
+
+/* ─── Sidebar C4 enrichment ────────────────────────────── */
+
+.level-tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.6875rem;
+  font-family: monospace;
+  color: var(--fg-muted);
+}
+
+dd.multiline {
+  white-space: pre-wrap;
+  line-height: 1.4;
+}

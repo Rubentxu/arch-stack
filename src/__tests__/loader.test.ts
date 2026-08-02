@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeBundle } from "../bundle/loader";
+import { c4LevelForKind, normalizeBundle } from "../bundle/loader";
 
 describe("bundle loader", () => {
   it("normalizes a call-graph bundle", () => {
@@ -79,5 +79,58 @@ describe("bundle loader", () => {
     expect(bundle.rawKind).toBe("c4");
     expect(bundle.nodes).toHaveLength(2);
     expect(bundle.edges[0].kind).toBe("uses");
+  });
+
+  it("derives C4 level and parentId for hierarchical rendering", () => {
+    const raw = {
+      schemaVersion: "1.0",
+      elements: [
+        {
+          id: "sys:1",
+          kind: "SoftwareSystem",
+          name: "Platform",
+          parent: null,
+        },
+        {
+          id: "ctn:1",
+          kind: "Container",
+          name: "API",
+          technology: "Rust",
+          description: "HTTP entry",
+          parent: "sys:1",
+        },
+      ],
+      relations: [],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    const sys = bundle.nodes.find((n) => n.id === "sys:1")!;
+    const ctn = bundle.nodes.find((n) => n.id === "ctn:1")!;
+    expect(sys.level).toBe(1);
+    expect(sys.parentId).toBeUndefined();
+    expect(ctn.level).toBe(2);
+    expect(ctn.parentId).toBe("sys:1");
+    expect(ctn.meta.technology).toBe("Rust");
+    expect(ctn.meta.description).toBe("HTTP entry");
+  });
+});
+
+describe("c4LevelForKind", () => {
+  it("maps C4 kinds to hierarchy levels", () => {
+    expect(c4LevelForKind("Person")).toBe(1);
+    expect(c4LevelForKind("SoftwareSystem")).toBe(1);
+    expect(c4LevelForKind("Container")).toBe(2);
+    expect(c4LevelForKind("Component")).toBe(3);
+    expect(c4LevelForKind("Code")).toBe(4);
+  });
+
+  it("handles instance variants and kind:variant form", () => {
+    expect(c4LevelForKind("ContainerInstance")).toBe(2);
+    expect(c4LevelForKind("ComponentInstance")).toBe(3);
+    expect(c4LevelForKind("foo:Container")).toBe(2);
+  });
+
+  it("returns 0 for unknown kinds", () => {
+    expect(c4LevelForKind("UnknownKind")).toBe(0);
+    expect(c4LevelForKind("")).toBe(0);
   });
 });

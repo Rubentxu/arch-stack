@@ -1,15 +1,16 @@
 /**
  * App shell — top bar with bundle loader, main canvas, sidebar.
  *
- * The M17.0 MVP is intentionally minimal: load a bundle from a URL,
- * render the graph, click a node, see evidence. No toolbar, no
- * filters, no semantic zoom. Those come in M17.1+.
+ * Renders different views depending on the bundle shape:
+ * - C4 bundles → C4View (hierarchical with drill-down, M17.1)
+ * - All other bundles → GraphRenderer (G6 canvas, M17.0)
  */
 
-import { createSignal, onCleanup, onMount, type Component } from "solid-js";
+import { Match, Show, Switch, createSignal, type Component } from "solid-js";
 import { GraphRenderer } from "./renderer/g6";
 import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
 import { Sidebar } from "./components/Sidebar";
+import { C4View } from "./views/C4View";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -20,34 +21,27 @@ const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
     label: "Sample class-diagram (rust)",
     url: "/samples/class-diagram.json",
   },
+  {
+    label: "Sample C4 context",
+    url: "/samples/c4-context.json",
+  },
+  {
+    label: "Sample C4 container (archctl)",
+    url: "/samples/c4-container.json",
+  },
 ];
 
 export const App: Component = () => {
-  let canvasRef: HTMLDivElement | undefined;
-  let renderer: GraphRenderer | undefined;
   const [bundle, setBundle] = createSignal<GraphBundle | null>(null);
   const [selected, setSelected] = createSignal<GraphNode | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-
-  onMount(() => {
-    if (!canvasRef) return;
-    renderer = new GraphRenderer({
-      container: canvasRef,
-      width: canvasRef.clientWidth || 800,
-      height: canvasRef.clientHeight || 600,
-    });
-  });
-
-  onCleanup(() => {
-    renderer?.destroy();
-  });
 
   const handleLoad = async (url: string) => {
     setError(null);
     try {
       const b = await loadBundle(url);
       setBundle(b);
-      renderer?.setData(b);
+      setSelected(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -75,13 +69,39 @@ export const App: Component = () => {
       </header>
 
       <main class="main">
-        <div class="canvas" ref={canvasRef}>
-          {!bundle() && (
+        <Show
+          when={bundle()}
+          fallback={
             <p class="empty-canvas">
               Load a bundle from the top bar to start exploring.
             </p>
+          }
+        >
+          {(b) => (
+            <Switch>
+              <Match when={b().rawKind === "c4"}>
+                <C4View
+                  nodes={b().nodes}
+                  edges={b().edges}
+                  selectedId={selected()?.id ?? null}
+                  onSelect={(id) => {
+                    const node = id
+                      ? b().nodes.find((n) => n.id === id) ?? null
+                      : null;
+                    setSelected(node);
+                  }}
+                />
+              </Match>
+              <Match when={true}>
+                <GraphView
+                  bundle={b()}
+                  selectedId={selected()?.id ?? null}
+                  onSelect={(node) => setSelected(node)}
+                />
+              </Match>
+            </Switch>
           )}
-        </div>
+        </Show>
         <Sidebar
           node={selected()}
           bundleMeta={
@@ -100,6 +120,38 @@ export const App: Component = () => {
       {error() && <p class="error">{error()}</p>}
     </div>
   );
+};
+
+/**
+ * GraphView — G6-based canvas for non-C4 bundles (call-graph, sequence,
+ * class-diagram). The original M17.0 view, kept for those bundle shapes.
+ */
+const GraphView: Component<{
+  bundle: GraphBundle;
+  selectedId: string | null;
+  onSelect: (node: GraphNode | null) => void;
+}> = (props) => {
+  let canvasRef: HTMLDivElement | undefined;
+  let renderer: GraphRenderer | undefined;
+
+  // SolidJS doesn't have onMount lifecycle for DOM ref initialization
+  // in the same way React does; we use a createEffect to wire up.
+  const mount = (el: HTMLDivElement) => {
+    canvasRef = el;
+    if (renderer) {
+      renderer.destroy();
+    }
+    renderer = new GraphRenderer({
+      container: el,
+      width: el.clientWidth || 800,
+      height: el.clientHeight || 600,
+    });
+    renderer.setData(props.bundle);
+  };
+
+  // Note: keeping it simple — no resize observer in M17.1.
+
+  return <div class="canvas" ref={mount} />;
 };
 
 export default App;

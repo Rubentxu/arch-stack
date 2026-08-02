@@ -50,7 +50,28 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               <h3>{node().label}</h3>
               <dl class="node-meta">
                 <dt>kind</dt>
-                <dd>{node().kind}</dd>
+                <dd>
+                  {node().kind}
+                  <Show when={node().level !== undefined && node().level! > 0}>
+                    <span class="level-tag">L{node().level}</span>
+                  </Show>
+                </dd>
+                <Show when={getMetaString(node(), "technology")}>
+                  {(tech) => (
+                    <>
+                      <dt>technology</dt>
+                      <dd>{tech()}</dd>
+                    </>
+                  )}
+                </Show>
+                <Show when={getMetaString(node(), "description")}>
+                  {(desc) => (
+                    <>
+                      <dt>description</dt>
+                      <dd class="multiline">{desc()}</dd>
+                    </>
+                  )}
+                </Show>
                 <Show when={node().language}>
                   <dt>language</dt>
                   <dd>{node().language}</dd>
@@ -59,6 +80,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   <dt>file</dt>
                   <dd>
                     <code>{node().file}:{node().line ?? "?"}</code>
+                  </dd>
+                </Show>
+                <Show when={node().parentId}>
+                  <dt>parent</dt>
+                  <dd>
+                    <code>{node().parentId}</code>
                   </dd>
                 </Show>
               </dl>
@@ -85,6 +112,12 @@ interface EvidenceRef {
   file: string;
   line: number | string;
   confidence: number | string;
+}
+
+function getMetaString(node: GraphNode, key: string): string | undefined {
+  const meta = node.meta ?? {};
+  const v = meta[key];
+  return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
 function extractEvidence(node: GraphNode): EvidenceRef[] {

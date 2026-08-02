@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "elements": [
+    {
+      "id": "system:archctl",
+      "kind": "SoftwareSystem",
+      "name": "archctl",
+      "description": "CLI sidecar that emits architecture bundles",
+      "parent": null
+    },
+    {
+      "id": "container:cli",
+      "kind": "Container",
+      "name": "CLI",
+      "description": "Binary entry point",
+      "technology": "Rust",
+      "parent": "system:archctl"
+    },
+    {
+      "id": "container:lbug",
+      "kind": "Container",
+      "name": "LadybugDB Store",
+      "description": "Persistent graph store",
+      "technology": "lbug",
+      "parent": "system:archctl"
+    },
+    {
+      "id": "container:manifests",
+      "kind": "Container",
+      "name": "Manifest Gates",
+      "description": "23 scope gates for refactor/extract-code-apply-helpers",
+      "technology": "TOML",
+      "parent": "system:archctl"
+    }
+  ],
+  "relations": [
+    {
+      "source": "container:cli",
+      "target": "container:lbug",
+      "predicate_id": "reads/writes"
+    },
+    {
+      "source": "container:cli",
+      "target": "container:manifests",
+      "predicate_id": "validates"
+    }
+  ]
+}
