@@ -104,35 +104,42 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 
 **Pivot v2.4:** Promovido. Output: `archctl code class-diagram` (UML via tree-sitter CST walk, intra-file scaffold; LSP deferido a fase 2). Renderizado en `archview` como vista "class".
 
-## M13 — Workbench actions (era M12) — **REDEFINIDO**
+## M13 — Workbench actions — **WON'T DO en v1.x** (decisión 2026-08-02)
 
-**Pivot v2.4:** Ya no es "view/review/format" (PNG/SVG/PDF). Es **workbench actions**: drift detection C4 declarado vs actual, impact analysis (blast radius), test mapping, save/load views. Reemplaza la sección "format export" original.
+**Pivot v2.5:** Reubicado fuera del target v0.x. Drift detection C4, impact analysis y test mapping son features orientadas a enterprise/CI workflows, no al target developer/architect de `archview`. El workbench de M17 cubre los flujos interactivos necesarios (browse + filter + select). Si surge demanda real desde un usuario, reevaluar como v1.x.
 
-## M14 — Versionado, recuperación y actualización (era M13) — **DEFER A 1.x**
+## M14 — Versionado, recuperación y rollback — **WON'T DO en v1.x**
 
-**Pivot v2.4:** Defer. Feature de enterprise (rollback, snapshots) no es core para developers.
+**Pivot v2.5:** Snapshots y rollback son features enterprise (compliance, audit, recovery). El grafo canónico en lbug ya está versionado por `current_version_id` en cada Element/Relation (ADR-008) — el "writable snapshot" es la base de datos misma. Multi-versioning y rollback explícito solo justificables si un usuario enterprise los pide.
 
-## M15 — Herramientas semánticas opcionales (era M14) — **DEFER A 1.x**
+## M15 — Herramientas semánticas opcionales — **WON'T DO en v1.x**
 
-**Pivot v2.4:** Defer. Optional. Solo después del workbench estable.
+**Pivot v2.5:** OpenTelemetry traces, ML-based similarity, semantic clustering — todo nice-to-have. Sin demanda concreta. Defer indefinidamente.
 
-## M16 — Endurecimiento 1.0 (era M15)
+## M16 — Endurecimiento 1.0 (era M15) — **PRE-M17 BLOCKER**
 
-## M17 — `archview` workbench (sustituye a Av0–Av6) — **NUEVO, PRIORIDAD 1**
+**Pivot v2.5:** Endurecimiento antes de M17. Tareas concretas:
+- lbug infra gap: restaurar `doctor --scopes` runtime (F3.3)
+- fmt-staged script + AGENTS.md nota (F3.2)
+- audit `manifests/code.toml` (F2.3)
+- `refactor/extract-code-apply-helpers` (~150 LOC deuda)
+
+## M17 — `archview` workbench (sustituye a Av0–Av6) — **PRIORIDAD 1 — PRÓXIMO CICLO GRANDE**
 
 **Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
 
-- **M17.0**: Svelte + ELK.js — **REEMPLAZADO** con SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline.
-- **M17.1**: Pan/zoom + sidebar de evidencias — primera vista funcional.
-- **M17.2**: Semantic zoom para C4 (Context → Container → Component → Code).
-- **M17.3**: Call graph view (1-N niveles, blast radius, async flow).
-- **M17.4**: Sequence diagram view (call chains, async flows).
-- **M17.5**: Class diagram view (UML).
-- **M17.6**: Package diagram view (dependencias, ciclos, cohesión).
-- **M17.7**: Drift detection (C4 declarado vs actual; cross-validation).
-- **M17.8**: Impact analysis (blast radius de un cambio propuesto).
+- **M17.0**: SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline. **Single PR → tag v0.14.0 en repo separado `archview`**. Scope MVP: bundle loader + pan/zoom + sidebar de evidencias. Mínimo para que los bundles de M11/M12 sean visualizables.
+- **M17.1**: Semantic zoom para C4 (Context → Container → Component → Code).
+- **M17.2**: Call graph view (1-N niveles, blast radius, async flow).
+- **M17.3**: Sequence diagram view (call chains, async flows).
+- **M17.4**: Class diagram view (UML).
+- **M17.5**: Package diagram view (dependencias, ciclos, cohesión).
+- **M17.6**: Drift detection (C4 declarado vs actual; cross-validation). Requiere M13 si se reactiva, sino implement in-situ.
+- **M17.7**: Impact analysis (blast radius de un cambio propuesto). Requiere M14 si se reactiva, sino implement in-situ.
 
 Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos.
+
+**Repositorio**: `archview` (separado de `archctl`). Primer release tag `v0.14.0` cuando M17.0 cierre. Co-evoluciona con `archctl` v0.14.x (consume bundles vía CLI).
 
 ## M18 — Reactive runtime (event log + behaviors + planners) — **NUEVO, 1.x**
 
