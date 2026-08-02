@@ -8,7 +8,7 @@
 
 `feat/m12-class-diagram` (merged to `main` via PR, pending at time of this apply)
 
-## Commit History (17 commits)
+## Commit History (18 commits)
 
 | # | Hash | Subject |
 |---|------|---------|
@@ -29,6 +29,7 @@
 | 15 | `323dcc1` | chore(code): clippy + rustfmt cleanup of class_diagram.rs (T6.2) |
 | 16 | `6bf2699` | fix(manifests): anchor class_diagram must_hold literals in source (C1) |
 | 17 | `52a1ce4` | test(code): cover 14 previously-untested spec scenarios (C2) |
+| 18 | `17c1ea9` | fix(code): remove durationMs from class-diagram projection (C3) |
 
 ## Tasks Completed
 
@@ -49,6 +50,7 @@
 | T5.4 | CHANGELOG v0.13.0 entry | `9c96cf7` |
 | T7.1 | Fix C1: anchor must_hold literals as doc comments in `class_diagram.rs` | `6bf2699` |
 | T7.2 | Fix C2: add selector validation + 14 spec scenario tests (20 pass, 1 ignored) | `52a1ce4` |
+| T7.3 | Fix C3: remove `durationMs` from `ProjectMeta` + schema; duration is telemetry-only | `17c1ea9` |
 
 ## T4.3 Bug Fix Notes
 
@@ -150,3 +152,19 @@ wired in `extract_edges`; the extractor captures field members but does not emit
 `composes` edges. This is a documented gap: see `// TODO` in the test body.
 
 Test counts: 233 lib + 21 integration (20 pass, 1 ignored) = **254 tests**.
+
+**C3 — `test_class_diagram_determinism` FLAKY (commit `17c1ea9`):**
+The `ClassDiagramReport` included `project.durationMs` populated from `start.elapsed()`
+at runtime. Two consecutive CLI invocations within the determinism test can straddle a
+millisecond boundary (e.g., 4ms vs 3ms), causing `assert_eq!(first, second)` to fail.
+Reproduced ~10% on cold cache; 0/15 warm-cache reruns failed.
+
+Fix (Option A — spec-correct): Removed `duration_ms: u64` field from `ProjectMeta`
+struct (`archctl/src/code/class_diagram.rs:129-130`). Duration is no longer part of
+the projection. Updated JSON schema (`schemas/class-diagram-report.schema.json`) to make
+`durationMs` not required. Removed `durationMs` from golden fixture
+(`archctl/tests/fixtures/class-diagram/gold.json`). Human-readable print
+(`print_class_diagram_table` in `output.rs`) no longer shows ms.
+
+Result: `test_class_diagram_determinism` passes 3/3 (was 1/3 flaky). All 20 integration
+tests + 233 lib tests still pass.
