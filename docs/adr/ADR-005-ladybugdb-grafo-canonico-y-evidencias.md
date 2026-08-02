@@ -47,10 +47,19 @@ PlantUML, Structurizr, Mermaid, draw.io y renders se guardan en el sistema de fi
 El dominio de `archctl` dependerá de un trait:
 
 ```rust
-pub trait ArchitectureGraph { /* ... */ }
+pub trait GraphStore { /* ... */ }
 ```
 
-La implementación inicial será `LadybugArchitectureGraph`.
+La implementación inicial será `LbugStore` (adaptador sobre LadybugDB).
+
+> **Nota de implementación (revisión 2026-08-01)**: el trait se
+> llama `GraphStore` en el código (no `ArchitectureGraph`), y el
+> adaptador es `LbugStore` (no `LadybugArchitectureGraph`). El nombre
+> original del ADR se preserva como referencia histórica; los
+> refactors `refactor-1b-filesystem-port`, `refactor-m9-debt-cleanup`
+> (v0.9.1) y posteriores adoptaron el naming más corto. El contrato
+> (port hexagonal + adapter LadybugDB) es idéntico al declarado en
+> este ADR.
 
 ## Consecuencias positivas
 

@@ -22,7 +22,7 @@ $XDG_CONFIG_HOME/archctl/
 
 ```text
 $XDG_DATA_HOME/archctl/projects/
-└── <host>/<owner>/<repo>--<repository-id>/
+└── <portable-project-id>/
     ├── architecture.lbdb
     ├── project.json
     ├── models/
@@ -30,6 +30,16 @@ $XDG_DATA_HOME/archctl/projects/
     ├── rendered/
     ├── exports/
     └── worktrees/
+```
+
+> **Nota de implementación (revisión 2026-08-01)**: el formato del
+> directorio de proyecto es `<portable-project-id>/` (un UUIDv4
+> derivado de la identidad serializada: remote git + root commit +
+> canonical worktree path), no `<host>/<owner>/<repo>--<id>/` como
+> declaraba el ADR original. El naming original era más legible
+> para humanos; el UUID es estable across worktree renames y más
+> seguro (no expone el remote URL en el filesystem). El contrato
+> (XDG_DATA_HOME/archctl/projects/<id>/) es idéntico.
 ```
 
 ### Estado
