@@ -15,7 +15,7 @@
 //! Run with: `cargo bench --bench apply_pipeline`
 //! Quick smoke: `cargo bench --bench apply_pipeline -- --quick`
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 mod common;
 use common::{seed_large, seed_medium, seed_small};
@@ -29,57 +29,51 @@ fn bench_apply_set_label_small(c: &mut Criterion) {
         // `iter_with_setup` runs the closure ONCE per batch, then
         // measures the apply path many times. Without this, the
         // 1k-node seed (~2.8s) dominates the apply cost (~370ms).
-        b.iter_with_setup(
-            || seed_small(),
-            |(mut store, _tmp)| {
-                store
-                    .put_diagram(&Diagram {
-                        id: "container:test".into(),
-                        revision:
-                            "blake3:0000000000000000000000000000000000000000000000000000000000000000"
-                                .into(),
-                        selector: "container:test".into(),
-                        props: serde_json::json!({}),
-                        created_at: None,
-                        updated_at: None,
-                    })
-                    .unwrap();
-                let cmd = Command::SetLabel {
-                    member_id: "vm:container:test:el:1".into(),
-                    label: "Bench Label".into(),
-                };
-                let _ = cmd.apply(&mut store, "container:test");
-            },
-        );
+        b.iter_with_setup(seed_small, |(mut store, _tmp)| {
+            store
+                .put_diagram(&Diagram {
+                    id: "container:test".into(),
+                    revision:
+                        "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                            .into(),
+                    selector: "container:test".into(),
+                    props: serde_json::json!({}),
+                    created_at: None,
+                    updated_at: None,
+                })
+                .unwrap();
+            let cmd = Command::SetLabel {
+                member_id: "vm:container:test:el:1".into(),
+                label: "Bench Label".into(),
+            };
+            let _ = cmd.apply(&mut store, "container:test");
+        });
     });
 }
 
 fn bench_apply_move_member_medium(c: &mut Criterion) {
     c.bench_function("apply_move_member_medium", |b| {
-        b.iter_with_setup(
-            || seed_medium(),
-            |(mut store, _tmp)| {
-                store
-                    .put_diagram(&Diagram {
-                        id: "container:test".into(),
-                        revision:
-                            "blake3:0000000000000000000000000000000000000000000000000000000000000000"
-                                .into(),
-                        selector: "container:test".into(),
-                        props: serde_json::json!({}),
-                        created_at: None,
-                        updated_at: None,
-                    })
-                    .unwrap();
-                let cmd = Command::MoveMember {
-                    member_id: "vm:container:test:el:1".into(),
-                    element_id: "el:1".into(),
-                    x: 240,
-                    y: 160,
-                };
-                let _ = cmd.apply(&mut store, "container:test");
-            },
-        );
+        b.iter_with_setup(seed_medium, |(mut store, _tmp)| {
+            store
+                .put_diagram(&Diagram {
+                    id: "container:test".into(),
+                    revision:
+                        "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                            .into(),
+                    selector: "container:test".into(),
+                    props: serde_json::json!({}),
+                    created_at: None,
+                    updated_at: None,
+                })
+                .unwrap();
+            let cmd = Command::MoveMember {
+                member_id: "vm:container:test:el:1".into(),
+                element_id: "el:1".into(),
+                x: 240,
+                y: 160,
+            };
+            let _ = cmd.apply(&mut store, "container:test");
+        });
     });
 }
 

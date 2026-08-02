@@ -93,7 +93,7 @@ pub fn init(project_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
     let path = database_path(project_dir);
     fs.create_dir_all(project_dir)
         .with_context(|| format!("mkdir {}", project_dir.display()))?;
-    let session = open_session(&path.parent().unwrap_or(project_dir), fs)?;
+    let session = open_session(path.parent().unwrap_or(project_dir), fs)?;
     let marker = project_dir.join(SCHEMA_MARKER_FILENAME);
     let applied = migrations::apply_pending(&session, fs, &marker)?;
     if applied.is_empty() {
@@ -230,10 +230,10 @@ pub fn query(project_dir: &Path, cypher: &str, fs: &dyn Filesystem) -> Result<Ve
 }
 
 fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
-    let mut result = conn.query(cypher).context("execute query")?;
+    let result = conn.query(cypher).context("execute query")?;
     let columns = result.get_column_names();
     let mut rows = Vec::new();
-    while let Some(row) = result.next() {
+    for row in result {
         let mut obj = serde_json::Map::new();
         for (i, col) in columns.iter().enumerate() {
             let value = row.get(i).map(value_to_json).unwrap_or(Json::Null);
@@ -244,14 +244,22 @@ fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
     Ok(rows)
 }
 
-pub fn neighbours(project_dir: &Path, element_id: &str, depth: u8, fs: &dyn Filesystem) -> Result<Vec<Json>> {
+pub fn neighbours(
+    project_dir: &Path,
+    element_id: &str,
+    depth: u8,
+    fs: &dyn Filesystem,
+) -> Result<Vec<Json>> {
     let id = validate_identifier(element_id)?;
     let depth = depth.clamp(1, 4) as i64;
     let cypher = format!(
         "MATCH (e:Element {{id: '{id}'}})-[*1..{depth}]-(n) RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
     if depth > 2 {
-        warn!(depth, "graph traversal depth > 2 may be slow on large graphs");
+        warn!(
+            depth,
+            "graph traversal depth > 2 may be slow on large graphs"
+        );
     }
     let session = open_session(project_dir, fs)?;
     debug!(%cypher, "graph neighbours");
@@ -277,7 +285,12 @@ mod tests {
             .conn
             .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
             .unwrap();
-        let rows = query(&project, "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;", &fs).unwrap();
+        let rows = query(
+            &project,
+            "MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["m.id"], "mt.system");
         assert_eq!(rows[0]["m.name"], "system");

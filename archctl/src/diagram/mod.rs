@@ -21,10 +21,10 @@ pub mod validate;
 pub mod view_types;
 
 // Public re-exports
-pub use apply::{run_apply, ApplyReport};
+pub use apply::{ApplyReport, run_apply};
 pub use assets::icon_for;
-pub use changeset_types::{ChangeSet, Command, CHANGESET_COMMAND_TYPES};
-pub use export::{run_export, ExportReport};
+pub use changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet, Command};
+pub use export::{ExportReport, run_export};
 pub use hash::base_revision;
-pub use selector::{parse, C4Kind, ScopeFilter, ViewSelector};
-pub use validate::{run_validate, ValidationError, ValidationReport};
+pub use selector::{C4Kind, ScopeFilter, ViewSelector, parse};
+pub use validate::{ValidationError, ValidationReport, run_validate};

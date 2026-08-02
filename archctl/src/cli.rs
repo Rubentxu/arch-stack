@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::astgrep::Lang;
@@ -721,7 +721,7 @@ fn inventory_languages_cmd(
             summary.total_files, summary.total_bytes
         );
         let mut v: Vec<_> = summary.languages.iter().collect();
-        v.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes));
+        v.sort_by_key(|b| std::cmp::Reverse(b.1.bytes));
         for (lang, stat) in v {
             println!("  {lang:<14} files={:<6} bytes={}", stat.files, stat.bytes);
         }
@@ -760,6 +760,9 @@ fn inventory_depends_cmd(
     Ok(0)
 }
 
+// CLI dispatch fn: each param maps 1:1 to a clap flag. Restructuring into
+// a struct would add ceremony without reducing surface area.
+#[allow(clippy::too_many_arguments)]
 fn evidence_extract_cmd(
     cwd: Option<PathBuf>,
     lang: Lang,
@@ -1205,7 +1208,7 @@ fn code_c4_discover_cmd(
 }
 
 fn code_class_diagram_cmd(
-    cwd: &PathBuf,
+    cwd: &Path,
     apply: bool,
     json: bool,
     lang: &[crate::code::class_diagram::Language],
@@ -1405,8 +1408,8 @@ mod tests {
             info_a.project_id
         );
         // Both must succeed — `project resolve` is idempotent.
-        assert!(info_a.project_id.len() > 0);
-        assert!(info_b.project_id.len() > 0);
+        assert!(!info_a.project_id.is_empty());
+        assert!(!info_b.project_id.is_empty());
     }
 
     #[test]

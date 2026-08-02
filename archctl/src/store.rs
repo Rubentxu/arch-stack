@@ -286,6 +286,13 @@ impl LbugStore {
         if let Some(parent) = lock_path.parent() {
             std::fs::create_dir_all(parent).map_err(LockError::Io)?;
         }
+        // Note: do NOT add `.truncate(true)` here — `database_path` returns
+        // the `.lbdb` database file, and truncating it would wipe the
+        // schema that `graph::init` (and its migration runner) just
+        // applied. Clippy's `suspicious_open_options` lint warns about
+        // create+write without truncate, but in this case truncate is
+        // actively wrong. The `#[allow]` below documents the exception.
+        #[allow(clippy::suspicious_open_options)]
         let lock_fd = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -353,7 +360,10 @@ impl GraphStore for LbugStore {
             // See F2 (m9-relations-decision) — relations live on the
             // SEMANTIC_EDGE REL TABLE; the reified SemanticRelation node
             // table is reserved for future use (ADR-009 deferral).
-            relations: count_match(&session.conn, "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)")?,
+            relations: count_match(
+                &session.conn,
+                "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)",
+            )?,
             evidence: count_match(&session.conn, "MATCH (:Evidence) RETURN count(*)")?,
             metatypes: count_match(&session.conn, "MATCH (:MetaType) RETURN count(*)")?,
             predicates: count_match(&session.conn, "MATCH (:Predicate) RETURN count(*)")?,
@@ -692,10 +702,10 @@ impl SourceOps for LbugStore {
         link_with_merge_fallback(
             &session.conn,
             "Evidence",
-            &eid,
+            eid,
             "EXTRACTED_FROM",
             "SourceArtifact",
-            &sid,
+            sid,
         )
     }
 
@@ -708,10 +718,10 @@ impl SourceOps for LbugStore {
         link_with_merge_fallback(
             &session.conn,
             "Evaluation",
-            &evid,
+            evid,
             "EVALUATES",
             "Evidence",
-            &eid,
+            eid,
         )
     }
 }
@@ -765,11 +775,10 @@ impl DiagramOps for LbugStore {
         let cell_to_json = |col: &str| -> serde_json::Value {
             row.get(col)
                 .and_then(|c| c.as_str())
-                .map(|s| {
+                .and_then(|s| {
                     // Props are stored escaped, unescape single quotes
                     serde_json::from_str(&s.replace("\\'", "'")).ok()
                 })
-                .flatten()
                 .unwrap_or(serde_json::Value::Null)
         };
         Ok(Diagram {
@@ -827,10 +836,10 @@ impl DiagramOps for LbugStore {
         link_with_merge_fallback(
             &session.conn,
             "ViewMember",
-            &mid,
+            mid,
             "MEMBER_OF",
             "Diagram",
-            &did,
+            did,
         )
     }
 
@@ -848,14 +857,7 @@ impl DiagramOps for LbugStore {
         }
 
         let session = self.session_mut()?;
-        link_with_merge_fallback(
-            &session.conn,
-            "ViewMember",
-            &mid,
-            "RENDERS",
-            "Element",
-            &eid,
-        )
+        link_with_merge_fallback(&session.conn, "ViewMember", mid, "RENDERS", "Element", eid)
     }
 
     fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()> {
@@ -896,14 +898,14 @@ impl DiagramOps for LbugStore {
         link_with_merge_fallback(
             &session.conn,
             "ViewGroup",
-            &gid,
+            gid,
             "GROUP_CONTAINS",
             "ViewMember",
-            &mid,
+            mid,
         )
     }
 
-fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
+    fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
         let session = self.session_mut()?;
         let mid = crate::graph::validate_identifier(member_id)
             .context("update_view_member_label: member_id failed validation")?;
@@ -923,9 +925,10 @@ fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<(
              SET vm.label = '{safe_label}' \
              RETURN vm.id;"
         );
-        let mut result = session.conn.query(&cypher).with_context(|| {
-            format!("update_view_member_label: failed to update {mid}")
-        })?;
+        let mut result = session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("update_view_member_label: failed to update {mid}"))?;
         let updated = result.next().is_some();
         if !updated {
             anyhow::bail!("member not found: {mid}");
@@ -963,8 +966,7 @@ fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<(
                 let cell_to_json = |col: &str| -> serde_json::Value {
                     row.get(col)
                         .and_then(|c| c.as_str())
-                        .map(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
-                        .flatten()
+                        .and_then(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
                         .unwrap_or(serde_json::Value::Null)
                 };
                 ViewMember {
@@ -1011,10 +1013,10 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
             }
         }
         Cell::String(s) => {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
-                if let Some(obj) = parsed.as_object() {
-                    return obj.clone();
-                }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s)
+                && let Some(obj) = parsed.as_object()
+            {
+                return obj.clone();
             }
         }
         Cell::Null => {}
@@ -1024,8 +1026,7 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
 }
 
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
-    let (conn, db) =
-        crate::graph::create_db_session(&crate::graph::database_path(project_dir))?;
+    let (conn, db) = crate::graph::create_db_session(&crate::graph::database_path(project_dir))?;
     Ok(LbugSession { conn, _db: db })
 }
 
@@ -1085,10 +1086,10 @@ fn value_to_i64(v: &lbug::Value) -> i64 {
 fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
     use crate::row::{Cell, Row};
     use anyhow::Context;
-    let mut result = conn.query(cypher).context("execute query")?;
+    let result = conn.query(cypher).context("execute query")?;
     let columns = result.get_column_names();
     let mut rows = Vec::new();
-    while let Some(row) = result.next() {
+    for row in result {
         let mut r = Row::new();
         for (i, col) in columns.iter().enumerate() {
             // Translate driver value -> Cell. The `from_serde_json`
@@ -1444,7 +1445,7 @@ mod tests {
                         };
                         m.insert(k.clone(), json_val);
                     }
-                    Some(serde_json::Map::from(m))
+                    Some(m)
                 }
                 _ => None,
             })
@@ -1578,7 +1579,7 @@ mod tests {
                         };
                         m.insert(k.clone(), json_val);
                     }
-                    Some(serde_json::Map::from(m))
+                    Some(m)
                 }
                 _ => None,
             })
@@ -1627,7 +1628,7 @@ mod tests {
                         };
                         m.insert(k.clone(), json_val);
                     }
-                    Some(serde_json::Map::from(m))
+                    Some(m)
                 }
                 _ => None,
             })

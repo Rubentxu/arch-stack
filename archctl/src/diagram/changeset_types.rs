@@ -88,7 +88,7 @@ impl Command {
         diagram_id: &str,
     ) -> anyhow::Result<()> {
         use crate::diagram::view_types::{ViewGroup, ViewMember};
-        use anyhow::{anyhow, Context};
+        use anyhow::{Context, anyhow};
 
         match self {
             Command::MoveMember {

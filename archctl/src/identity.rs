@@ -1,9 +1,9 @@
+use crate::Filesystem;
 use anyhow::Result;
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use crate::Filesystem;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceIdentity {
@@ -42,8 +42,6 @@ pub fn normalize_remote(url: &str) -> String {
     s.trim_end_matches('/').to_string()
 }
 
-
-
 fn norm_dir(p: &str) -> String {
     p.trim_end_matches('/').trim_end_matches('\\').to_string()
 }
@@ -64,7 +62,8 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
     match gix::open(cwd) {
         Ok(repo) => {
             // Get worktree path via gix Worktree::base()
-            let toplevel = repo.worktree()
+            let toplevel = repo
+                .worktree()
                 .map(|p| p.base().to_string_lossy().into_owned())
                 .unwrap_or_else(|| cwd.to_string());
             let canonical_top = safe_realpath(&toplevel, fs)
@@ -72,7 +71,8 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
                 .unwrap_or_else(|_| norm_dir(&toplevel));
 
             // Get remote.origin.url via config snapshot
-            let remote = repo.config_snapshot()
+            let remote = repo
+                .config_snapshot()
                 .string("remote.origin.url")
                 .map(|r| r.to_string())
                 .unwrap_or_default();
@@ -107,22 +107,22 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
 
             let repository_id = blake_like(&format!("git|{remote}|{root_commit}"));
             let worktree_id = blake_like(&format!("worktree|{canonical_top}"));
-            return Ok(SourceIdentity::Git {
+            Ok(SourceIdentity::Git {
                 repository_id,
                 worktree_id,
                 root_commit,
                 toplevel: canonical_top,
                 remote,
-            });
+            })
         }
         Err(_) => {
             let canonical = safe_realpath(cwd, fs)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| cwd.to_string());
-            return Ok(SourceIdentity::Directory {
+            Ok(SourceIdentity::Directory {
                 directory_id: blake_like(&format!("dir|{canonical}")),
                 canonical_realpath: norm_dir(&canonical),
-            });
+            })
         }
     }
 }
@@ -130,10 +130,19 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
 pub fn portable_project_id(identity: &SourceIdentity) -> String {
     let mut hasher = Sha256::new();
     let serialized = match identity {
-        SourceIdentity::Git { repository_id, worktree_id, root_commit, toplevel, remote } => {
+        SourceIdentity::Git {
+            repository_id,
+            worktree_id,
+            root_commit,
+            toplevel,
+            remote,
+        } => {
             format!("git|{remote}|{root_commit}|{toplevel}|{repository_id}|{worktree_id}")
         }
-        SourceIdentity::Directory { directory_id, canonical_realpath } => {
+        SourceIdentity::Directory {
+            directory_id,
+            canonical_realpath,
+        } => {
             format!("dir|{canonical_realpath}|{directory_id}")
         }
     };
@@ -156,11 +165,21 @@ pub fn portable_project_id(identity: &SourceIdentity) -> String {
 
 pub fn identity_summary(identity: &SourceIdentity) -> String {
     match identity {
-        SourceIdentity::Git { remote, root_commit, .. } => {
-            let short = if root_commit.len() >= 12 { &root_commit[..12] } else { root_commit };
+        SourceIdentity::Git {
+            remote,
+            root_commit,
+            ..
+        } => {
+            let short = if root_commit.len() >= 12 {
+                &root_commit[..12]
+            } else {
+                root_commit
+            };
             format!("git:{remote}@{short}")
         }
-        SourceIdentity::Directory { canonical_realpath, .. } => {
+        SourceIdentity::Directory {
+            canonical_realpath, ..
+        } => {
             format!("dir:{canonical_realpath}")
         }
     }
@@ -172,9 +191,18 @@ mod tests {
 
     #[test]
     fn normalize_remote_strips_transport_and_credentials() {
-        assert_eq!(normalize_remote("https://user:pass@github.com/foo/bar.git"), "github.com/foo/bar");
-        assert_eq!(normalize_remote("git@github.com:foo/bar.git"), "github.com/foo/bar");
-        assert_eq!(normalize_remote("https://github.com/foo/bar.git"), "github.com/foo/bar");
+        assert_eq!(
+            normalize_remote("https://user:pass@github.com/foo/bar.git"),
+            "github.com/foo/bar"
+        );
+        assert_eq!(
+            normalize_remote("git@github.com:foo/bar.git"),
+            "github.com/foo/bar"
+        );
+        assert_eq!(
+            normalize_remote("https://github.com/foo/bar.git"),
+            "github.com/foo/bar"
+        );
         assert_eq!(normalize_remote("ssh://git@host/x/y.git"), "host/x/y");
     }
 
@@ -204,8 +232,15 @@ mod tests {
             matches!(variant, '8' | '9' | 'a' | 'b'),
             "variant nibble must be 8|9|a|b, got {variant}"
         );
-        for &i in &[0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35] {
-            assert!(matches!(bytes[i] as char, '0'..='9' | 'a'..='f'), "non-hex at {i}: {}", bytes[i] as char);
+        for &i in &[
+            0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 19, 20, 21, 22, 24, 25, 26, 27,
+            28, 29, 30, 31, 32, 33, 34, 35,
+        ] {
+            assert!(
+                matches!(bytes[i] as char, '0'..='9' | 'a'..='f'),
+                "non-hex at {i}: {}",
+                bytes[i] as char
+            );
         }
     }
 

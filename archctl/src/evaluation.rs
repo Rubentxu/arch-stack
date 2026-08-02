@@ -112,37 +112,21 @@ mod tests {
         assert_eq!(eval.target_evidence_id, "ev:abcd1234");
         assert_eq!(eval.evaluator, "archctl:threshold_v1");
         assert_eq!(eval.evaluated_at, "2026-07-30T12:00:00Z");
-        assert!(
-            eval.id.starts_with("eval:"),
-            "id must use eval: prefix"
-        );
+        assert!(eval.id.starts_with("eval:"), "id must use eval: prefix");
     }
 
     #[test]
     fn evaluation_reject_sets_passed_false() {
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
-        let eval = Evaluation::reject(
-            "ev:abcd1234",
-            "min_confidence",
-            "human:alice",
-            &clock,
-        );
+        let eval = Evaluation::reject("ev:abcd1234", "min_confidence", "human:alice", &clock);
         assert!(!eval.passed);
         assert_eq!(eval.criterion, "min_confidence");
     }
 
     #[test]
     fn evaluation_id_is_deterministic() {
-        let id = Evaluation::id_for(
-            "min_occurrence",
-            "ev:abcd1234",
-            "2026-07-30T12:00:00Z",
-        );
-        let id2 = Evaluation::id_for(
-            "min_occurrence",
-            "ev:abcd1234",
-            "2026-07-30T12:00:00Z",
-        );
+        let id = Evaluation::id_for("min_occurrence", "ev:abcd1234", "2026-07-30T12:00:00Z");
+        let id2 = Evaluation::id_for("min_occurrence", "ev:abcd1234", "2026-07-30T12:00:00Z");
         assert_eq!(id, id2, "same inputs must produce same id");
         assert_ne!(
             Evaluation::id_for("min_confidence", "ev:abcd1234", "2026-07-30T12:00:00Z"),

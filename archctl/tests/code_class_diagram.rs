@@ -487,9 +487,8 @@ fn test_class_diagram_no_cross_file_inheritance() {
 /// Scenario: same-file composition — A has a field typed B (same file) → composes edge.
 /// Currently: field members ARE captured, but no `composes` edge is emitted because
 /// field-type → edge resolution is not yet wired in `extract_edges`.  The spec
-/// expects a `composes` edge; this test documents the gap.
+/// Composes edge emission: intra-file field type resolves to a same-file class.
 #[test]
-#[ignore = "composes edge emission not yet implemented — field-type → edge resolution missing in extract_edges"]
 fn test_class_diagram_same_file_composes() {
     let tmp = TempDir::new().unwrap();
     let file = tmp.path().join("service.rs");
@@ -538,15 +537,23 @@ pub struct App {
         "App should have field members captured: {members:?}"
     );
 
-    // Composes edge: spec expects it; current extractor does not yet emit it.
-    // TODO: wire field-type → edge resolution in extract_edges to satisfy spec.
+    // Composes edge: App → Config (field type resolves to same-file class).
     let composes: Vec<_> = edges
         .iter()
         .filter(|e| e["predicate"] == "composes")
         .collect();
     assert!(
         !composes.is_empty(),
-        "expected at least one composes edge for same-file typed field (TODO), got: {edges:?}"
+        "expected at least one composes edge for same-file typed field, got: {edges:?}"
+    );
+    let app_key = app_node["canonical_key"].as_str().unwrap();
+    let config_node = nodes.iter().find(|n| n["name"] == "Config").unwrap();
+    let config_key = config_node["canonical_key"].as_str().unwrap();
+    assert!(
+        composes
+            .iter()
+            .any(|e| e["source"] == app_key && e["target"] == config_key),
+        "expected App→Config composes edge: {composes:?}"
     );
 }
 

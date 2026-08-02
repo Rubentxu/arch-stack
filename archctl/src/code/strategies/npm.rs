@@ -12,32 +12,38 @@ use crate::filesystem::Filesystem;
 pub struct NpmWorkspace;
 
 impl Strategy for NpmWorkspace {
-    fn id(&self) -> &'static str { "npm-workspace" }
-    fn confidence(&self) -> f64 { 0.80 }
+    fn id(&self) -> &'static str {
+        "npm-workspace"
+    }
+    fn confidence(&self) -> f64 {
+        0.80
+    }
 
-    fn detect(
-        &self,
-        project_root: &Path,
-        fs: &dyn Filesystem,
-    ) -> Result<Vec<ContainerCandidate>> {
+    fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let pkg_json = project_root.join("package.json");
         if !fs.exists(&pkg_json) {
             return Ok(Vec::new());
         }
 
-        let pkg_json_text = fs.read_to_string(&pkg_json)
+        let pkg_json_text = fs
+            .read_to_string(&pkg_json)
             .with_context(|| format!("read {}", pkg_json.display()))?;
-        let pkg: Value = serde_json::from_str(&pkg_json_text)
-            .context("parse package.json")?;
+        let pkg: Value = serde_json::from_str(&pkg_json_text).context("parse package.json")?;
 
         // workspaces can be ["packages/*"] or { "packages": ["packages/*"] }
         let workspaces: Vec<String> = match &pkg.get("workspaces") {
-            Some(Value::Array(arr)) => arr.iter()
+            Some(Value::Array(arr)) => arr
+                .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect(),
-            Some(Value::Object(obj)) => obj.get("packages")
+            Some(Value::Object(obj)) => obj
+                .get("packages")
                 .and_then(|p| p.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
             _ => Vec::new(),
         };
@@ -65,14 +71,16 @@ impl Strategy for NpmWorkspace {
                 if !fs.exists(&pkg_path) {
                     continue;
                 }
-                let rel_path = pkg_path.strip_prefix(project_root)
+                let rel_path = pkg_path
+                    .strip_prefix(project_root)
                     .unwrap_or(&pkg_path)
                     .to_string_lossy()
                     .replace('\\', "/");
                 let package_text = fs.read_to_string(&pkg_path)?;
-                let package: Value = serde_json::from_str(&package_text)
-                    .context("parse workspace package.json")?;
-                let name = package.get("name")
+                let package: Value =
+                    serde_json::from_str(&package_text).context("parse workspace package.json")?;
+                let name = package
+                    .get("name")
                     .and_then(|n| n.as_str())
                     .map(String::from)
                     .unwrap_or_else(|| rel_path.trim_end_matches("/package.json").to_string());

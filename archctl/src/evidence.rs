@@ -28,7 +28,7 @@ use tree_sitter_graph::graph::{Graph as TsgGraph, GraphNode, Value as TsgValue};
 
 use crate::clock::Clock;
 
-use crate::astgrep::{compile_pattern, find_all, parse, Lang};
+use crate::astgrep::{Lang, compile_pattern, find_all, parse};
 use crate::evaluation::Evaluation;
 use crate::inventory::supported_files;
 use crate::source::SourceArtifact;
@@ -132,7 +132,7 @@ impl EvidenceStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_label(s: &str) -> Option<Self> {
         match s {
             "drafted" => Some(Self::Drafted),
             "accepted" => Some(Self::Accepted),
@@ -151,9 +151,7 @@ impl EvidenceStatus {
 
     /// Read from a props map. Returns `Accepted` when the key is
     /// absent (D2 read-time default for legacy rows).
-    pub fn from_props(
-        props: &serde_json::Map<String, serde_json::Value>,
-    ) -> Self {
+    pub fn from_props(props: &serde_json::Map<String, serde_json::Value>) -> Self {
         match props.get("status").and_then(|v| v.as_str()) {
             Some("drafted") => Self::Drafted,
             Some("superseded") => Self::Superseded,
@@ -286,7 +284,15 @@ pub fn extract_with_system_clock(
     kind: EvidenceKind,
     fs: &dyn Filesystem,
 ) -> Result<ExtractionResult> {
-    extract(root, lang, pattern_src, claim, kind, &crate::clock::SystemClock, fs)
+    extract(
+        root,
+        lang,
+        pattern_src,
+        claim,
+        kind,
+        &crate::clock::SystemClock,
+        fs,
+    )
 }
 
 fn evidence_from_match<D: Doc>(
@@ -323,14 +329,8 @@ fn evidence_from_match<D: Doc>(
         "language".to_string(),
         serde_json::Value::String(lang.label().to_string()),
     );
-    props.insert(
-        "start_byte".to_string(),
-        serde_json::json!(range.start),
-    );
-    props.insert(
-        "end_byte".to_string(),
-        serde_json::json!(range.end),
-    );
+    props.insert("start_byte".to_string(), serde_json::json!(range.start));
+    props.insert("end_byte".to_string(), serde_json::json!(range.end));
     if let Some(ref p) = text_preview {
         props.insert(
             "text_preview".to_string(),
@@ -461,10 +461,7 @@ pub fn from_tsg_node(
                     format!("{}_byte_start", key.as_str()),
                     serde_json::json!(start),
                 );
-                props.insert(
-                    format!("{}_byte_end", key.as_str()),
-                    serde_json::json!(end),
-                );
+                props.insert(format!("{}_byte_end", key.as_str()), serde_json::json!(end));
             }
             _ => {
                 // Skip Null, Boolean, List, Set, GraphNode — the Evidence
@@ -482,8 +479,7 @@ pub fn from_tsg_node(
     // attribute we skip the row rather than emit a position-less one.
     let text = source.get(start..end).unwrap_or("").to_string();
     let start_line = line_at_byte(source, start) as u64 + 1;
-    let end_line =
-        line_at_byte(source, end.saturating_sub(1).max(start)) as u64 + 1;
+    let end_line = line_at_byte(source, end.saturating_sub(1).max(start)) as u64 + 1;
     let id = evidence_id(rel_path, start, end, &text);
     let content_hash = Some(content_hash_of(source));
     let text_preview = Some(truncate(&text, 200));
@@ -803,10 +799,12 @@ mod tests {
             &*crate::filesystem::system_filesystem(),
         )
         .unwrap();
-        assert!(result
-            .evidence
-            .iter()
-            .all(|e| e.observed_at == "2030-01-01T00:00:00Z"));
+        assert!(
+            result
+                .evidence
+                .iter()
+                .all(|e| e.observed_at == "2030-01-01T00:00:00Z")
+        );
     }
 
     #[test]
@@ -861,8 +859,8 @@ mod tests {
         let n2 = put_with_clock(&project, &evidence, clock).unwrap();
         assert_eq!(n1, 1);
         assert_eq!(n2, 1, "MERGE must not duplicate rows");
-        let count = crate::graph::query(&project, "MATCH (e:Evidence) RETURN count(e) AS n;", &fs)
-            .unwrap();
+        let count =
+            crate::graph::query(&project, "MATCH (e:Evidence) RETURN count(e) AS n;", &fs).unwrap();
         assert_eq!(count[0]["n"], 1);
     }
 
@@ -1019,7 +1017,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            evidence_count[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
+            evidence_count[0]
+                .get("n")
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0),
             1
         );
 
@@ -1030,7 +1031,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            source_count[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
+            source_count[0]
+                .get("n")
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0),
             0,
             "No SourceArtifact nodes should be created when sources=None"
         );
@@ -1076,7 +1080,7 @@ mod tests {
         let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
 
         // Run once
-        put_with_source(&project, &ev, Some(&[sa.clone()]), None, clock).unwrap();
+        put_with_source(&project, &ev, Some(std::slice::from_ref(&sa)), None, clock).unwrap();
         // Run again with same source
         put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
 
@@ -1087,7 +1091,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            source_count[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
+            source_count[0]
+                .get("n")
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0),
             1,
             "MERGE on SourceArtifact must be idempotent — exactly 1 node"
         );

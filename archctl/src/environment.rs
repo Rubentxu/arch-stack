@@ -89,20 +89,19 @@ impl Environment for SystemEnvironment {
         // Windows fallbacks. We do not pre-canonicalise here — the
         // port returns whatever the OS says and lets the caller
         // decide whether to canonicalise.
-        if let Some(home) = std::env::var_os("HOME") {
-            if !home.is_empty() {
-                return Ok(PathBuf::from(home));
-            }
+        if let Some(home) = std::env::var_os("HOME")
+            && !home.is_empty()
+        {
+            return Ok(PathBuf::from(home));
         }
-        if let Some(profile) = std::env::var_os("USERPROFILE") {
-            if !profile.is_empty() {
-                return Ok(PathBuf::from(profile));
-            }
+        if let Some(profile) = std::env::var_os("USERPROFILE")
+            && !profile.is_empty()
+        {
+            return Ok(PathBuf::from(profile));
         }
-        if let (Some(drive), Some(path)) = (
-            std::env::var_os("HOMEDRIVE"),
-            std::env::var_os("HOMEPATH"),
-        ) {
+        if let (Some(drive), Some(path)) =
+            (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH"))
+        {
             let mut combined = PathBuf::from(drive);
             combined.push(path);
             if !combined.as_os_str().is_empty() {
@@ -168,9 +167,9 @@ impl FixedEnvironment {
 
 impl Environment for FixedEnvironment {
     fn current_dir(&self) -> Result<PathBuf> {
-        self.cwd.clone().ok_or_else(|| {
-            anyhow::anyhow!("FixedEnvironment::current_dir called without with_cwd")
-        })
+        self.cwd
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("FixedEnvironment::current_dir called without with_cwd"))
     }
 
     fn var(&self, key: &str) -> Option<String> {
@@ -178,9 +177,9 @@ impl Environment for FixedEnvironment {
     }
 
     fn home_dir(&self) -> Result<PathBuf> {
-        self.home.clone().ok_or_else(|| {
-            anyhow::anyhow!("FixedEnvironment::home_dir called without with_home")
-        })
+        self.home
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("FixedEnvironment::home_dir called without with_home"))
     }
 }
 
@@ -201,6 +200,8 @@ pub fn fixed_environment() -> Arc<dyn Environment> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -240,7 +241,7 @@ mod tests {
         // the contract: calling it returns *some* path that exists.
         let env = SystemEnvironment;
         let cwd = env.current_dir().unwrap();
-        assert!(cwd.is_absolute() || cwd == PathBuf::from("."));
+        assert!(cwd.is_absolute() || cwd == Path::new("."));
     }
 
     #[test]

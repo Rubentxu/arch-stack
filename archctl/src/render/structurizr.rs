@@ -35,13 +35,13 @@
 //! Anything outside the C4 subset yields an explicit parse error so
 //! the failure mode is clear, not silent.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
+use petgraph::Direction;
 use petgraph::graph::DiGraph;
 use petgraph::visit::{DfsPostOrder, EdgeRef};
-use petgraph::Direction;
+use svg::Document;
 use svg::node::element::path::Data;
 use svg::node::element::{Group, Marker, Path, Rectangle, Text};
-use svg::Document;
 
 /// One parsed Structurizr DSL statement.
 ///

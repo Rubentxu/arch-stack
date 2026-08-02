@@ -21,9 +21,9 @@
 //! should install `libgraphviz-dev` system-wide and re-vendor
 //! `plantuml-little` + `merman` in a follow-up cycle.
 
-use crate::cli::RenderFormat;
 use crate::Filesystem;
-use anyhow::{bail, Context, Result};
+use crate::cli::RenderFormat;
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 

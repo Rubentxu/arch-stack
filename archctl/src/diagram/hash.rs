@@ -29,8 +29,7 @@ pub fn base_revision(projection: &Projection) -> String {
     sort_arrays_by_id(&mut value);
 
     // Step 4: compact bytes (serde_json::to_vec is compact, no pretty-print)
-    let bytes =
-        serde_json::to_vec(&value).expect("canonical JSON serialization is infallible");
+    let bytes = serde_json::to_vec(&value).expect("canonical JSON serialization is infallible");
 
     // Step 5: blake3 hash
     let digest = blake3::hash(&bytes);
@@ -49,8 +48,7 @@ fn sort_object_keys_recursive(value: &mut serde_json::Value) {
             }
             // Build a BTreeMap to get sorted keys, then put back
             let pairs: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            let sorted: BTreeMap<String, serde_json::Value> =
-                pairs.into_iter().collect();
+            let sorted: BTreeMap<String, serde_json::Value> = pairs.into_iter().collect();
             *map = sorted.into_iter().collect();
         }
         serde_json::Value::Array(arr) => {
@@ -82,7 +80,7 @@ fn sort_arrays_by_id(value: &mut serde_json::Value) {
         if indices.len() == arr.len() {
             indices.sort_by(|a, b| a.1.cmp(&b.1));
             let original = std::mem::take(arr);
-            for (_new_idx, (old_idx, _)) in indices.into_iter().enumerate() {
+            for (old_idx, _) in indices.into_iter() {
                 arr.push(original[old_idx].clone());
             }
         }
@@ -194,9 +192,15 @@ mod tests {
     fn base_revision_format_is_blake3_hex() {
         let p = make_projection(vec![], vec![]);
         let rev = base_revision(&p);
-        assert!(rev.starts_with("blake3:"), "revision must start with 'blake3:'");
+        assert!(
+            rev.starts_with("blake3:"),
+            "revision must start with 'blake3:'"
+        );
         let hex = &rev["blake3:".len()..];
         assert_eq!(hex.len(), 64, "blake3 hex must be 64 chars (32 bytes)");
-        assert!(hex.chars().all(|c| c.is_ascii_hexdigit()), "hex must be lowercase hex");
+        assert!(
+            hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "hex must be lowercase hex"
+        );
     }
 }

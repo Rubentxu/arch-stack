@@ -12,14 +12,14 @@ use crate::filesystem::Filesystem;
 pub struct CargoWorkspace;
 
 impl Strategy for CargoWorkspace {
-    fn id(&self) -> &'static str { "cargo-workspace" }
-    fn confidence(&self) -> f64 { 0.85 }
+    fn id(&self) -> &'static str {
+        "cargo-workspace"
+    }
+    fn confidence(&self) -> f64 {
+        0.85
+    }
 
-    fn detect(
-        &self,
-        project_root: &Path,
-        _fs: &dyn Filesystem,
-    ) -> Result<Vec<ContainerCandidate>> {
+    fn detect(&self, project_root: &Path, _fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let cargo_toml = project_root.join("Cargo.toml");
         if !cargo_toml.exists() {
             return Ok(Vec::new());
@@ -42,7 +42,8 @@ impl Strategy for CargoWorkspace {
                 continue;
             }
             let manifest_path = package.manifest_path.as_std_path();
-            let rel_manifest = manifest_path.strip_prefix(project_root)
+            let rel_manifest = manifest_path
+                .strip_prefix(project_root)
                 .unwrap_or(manifest_path)
                 .to_string_lossy()
                 .replace('\\', "/");

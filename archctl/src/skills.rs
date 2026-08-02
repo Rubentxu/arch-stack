@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
+use crate::Filesystem;
 use crate::cli::SkillsAction;
 use crate::environment::Environment;
 use crate::xdg::{ensure_xdg, resolve_xdg};
-use crate::Filesystem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -37,12 +37,20 @@ pub struct SkillsLock {
 }
 
 pub fn load_lock(path: &Path, fs: &dyn Filesystem) -> Result<SkillsLock> {
-    let text = fs.read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let text = fs
+        .read_to_string(path)
+        .with_context(|| format!("read {}", path.display()))?;
     serde_yaml::from_str(&text).with_context(|| format!("parse {}", path.display()))
 }
 
-pub fn sync_skill(name: &str, entry: &SkillLockEntry, dest: &Path, fs: &dyn Filesystem) -> Result<()> {
-    fs.create_dir_all(dest).with_context(|| format!("mkdir {}", dest.display()))?;
+pub fn sync_skill(
+    name: &str,
+    entry: &SkillLockEntry,
+    dest: &Path,
+    fs: &dyn Filesystem,
+) -> Result<()> {
+    fs.create_dir_all(dest)
+        .with_context(|| format!("mkdir {}", dest.display()))?;
     info!(skill = name, source = %entry.source, dest = %dest.display(), "cloning");
     let status = std::process::Command::new("git")
         .args(["clone", "--depth", "1", &entry.source, "."])
@@ -73,7 +81,11 @@ pub struct SyncReport {
 }
 
 pub fn sync_skills(lock: &SkillsLock, into: &Path, fs: &dyn Filesystem) -> SyncReport {
-    let mut report = SyncReport { synced: Vec::new(), skipped: Vec::new(), failures: Vec::new() };
+    let mut report = SyncReport {
+        synced: Vec::new(),
+        skipped: Vec::new(),
+        failures: Vec::new(),
+    };
     fs.create_dir_all(into).ok();
     for (name, entry) in &lock.skills {
         let dest = into.join(name.replace(['/', '\\'], "_"));
@@ -113,10 +125,19 @@ pub fn verify_skills(lock: &SkillsLock, source_root: &Path, fs: &dyn Filesystem)
             missing.push(name.clone());
         }
     }
-    VerifyReport { ok: missing.is_empty(), present, missing }
+    VerifyReport {
+        ok: missing.is_empty(),
+        present,
+        missing,
+    }
 }
 
-pub fn activate_skill(name: &str, source: &Path, profile_skills_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
+pub fn activate_skill(
+    name: &str,
+    source: &Path,
+    profile_skills_dir: &Path,
+    fs: &dyn Filesystem,
+) -> Result<PathBuf> {
     fs.create_dir_all(profile_skills_dir)
         .with_context(|| format!("mkdir {}", profile_skills_dir.display()))?;
     let target = profile_skills_dir.join(name);
@@ -145,7 +166,10 @@ pub fn run(action: SkillsAction, fs: &dyn Filesystem) -> Result<i32> {
         Err(err) if matches!(action, SkillsAction::List) => {
             anyhow::bail!("could not load {}: {err}", lock_path.display());
         }
-        Err(_) => SkillsLock { schema_version: 1, skills: HashMap::new() },
+        Err(_) => SkillsLock {
+            schema_version: 1,
+            skills: HashMap::new(),
+        },
     };
 
     match action {
@@ -181,9 +205,7 @@ pub fn run(action: SkillsAction, fs: &dyn Filesystem) -> Result<i32> {
             if !lock.skills.contains_key(&name) {
                 anyhow::bail!("unknown skill in lockfile: {name}");
             }
-            let src = layout
-                .sources_root()
-                .join(name.replace(['/', '\\'], "_"));
+            let src = layout.sources_root().join(name.replace(['/', '\\'], "_"));
             if !fs.exists(&src.join("SKILL.md")) {
                 anyhow::bail!("source not synced: {}", src.display());
             }

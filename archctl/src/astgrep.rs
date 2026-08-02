@@ -170,7 +170,7 @@ pub fn find_by_kind<'a>(
 fn walk_collect<'a>(
     node: &Node<'a, StrDoc<Lang>>,
     kind: &str,
-    out: &mut Vec<NodeMatch<'a, StrDoc<Lang>>>,
+    _out: &mut Vec<NodeMatch<'a, StrDoc<Lang>>>,
 ) {
     if node.kind().as_ref() == kind {
         // Reuse the pattern matcher for kind-only queries by
@@ -183,7 +183,7 @@ fn walk_collect<'a>(
         debug!(kind, "kind match candidate");
     }
     for child in node.children() {
-        walk_collect(&child, kind, out);
+        walk_collect(&child, kind, _out);
     }
 }
 
@@ -234,19 +234,14 @@ mod tests {
 
     #[test]
     fn parse_rust_finds_function_items() {
-        let src = "fn add(a: i32, b: i32) -> i32 { a + b }\nfn mul(a: i32, b: i32) -> i32 { a * b }\n";
+        let src =
+            "fn add(a: i32, b: i32) -> i32 { a + b }\nfn mul(a: i32, b: i32) -> i32 { a * b }\n";
         let ast = parse(Lang::Rust, src);
         let pattern = compile_pattern(Lang::Rust, "fn $NAME").unwrap();
         let matches = find_all(&ast, &pattern);
         assert_eq!(matches.len(), 2);
-        assert_eq!(
-            matches[0].text(),
-            "fn add(a: i32, b: i32) -> i32 { a + b }"
-        );
-        assert_eq!(
-            matches[1].text(),
-            "fn mul(a: i32, b: i32) -> i32 { a * b }"
-        );
+        assert_eq!(matches[0].text(), "fn add(a: i32, b: i32) -> i32 { a + b }");
+        assert_eq!(matches[1].text(), "fn mul(a: i32, b: i32) -> i32 { a * b }");
     }
 
     #[test]
@@ -306,17 +301,17 @@ mod tests {
         assert!(matches[1].text().starts_with("fun mul"));
     }
 
-     #[test]
-     fn match_carries_byte_range_and_line() {
-         let src = "fn alpha() {}\nfn beta() {}\n";
-         let ast = parse(Lang::Rust, src);
-         let pattern = compile_pattern(Lang::Rust, "fn $NAME").unwrap();
-         let matches = find_all(&ast, &pattern);
-         assert_eq!(matches.len(), 2);
-         // alpha is on line 0, beta is on line 1.
-         assert_eq!(matches[0].start_pos().line(), 0);
-         assert_eq!(matches[1].start_pos().line(), 1);
-         assert_eq!(matches[0].range().start, 0);
-         assert!(matches[1].range().start > matches[0].range().start);
-     }
+    #[test]
+    fn match_carries_byte_range_and_line() {
+        let src = "fn alpha() {}\nfn beta() {}\n";
+        let ast = parse(Lang::Rust, src);
+        let pattern = compile_pattern(Lang::Rust, "fn $NAME").unwrap();
+        let matches = find_all(&ast, &pattern);
+        assert_eq!(matches.len(), 2);
+        // alpha is on line 0, beta is on line 1.
+        assert_eq!(matches[0].start_pos().line(), 0);
+        assert_eq!(matches[1].start_pos().line(), 1);
+        assert_eq!(matches[0].range().start, 0);
+        assert!(matches[1].range().start > matches[0].range().start);
+    }
 }

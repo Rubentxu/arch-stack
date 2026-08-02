@@ -19,14 +19,14 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use jsonschema;
 
 use crate::clock::Clock;
 use crate::diagram::changeset_schema::CHANGESET_SCHEMA;
 #[cfg(test)]
 use crate::diagram::changeset_types::Command;
-use crate::diagram::changeset_types::{ChangeSet, CHANGESET_COMMAND_TYPES};
+use crate::diagram::changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet};
 use crate::diagram::export_types::Projection;
 use crate::diagram::hash::base_revision;
 use crate::diagram::view_types::Diagram;
@@ -177,7 +177,7 @@ pub fn apply_changeset(
 /// Validate `changeset_json` against the embedded `changeset.schema.json`.
 fn validate_changeset_schema(changeset_json: &str) -> Result<()> {
     let schema: serde_json::Value =
-        serde_json::from_str(&CHANGESET_SCHEMA).context("parse embedded changeset schema")?;
+        serde_json::from_str(CHANGESET_SCHEMA).context("parse embedded changeset schema")?;
 
     let validator = jsonschema::validator_for(&schema).context("compile changeset schema")?;
 
@@ -258,10 +258,10 @@ pub fn assert_command_types_match_schema() {
             let def_name = ref_path.strip_prefix("#/$defs/").unwrap_or(ref_path);
             let def = defs
                 .get(def_name)
-                .expect(&format!("$defs.{} must exist", def_name));
+                .unwrap_or_else(|| panic!("$defs.{} must exist", def_name));
             let type_val = def["properties"]["type"]["const"]
                 .as_str()
-                .expect(&format!("type const must be string in $defs.{}", def_name));
+                .unwrap_or_else(|| panic!("type const must be string in $defs.{}", def_name));
             schema_types.push(type_val);
         }
     }

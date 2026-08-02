@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crate::Filesystem;
+use std::path::PathBuf;
 
 pub struct XdgLayout {
     pub data: PathBuf,

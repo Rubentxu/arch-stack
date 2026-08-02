@@ -23,40 +23,56 @@ struct ChartYaml {
 pub struct HelmCharts;
 
 impl Strategy for HelmCharts {
-    fn id(&self) -> &'static str { "helm" }
-    fn confidence(&self) -> f64 { 0.70 }
+    fn id(&self) -> &'static str {
+        "helm"
+    }
+    fn confidence(&self) -> f64 {
+        0.70
+    }
 
-    fn detect(
-        &self,
-        project_root: &Path,
-        fs: &dyn Filesystem,
-    ) -> Result<Vec<ContainerCandidate>> {
+    fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let mut candidates = Vec::new();
         for root_str in CHART_ROOTS {
             let root = project_root.join(root_str);
-            if !root.is_dir() { continue; }
+            if !root.is_dir() {
+                continue;
+            }
 
-            for entry in std::fs::read_dir(&root)
-                .with_context(|| format!("read_dir {}", root.display()))?
+            for entry in
+                std::fs::read_dir(&root).with_context(|| format!("read_dir {}", root.display()))?
             {
                 let entry = entry?;
-                if !entry.file_type()?.is_dir() { continue; }
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
                 let chart_yaml = entry.path().join("Chart.yaml");
-                if !chart_yaml.is_file() { continue; }
-                let rel_chart = chart_yaml.strip_prefix(project_root)
+                if !chart_yaml.is_file() {
+                    continue;
+                }
+                let rel_chart = chart_yaml
+                    .strip_prefix(project_root)
                     .unwrap_or(&chart_yaml)
                     .to_string_lossy()
                     .replace('\\', "/");
-                if EXCLUDED_PATH_PREFIXES.iter().any(|p| rel_chart.starts_with(p)) {
+                if EXCLUDED_PATH_PREFIXES
+                    .iter()
+                    .any(|p| rel_chart.starts_with(p))
+                {
                     continue;
                 }
 
                 let text = fs.read_to_string(&chart_yaml)?;
                 let chart: ChartYaml = serde_yaml::from_str(&text)
                     .with_context(|| format!("parse {}", chart_yaml.display()))?;
-                let name = chart.name.clone()
+                let name = chart
+                    .name
+                    .clone()
                     .unwrap_or_else(|| entry.file_name().to_string_lossy().to_string());
-                let confidence = if chart.name.is_some() { self.confidence() } else { 0.50 };
+                let confidence = if chart.name.is_some() {
+                    self.confidence()
+                } else {
+                    0.50
+                };
 
                 candidates.push(ContainerCandidate {
                     canonical_key: name.clone(),
