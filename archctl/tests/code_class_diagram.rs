@@ -196,7 +196,7 @@ impl Foo {
             .output()
             .unwrap();
         assert!(output.status.success());
-        String::from_utf8_lossy(&output.stdout).to_string()
+        parse_class_diagram_output(&String::from_utf8_lossy(&output.stdout))
     };
 
     let first = run();
@@ -237,7 +237,7 @@ pub struct Service {
     let report = parse_class_diagram_output(&stdout);
     let schema_bytes = fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../schemas/class-diagram-report.schema.json"),
+            .join("../schemas/class-diagram-report.schema.json"),
     )
     .unwrap();
     let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
