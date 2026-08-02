@@ -82,8 +82,10 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: `v0.14.0-rc1` (final v0.14.0 pendiente de verificación `pnpm install && pnpm test`)
-- **Status**: M17.0 scaffold completo (bundle loader, G6 renderer, sidebar). 4 tests escritos, no ejecutados localmente.
+- **Tag**: **`v0.14.0`** (verified — pnpm install/test/build OK, 4 tests passed)
+- **Status**: M17.0 scaffold shipped. Bundle loader supports 4 shapes
+  (call-graph, sequence, class-diagram, C4). G6 5.x renderer + sidebar
+  evidence inspector. Dev server on port 18080.
 - **Próximo**: M17.1 semantic zoom C4.
 
 ## Archivos clave para retomar
