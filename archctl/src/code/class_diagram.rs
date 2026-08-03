@@ -1276,7 +1276,8 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::code::apply_common::{escape_cypher_string, open_and_init};
+    use crate::code::apply_common::escape_cypher_string;
+    use crate::store::open_and_init;
 
     let start = Instant::now();
     let store = open_and_init(project_dir).map_err(ClassDiagramError::GraphWrite)?;

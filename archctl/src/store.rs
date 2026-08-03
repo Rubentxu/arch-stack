@@ -41,7 +41,7 @@
 //!   adapters pick their own. Cross-engine migration is the
 //!   `SparrowStore::import_lbug()` problem, not the port's.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
@@ -215,6 +215,17 @@ pub trait GraphStore: EvidenceOps + SourceOps + DiagramOps {
 pub fn open_default(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
     let store = LbugStore::open(project_dir)?;
     Ok(Box::new(store))
+}
+
+/// Open the project's graph store and ensure the schema is initialized.
+///
+/// Canonical open+init sequence shared by CLI handlers and the `code/*`
+/// apply pipelines. Error is contextualized so the caller can wrap it in
+/// its own error type (e.g. `CallGraphError::GraphWrite`).
+pub fn open_and_init(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
+    let mut store = open_default(project_dir).context("failed to acquire DB lock")?;
+    store.init().context("graph init")?;
+    Ok(store)
 }
 
 // ---------------------------------------------------------------------------
@@ -1163,8 +1174,6 @@ fn value_to_json(v: &lbug::Value) -> Json {
     }
 }
 
-use anyhow::Context;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1184,6 +1193,17 @@ mod tests {
         let project = tmp.path().join("proj");
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
+        let stat = store.stat().unwrap();
+        assert_eq!(stat.elements, 0);
+        assert_eq!(stat.evidence, 0);
+    }
+
+    #[test]
+    fn open_and_init_opens_and_initializes_schema() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let store = open_and_init(&project).unwrap();
+        // Schema is applied: stat works without an explicit init call.
         let stat = store.stat().unwrap();
         assert_eq!(stat.elements, 0);
         assert_eq!(stat.evidence, 0);

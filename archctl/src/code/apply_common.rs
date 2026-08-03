@@ -10,22 +10,11 @@
 //! `write_source_artifact` + 2 local `Pipe` traits).
 
 use std::collections::HashSet;
-use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::source::SourceArtifact;
 use crate::store::GraphStore;
-
-/// Open the project's graph store and ensure the schema is initialized.
-///
-/// Error is contextualized so the caller can wrap it in its own
-/// error type (e.g. `CallGraphError::GraphWrite`).
-pub fn open_and_init(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
-    let mut store = crate::store::open_default(project_dir).context("failed to acquire DB lock")?;
-    store.init().context("graph init")?;
-    Ok(store)
-}
 
 /// Escape a string for use inside a Cypher single-quoted string.
 pub fn escape_cypher_string(s: &str) -> String {

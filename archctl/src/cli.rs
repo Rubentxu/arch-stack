@@ -563,8 +563,8 @@ fn resolve_project_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Re
 fn graph_init_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init")?;
+    // Open + init purely for the side effect of ensuring the schema exists.
+    let _store = store::open_and_init(&info.project_dir)?;
     let path = graph::database_path(&info.project_dir);
     if json {
         println!(
@@ -583,8 +583,7 @@ fn graph_stat_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<
     let info = resolve_project(&cwd.to_string_lossy());
     // stat requires a session — open with init so the schema is in
     // place if this is the first run after `git clone`.
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (stat prerequisite)")?;
+    let store = store::open_and_init(&info.project_dir)?;
     let stat = store.stat().context("graph stat")?;
     if json {
         println!("{}", serde_json::to_string_pretty(&stat)?);
@@ -606,8 +605,7 @@ fn graph_query_cmd(
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (query prerequisite)")?;
+    let store = store::open_and_init(&info.project_dir)?;
     let rows = store.query(cypher).context("graph query")?;
     let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
     if json || json_rows.is_empty() {
@@ -645,10 +643,7 @@ fn graph_neighbours_cmd(
         "MATCH (e:Element {{id: '{safe_id}'}})-[*1..{clamped_depth}]-(n) \
          RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store
-        .init()
-        .context("graph init (neighbours prerequisite)")?;
+    let store = store::open_and_init(&info.project_dir)?;
     let rows = store.query(&cypher).context("graph neighbours")?;
     if json {
         let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
@@ -829,10 +824,7 @@ fn evidence_accept_cmd(
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store
-        .init()
-        .context("graph init (evidence accept prerequisite)")?;
+    let mut store = store::open_and_init(&info.project_dir)?;
 
     let result = store.accept_evidence(id, clock);
 
@@ -886,10 +878,7 @@ fn evidence_supersede_cmd(
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store
-        .init()
-        .context("graph init (evidence supersede prerequisite)")?;
+    let mut store = store::open_and_init(&info.project_dir)?;
 
     let result = store.supersede_evidence(old_id);
 
@@ -945,10 +934,7 @@ fn evidence_list_cmd(
         .as_deref()
         .map(crate::graph::validate_identifier)
         .transpose()?;
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store
-        .init()
-        .context("graph init (evidence list prerequisite)")?;
+    let store = store::open_and_init(&info.project_dir)?;
 
     let rows = if let Some(s) = status {
         store
@@ -995,8 +981,7 @@ fn diagram_export_cmd(
     }
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_default(&info.project_dir).context("open graph store")?;
-    store.init().context("graph init (export prerequisite)")?;
+    let store = store::open_and_init(&info.project_dir)?;
 
     let report = crate::diagram::run_export(
         &*store,

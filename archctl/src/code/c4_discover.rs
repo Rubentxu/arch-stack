@@ -409,9 +409,8 @@ pub fn apply(
     report: &DiscoverReport,
     fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
-    use crate::code::apply_common::{
-        existing_canonical_keys, open_and_init, write_source_artifact,
-    };
+    use crate::code::apply_common::{existing_canonical_keys, write_source_artifact};
+    use crate::store::open_and_init;
 
     let mut store = open_and_init(project_dir)?;
 
