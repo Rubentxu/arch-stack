@@ -4,9 +4,9 @@
  * Renders different views depending on the bundle shape:
  * - sequence → SequenceView (lifelines + arrows, M17.3)
  * - call-graph → PackageView (modules + cycles, M17.5)
- *   (or CallGraphView if user prefers function-level — TBD)
  * - class-diagram → ClassDiagramView (UML compartments, M17.4)
  * - C4 → C4View (hierarchical with drill-down, M17.1)
+ * - drift mode (M17.6): two C4 bundles side-by-side diff
  */
 
 import { Match, Show, Switch, createSignal, type Component } from "solid-js";
@@ -18,6 +18,7 @@ import { CallGraphView } from "./views/CallGraphView";
 import { SequenceView } from "./views/SequenceView";
 import { ClassDiagramView } from "./views/ClassDiagramView";
 import { PackageView } from "./views/PackageView";
+import { DriftView } from "./views/DriftView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -55,12 +56,34 @@ export const App: Component = () => {
   const [selected, setSelected] = createSignal<GraphNode | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [stats, setStats] = createSignal<SidebarStats | undefined>(undefined);
+  const [driftMode, setDriftMode] = createSignal(false);
+  const [declaredBundle, setDeclaredBundle] =
+    createSignal<GraphBundle | null>(null);
+  const [actualBundle, setActualBundle] = createSignal<GraphBundle | null>(
+    null,
+  );
 
   const handleLoad = async (url: string) => {
     setError(null);
     try {
       const b = await loadBundle(url);
       setBundle(b);
+      setSelected(null);
+      setStats(undefined);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleDriftLoad = async (declaredUrl: string, actualUrl: string) => {
+    setError(null);
+    try {
+      const [dec, act] = await Promise.all([
+        loadBundle(declaredUrl),
+        loadBundle(actualUrl),
+      ]);
+      setDeclaredBundle(dec);
+      setActualBundle(act);
       setSelected(null);
       setStats(undefined);
     } catch (e) {
@@ -78,24 +101,66 @@ export const App: Component = () => {
           ))}
           <input
             type="text"
-            placeholder="bundle URL (file://… or http://…)"
+            placeholder={
+              driftMode()
+                ? "unused in drift mode"
+                : "bundle URL (file://… or http://…)"
+            }
+            disabled={driftMode()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !driftMode()) {
                 const url = e.currentTarget.value.trim();
                 if (url) void handleLoad(url);
               }
             }}
           />
+          <button
+            class={`drift-toggle ${driftMode() ? "active" : ""}`}
+            onClick={() => setDriftMode(!driftMode())}
+            title="Toggle drift detection mode (compare declared vs actual)"
+          >
+            {driftMode() ? "✓ drift mode" : "drift mode"}
+          </button>
         </nav>
+
+        <Show when={driftMode()}>
+          <nav class="drift-loader">
+            <input
+              type="text"
+              placeholder="declared C4 bundle URL"
+              id="declared-url"
+            />
+            <input
+              type="text"
+              placeholder="actual C4 bundle URL"
+              id="actual-url"
+            />
+            <button
+              onClick={() => {
+                const dec =
+                  (document.getElementById("declared-url") as HTMLInputElement)
+                    ?.value.trim() || "";
+                const act =
+                  (document.getElementById("actual-url") as HTMLInputElement)
+                    ?.value.trim() || "";
+                if (dec && act) void handleDriftLoad(dec, act);
+              }}
+            >
+              compare
+            </button>
+          </nav>
+        </Show>
       </header>
 
       <main class="main">
         <Show
-          when={bundle()}
+          when={driftMode() ? null : bundle()}
           fallback={
-            <p class="empty-canvas">
-              Load a bundle from the top bar to start exploring.
-            </p>
+            driftMode() ? null : (
+              <p class="empty-canvas">
+                Load a bundle from the top bar to start exploring.
+              </p>
+            )
           }
         >
           {(b) => (
@@ -180,17 +245,42 @@ export const App: Component = () => {
             </Switch>
           )}
         </Show>
+
+        <Show when={driftMode()}>
+          <DriftView
+            declared={declaredBundle()}
+            actual={actualBundle()}
+            onSelect={(id) => {
+              const all = [
+                ...(declaredBundle()?.nodes ?? []),
+                ...(actualBundle()?.nodes ?? []),
+              ];
+              const node = id ? all.find((n) => n.id === id) ?? null : null;
+              setSelected(node);
+            }}
+          />
+        </Show>
+
         <Sidebar
           node={selected()}
           bundleMeta={
-            bundle()
+            !driftMode() && bundle()
               ? {
                   source: bundle()!.source,
                   schemaVersion: bundle()!.schemaVersion,
                   loadedAt: bundle()!.loadedAt,
                   rawKind: bundle()!.rawKind,
                 }
-              : null
+              : driftMode()
+                ? declaredBundle() && actualBundle()
+                  ? {
+                      source: "drift comparison",
+                      schemaVersion: `${declaredBundle()!.schemaVersion} vs ${actualBundle()!.schemaVersion}`,
+                      loadedAt: actualBundle()!.loadedAt,
+                      rawKind: "c4 (drift)",
+                    }
+                  : null
+                : null
           }
           stats={stats()}
         />

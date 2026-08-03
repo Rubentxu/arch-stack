@@ -1101,3 +1101,186 @@ dd.multiline {
   color: #f97583;
   font-weight: 600;
 }
+
+/* ─── DriftView (M17.6) ─────────────────────────────────── */
+
+.drift-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 1.5rem;
+  gap: 1rem;
+}
+
+.drift-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.drift-header p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8125rem;
+}
+
+.drift-toggle {
+  margin-left: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.drift-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.drift-loader {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.drift-loader input {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 0.8125rem;
+  font-family: monospace;
+}
+
+.drift-loader button {
+  padding: 0.4rem 0.75rem;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.8125rem;
+}
+
+.drift-summary {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+}
+
+.drift-summary h3 {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin: 0 0 0.5rem 0;
+}
+
+.drift-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.drift-count {
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+.drift-added {
+  background: rgba(46, 160, 67, 0.2);
+  color: #56d364;
+}
+
+.drift-removed {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+}
+
+.drift-changed {
+  background: rgba(187, 128, 9, 0.2);
+  color: #d29922;
+}
+
+.drift-section {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+}
+
+.drift-section h3 {
+  font-size: 0.875rem;
+  margin: 0 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.drift-tag {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.drift-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.drift-section li {
+  padding: 0.25rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.drift-element {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.25rem 0.5rem;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: monospace;
+  text-align: left;
+}
+
+.drift-element:hover {
+  border-color: var(--accent);
+}
+
+.drift-removed-element {
+  border-color: rgba(248, 81, 73, 0.4);
+}
+
+.drift-element-id {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+.drift-changes {
+  list-style: none;
+  padding: 0 0 0 1rem;
+  margin: 0.25rem 0 0 0;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}

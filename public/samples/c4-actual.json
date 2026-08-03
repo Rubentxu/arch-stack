@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0",
+  "elements": [
+    {
+      "id": "person:user",
+      "kind": "Person",
+      "name": "User",
+      "description": "A regular user of the platform (now via SSO)"
+    },
+    {
+      "id": "system:archctl",
+      "kind": "SoftwareSystem",
+      "name": "archctl",
+      "description": "CLI sidecar that emits architecture bundles"
+    },
+    {
+      "id": "system:archview",
+      "kind": "SoftwareSystem",
+      "name": "archview",
+      "description": "Web workbench that consumes archctl bundles"
+    },
+    {
+      "id": "system:metrics",
+      "kind": "SoftwareSystem",
+      "name": "Metrics Dashboard",
+      "description": "Operational metrics"
+    }
+  ],
+  "relations": [
+    {
+      "source": "person:user",
+      "target": "system:archctl",
+      "predicate_id": "uses"
+    },
+    {
+      "source": "person:user",
+      "target": "system:archview",
+      "predicate_id": "uses"
+    },
+    {
+      "source": "system:archview",
+      "target": "system:metrics",
+      "predicate_id": "emits to"
+    }
+  ]
+}

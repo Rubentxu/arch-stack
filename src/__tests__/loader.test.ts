@@ -407,3 +407,130 @@ describe("package derivation (M17.5)", () => {
     expect(bundle.edges).toHaveLength(4);
   });
 });
+
+describe("drift detection (M17.6)", () => {
+  // Helper that replicates the diff logic for testing.
+  function diffBundles(
+    declared: { nodes: { id: string; name: string; meta?: Record<string, unknown> }[]; edges: { source: string; target: string; kind?: string }[] },
+    actual: { nodes: { id: string; name: string; meta?: Record<string, unknown> }[]; edges: { source: string; target: string; kind?: string }[] },
+  ): {
+    added: string[];
+    removed: string[];
+    changed: { id: string; changes: string[] }[];
+    relAdded: string[];
+    relRemoved: string[];
+  } {
+    const decMap = new Map(declared.nodes.map((n) => [n.id, n]));
+    const actMap = new Map(actual.nodes.map((n) => [n.id, n]));
+    const added: string[] = [];
+    const removed: string[] = [];
+    const changed: { id: string; changes: string[] }[] = [];
+    for (const [id, n] of actMap) {
+      if (!decMap.has(id)) added.push(id);
+    }
+    for (const [id, n] of decMap) {
+      if (!actMap.has(id)) removed.push(id);
+    }
+    for (const [id, dec] of decMap) {
+      const act = actMap.get(id);
+      if (!act) continue;
+      const changes: string[] = [];
+      if (dec.name !== act.name) changes.push(`name changed`);
+      if (dec.meta?.description !== act.meta?.description)
+        changes.push(`description changed`);
+      if (changes.length > 0) changed.push({ id, changes });
+    }
+    const relKey = (e: { source: string; target: string; kind?: string }) =>
+      `${e.source}\0${e.target}\0${e.kind ?? ""}`;
+    const decRels = new Map(declared.edges.map((e) => [relKey(e), e]));
+    const actRels = new Map(actual.edges.map((e) => [relKey(e), e]));
+    const relAdded: string[] = [];
+    const relRemoved: string[] = [];
+    for (const [k] of actRels) {
+      if (!decRels.has(k)) relAdded.push(k);
+    }
+    for (const [k] of decRels) {
+      if (!actRels.has(k)) relRemoved.push(k);
+    }
+    return { added, removed, changed, relAdded, relRemoved };
+  }
+
+  it("detects added elements (in actual, not declared)", () => {
+    const result = diffBundles(
+      { nodes: [{ id: "a", name: "A" }], edges: [] },
+      {
+        nodes: [
+          { id: "a", name: "A" },
+          { id: "b", name: "B" },
+        ],
+        edges: [],
+      },
+    );
+    expect(result.added).toEqual(["b"]);
+  });
+
+  it("detects removed elements (in declared, not actual)", () => {
+    const result = diffBundles(
+      {
+        nodes: [
+          { id: "a", name: "A" },
+          { id: "b", name: "B" },
+        ],
+        edges: [],
+      },
+      { nodes: [{ id: "a", name: "A" }], edges: [] },
+    );
+    expect(result.removed).toEqual(["b"]);
+  });
+
+  it("detects changed elements (description diff)", () => {
+    const result = diffBundles(
+      {
+        nodes: [
+          { id: "a", name: "A", meta: { description: "old" } },
+        ],
+        edges: [],
+      },
+      {
+        nodes: [
+          { id: "a", name: "A", meta: { description: "new" } },
+        ],
+        edges: [],
+      },
+    );
+    expect(result.changed).toHaveLength(1);
+    expect(result.changed[0].id).toBe("a");
+    expect(result.changed[0].changes).toContain("description changed");
+  });
+
+  it("detects added/removed relations", () => {
+    const result = diffBundles(
+      {
+        nodes: [{ id: "a" }, { id: "b" }],
+        edges: [{ source: "a", target: "b", kind: "uses" }],
+      },
+      {
+        nodes: [{ id: "a" }, { id: "b" }],
+        edges: [
+          { source: "a", target: "b", kind: "uses" },
+          { source: "a", target: "b", kind: "depends" },
+        ],
+      },
+    );
+    expect(result.relAdded).toContain("a\0b\0depends");
+    expect(result.relRemoved).toEqual([]);
+  });
+
+  it("no changes when bundles are identical", () => {
+    const bundle = {
+      nodes: [{ id: "a", name: "A" }],
+      edges: [{ source: "a", target: "a", kind: "self" }],
+    };
+    const result = diffBundles(bundle, bundle);
+    expect(result.added).toEqual([]);
+    expect(result.removed).toEqual([]);
+    expect(result.changed).toEqual([]);
+    expect(result.relAdded).toEqual([]);
+    expect(result.relRemoved).toEqual([]);
+  });
+});

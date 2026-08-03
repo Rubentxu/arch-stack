@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0",
+  "elements": [
+    {
+      "id": "person:user",
+      "kind": "Person",
+      "name": "User",
+      "description": "A regular user of the platform"
+    },
+    {
+      "id": "system:archctl",
+      "kind": "SoftwareSystem",
+      "name": "archctl",
+      "description": "CLI sidecar that emits architecture bundles"
+    },
+    {
+      "id": "system:archview",
+      "kind": "SoftwareSystem",
+      "name": "archview",
+      "description": "Web workbench that consumes archctl bundles"
+    },
+    {
+      "id": "system:ci",
+      "kind": "SoftwareSystem",
+      "name": "CI Pipeline",
+      "description": "Continuous integration"
+    }
+  ],
+  "relations": [
+    {
+      "source": "person:user",
+      "target": "system:archctl",
+      "predicate_id": "uses"
+    },
+    {
+      "source": "person:user",
+      "target": "system:archview",
+      "predicate_id": "uses"
+    },
+    {
+      "source": "system:ci",
+      "target": "system:archctl",
+      "predicate_id": "validates"
+    }
+  ]
+}
