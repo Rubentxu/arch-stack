@@ -122,13 +122,18 @@ require "toolchain channel pinned 1.97.1" \
   grep -q 'channel = "1.97.1"' rust-toolchain.toml
 
 # ---------------------------------------------------------------------------
-# 5. MSRV declared in archctl/Cargo.toml.
+# 5. MSRV declared in archctl/Cargo.toml AND the root toolchain comment.
 # NOTE: spec proposed 1.85, but the dependency tree requires 1.91 (validated
 # empirically at apply: cargo-platform@0.3.3 -> rustc 1.91, idna_adapter/ignore/
 # time -> 1.86-1.88). Declaring 1.85 would be false; ADR-025 records the raise.
+# The rust-toolchain.toml comment must match, not drift back to 1.85.
 # ---------------------------------------------------------------------------
 require "MSRV rust-version 1.91 declared" \
   grep -q 'rust-version = "1.91"' archctl/Cargo.toml
+require_not "rust-toolchain.toml comment does not drift to 1.85" \
+  grep -q 'rust-version = "1.85"' rust-toolchain.toml
+require "rust-toolchain.toml comment states MSRV 1.91" \
+  grep -q 'rust-version = "1.91"' rust-toolchain.toml
 
 # ---------------------------------------------------------------------------
 # 6. Clippy repair: filesystem.rs uses .keys(), no lint suppression.
