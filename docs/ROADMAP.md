@@ -331,7 +331,7 @@ Incluye:
 | `refactor/bench-seed-decomposition` | `refactor/bench-seed-decomposition` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.12.1` |
 | `m12-class-diagram` | `feat/m12-class-diagram` (merged to main via --no-ff) | `9e665ee` | **Cerrado** ✅ · tag `v0.13.0` |
 | `ci-main-gates` | `test/main-gates-05-contract` (merged to main via --no-ff) | `443b6fe` (merge commit) | **Cerrado** ✅ · tag `v0.13.8` |
-| `release-pipeline` | `release/release-pipeline` (merged to main via --no-ff) | `43748b8` (merge commit) | **Cerrado** ✅ · tag `v0.14.1` |
+| `release-pipeline` | `release/release-pipeline` (merged to main via --no-ff) | `43748b8` (merge commit) | **Cerrado** ✅ · tag `v0.14.1` · dup-002 fix: PR #12 ✅ |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
