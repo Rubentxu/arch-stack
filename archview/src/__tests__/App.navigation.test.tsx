@@ -299,6 +299,85 @@ describe("App navigation — Package (R2/R5)", () => {
   });
 });
 
+describe("App navigation — package card selection populates sidebar (R5)", () => {
+  function packageCard(text: string): HTMLElement {
+    const card = screen
+      .getAllByRole("article")
+      .find((c) => c.textContent?.includes(text));
+    expect(card).toBeTruthy();
+    return card!;
+  }
+
+  async function openPackageView() {
+    render(() => <App />);
+    loadSample("Sample call-graph (rust)");
+    fireEvent.click(await screen.findByRole("button", { name: "Package" }));
+    await waitFor(() =>
+      expect(document.querySelector(".package-view")).not.toBeNull(),
+    );
+  }
+
+  it("shows the clicked package label, kind, and file evidence in the sidebar", async () => {
+    await openPackageView();
+    fireEvent.click(packageCard("src"));
+
+    const detail = document.querySelector(".node-detail");
+    expect(detail?.textContent).toContain("src");
+    expect(detail?.textContent).toContain("package");
+    expect(detail?.textContent).toContain("src/main.rs:0");
+    expect(detail?.textContent).toContain("src/auth.rs:0");
+    expect(detail?.textContent).toContain("confidence: package");
+  });
+
+  it("triangulates: a different package shows its own files as evidence", async () => {
+    await openPackageView();
+    fireEvent.click(packageCard("crates/db"));
+
+    const detail = document.querySelector(".node-detail");
+    expect(detail?.textContent).toContain("crates/db");
+    expect(detail?.textContent).toContain("package");
+    expect(detail?.textContent).toContain("crates/db/src/lib.rs:0");
+    // The src package's files must not leak into this selection.
+    expect(detail?.textContent).not.toContain("src/main.rs");
+  });
+
+  it("is idempotent: clicking the same package card twice keeps the sidebar stable", async () => {
+    await openPackageView();
+    fireEvent.click(packageCard("src"));
+    await waitFor(() =>
+      expect(document.querySelector(".node-detail")?.textContent).toContain(
+        "src/main.rs:0",
+      ),
+    );
+
+    fireEvent.click(packageCard("src"));
+
+    const detail = document.querySelector(".node-detail");
+    expect(detail?.textContent).toContain("src");
+    expect(detail?.textContent).toContain("package");
+    expect(detail?.textContent).toContain("src/main.rs:0");
+  });
+
+  it("keeps the package selection when switching to Call graph view", async () => {
+    await openPackageView();
+    fireEvent.click(packageCard("src"));
+    await waitFor(() =>
+      expect(document.querySelector(".node-detail")?.textContent).toContain(
+        "src/main.rs:0",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Call graph" }));
+    await waitFor(() =>
+      expect(document.querySelector(".callgraph-view")).not.toBeNull(),
+    );
+
+    const detail = document.querySelector(".node-detail");
+    expect(detail?.textContent).toContain("src");
+    expect(detail?.textContent).toContain("package");
+  });
+});
+
 describe("App navigation — sequence must not collide (R1)", () => {
   it("renders Sequence and never Call graph for a sequence bundle", async () => {
     render(() => <App />);

@@ -33,6 +33,7 @@ import { ClassDiagramView } from "./views/ClassDiagramView";
 import { DriftView } from "./views/DriftView";
 import { ImpactView } from "./views/ImpactView";
 import { PackageView } from "./views/PackageView";
+import { buildPackageNode } from "./views/PackageGraph";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -257,10 +258,11 @@ export const App: Component = () => {
                       nodes={b().nodes}
                       edges={b().edges}
                       onSelect={(id) => {
-                        const node = id
-                          ? (b().nodes.find((n) => n.id === id) ?? null)
-                          : null;
-                        setSelected(node);
+                        // Call-graph bundles have no package-kind nodes, so a
+                        // package selection is synthesized (spec Option D).
+                        setSelected(
+                          id ? buildPackageNode(id, b().nodes) : null,
+                        );
                       }}
                     />
                   </Match>
