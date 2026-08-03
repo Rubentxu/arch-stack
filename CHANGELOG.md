@@ -3,6 +3,32 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.21.0] — 2026-08-02 — M17.7 impact analysis (M17 series complete)
+
+### Added
+- **ImpactView**: `src/views/ImpactView.tsx` — final M17 view.
+  Select a function as "proposed for change" and see the blast
+  radius: every node transitively affected. Direction selector
+  (downstream / upstream / both) + max-depth 5 BFS. Each
+  impacted node shows the path from focus (collapsible details).
+  Upstream callers have orange left-border; downstream callees
+  have blue left-border. Stats emitted via `onStats` prop.
+- **App.tsx Switch routing**: call-graph bundles now go to
+  `ImpactView` (replacing M17.2's `CallGraphView` for that shape;
+  `CallGraphView` is still used for sequence bundles).
+- **Tests**: 26 → 32. New coverage: isolated node empty impact,
+  upstream BFS finds callers, downstream BFS finds callees, both
+  directions, maxDepth cutoff, cycle does not loop back to focus.
+
+### Refs
+- Cycle: `m17.7-archview-impact` (final M17 cycle)
+- ROADMAP M17 (post-v0.13.0 stabilization plan F2.2)
+
+### Notes
+- M17 series complete (M17.0 scaffold → M17.7 impact). Next archview
+  cycle is M18 (reactive runtime, defer to 1.x per roadmap) or M19
+  (custom wgpu renderer, 2.0).
+
 ## [v0.20.0] — 2026-08-02 — M17.6 drift detection
 
 ### Added
