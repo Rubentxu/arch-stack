@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    name: archctl (build/test/clippy/fmt/doctor)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: archctl
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            archctl/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('archctl/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Build
+        run: cargo build --quiet
+
+      - name: Test
+        run: cargo test --quiet
+
+      - name: Clippy
+        run: cargo clippy --quiet --all-targets -- -D warnings
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Doctor (repo-root cwd)
+        run: |
+          cargo build --quiet --release
+          ../target/release/archctl doctor --scopes code --cwd ..
+
+  bench-smoke:
+    name: archctl (benchmark smoke)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: archctl
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            archctl/target
+          key: cargo-bench-${{ runner.os }}-${{ hashFiles('archctl/Cargo.lock') }}
+          restore-keys: cargo-bench-${{ runner.os }}-
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      # ADR-019: benchmark smoke gate (deterministic, quick mode).
+      # Full >10% regression comparison needs criterion baselines — follow-up.
+      - name: Benchmark smoke (export pipeline)
+        run: cargo bench --bench export_pipeline -- --quick
+
+  web:
+    name: archview (test/build/bundle-cap)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: archview
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: archview/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (vitest)
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      # ADR-019 hard contract: gzipped JS bundle <= 2MB.
+      - name: Bundle size check (gzipped <= 2MB)
+        run: |
+          total=0
+          for f in dist/assets/*.js; do
+            size=$(gzip -c "$f" | wc -c)
+            echo "$f: $size bytes gzipped"
+            total=$((total + size))
+          done
+          echo "total gzipped: $total bytes"
+          limit=$((2 * 1024 * 1024))
+          if [ "$total" -gt "$limit" ]; then
+            echo "::error::Bundle exceeds ADR-019 cap (2MB gzipped): $total > $limit"
+            exit 1
+          fi
+          echo "Bundle within ADR-019 cap."
