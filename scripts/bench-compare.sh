@@ -82,7 +82,17 @@ SAMPLE_SIZE="${SAMPLE_SIZE:-30}"
 MEASUREMENT_TIME="${MEASUREMENT_TIME:-5}"
 WARM_UP_TIME="${WARM_UP_TIME:-1}"
 WORKTREE_DIR="$(mktemp -d /tmp/bench-compare.XXXXXX)"
-trap 'rm -rf "$WORKTREE_DIR"' EXIT
+# Remove the worktree from disk AND git metadata on any exit. A plain
+# rm -rf would leave stale .git/worktrees entries (the historical
+# /tmp/bench-compare.* pollution); git worktree remove + prune cleans both.
+cleanup_worktrees() {
+    if [ -d "$WORKTREE_DIR/main" ]; then
+        git worktree remove --force "$WORKTREE_DIR/main" >/dev/null 2>&1 || true
+    fi
+    git worktree prune >/dev/null 2>&1 || true
+    rm -rf "$WORKTREE_DIR"
+}
+trap cleanup_worktrees EXIT
 
 # ---- test mode -----------------------------------------------------------
 if [ -n "$FAKE_REGRESSION" ]; then

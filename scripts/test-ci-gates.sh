@@ -181,6 +181,14 @@ require "bench-compare.sh synthetic within-threshold exits 0" \
 require_not "bench-compare.sh no TEST_FAKE_REGRESSION env bypass" \
   grep -qE '\$\{?TEST_FAKE_REGRESSION' "$BENCH_SCRIPT"
 
+# Worktree hygiene: bench-compare must remove its worktree from disk AND git
+# metadata (git worktree remove --force + prune), not only rm -rf the dir,
+# which is what created the historical stale /tmp/bench-compare.* entries.
+require "bench-compare.sh removes worktree from git metadata" \
+  grep -q 'git worktree remove --force' "$BENCH_SCRIPT"
+require "bench-compare.sh prunes worktree metadata" \
+  grep -q 'git worktree prune' "$BENCH_SCRIPT"
+
 # python3 prerequisite must fail clearly before creating any worktree.
 MINBIN="$(mktemp -d)"
 ln -s "$(command -v bash)" "$MINBIN/bash"
