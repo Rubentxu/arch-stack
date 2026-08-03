@@ -6,10 +6,44 @@
  * transformation over the call-graph bundle — no Solid reactivity.
  */
 
+import type { GraphNode } from "../bundle/loader";
+
 export interface PackageEdge {
   source: string;
   target: string;
   weight: number;
+}
+
+/**
+ * Build a synthetic package node for the sidebar (spec Option D).
+ *
+ * Call-graph bundles have no package-kind nodes (loader only emits
+ * `kind: "function"`), so clicking a package card must construct the
+ * selection: `id`/`label` = package name, `kind = "package"`, and
+ * `meta.evidence_refs` listing every file that belongs to the package.
+ * Returns `null` when no node file maps to the given package.
+ */
+export function buildPackageNode(
+  pkgName: string,
+  nodes: { id: string; file?: string }[],
+): GraphNode | null {
+  const files = new Set<string>();
+  for (const n of nodes) {
+    if (n.file && packageForFile(n.file) === pkgName) {
+      files.add(n.file);
+    }
+  }
+  if (files.size === 0) return null;
+  return {
+    id: pkgName,
+    label: pkgName,
+    kind: "package",
+    meta: {
+      evidence_refs: [...files]
+        .sort()
+        .map((file) => ({ file, line: 0, confidence: "package" })),
+    },
+  };
 }
 
 /**
