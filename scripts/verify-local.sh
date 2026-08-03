@@ -77,25 +77,8 @@ if [ "$MODE" = "full" ]; then
         run_gate pnpm test
         run_gate pnpm build
     )
-    # ADR-019 bundle cap: gzipped JS <= 2MB.
-    if [ "$DRY_RUN" = "1" ]; then
-        echo "[dry-run] bundle cap check (gzipped dist/assets/*.js <= 2MB)"
-    else
-        total=0
-        for f in "$REPO_ROOT"/archview/dist/assets/*.js; do
-            [ -f "$f" ] || continue
-            size=$(gzip -c "$f" | wc -c)
-            echo "$f: $size bytes gzipped"
-            total=$((total + size))
-        done
-        echo "total gzipped: $total bytes"
-        limit=$((2 * 1024 * 1024))
-        if [ "$total" -gt "$limit" ]; then
-            echo "::error::Bundle exceeds ADR-019 cap (2MB gzipped): $total > $limit"
-            exit 1
-        fi
-        echo "Bundle within ADR-019 cap."
-    fi
+    # ADR-019 bundle cap: single-source script, shared with CI.
+    run_gate "$REPO_ROOT/scripts/check-bundle-cap.sh" "$REPO_ROOT/archview/dist/assets/*.js"
 
     # ---- benchmark gates (ADR-019) -------------------------------------------
     (

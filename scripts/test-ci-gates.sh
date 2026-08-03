@@ -231,6 +231,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 8b. Bundle cap is a single-source executable called by both callers.
+# ---------------------------------------------------------------------------
+BUNDLE_CAP="scripts/check-bundle-cap.sh"
+require "check-bundle-cap.sh exists" test -f "$BUNDLE_CAP"
+require "check-bundle-cap.sh executable" test -x "$BUNDLE_CAP"
+
+# Both CI and local verification must call the shared script, and neither may
+# keep a private duplicate of the gzip loop.
+require "verify-local.sh calls check-bundle-cap.sh" \
+  grep -q 'check-bundle-cap.sh' "$VERIFY_SCRIPT"
+require "ci.yml calls check-bundle-cap.sh" \
+  grep -q 'check-bundle-cap.sh' "$WORKFLOW"
+require_not "verify-local.sh has no duplicate bundle-cap loop" \
+  grep -q 'gzip -c' "$VERIFY_SCRIPT"
+require_not "ci.yml has no duplicate bundle-cap loop" \
+  grep -q 'gzip -c' "$WORKFLOW"
+
+# Behavioral: over-limit fixture fails, within-limit passes, using the script.
+CAP_DIR="$(mktemp -d)"
+head -c 3000000 /dev/urandom > "$CAP_DIR/big.js"
+printf 'console.log(1)\n' > "$CAP_DIR/small.js"
+require_not "check-bundle-cap.sh rejects over-limit bundle" \
+  bash -c '"$0" "$1"/*.js >/dev/null 2>&1' "$BUNDLE_CAP" "$CAP_DIR"
+require "check-bundle-cap.sh accepts within-limit bundle" \
+  bash -c '"$0" "$1"/small.js >/dev/null 2>&1' "$BUNDLE_CAP" "$CAP_DIR"
+rm -rf "$CAP_DIR"
+
+# ---------------------------------------------------------------------------
 # 9. Pre-push hook wiring.
 # ---------------------------------------------------------------------------
 PRE_PUSH=".githooks/pre-push"
