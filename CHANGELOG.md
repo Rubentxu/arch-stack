@@ -4,6 +4,17 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v0.13.6
+
+### Added
+- **CI gate (M20 / ADR-019)**: GitHub Actions workflow with 3 jobs —
+  rust (build/test/clippy/fmt/doctor), bench-smoke (criterion quick),
+  web (vitest + build + bundle cap ≤2MB gzipped). First CI for arch-stack.
+
+### Refs
+- Cycle: `m20-ci-gate`
+- Partially closes M20 (CI gate slice); regression >10% comparison deferred to backlog
+
 ## [Unreleased] — v0.13.5
 
 ### Changed
