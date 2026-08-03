@@ -3,22 +3,29 @@
 #
 # Cheap mode (default) runs the Rust gates that pre-push needs:
 #   cargo test, clippy -D warnings, fmt --check, doctor (code scope)
-# --full additionally runs the web gates and the ADR-019 benchmark
-#   regression comparison against origin/main:
-#   pnpm test, pnpm build, bundle cap <= 2MB gzipped, bench smoke,
-#   scripts/bench-compare.sh origin/main
+# --full additionally runs the web gates, the CI-gate contract tests, and
+#   the ADR-019 benchmark regression comparison against a FRESH origin/main:
+#   pnpm test, pnpm build, bundle cap <= 2MB gzipped,
+#   scripts/test-ci-gates.sh, bench smoke,
+#   scripts/bench-compare.sh <baseline>
+#   The default baseline is origin/main, refreshed with `git fetch origin
+#   main` before comparison so a stale baseline cannot silently pass. Pass
+#   --baseline <ref> to compare against an explicit ref instead (no fetch).
+# --full --check-branch-protection additionally queries the LIVE GitHub
+#   branch protection via scripts/check-branch-protection.sh. It is a
+#   network-dependent read-only check and is NEVER part of cheap pre-push.
 #
 # Usage:
-#   scripts/verify-local.sh [--full] [--help]
+#   scripts/verify-local.sh [--full] [--baseline <ref>] [--check-branch-protection] [--dry-run] [--help]
+#
+#   --baseline <ref>  benchmark baseline ref; default origin/main (fetched)
+#   --dry-run         print the gates that would run without executing them
+#                     (deterministic; used by scripts/test-ci-gates.sh)
 #
 # Exit codes:
 #   0 = all gates passed
 #   1 = a gate failed
 #   2 = usage error or missing prerequisite
-#
-# Env:
-#   VERIFY_LOCAL_DRY_RUN=1  print the gates that would run without executing
-#                           (used by scripts/test-ci-gates.sh; never mutates)
 #
 # The script never mutates tracked source: cargo/pnpm write only to
 # gitignored build dirs (target/, dist/).
@@ -29,18 +36,28 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 MODE="cheap"
-if [ "${1:-}" = "--full" ]; then
-    MODE="full"
-elif [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'
-    exit 0
-elif [ $# -gt 0 ]; then
-    echo "verify-local: unknown argument '${1}' (expected --full or --help)" >&2
+DRY_RUN=0
+CHECK_BP=0
+BASELINE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --full) MODE="full" ;;
+        --check-branch-protection) CHECK_BP=1 ;;
+        --baseline) BASELINE="${2:-}"; shift || true ;;
+        --dry-run) DRY_RUN=1 ;;
+        --help|-h) sed -n '1,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "verify-local: unknown argument '${1}' (expected --full, --baseline, --check-branch-protection, --dry-run or --help)" >&2; exit 2 ;;
+    esac
+    shift || true
+done
+
+if [ "$CHECK_BP" = "1" ] && [ "$MODE" != "full" ]; then
+    echo "verify-local: --check-branch-protection requires --full" >&2
     exit 2
 fi
 
 run_gate() {
-    if [ "${VERIFY_LOCAL_DRY_RUN:-0}" = "1" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
         echo "[dry-run] $*"
         return 0
     fi
@@ -72,38 +89,40 @@ fi
 )
 
 if [ "$MODE" = "full" ]; then
+    # ---- fresh baseline: fetch origin/main unless --baseline given ----
+    if [ -z "$BASELINE" ]; then
+        if [ "$DRY_RUN" = "1" ]; then
+            echo "[dry-run] git fetch origin main"
+        elif ! git fetch origin main >/dev/null 2>&1; then
+            echo "verify-local: cannot fetch origin/main; refusing stale baseline comparison" >&2
+            exit 2
+        fi
+        BASELINE="origin/main"
+    fi
+
     # ---- web gates (archview) ------------------------------------------------
     (
         cd "$REPO_ROOT/archview"
         run_gate pnpm test
         run_gate pnpm build
     )
-    # ADR-019 bundle cap: gzipped JS <= 2MB.
-    if [ "${VERIFY_LOCAL_DRY_RUN:-0}" = "1" ]; then
-        echo "[dry-run] bundle cap check (gzipped dist/assets/*.js <= 2MB)"
-    else
-        total=0
-        for f in "$REPO_ROOT"/archview/dist/assets/*.js; do
-            [ -f "$f" ] || continue
-            size=$(gzip -c "$f" | wc -c)
-            echo "$f: $size bytes gzipped"
-            total=$((total + size))
-        done
-        echo "total gzipped: $total bytes"
-        limit=$((2 * 1024 * 1024))
-        if [ "$total" -gt "$limit" ]; then
-            echo "::error::Bundle exceeds ADR-019 cap (2MB gzipped): $total > $limit"
-            exit 1
-        fi
-        echo "Bundle within ADR-019 cap."
-    fi
+    # ADR-019 bundle cap: single-source script, shared with CI.
+    run_gate "$REPO_ROOT/scripts/check-bundle-cap.sh" "$REPO_ROOT/archview/dist/assets/*.js"
+
+    # ---- CI-gate contract tests (deterministic; enforces this suite) ---------
+    run_gate "$REPO_ROOT/scripts/test-ci-gates.sh"
 
     # ---- benchmark gates (ADR-019) -------------------------------------------
     (
         cd "$REPO_ROOT/archctl"
         run_gate cargo bench --bench export_pipeline -- --quick
     )
-    run_gate "$REPO_ROOT/scripts/bench-compare.sh" origin/main
+    run_gate "$REPO_ROOT/scripts/bench-compare.sh" "$BASELINE"
+
+    # ---- live branch protection (explicit opt-in, never cheap pre-push) ------
+    if [ "$CHECK_BP" = "1" ]; then
+        run_gate "$REPO_ROOT/scripts/check-branch-protection.sh"
+    fi
 fi
 
 echo "verify-local: ${MODE} mode PASS"

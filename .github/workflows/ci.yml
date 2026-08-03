@@ -135,19 +135,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # ADR-019 hard contract: gzipped JS bundle <= 2MB.
+      # ADR-019 hard contract: gzipped JS bundle <= 2MB. Single-source rule
+      # in scripts/check-bundle-cap.sh, shared with scripts/verify-local.sh.
       - name: Bundle size check (gzipped <= 2MB)
-        run: |
-          total=0
-          for f in dist/assets/*.js; do
-            size=$(gzip -c "$f" | wc -c)
-            echo "$f: $size bytes gzipped"
-            total=$((total + size))
-          done
-          echo "total gzipped: $total bytes"
-          limit=$((2 * 1024 * 1024))
-          if [ "$total" -gt "$limit" ]; then
-            echo "::error::Bundle exceeds ADR-019 cap (2MB gzipped): $total > $limit"
-            exit 1
-          fi
-          echo "Bundle within ADR-019 cap."
+        run: ../scripts/check-bundle-cap.sh "dist/assets/*.js"
