@@ -4,6 +4,29 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v0.13.2
+
+### Changed
+- **Internal refactor**: shared `code::apply_common` module extracted from four
+  caller pipelines (`call_graph`, `c4_discover`, `class_diagram`, `sequence`).
+  `escape_cypher_string`, `open_and_init`, `existing_canonical_keys`,
+  `write_source_artifact`, and a local `Pipe` trait now live in one place.
+  No observable behavior change; ~150 LOC of duplicated apply boilerplate
+  eliminated. The `Pipe` trait is a single-use abstraction kept for API
+  stability; tracked for future removal.
+
+### Fixed
+- **`scripts/fmt-staged.sh --edition`**: derive Rust edition from
+  `archctl/Cargo.toml` instead of hardcoding 2021. Fixes pre-commit false
+  failure for Rust 2024 `let` chains.
+
+### Refs
+- Cycle: `refactor/extract-code-apply-helpers`
+- Closes M16 deferred debt item (`~150 LOC helper duplication`)
+- Debt carried: `SourceArtifact` id formula divergence (pre-existing, tracked as
+  `refactor/debt-source-artifact-id-1`); `Pipe` trait single-use (drive-by,
+  `refactor/extract-code-apply-helpers-pipe-1`)
+
 ## [v0.13.1] — 2026-08-02 — clippy-fmt cleanup + composes edges
 
 ### Fixed

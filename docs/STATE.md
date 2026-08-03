@@ -48,7 +48,7 @@
 
 | ID | Descripción | Bloquea gate | Estado |
 |---|---|---|---|
-| `code::apply` repetition | `code::call_graph::apply` + `code::c4_discover::apply` + `code::class_diagram::apply` comparten ~150 LOC de open-default + init + counters + ApplyReport construction. No extraction hecha — error types y semánticas difieren por dominio. | No | Defer v0.14.x; cada `apply` mantiene su firma pública estable |
+| `code::apply` repetition | `code::call_graph::apply` + `code::c4_discover::apply` + `code::class_diagram::apply` comparten ~150 LOC de open-default + init + counters + ApplyReport construction. | No | **Cerrado v0.13.2** ✅ — extraídos en `code::apply_common.rs`; 4 callers unificados; cada `apply` mantiene su firma pública estable |
 | `diagram::apply` 3-tier | `run_apply` (CLI) → `apply_changeset` (high) → `apply_to_store` (core). Algunas validaciones duplicadas entre niveles. | No | OK por ahora; el core está extraído para testabilidad |
 
 **Sin deuda bloqueante activa** — `doctor --scopes code` corre en <1s con 0 findings.
