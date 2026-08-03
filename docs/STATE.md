@@ -53,6 +53,10 @@
 
 **Sin deuda bloqueante activa** — `doctor --scopes code` corre en <1s con 0 findings.
 
+**Cerrado en v0.13.3**:
+- `SourceArtifact` id formula divergence (C-HD-1 / `refactor/debt-source-artifact-id-1`) ✅ — identidad unificada en D2 (`id_for` + `from_content` + `put_source`); `content_hash` threaded en carriers de call_graph y computado en c4 apply
+- `Pipe` trait single-use (O-AE-1 / `refactor/extract-code-apply-helpers-pipe-1`) ✅ — eliminado
+
 **Cerrado en v0.13.1**:
 - W4 composes edges (F1.2) ✅
 - Pre-existing 56 clippy warnings (F1.1) ✅
