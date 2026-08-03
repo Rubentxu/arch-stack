@@ -11,12 +11,17 @@
  * counting inter-package call edges (with weight = number of calls).
  * Cycles are highlighted in the relations panel.
  *
- * This is a derived view — no new bundle shape required. The
- * underlying bundle is still call-graph; the view abstracts it.
+ * Pure helpers (packageForFile / buildPackageEdges / detectCycles)
+ * live in `./PackageGraph.ts` for testability without JSX imports.
  */
 
 import { For, Show, createMemo, type Component } from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
+import {
+  buildPackageEdges,
+  detectCycles,
+  packageForFile,
+} from "./PackageGraph";
 
 export interface PackageViewProps {
   nodes: GraphNode[];
@@ -30,29 +35,6 @@ interface Package {
   functionCount: number;
 }
 
-interface PackageEdge {
-  source: string;
-  target: string;
-  weight: number;
-}
-
-function packageForFile(file: string | undefined): string {
-  if (!file) return "(unknown)";
-  // Drop the filename, then drop any trailing "src" segment (Rust
-  // workspace convention: crates/*/src/<file>). Examples:
-  //   "src/auth.rs"               → "src"
-  //   "crates/cli/src/main.rs"    → "crates/cli"
-  //   "lib/foo/bar.ts"            → "lib/foo"
-  //   "src/auth/login.rs"         → "src/auth"
-  const parts = file.split("/");
-  if (parts.length <= 1) return file;
-  parts.pop(); // drop filename
-  while (parts.length > 1 && parts[parts.length - 1] === "src") {
-    parts.pop();
-  }
-  return parts.join("/") || file;
-}
-
 export const PackageView: Component<PackageViewProps> = (props) => {
   /** Aggregate nodes by package (file directory). */
   const packages = createMemo<Package[]>(() => {
@@ -62,8 +44,6 @@ export const PackageView: Component<PackageViewProps> = (props) => {
       const existing = map.get(pkg);
       if (existing) {
         existing.functionCount++;
-        // functionCount increments; fileCount stays since one file
-        // may host many functions
       } else {
         map.set(pkg, { name: pkg, fileCount: 1, functionCount: 1 });
       }
@@ -74,71 +54,13 @@ export const PackageView: Component<PackageViewProps> = (props) => {
   /**
    * Build package-level edges from call-graph edges. A package edge
    * (A → B) exists if any function in A calls any function in B.
-   * Weight = number of distinct call sites.
    */
-  const nodePkg = createMemo<Map<string, string>>(() => {
-    const m = new Map<string, string>();
-    for (const n of props.nodes) m.set(n.id, packageForFile(n.file));
-    return m;
-  });
+  const packageEdges = createMemo(() =>
+    buildPackageEdges(props.nodes, props.edges),
+  );
 
-  const packageEdges = createMemo<PackageEdge[]>(() => {
-    const map = new Map<string, number>();
-    for (const e of props.edges) {
-      const srcPkg = nodePkg().get(e.source);
-      const dstPkg = nodePkg().get(e.target);
-      if (!srcPkg || !dstPkg || srcPkg === dstPkg) continue;
-      const key = `${srcPkg}\0${dstPkg}`;
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return [...map.entries()].map(([key, weight]) => {
-      const [source, target] = key.split("\0");
-      return { source, target, weight };
-    });
-  });
-
-  /**
-   * Detect cycles via DFS. Returns a Set of edge keys (source\0target)
-   * that are part of a cycle.
-   */
-  const cycleEdges = createMemo<Set<string>>(() => {
-    const adj = new Map<string, Set<string>>();
-    for (const e of packageEdges()) {
-      const set = adj.get(e.source) ?? new Set();
-      set.add(e.target);
-      adj.set(e.source, set);
-    }
-    const inCycle = new Set<string>();
-    const WHITE = 0, GRAY = 1, BLACK = 2;
-    const color = new Map<string, number>();
-    for (const v of adj.keys()) color.set(v, WHITE);
-
-    const dfs = (u: string, path: string[]) => {
-      color.set(u, GRAY);
-      path.push(u);
-      for (const v of adj.get(u) ?? []) {
-        const c = color.get(v) ?? WHITE;
-        if (c === GRAY) {
-          // Found a back-edge — cycle from v to current u.
-          const idx = path.indexOf(v);
-          if (idx >= 0) {
-            for (let i = idx; i < path.length - 1; i++) {
-              inCycle.add(`${path[i]}\0${path[i + 1]}`);
-            }
-            inCycle.add(`${path[path.length - 1]}\0${v}`);
-          }
-        } else if (c === WHITE) {
-          dfs(v, path);
-        }
-      }
-      color.set(u, BLACK);
-      path.pop();
-    };
-    for (const v of adj.keys()) {
-      if (color.get(v) === WHITE) dfs(v, []);
-    }
-    return inCycle;
-  });
+  /** Detect cycles via DFS. Returns edge keys that are part of a cycle. */
+  const cycleEdges = createMemo(() => detectCycles(packageEdges()));
 
   return (
     <div class="package-view">
