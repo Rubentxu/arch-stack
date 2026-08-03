@@ -9,16 +9,15 @@
 #   scripts/bench-compare.sh origin/main
 #
 # Usage:
-#   scripts/verify-local.sh [--full] [--help]
+#   scripts/verify-local.sh [--full] [--dry-run] [--help]
+#
+#   --dry-run  print the gates that would run without executing them
+#              (deterministic; used by scripts/test-ci-gates.sh; never mutates)
 #
 # Exit codes:
 #   0 = all gates passed
 #   1 = a gate failed
 #   2 = usage error or missing prerequisite
-#
-# Env:
-#   VERIFY_LOCAL_DRY_RUN=1  print the gates that would run without executing
-#                           (used by scripts/test-ci-gates.sh; never mutates)
 #
 # The script never mutates tracked source: cargo/pnpm write only to
 # gitignored build dirs (target/, dist/).
@@ -29,18 +28,18 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 MODE="cheap"
-if [ "${1:-}" = "--full" ]; then
-    MODE="full"
-elif [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'
-    exit 0
-elif [ $# -gt 0 ]; then
-    echo "verify-local: unknown argument '${1}' (expected --full or --help)" >&2
-    exit 2
-fi
+DRY_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --full) MODE="full" ;;
+        --dry-run) DRY_RUN=1 ;;
+        --help|-h) sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "verify-local: unknown argument '${arg}' (expected --full, --dry-run or --help)" >&2; exit 2 ;;
+    esac
+done
 
 run_gate() {
-    if [ "${VERIFY_LOCAL_DRY_RUN:-0}" = "1" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
         echo "[dry-run] $*"
         return 0
     fi
@@ -79,7 +78,7 @@ if [ "$MODE" = "full" ]; then
         run_gate pnpm build
     )
     # ADR-019 bundle cap: gzipped JS <= 2MB.
-    if [ "${VERIFY_LOCAL_DRY_RUN:-0}" = "1" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
         echo "[dry-run] bundle cap check (gzipped dist/assets/*.js <= 2MB)"
     else
         total=0

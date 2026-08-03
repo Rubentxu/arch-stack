@@ -137,28 +137,50 @@ require "bench-compare.sh --help exits 0" \
 
 # Default baseline is origin/main (valid in a normal clone).
 require "bench-compare.sh default baseline origin/main accepted" \
-  env TEST_FAKE_REGRESSION=0 bash -c '"$0" >/dev/null 2>&1' "$BENCH_SCRIPT"
+  bash -c '"$0" --fake-regression 0 >/dev/null 2>&1' "$BENCH_SCRIPT"
 
 # Explicit valid baseline (HEAD) accepted.
 require "bench-compare.sh explicit valid baseline accepted" \
-  env TEST_FAKE_REGRESSION=0 bash -c '"$0" "$1" >/dev/null 2>&1' \
+  bash -c '"$0" --fake-regression 0 "$1" >/dev/null 2>&1' \
   "$BENCH_SCRIPT" "$(git rev-parse HEAD)"
 
 # All-zero SHA must fail clearly (exit 2).
 require_not "bench-compare.sh all-zero SHA rejected (exit 2)" \
-  env TEST_FAKE_REGRESSION=0 bash -c '"$0" 0000000000000000000000000000000000000000 >/dev/null 2>&1' \
+  bash -c '"$0" --fake-regression 0 0000000000000000000000000000000000000000 >/dev/null 2>&1' \
   "$BENCH_SCRIPT"
 
 # Invalid / unreachable baseline must fail clearly (exit 2).
 require_not "bench-compare.sh invalid baseline rejected (exit 2)" \
-  env TEST_FAKE_REGRESSION=0 bash -c '"$0" no-such-ref-xyz >/dev/null 2>&1' \
+  bash -c '"$0" --fake-regression 0 no-such-ref-xyz >/dev/null 2>&1' \
   "$BENCH_SCRIPT"
 
 # ADR-019 synthetic regression: over threshold exits 1, within exits 0.
 require_not "bench-compare.sh synthetic over-threshold exits 1" \
-  env TEST_FAKE_REGRESSION=11 bash -c '"$0" >/dev/null 2>&1' "$BENCH_SCRIPT"
+  bash -c '"$0" --fake-regression 11 >/dev/null 2>&1' "$BENCH_SCRIPT"
 require "bench-compare.sh synthetic within-threshold exits 0" \
-  env TEST_FAKE_REGRESSION=5 bash -c '"$0" >/dev/null 2>&1' "$BENCH_SCRIPT"
+  bash -c '"$0" --fake-regression 5 >/dev/null 2>&1' "$BENCH_SCRIPT"
+
+# Hidden environment bypass must be gone: TEST_FAKE_REGRESSION is a production
+# path that could disable gates without an explicit CLI option.
+require_not "bench-compare.sh no TEST_FAKE_REGRESSION env bypass" \
+  grep -qE '\$\{?TEST_FAKE_REGRESSION' "$BENCH_SCRIPT"
+
+# python3 prerequisite must fail clearly before creating any worktree.
+MINBIN="$(mktemp -d)"
+ln -s "$(command -v bash)" "$MINBIN/bash"
+NOPY_MSG="$(env PATH="$MINBIN" bash -c '"$0" --fake-regression 0 2>&1' "$BENCH_SCRIPT" || true)"
+set +e
+env PATH="$MINBIN" bash -c '"$0" --fake-regression 0 >/dev/null 2>&1' "$BENCH_SCRIPT"
+NOPY_EXIT=$?
+set -e
+rm -rf "$MINBIN"
+require "bench-compare.sh missing python3 message mentions python3" \
+  grep -q 'python3' <<<"$NOPY_MSG"
+if [ "$NOPY_EXIT" -eq 2 ]; then
+  note_pass "bench-compare.sh fails clearly without python3 (exit 2)"
+else
+  note_fail "bench-compare.sh fails clearly without python3 (exit 2, got $NOPY_EXIT)"
+fi
 
 # ---------------------------------------------------------------------------
 # 8. verify-local.sh tiered local verification.
@@ -168,7 +190,7 @@ require "verify-local.sh exists" test -f "$VERIFY_SCRIPT"
 require "verify-local.sh executable" test -x "$VERIFY_SCRIPT"
 
 # Dry-run mode prints the cheap Rust gates without executing them.
-DRY_CHEAP="$(VERIFY_LOCAL_DRY_RUN=1 "$VERIFY_SCRIPT" 2>&1 || true)"
+DRY_CHEAP="$("$VERIFY_SCRIPT" --dry-run 2>&1 || true)"
 require "verify-local.sh cheap mode runs cargo test" \
   grep -q 'cargo test' <<<"$DRY_CHEAP"
 require "verify-local.sh cheap mode runs cargo clippy" \
@@ -181,7 +203,7 @@ require_not "verify-local.sh cheap mode skips bench-compare" \
   grep -q 'bench-compare' <<<"$DRY_CHEAP"
 
 # Full mode adds web gates + ADR-019 comparison vs origin/main.
-DRY_FULL="$(VERIFY_LOCAL_DRY_RUN=1 "$VERIFY_SCRIPT" --full 2>&1 || true)"
+DRY_FULL="$("$VERIFY_SCRIPT" --dry-run --full 2>&1 || true)"
 require "verify-local.sh --full runs pnpm test" \
   grep -q 'pnpm test' <<<"$DRY_FULL"
 require "verify-local.sh --full runs pnpm build" \
@@ -190,6 +212,12 @@ require "verify-local.sh --full runs bench-compare origin/main" \
   grep -q 'bench-compare.sh origin/main' <<<"$DRY_FULL"
 require "verify-local.sh --full runs bench smoke" \
   grep -q 'bench --bench' <<<"$DRY_FULL"
+
+# The former hidden env bypass must be gone: dry-run is now an explicit flag.
+require_not "verify-local.sh no VERIFY_LOCAL_DRY_RUN env bypass" \
+  grep -q 'VERIFY_LOCAL_DRY_RUN' "$VERIFY_SCRIPT"
+require "verify-local.sh --help documents --dry-run" \
+  bash -c '"$0" --help 2>&1 | grep -q -- "--dry-run"' "$VERIFY_SCRIPT"
 
 # Usage / prerequisite errors exit 2 (unknown flag).
 set +e
