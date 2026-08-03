@@ -122,13 +122,18 @@ require "toolchain channel pinned 1.97.1" \
   grep -q 'channel = "1.97.1"' rust-toolchain.toml
 
 # ---------------------------------------------------------------------------
-# 5. MSRV declared in archctl/Cargo.toml.
+# 5. MSRV declared in archctl/Cargo.toml AND the root toolchain comment.
 # NOTE: spec proposed 1.85, but the dependency tree requires 1.91 (validated
 # empirically at apply: cargo-platform@0.3.3 -> rustc 1.91, idna_adapter/ignore/
 # time -> 1.86-1.88). Declaring 1.85 would be false; ADR-025 records the raise.
+# The rust-toolchain.toml comment must match, not drift back to 1.85.
 # ---------------------------------------------------------------------------
 require "MSRV rust-version 1.91 declared" \
   grep -q 'rust-version = "1.91"' archctl/Cargo.toml
+require_not "rust-toolchain.toml comment does not drift to 1.85" \
+  grep -q 'rust-version = "1.85"' rust-toolchain.toml
+require "rust-toolchain.toml comment states MSRV 1.91" \
+  grep -q 'rust-version = "1.91"' rust-toolchain.toml
 
 # ---------------------------------------------------------------------------
 # 6. Clippy repair: filesystem.rs uses .keys(), no lint suppression.
@@ -175,6 +180,14 @@ require "bench-compare.sh synthetic within-threshold exits 0" \
 # path that could disable gates without an explicit CLI option.
 require_not "bench-compare.sh no TEST_FAKE_REGRESSION env bypass" \
   grep -qE '\$\{?TEST_FAKE_REGRESSION' "$BENCH_SCRIPT"
+
+# Worktree hygiene: bench-compare must remove its worktree from disk AND git
+# metadata (git worktree remove --force + prune), not only rm -rf the dir,
+# which is what created the historical stale /tmp/bench-compare.* entries.
+require "bench-compare.sh removes worktree from git metadata" \
+  grep -q 'git worktree remove --force' "$BENCH_SCRIPT"
+require "bench-compare.sh prunes worktree metadata" \
+  grep -q 'git worktree prune' "$BENCH_SCRIPT"
 
 # python3 prerequisite must fail clearly before creating any worktree.
 MINBIN="$(mktemp -d)"
@@ -224,6 +237,19 @@ require "verify-local.sh --full runs bench-compare origin/main" \
 require "verify-local.sh --full runs bench smoke" \
   grep -q 'bench --bench' <<<"$DRY_FULL"
 
+# --full must wire the contract gates and refresh the benchmark baseline.
+require "verify-local.sh --full runs contract gates" \
+  grep -q 'test-ci-gates.sh' <<<"$DRY_FULL"
+require "verify-local.sh --full fetches fresh origin/main" \
+  grep -q 'git fetch origin main' <<<"$DRY_FULL"
+
+# --baseline <ref> overrides the default origin/main and skips the fetch.
+DRY_BASELINE="$("$VERIFY_SCRIPT" --dry-run --full --baseline HEAD 2>&1 || true)"
+require "verify-local.sh --full --baseline uses explicit ref" \
+  grep -q 'bench-compare.sh HEAD' <<<"$DRY_BASELINE"
+require_not "verify-local.sh --full --baseline skips fetch" \
+  grep -q 'git fetch origin main' <<<"$DRY_BASELINE"
+
 # The former hidden env bypass must be gone: dry-run is now an explicit flag.
 require_not "verify-local.sh no VERIFY_LOCAL_DRY_RUN env bypass" \
   grep -q 'VERIFY_LOCAL_DRY_RUN' "$VERIFY_SCRIPT"
@@ -239,6 +265,75 @@ if [ "$VERIFY_USAGE_EXIT" -eq 2 ]; then
   note_pass "verify-local.sh unknown flag exits 2"
 else
   note_fail "verify-local.sh unknown flag exits 2 (got $VERIFY_USAGE_EXIT)"
+fi
+
+# ---------------------------------------------------------------------------
+# 8c. Branch protection live check: only via explicit --full flag; never from
+#     cheap pre-push; no credential leakage; clear failures on gh/auth/network.
+# ---------------------------------------------------------------------------
+BP_SCRIPT="scripts/check-branch-protection.sh"
+require "check-branch-protection.sh exists" test -x "$BP_SCRIPT"
+
+# Behavioral via a fake gh shim (no network; nothing is pushed or mutated).
+FAKE_BIN="$(mktemp -d)"
+cat > "$FAKE_BIN/gh" <<'SHIM'
+#!/usr/bin/env bash
+if [ "${1:-}" = "auth" ]; then
+  [ "$FAKE_GH_AUTH" = "ok" ] || { echo "not logged in" >&2; exit 1; }
+  echo "logged in"; exit 0
+fi
+if [ "${1:-}" = "api" ]; then
+  [ "$FAKE_GH_API_FAIL" = "1" ] && { echo "network error" >&2; exit 1; }
+  printf '%s' "$FAKE_GH_JSON"
+  exit 0
+fi
+exit 2
+SHIM
+chmod +x "$FAKE_BIN/gh"
+
+COMPLIANT='{"required_pull_request_reviews":{"required_approving_review_count":1},"enforce_admins":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_status_checks":null}'
+NONCOMPLIANT='{"required_pull_request_reviews":null,"enforce_admins":{"enabled":false},"allow_force_pushes":{"enabled":true},"allow_deletions":{"enabled":false},"required_status_checks":null}'
+
+require "branch protection passes on compliant live settings" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$COMPLIANT" \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails on non-compliant settings" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$NONCOMPLIANT" \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails clearly without gh auth" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=no FAKE_GH_JSON="$COMPLIANT" \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails clearly on API/network error" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$COMPLIANT" FAKE_GH_API_FAIL=1 \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails clearly without gh CLI" \
+  env PATH="/usr/bin:/bin" bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+
+# Credentials must never be printed, even when the API response contains one.
+LEAK_JSON='{"required_pull_request_reviews":null,"enforce_admins":{"enabled":false},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_status_checks":null,"note":"token gho_FAKE_SECRET_123"}'
+BP_OUT="$(env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$LEAK_JSON" \
+  bash -c '"$0" 2>&1 || true' "$BP_SCRIPT")"
+require_not "branch protection never prints credentials" \
+  grep -q 'gho_FAKE_SECRET_123' <<<"$BP_OUT"
+require "branch protection failure message is human-readable" \
+  grep -q 'check-branch-protection' <<<"$BP_OUT"
+rm -rf "$FAKE_BIN"
+
+# Cheap pre-push mode must NEVER query branch protection; only --full
+# --check-branch-protection may. And --check-branch-protection requires --full.
+require_not "verify-local.sh cheap mode never queries branch protection" \
+  grep -q 'check-branch-protection' <<<"$DRY_CHEAP"
+BP_FULL="$("$VERIFY_SCRIPT" --dry-run --full --check-branch-protection 2>&1 || true)"
+require "verify-local.sh --full --check-branch-protection runs it" \
+  grep -q 'check-branch-protection.sh' <<<"$BP_FULL"
+set +e
+"$VERIFY_SCRIPT" --check-branch-protection >/dev/null 2>&1
+BP_FLAG_EXIT=$?
+set -e
+if [ "$BP_FLAG_EXIT" -eq 2 ]; then
+  note_pass "verify-local.sh --check-branch-protection without --full exits 2"
+else
+  note_fail "verify-local.sh --check-branch-protection without --full exits 2 (got $BP_FLAG_EXIT)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -270,17 +365,98 @@ require "check-bundle-cap.sh accepts within-limit bundle" \
 rm -rf "$CAP_DIR"
 
 # ---------------------------------------------------------------------------
-# 9. Pre-push hook wiring.
+# 9. Pre-push hook wiring + behavioral ref validation.
 # ---------------------------------------------------------------------------
 PRE_PUSH=".githooks/pre-push"
 require "pre-push hook exists" test -f "$PRE_PUSH"
 require "pre-push hook executable" test -x "$PRE_PUSH"
-require "pre-push hook calls verify-local.sh" \
-  grep -q 'verify-local.sh' "$PRE_PUSH"
 require "install-hooks.sh sets core.hooksPath" \
   grep -q 'core.hooksPath' scripts/install-hooks.sh
 require "install-hooks.sh covers pre-push" \
   grep -q 'pre-push' scripts/install-hooks.sh
+
+# Behavioral: the hook must consume Git's stdin ref lines (local_ref
+# local_sha remote_ref remote_sha), validate the pushed commits in a temp
+# worktree (never the ambient tree), skip zero-SHA deletions, handle
+# multiple refs, and clean up worktrees + git metadata on success/failure.
+SCRATCH="$(mktemp -d)"
+git -C "$SCRATCH" init -q
+git -C "$SCRATCH" config user.email test@example.com
+git -C "$SCRATCH" config user.name test
+mkdir -p "$SCRATCH/scripts" "$SCRATCH/.githooks"
+printf 'hello\n' > "$SCRATCH/f.txt"
+git -C "$SCRATCH" add f.txt
+git -C "$SCRATCH" commit -qm one
+SHA1="$(git -C "$SCRATCH" rev-parse HEAD)"
+printf 'world\n' >> "$SCRATCH/f.txt"
+git -C "$SCRATCH" commit -qam two
+SHA2="$(git -C "$SCRATCH" rev-parse HEAD)"
+
+# A fake verify-local.sh that records the worktree path it was invoked from.
+cat > "$SCRATCH/scripts/verify-local.sh" <<'FAKE'
+#!/usr/bin/env bash
+pwd >> "$PP_MARKER"
+exit "${PP_EXIT:-0}"
+FAKE
+chmod +x "$SCRATCH/scripts/verify-local.sh"
+cp "$PRE_PUSH" "$SCRATCH/.githooks/pre-push"
+chmod +x "$SCRATCH/.githooks/pre-push"
+
+ZERO="0000000000000000000000000000000000000000"
+PP_MARKER="$SCRATCH/marker"
+# One real push (SHA1) plus one deletion (zero SHA) on stdin.
+printf 'refs/heads/main %s refs/heads/main %s\nrefs/heads/del %s refs/heads/del %s\n' \
+  "$SHA1" "$SHA1" "$ZERO" "$ZERO" \
+  | (cd "$SCRATCH" && PP_MARKER="$PP_MARKER" .githooks/pre-push >/dev/null 2>&1)
+PP_EXIT=$?
+if [ "$PP_EXIT" -eq 0 ] && [ "$(wc -l < "$PP_MARKER")" -eq 1 ] \
+   && [ "$(cat "$PP_MARKER")" != "$SCRATCH" ] \
+   && [ "$(git -C "$SCRATCH" worktree list | wc -l)" -eq 1 ]; then
+  note_pass "pre-push validates pushed commit in worktree and skips deletion"
+else
+  note_fail "pre-push validates pushed commit in worktree and skips deletion (exit=$PP_EXIT, lines=$(wc -l < "$PP_MARKER" 2>/dev/null || echo 0), wts=$(git -C "$SCRATCH" worktree list | wc -l))"
+fi
+
+# Multiple refs: each unique pushed commit is validated, none from ambient tree.
+PP_MARKER="$SCRATCH/marker2"
+printf 'refs/heads/a %s refs/heads/a %s\nrefs/heads/b %s refs/heads/b %s\n' \
+  "$SHA1" "$SHA1" "$SHA2" "$SHA2" \
+  | (cd "$SCRATCH" && PP_MARKER="$PP_MARKER" .githooks/pre-push >/dev/null 2>&1)
+if [ "$(wc -l < "$PP_MARKER")" -eq 2 ] \
+   && [ "$(git -C "$SCRATCH" worktree list | wc -l)" -eq 1 ]; then
+  note_pass "pre-push validates multiple pushed commits"
+else
+  note_fail "pre-push validates multiple pushed commits (lines=$(wc -l < "$PP_MARKER" 2>/dev/null || echo 0), wts=$(git -C "$SCRATCH" worktree list | wc -l))"
+fi
+
+# Failure inside verify-local must propagate exit 1 AND still clean up.
+PP_MARKER="$SCRATCH/marker3"
+set +e
+printf 'refs/heads/main %s refs/heads/main %s\n' "$SHA1" "$SHA1" \
+  | (cd "$SCRATCH" && PP_MARKER="$PP_MARKER" PP_EXIT=1 .githooks/pre-push >/dev/null 2>&1)
+PP_FAIL_EXIT=$?
+set -e
+if [ "$PP_FAIL_EXIT" -eq 1 ] \
+   && [ "$(git -C "$SCRATCH" worktree list | wc -l)" -eq 1 ]; then
+  note_pass "pre-push failure exits 1 and cleans worktrees"
+else
+  note_fail "pre-push failure exits 1 and cleans worktrees (exit=$PP_FAIL_EXIT, wts=$(git -C "$SCRATCH" worktree list | wc -l))"
+fi
+
+# Missing verify-local.sh: fail closed with the documented remediation.
+rm "$SCRATCH/scripts/verify-local.sh"
+set +e
+printf 'refs/heads/main %s refs/heads/main %s\n' "$SHA1" "$SHA1" \
+  | (cd "$SCRATCH" && .githooks/pre-push >/dev/null 2>&1)
+PP_MISS_EXIT=$?
+PP_MISS_MSG="$(cd "$SCRATCH" && printf 'refs/heads/main %s refs/heads/main %s\n' "$SHA1" "$SHA1" | .githooks/pre-push 2>&1 || true)"
+set -e
+if [ "$PP_MISS_EXIT" -eq 1 ] && grep -q 'refusing push' <<<"$PP_MISS_MSG"; then
+  note_pass "pre-push fails closed when verify-local.sh missing"
+else
+  note_fail "pre-push fails closed when verify-local.sh missing (exit=$PP_MISS_EXIT)"
+fi
+rm -rf "$SCRATCH"
 
 # ---------------------------------------------------------------------------
 # 10. ADR-025 recorded and indexed.
