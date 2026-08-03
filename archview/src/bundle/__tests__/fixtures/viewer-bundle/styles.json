@@ -1,0 +1,14 @@
+{
+  "theme": "default",
+  "version": "1.0.0",
+  "elementColors": {
+    "context": "#1168bd",
+    "container": "#438dd5",
+    "component": "#85b8e8",
+    "dynamic": "#2694ab",
+    "deployment": "#999999"
+  },
+  "edgeColors": {
+    "default": "#707070"
+  }
+}

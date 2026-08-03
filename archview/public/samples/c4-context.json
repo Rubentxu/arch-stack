@@ -1,43 +1,74 @@
 {
-  "schemaVersion": "1.0",
-  "elements": [
-    {
-      "id": "person:user",
-      "kind": "Person",
-      "name": "User",
-      "description": "A regular user of the platform",
-      "parent": null
+  "manifest": {
+    "schemaVersion": "1.0.0",
+    "format": "viewer-bundle",
+    "viewSelector": "context:*",
+    "baseRevision": "blake3:8e9d786399fc0ed1eaf73a90da19efd35a069556ee2cc7fff0c1818daa63a1ce",
+    "generatedAt": "2026-08-03T12:00:00Z",
+    "elementCount": 3,
+    "edgeCount": 3,
+    "evidenceCount": 0
+  },
+  "projection": {
+    "nodes": [
+      {
+        "id": "person:user",
+        "type": "context",
+        "name": "User",
+        "description": "A regular user of the platform",
+        "canonicalKey": "user"
+      },
+      {
+        "id": "system:archctl",
+        "type": "context",
+        "name": "archctl",
+        "description": "CLI sidecar that emits architecture bundles",
+        "canonicalKey": "archctl"
+      },
+      {
+        "id": "system:archview",
+        "type": "context",
+        "name": "archview",
+        "description": "Web workbench that consumes archctl bundles",
+        "canonicalKey": "archview"
+      }
+    ],
+    "edges": [
+      {
+        "id": "rel:0",
+        "source": "person:user",
+        "target": "system:archctl",
+        "predicate": "uses"
+      },
+      {
+        "id": "rel:1",
+        "source": "person:user",
+        "target": "system:archview",
+        "predicate": "uses"
+      },
+      {
+        "id": "rel:2",
+        "source": "system:archctl",
+        "target": "system:archview",
+        "predicate": "produces bundles for"
+      }
+    ]
+  },
+  "evidence": {
+    "evidence": []
+  },
+  "styles": {
+    "theme": "default",
+    "version": "1.0.0",
+    "elementColors": {
+      "context": "#1168bd",
+      "container": "#438dd5",
+      "component": "#85b8e8",
+      "dynamic": "#2694ab",
+      "deployment": "#999999"
     },
-    {
-      "id": "system:archctl",
-      "kind": "SoftwareSystem",
-      "name": "archctl",
-      "description": "CLI sidecar that emits architecture bundles",
-      "parent": null
-    },
-    {
-      "id": "system:archview",
-      "kind": "SoftwareSystem",
-      "name": "archview",
-      "description": "Web workbench that consumes archctl bundles",
-      "parent": null
+    "edgeColors": {
+      "default": "#707070"
     }
-  ],
-  "relations": [
-    {
-      "source": "person:user",
-      "target": "system:archctl",
-      "predicate_id": "uses"
-    },
-    {
-      "source": "person:user",
-      "target": "system:archview",
-      "predicate_id": "uses"
-    },
-    {
-      "source": "system:archctl",
-      "target": "system:archview",
-      "predicate_id": "produces bundles for"
-    }
-  ]
+  }
 }

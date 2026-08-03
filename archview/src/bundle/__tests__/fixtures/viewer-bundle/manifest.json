@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "format": "viewer-bundle",
+  "viewSelector": "container:*",
+  "baseRevision": "blake3:54785f09e5afc268dfff95a95ff1bfebe009b0de6871a52a7e57099faf094a29",
+  "generatedAt": "2026-08-03T12:00:00Z",
+  "elementCount": 4,
+  "edgeCount": 3,
+  "evidenceCount": 3
+}

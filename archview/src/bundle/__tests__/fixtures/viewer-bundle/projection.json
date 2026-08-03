@@ -1,0 +1,63 @@
+{
+  "nodes": [
+    {
+      "id": "c4:container:api",
+      "type": "container",
+      "name": "api",
+      "description": "API service",
+      "canonicalKey": "api",
+      "status": "accepted",
+      "confidence": 0.85,
+      "evidenceRefs": ["ev:1"]
+    },
+    {
+      "id": "c4:container:auth",
+      "type": "container",
+      "name": "auth",
+      "description": "Authentication library",
+      "canonicalKey": "auth",
+      "status": "accepted",
+      "confidence": 0.85,
+      "evidenceRefs": ["ev:2"]
+    },
+    {
+      "id": "c4:container:shared",
+      "type": "container",
+      "name": "shared",
+      "description": "Shared utilities",
+      "canonicalKey": "shared",
+      "status": "accepted",
+      "confidence": 0.85,
+      "evidenceRefs": ["ev:3"]
+    },
+    {
+      "id": "c4:component:auth:login",
+      "type": "component",
+      "name": "login",
+      "description": "login function",
+      "canonicalKey": "auth/login",
+      "status": "accepted",
+      "confidence": 0.85
+    }
+  ],
+  "edges": [
+    {
+      "id": "rel:c4:container:api:c4:container:auth",
+      "source": "c4:container:api",
+      "target": "c4:container:auth",
+      "predicate": "uses"
+    },
+    {
+      "id": "rel:c4:container:api:c4:container:shared",
+      "source": "c4:container:api",
+      "target": "c4:container:shared",
+      "predicate": "uses"
+    },
+    {
+      "id": "rel:c4:container:auth:c4:container:shared",
+      "source": "c4:container:auth",
+      "target": "c4:container:shared",
+      "predicate": "uses"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "evidence": [
+    {
+      "id": "ev:1",
+      "kind": "structural",
+      "claim": "api container declared as Cargo workspace member",
+      "path": "Cargo.toml",
+      "startLine": 1,
+      "endLine": 5,
+      "toolName": "archctl",
+      "toolVersion": "0.13.8",
+      "ruleId": "cargo-workspace",
+      "contentHash": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "observedAt": "2026-08-03T12:00:00Z"
+    },
+    {
+      "id": "ev:2",
+      "kind": "structural",
+      "claim": "auth container declared as Cargo workspace member",
+      "path": "Cargo.toml",
+      "startLine": 1,
+      "endLine": 5,
+      "toolName": "archctl",
+      "toolVersion": "0.13.8",
+      "ruleId": "cargo-workspace",
+      "contentHash": "b2c3d4e5f60718293a4b5c6d7e8f90a1",
+      "observedAt": "2026-08-03T12:00:00Z"
+    },
+    {
+      "id": "ev:3",
+      "kind": "structural",
+      "claim": "shared container declared as Cargo workspace member",
+      "path": "Cargo.toml",
+      "startLine": 1,
+      "endLine": 5,
+      "toolName": "archctl",
+      "toolVersion": "0.13.8",
+      "ruleId": "cargo-workspace",
+      "contentHash": "c3d4e5f60718293a4b5c6d7e8f90a1b2",
+      "observedAt": "2026-08-03T12:00:00Z"
+    }
+  ]
+}
