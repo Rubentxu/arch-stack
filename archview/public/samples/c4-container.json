@@ -1,48 +1,75 @@
 {
-  "schemaVersion": "1.0",
-  "elements": [
-    {
-      "id": "system:archctl",
-      "kind": "SoftwareSystem",
-      "name": "archctl",
-      "description": "CLI sidecar that emits architecture bundles",
-      "parent": null
+  "manifest": {
+    "schemaVersion": "1.0.0",
+    "format": "viewer-bundle",
+    "viewSelector": "container:*",
+    "baseRevision": "blake3:14005163220bae0395f3ed1891213cdb0261ed9231e6938629400adde1590e82",
+    "generatedAt": "2026-08-03T12:00:00Z",
+    "elementCount": 4,
+    "edgeCount": 2,
+    "evidenceCount": 0
+  },
+  "projection": {
+    "nodes": [
+      {
+        "id": "container:cli",
+        "type": "container",
+        "name": "CLI",
+        "description": "Binary entry point",
+        "canonicalKey": "archctl/cli"
+      },
+      {
+        "id": "container:lbug",
+        "type": "container",
+        "name": "LadybugDB Store",
+        "description": "Persistent graph store",
+        "canonicalKey": "archctl/lbug"
+      },
+      {
+        "id": "container:manifests",
+        "type": "container",
+        "name": "Manifest Gates",
+        "description": "23 scope gates for refactor/extract-code-apply-helpers",
+        "canonicalKey": "archctl/manifests"
+      },
+      {
+        "id": "system:archctl",
+        "type": "context",
+        "name": "archctl",
+        "description": "CLI sidecar that emits architecture bundles",
+        "canonicalKey": "archctl"
+      }
+    ],
+    "edges": [
+      {
+        "id": "rel:0",
+        "source": "container:cli",
+        "target": "container:lbug",
+        "predicate": "reads/writes"
+      },
+      {
+        "id": "rel:1",
+        "source": "container:cli",
+        "target": "container:manifests",
+        "predicate": "validates"
+      }
+    ]
+  },
+  "evidence": {
+    "evidence": []
+  },
+  "styles": {
+    "theme": "default",
+    "version": "1.0.0",
+    "elementColors": {
+      "context": "#1168bd",
+      "container": "#438dd5",
+      "component": "#85b8e8",
+      "dynamic": "#2694ab",
+      "deployment": "#999999"
     },
-    {
-      "id": "container:cli",
-      "kind": "Container",
-      "name": "CLI",
-      "description": "Binary entry point",
-      "technology": "Rust",
-      "parent": "system:archctl"
-    },
-    {
-      "id": "container:lbug",
-      "kind": "Container",
-      "name": "LadybugDB Store",
-      "description": "Persistent graph store",
-      "technology": "lbug",
-      "parent": "system:archctl"
-    },
-    {
-      "id": "container:manifests",
-      "kind": "Container",
-      "name": "Manifest Gates",
-      "description": "23 scope gates for refactor/extract-code-apply-helpers",
-      "technology": "TOML",
-      "parent": "system:archctl"
+    "edgeColors": {
+      "default": "#707070"
     }
-  ],
-  "relations": [
-    {
-      "source": "container:cli",
-      "target": "container:lbug",
-      "predicate_id": "reads/writes"
-    },
-    {
-      "source": "container:cli",
-      "target": "container:manifests",
-      "predicate_id": "validates"
-    }
-  ]
+  }
 }

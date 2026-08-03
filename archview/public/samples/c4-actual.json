@@ -1,46 +1,81 @@
 {
-  "schemaVersion": "1.0",
-  "elements": [
-    {
-      "id": "person:user",
-      "kind": "Person",
-      "name": "User",
-      "description": "A regular user of the platform (now via SSO)"
+  "manifest": {
+    "schemaVersion": "1.0.0",
+    "format": "viewer-bundle",
+    "viewSelector": "context:*",
+    "baseRevision": "blake3:0decec2b4d7ffca14c5836cc53538beea3dfef00c829bd22bee4e7f257f2471e",
+    "generatedAt": "2026-08-03T12:00:00Z",
+    "elementCount": 4,
+    "edgeCount": 3,
+    "evidenceCount": 0
+  },
+  "projection": {
+    "nodes": [
+      {
+        "id": "person:user",
+        "type": "context",
+        "name": "User",
+        "description": "A regular user of the platform (now via SSO)",
+        "canonicalKey": "user"
+      },
+      {
+        "id": "system:archctl",
+        "type": "context",
+        "name": "archctl",
+        "description": "CLI sidecar that emits architecture bundles",
+        "canonicalKey": "archctl"
+      },
+      {
+        "id": "system:archview",
+        "type": "context",
+        "name": "archview",
+        "description": "Web workbench that consumes archctl bundles",
+        "canonicalKey": "archview"
+      },
+      {
+        "id": "system:metrics",
+        "type": "context",
+        "name": "Metrics Dashboard",
+        "description": "Operational metrics",
+        "canonicalKey": "metrics"
+      }
+    ],
+    "edges": [
+      {
+        "id": "rel:0",
+        "source": "person:user",
+        "target": "system:archctl",
+        "predicate": "uses"
+      },
+      {
+        "id": "rel:1",
+        "source": "person:user",
+        "target": "system:archview",
+        "predicate": "uses"
+      },
+      {
+        "id": "rel:2",
+        "source": "system:archview",
+        "target": "system:metrics",
+        "predicate": "emits to"
+      }
+    ]
+  },
+  "evidence": {
+    "evidence": []
+  },
+  "styles": {
+    "theme": "default",
+    "version": "1.0.0",
+    "elementColors": {
+      "context": "#1168bd",
+      "container": "#438dd5",
+      "component": "#85b8e8",
+      "dynamic": "#2694ab",
+      "deployment": "#999999"
     },
-    {
-      "id": "system:archctl",
-      "kind": "SoftwareSystem",
-      "name": "archctl",
-      "description": "CLI sidecar that emits architecture bundles"
-    },
-    {
-      "id": "system:archview",
-      "kind": "SoftwareSystem",
-      "name": "archview",
-      "description": "Web workbench that consumes archctl bundles"
-    },
-    {
-      "id": "system:metrics",
-      "kind": "SoftwareSystem",
-      "name": "Metrics Dashboard",
-      "description": "Operational metrics"
+    "edgeColors": {
+      "default": "#707070"
     }
-  ],
-  "relations": [
-    {
-      "source": "person:user",
-      "target": "system:archctl",
-      "predicate_id": "uses"
-    },
-    {
-      "source": "person:user",
-      "target": "system:archview",
-      "predicate_id": "uses"
-    },
-    {
-      "source": "system:archview",
-      "target": "system:metrics",
-      "predicate_id": "emits to"
-    }
-  ]
+  }
 }
