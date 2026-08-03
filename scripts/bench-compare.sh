@@ -4,7 +4,11 @@
 # group degrades more than THRESHOLD_PCT (default 10%).
 #
 # Usage:
-#   scripts/bench-compare.sh [--help]
+#   scripts/bench-compare.sh [--help] [baseline-ref]
+#
+#   baseline-ref   git ref/SHA to compare the current tree against
+#                  (default: origin/main). CI passes github.event.before;
+#                  local --full verification passes origin/main.
 #
 # Env:
 #   BENCH_NAME     benchmark binary (default: export_pipeline)
@@ -14,21 +18,39 @@
 #                         (test mode — no real worktree/bench runs)
 #
 # The script:
-#   1. Benchmarks `main` in a temporary worktree (--save-baseline main)
+#   1. Benchmarks the baseline ref in a temporary worktree (--save-baseline main)
 #   2. Benchmarks the current tree (--save-baseline pr)
 #   3. Compares median.point_estimate (ns) per group; fails if pr > main*1.10
 #
-# Exit codes: 0 = no regression, 1 = regression detected, 2 = usage/error.
+# Exit codes: 0 = no regression, 1 = regression detected, 2 = baseline/usage error.
 
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '1,25p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '1,28p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+BASELINE_REF="${1:-origin/main}"
+
+# ---- baseline validation ---------------------------------------------------
+# A baseline must be a real, reachable commit. The all-zero SHA (first push
+# to an empty repository or history rewrite) is not a valid baseline and MUST
+# NOT pass; an absent/invalid/unreachable ref fails the same way. This is the
+# ADR-019 regression contract under the post-merge flow.
+ZERO_SHA="0000000000000000000000000000000000000000"
+if [ "$BASELINE_REF" = "$ZERO_SHA" ]; then
+    echo "error: baseline ref is the all-zero SHA (first push or history rewrite); no previous main to compare against" >&2
+    exit 2
+fi
+
+if ! git rev-parse --verify --quiet "${BASELINE_REF}^{commit}" >/dev/null; then
+    echo "error: baseline ref not resolvable to a commit: ${BASELINE_REF}" >&2
+    exit 2
+fi
 
 BENCH_NAME="${BENCH_NAME:-export_pipeline}"
 THRESHOLD_PCT="${THRESHOLD_PCT:-10}"
@@ -60,9 +82,9 @@ if [ -n "${TEST_FAKE_REGRESSION:-}" ]; then
     exit 0
 fi
 
-# ---- 1. benchmark main in a worktree -------------------------------------
-echo "== Benchmarking main (baseline) =="
-git worktree add --detach "$WORKTREE_DIR/main" origin/main >/dev/null
+# ---- 1. benchmark baseline in a worktree ----------------------------------
+echo "== Benchmarking baseline (${BASELINE_REF}) =="
+git worktree add --detach "$WORKTREE_DIR/main" "$BASELINE_REF" >/dev/null
 (
     cd "$WORKTREE_DIR/main/$BENCH_DIR"
     cargo bench --bench "$BENCH_NAME" -- --sample-size "$SAMPLE_SIZE" \
@@ -143,5 +165,5 @@ if [ "$failed" -eq 1 ]; then
     echo "FAIL: performance regression detected (threshold ${THRESHOLD_PCT}%)."
     exit 1
 fi
-echo "PASS: no regression > ${THRESHOLD_PCT}% vs main."
+echo "PASS: no regression > ${THRESHOLD_PCT}% vs ${BASELINE_REF}."
 exit 0
