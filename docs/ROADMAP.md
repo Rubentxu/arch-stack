@@ -122,7 +122,7 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 - lbug infra gap: restaurar `doctor --scopes` runtime (F3.3)
 - fmt-staged script + AGENTS.md nota (F3.2)
 - audit `manifests/code.toml` (F2.3)
-- `refactor/extract-code-apply-helpers` (~150 LOC deuda)
+- `refactor/extract-code-apply-helpers` (~150 LOC deuda) — **Cerrado v0.13.2 ✅**
 
 ## M17 — `archview` workbench (sustituye a Av0–Av6) — **PRIORIDAD 1 — PRÓXIMO CICLO GRANDE**
 
@@ -724,3 +724,16 @@ Razones:
 - **Closes M12 W4**: composes edges emitted for same-file typed fields (e.g. `pub config: Config` inside `struct App`)
 - **Closes F1 of post-v0.13.0 stabilization plan** (obs-5524)
 - **Próximo candidato**: F2.1 (roadmap M13-M15 trim decision) → arrancar M17.0 archview scaffold (separate repo)
+
+## Cycle cerrado — `refactor/extract-code-apply-helpers` (v0.13.2)
+
+- **Fecha**: 2026-08-03
+- **Branch**: `refactor/extract-code-apply-helpers` (merged to main via --no-ff)
+- **Tag**: `v0.13.2` (`7a1205a`)
+- **Verdict**: verify PASS_WITH_WARNINGS · debt-verify PASS_WITH_WARNINGS · archive PASS
+- **Commits**: 1 (refactor only — A-min path)
+- **Tests**: 293 passing (vs 292 baseline, +1); 4 ignored (pre-existing)
+- **Output**: shared `code::apply_common` module extracting `escape_cypher_string`, `open_and_init`, `existing_canonical_keys`, `write_source_artifact`, and a local `Pipe` trait from four caller pipelines (`call_graph`, `c4_discover`, `class_diagram`, `sequence`). `scripts/fmt-staged.sh --edition` now derives Rust edition from `archctl/Cargo.toml` instead of hardcoding 2021. Net: ~103 insertions, ~150 deletions.
+- **Deuda técnica diferida**: `SourceArtifact` id formula divergence (pre-existing on main, tracked as `refactor/debt-source-artifact-id-1`); `Pipe` trait single-use (drive-by `refactor/extract-code-apply-helpers-pipe-1`).
+- **M16 status**: ENDURECIMIENTO 1.0 — `refactor/extract-code-apply-helpers` cerrado. F3.3 (lbug infra gap), F3.2 (fmt-staged script) y F2.3 (audit code.toml) pendientes.
+- **Próximo candidato**: M17.0 archview scaffold (separate repo `archview`) o F3.3 (lbug doctor infra gap restore).

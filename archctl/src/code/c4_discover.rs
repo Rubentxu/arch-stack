@@ -7,6 +7,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::code::apply_common::escape_cypher_string;
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
 use crate::store::GraphStore;
@@ -190,29 +191,6 @@ pub fn discover(
     })
 }
 
-/// Escape a string for use inside a Cypher single-quoted string.
-/// All single quotes are doubled (Cypher escaping convention).
-fn escape_cypher_string(s: &str) -> String {
-    s.replace('\'', "\\'")
-}
-
-// ─── apply() helpers ──────────────────────────────────────────────────────────
-
-/// Fetch the set of canonical_keys already present in the graph.
-/// Used for idempotency: skip containers whose keys already exist.
-fn existing_canonical_keys(store: &dyn GraphStore) -> Result<std::collections::HashSet<String>> {
-    store
-        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
-        .into_iter()
-        .filter_map(|row| {
-            row.get("e.canonical_key")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .pipe(Ok)
-}
-
 /// Write the Element node for a Container. Returns the element_id.
 fn write_element(
     store: &mut dyn GraphStore,
@@ -314,26 +292,6 @@ fn link_element_edges(
     Ok(())
 }
 
-/// Write a SourceArtifact node (deduplicated by file path).
-/// Returns the source_artifact_id.
-fn write_source_artifact(store: &mut dyn GraphStore, file: &str) -> Result<String> {
-    let id = format!("src:{}", blake3::hash(file.as_bytes()).to_hex());
-    let path_escaped = escape_cypher_string(file);
-    let cypher = format!(
-        "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
-         s.kind = 'manifest', \
-         s.relative_path = '{path_escaped}', \
-         s.language = '', \
-         s.content_hash = '', \
-         s.generated = false, \
-         s.props = '{{}}';"
-    );
-    store
-        .query(&cypher)
-        .with_context(|| format!("put_source_artifact {id}"))?;
-    Ok(id)
-}
-
 /// Write an Evidence node and its two edges (SUPPORTED_BY, EXTRACTED_FROM).
 fn write_evidence(
     store: &mut dyn GraphStore,
@@ -417,19 +375,6 @@ fn write_evidence(
     Ok(())
 }
 
-// ─── pipe helper ───────────────────────────────────────────────────────────────
-/// Pipe: pass a value through a function and return the result.
-trait Pipe<T> {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-        Self: Sized,
-    {
-        f(self)
-    }
-}
-impl<T> Pipe<T> for T {}
-
 /// Persist a DiscoverReport to the graph. One Element per Container
 /// (with ElementVersion.props.inferred=true), one Evidence per evidence
 /// (status="Drafted"), one SourceArtifact per unique file.
@@ -439,11 +384,11 @@ pub fn apply(
     report: &DiscoverReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
-    use crate::store::open_default;
+    use crate::code::apply_common::{
+        existing_canonical_keys, open_and_init, write_source_artifact,
+    };
 
-    let mut store =
-        open_default(project_dir).map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
-    store.init().context("graph init (c4 discover apply)")?;
+    let mut store = open_and_init(project_dir)?;
 
     // Seed mt.container MetaType if it doesn't exist
     let seed_metatype = r#"

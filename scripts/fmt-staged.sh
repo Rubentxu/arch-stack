@@ -18,6 +18,20 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# rustfmt reads the edition from the nearest Cargo.toml relative to the CWD,
+# not relative to the file being formatted. Since this script runs from the
+# repo root, a bare `rustfmt <file>` would fall back to edition 2015 and
+# hard-error on let chains (Rust 2024 syntax). Derive the edition from the
+# workspace crate instead of hardcoding it.
+# shellcheck disable=SC2016
+EDITION_FLAG=""
+if [ -f "archctl/Cargo.toml" ]; then
+    EDITION="$(grep -m1 '^edition' archctl/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+    if [ -n "$EDITION" ]; then
+        EDITION_FLAG="--edition $EDITION"
+    fi
+fi
+
 STAGED_RS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.rs$' || true)
 
 if [ -z "$STAGED_RS" ]; then
@@ -29,7 +43,8 @@ if [ "${1:-}" = "--apply" ]; then
     echo "Formatting $(echo "$STAGED_RS" | wc -l) staged .rs file(s)..."
     for f in $STAGED_RS; do
         if [ -f "$f" ]; then
-            rustfmt "$f"
+            # shellcheck disable=SC2086
+            rustfmt $EDITION_FLAG "$f"
             git add "$f"
         fi
     done
@@ -41,8 +56,10 @@ fi
 DRIFT=0
 for f in $STAGED_RS; do
     if [ -f "$f" ]; then
-        # rustfmt --check exits 0 if file is formatted, 1 if not
-        if ! rustfmt --check --edition 2021 "$f" >/dev/null 2>&1; then
+        # rustfmt --check exits 0 if file is formatted, 1 if not.
+        # --edition is derived from the workspace crate (see above).
+        # shellcheck disable=SC2086
+        if ! rustfmt --check $EDITION_FLAG "$f" >/dev/null 2>&1; then
             echo "drift: $f"
             DRIFT=1
         fi
