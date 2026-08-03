@@ -4,6 +4,19 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v0.13.5
+
+### Changed
+- **`store::open_and_init` promoted to canonical helper**: 8 CLI handlers
+  (`graph init/stat/query/neighbours`, `evidence accept/supersede/list`,
+  `graph export`) now use the shared `open_default + init` sequence from
+  `crate::store` instead of inline duplication. `code/*` apply pipelines
+  import it from `crate::store` too. No behavior change; net −7 lines.
+
+### Refs
+- Cycle: `refactor/open-and-init-store`
+- Closes debt-report suggestion from `source-artifact-id` cycle
+
 ## [Unreleased] — v0.13.4
 
 ### Changed
