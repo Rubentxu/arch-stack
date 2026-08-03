@@ -15,7 +15,14 @@
  * nodes highlighted yellow (blast radius), other nodes dimmed.
  */
 
-import { For, Show, createMemo, createSignal, type Component } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  type Component,
+} from "solid-js";
 import type { GraphNode } from "../bundle/loader";
 import type { SidebarStats } from "../components/Sidebar";
 import {
@@ -73,8 +80,10 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
     return m;
   });
 
-  // Emit stats whenever focus/direction change.
-  createMemo(() => {
+  // Emit stats whenever focus/direction change. Notification is a
+  // side effect, so use createEffect (not createMemo): derived impact
+  // calculations above stay pure (R4).
+  createEffect(() => {
     props.onStats?.({
       blastRadius: impactCount(),
       depth: maxDepth(),
