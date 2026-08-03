@@ -334,7 +334,7 @@ impl Filesystem for MemoryFilesystem {
         let files = self.files.read().unwrap();
         let dirs = self.dirs.read().unwrap();
         let mut entries: Vec<DirEntry> = Vec::new();
-        for (file_path, _) in files.iter() {
+        for file_path in files.keys() {
             if let Some(parent) = file_path.parent()
                 && parent == path
             {
