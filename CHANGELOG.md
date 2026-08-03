@@ -4,6 +4,20 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v0.13.7
+
+### Added
+- **ADR-019 regression gate**: `scripts/bench-compare.sh` benchmarks
+  `origin/main` in a temp worktree and the current branch, compares
+  criterion medians per group, and fails on >10% degradation. New
+  `bench-compare` CI job (PR-only) blocks regressions. Sampling calibrated:
+  `--quick` jitter (~20%) was too noisy for a 10% gate; moderate sampling
+  (~3% jitter, ~1m45/run) used instead.
+
+### Refs
+- Cycle: `m20-baseline-comparison`
+- **M20 COMPLETE** (harness + datasets + doctor gate + CI gate + regression gate)
+
 ## [Unreleased] — v0.13.6
 
 ### Added
