@@ -68,9 +68,36 @@ jobs:
         run: rustup toolchain install stable --profile minimal
 
       # ADR-019: benchmark smoke gate (deterministic, quick mode).
-      # Full >10% regression comparison needs criterion baselines — follow-up.
       - name: Benchmark smoke (export pipeline)
         run: cargo bench --bench export_pipeline -- --quick
+
+  bench-compare:
+    name: archctl (bench regression >10% vs main)
+    runs-on: ubuntu-latest
+    # Only PRs: main has nothing to compare against.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            archctl/target
+          key: cargo-benchcompare-${{ runner.os }}-${{ hashFiles('archctl/Cargo.lock') }}
+          restore-keys: cargo-benchcompare-${{ runner.os }}-
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      # ADR-019 enforcement: fail the PR when any benchmark degrades >10%
+      # vs the origin/main baseline.
+      - name: Benchmark regression compare (vs main)
+        run: scripts/bench-compare.sh
 
   web:
     name: archview (test/build/bundle-cap)
