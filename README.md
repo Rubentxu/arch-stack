@@ -1,3 +1,22 @@
+# Arch Stack
+
+Monorepo que agrupa el ecosistema de diagramación de arquitectura:
+
+- **`archctl/`** — CLI sidecar Rust: persistencia (LadybugDB), extracción
+  (ast-grep/tree-sitter), proyecciones C4/UML deterministas. La
+  especificación canónica vive en [`docs/`](docs/) y los ADRs en
+  [`docs/adr/`](docs/adr/).
+- **`archview/`** — workbench web (SolidJS + G6): visualización de las
+  proyecciones (C4, call graph, sequence, class diagram, packages,
+  drift, impact).
+
+Historia: `archctl` se incorporó como raíz del monorepo; `archview` como
+subtree (rama histórica `v0.14.0`–`v0.21.3` conservada vía merge commit
+`a2ba561`). Los tags `v0.13.x` pertenecen a archctl; `v0.14.0+` a
+archview.
+
+---
+
 # `archctl`
 
 OpenCode Architecture Diagrammer — C4 + UML diagrams by reverse-engineering
