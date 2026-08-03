@@ -99,12 +99,9 @@ export function normalizeBundle(
       // Canonical viewer-bundle: manifest + projection + evidence + styles.
       // R1 — incomplete bundles are rejected with the missing section named.
       {
-        const manifest = raw.manifest as
-          | Record<string, unknown>
-          | undefined;
+        const manifest = raw.manifest as Record<string, unknown> | undefined;
         const projection = raw.projection as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
         const missing: string[] = [];
         if (manifest === undefined) missing.push("manifest");
         if (projection === undefined) missing.push("projection");

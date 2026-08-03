@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeBundle, c4LevelForType } from "../bundle/loader";
+import { normalizeBundle } from "../bundle/loader";
 
 /**
  * R1/R2/R7 — canonical `viewer-bundle` ingestion (spec m17-contract-alignment).
@@ -45,9 +45,7 @@ const MINIMAL_BUNDLE = {
         canonicalKey: "orders/api/application",
       },
     ],
-    edges: [
-      { id: "e1", source: "n2", target: "n1", predicate: "uses" },
-    ],
+    edges: [{ id: "e1", source: "n2", target: "n1", predicate: "uses" }],
   },
   evidence: {
     evidence: [
@@ -168,7 +166,12 @@ describe("namespace-derived hierarchy (R7)", () => {
       projection: {
         nodes: [
           { id: "x", type: "container", name: "flat", canonicalKey: "flat" },
-          { id: "y", type: "container", name: "orphan", canonicalKey: "no/prefix/match" },
+          {
+            id: "y",
+            type: "container",
+            name: "orphan",
+            canonicalKey: "no/prefix/match",
+          },
           { id: "z", type: "context", name: "no-key" },
         ],
         edges: [],

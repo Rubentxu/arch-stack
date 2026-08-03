@@ -136,7 +136,9 @@ describe("bundle loader", () => {
           { id: "el:1", type: "container", name: "WebApp" },
           { id: "el:2", type: "container", name: "DB" },
         ],
-        edges: [{ id: "r1", source: "el:1", target: "el:2", predicate: "uses" }],
+        edges: [
+          { id: "r1", source: "el:1", target: "el:2", predicate: "uses" },
+        ],
       },
       evidence: { evidence: [] },
       styles: {
