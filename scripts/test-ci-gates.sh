@@ -242,6 +242,75 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 8c. Branch protection live check: only via explicit --full flag; never from
+#     cheap pre-push; no credential leakage; clear failures on gh/auth/network.
+# ---------------------------------------------------------------------------
+BP_SCRIPT="scripts/check-branch-protection.sh"
+require "check-branch-protection.sh exists" test -x "$BP_SCRIPT"
+
+# Behavioral via a fake gh shim (no network; nothing is pushed or mutated).
+FAKE_BIN="$(mktemp -d)"
+cat > "$FAKE_BIN/gh" <<'SHIM'
+#!/usr/bin/env bash
+if [ "${1:-}" = "auth" ]; then
+  [ "$FAKE_GH_AUTH" = "ok" ] || { echo "not logged in" >&2; exit 1; }
+  echo "logged in"; exit 0
+fi
+if [ "${1:-}" = "api" ]; then
+  [ "$FAKE_GH_API_FAIL" = "1" ] && { echo "network error" >&2; exit 1; }
+  printf '%s' "$FAKE_GH_JSON"
+  exit 0
+fi
+exit 2
+SHIM
+chmod +x "$FAKE_BIN/gh"
+
+COMPLIANT='{"required_pull_request_reviews":{"required_approving_review_count":1},"enforce_admins":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_status_checks":null}'
+NONCOMPLIANT='{"required_pull_request_reviews":null,"enforce_admins":{"enabled":false},"allow_force_pushes":{"enabled":true},"allow_deletions":{"enabled":false},"required_status_checks":null}'
+
+require "branch protection passes on compliant live settings" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$COMPLIANT" \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails on non-compliant settings" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$NONCOMPLIANT" \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails clearly without gh auth" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=no FAKE_GH_JSON="$COMPLIANT" \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails clearly on API/network error" \
+  env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$COMPLIANT" FAKE_GH_API_FAIL=1 \
+  bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+require_not "branch protection fails clearly without gh CLI" \
+  env PATH="/usr/bin:/bin" bash -c '"$0" >/dev/null 2>&1' "$BP_SCRIPT"
+
+# Credentials must never be printed, even when the API response contains one.
+LEAK_JSON='{"required_pull_request_reviews":null,"enforce_admins":{"enabled":false},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_status_checks":null,"note":"token gho_FAKE_SECRET_123"}'
+BP_OUT="$(env PATH="$FAKE_BIN:$PATH" FAKE_GH_AUTH=ok FAKE_GH_JSON="$LEAK_JSON" \
+  bash -c '"$0" 2>&1 || true' "$BP_SCRIPT")"
+require_not "branch protection never prints credentials" \
+  grep -q 'gho_FAKE_SECRET_123' <<<"$BP_OUT"
+require "branch protection failure message is human-readable" \
+  grep -q 'check-branch-protection' <<<"$BP_OUT"
+rm -rf "$FAKE_BIN"
+
+# Cheap pre-push mode must NEVER query branch protection; only --full
+# --check-branch-protection may. And --check-branch-protection requires --full.
+require_not "verify-local.sh cheap mode never queries branch protection" \
+  grep -q 'check-branch-protection' <<<"$DRY_CHEAP"
+BP_FULL="$("$VERIFY_SCRIPT" --dry-run --full --check-branch-protection 2>&1 || true)"
+require "verify-local.sh --full --check-branch-protection runs it" \
+  grep -q 'check-branch-protection.sh' <<<"$BP_FULL"
+set +e
+"$VERIFY_SCRIPT" --check-branch-protection >/dev/null 2>&1
+BP_FLAG_EXIT=$?
+set -e
+if [ "$BP_FLAG_EXIT" -eq 2 ]; then
+  note_pass "verify-local.sh --check-branch-protection without --full exits 2"
+else
+  note_fail "verify-local.sh --check-branch-protection without --full exits 2 (got $BP_FLAG_EXIT)"
+fi
+
+# ---------------------------------------------------------------------------
 # 8b. Bundle cap is a single-source executable called by both callers.
 # ---------------------------------------------------------------------------
 BUNDLE_CAP="scripts/check-bundle-cap.sh"

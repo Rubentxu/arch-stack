@@ -7,9 +7,12 @@
 #   regression comparison against origin/main:
 #   pnpm test, pnpm build, bundle cap <= 2MB gzipped, bench smoke,
 #   scripts/bench-compare.sh origin/main
+# --full --check-branch-protection additionally queries the LIVE GitHub
+#   branch protection via scripts/check-branch-protection.sh. It is a
+#   network-dependent read-only check and is NEVER part of cheap pre-push.
 #
 # Usage:
-#   scripts/verify-local.sh [--full] [--dry-run] [--help]
+#   scripts/verify-local.sh [--full] [--check-branch-protection] [--dry-run] [--help]
 #
 #   --dry-run  print the gates that would run without executing them
 #              (deterministic; used by scripts/test-ci-gates.sh; never mutates)
@@ -29,14 +32,21 @@ cd "$REPO_ROOT"
 
 MODE="cheap"
 DRY_RUN=0
+CHECK_BP=0
 for arg in "$@"; do
     case "$arg" in
         --full) MODE="full" ;;
+        --check-branch-protection) CHECK_BP=1 ;;
         --dry-run) DRY_RUN=1 ;;
-        --help|-h) sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        *) echo "verify-local: unknown argument '${arg}' (expected --full, --dry-run or --help)" >&2; exit 2 ;;
+        --help|-h) sed -n '1,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "verify-local: unknown argument '${arg}' (expected --full, --check-branch-protection, --dry-run or --help)" >&2; exit 2 ;;
     esac
 done
+
+if [ "$CHECK_BP" = "1" ] && [ "$MODE" != "full" ]; then
+    echo "verify-local: --check-branch-protection requires --full" >&2
+    exit 2
+fi
 
 run_gate() {
     if [ "$DRY_RUN" = "1" ]; then
@@ -86,6 +96,11 @@ if [ "$MODE" = "full" ]; then
         run_gate cargo bench --bench export_pipeline -- --quick
     )
     run_gate "$REPO_ROOT/scripts/bench-compare.sh" origin/main
+
+    # ---- live branch protection (explicit opt-in, never cheap pre-push) ------
+    if [ "$CHECK_BP" = "1" ]; then
+        run_gate "$REPO_ROOT/scripts/check-branch-protection.sh"
+    fi
 fi
 
 echo "verify-local: ${MODE} mode PASS"
