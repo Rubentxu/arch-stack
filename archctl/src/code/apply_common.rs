@@ -14,6 +14,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::source::SourceArtifact;
 use crate::store::GraphStore;
 
 /// Open the project's graph store and ensure the schema is initialized.
@@ -34,7 +35,7 @@ pub fn escape_cypher_string(s: &str) -> String {
 /// Fetch the set of `canonical_key`s already present in the graph.
 /// Used for idempotency: skip elements whose keys already exist.
 pub fn existing_canonical_keys(store: &dyn GraphStore) -> Result<HashSet<String>> {
-    store
+    Ok(store
         .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
         .into_iter()
         .filter_map(|row| {
@@ -42,46 +43,37 @@ pub fn existing_canonical_keys(store: &dyn GraphStore) -> Result<HashSet<String>
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         })
-        .collect::<HashSet<_>>()
-        .pipe(Ok)
+        .collect::<HashSet<_>>())
 }
 
-/// Write a `SourceArtifact` node for a file and return its id.
+/// Write a `SourceArtifact` node for a file and return its canonical id.
 ///
-/// Id is derived from the file path (`src:<blake3-hex>`), so the
-/// MERGE is idempotent. Callers typically combine this with a
-/// per-file dedup map to avoid re-querying for the same file.
-pub fn write_source_artifact(store: &mut dyn GraphStore, file: &str) -> Result<String> {
-    let id = format!("src:{}", blake3::hash(file.as_bytes()).to_hex());
-    let path_escaped = escape_cypher_string(file);
-    let cypher = format!(
-        "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
-         s.kind = 'manifest', \
-         s.relative_path = '{path_escaped}', \
-         s.language = '', \
-         s.content_hash = '', \
-         s.generated = false, \
-         s.props = '{{}}';"
+/// Id follows ADR-017 §D2: `"src:" + blake3(relative_path + content_hash)[..16]`
+/// via [`SourceArtifact::id_for`]. Persistence goes through the canonical
+/// [`SourceOps::put_source`] path (shared with the `evidence` pipeline), so
+/// the `code/*` and `evidence` pipelines converge on the same node for the
+/// same file version.
+///
+/// `language` is the inventory language label (`"rust"`, `"typescript"`, …)
+/// or `""` when unknown. `commit_hash` stays `None` for code-derived
+/// artifacts (B1 limitation, see `source.rs:33`).
+pub fn write_source_artifact(
+    store: &mut dyn GraphStore,
+    file: &str,
+    content_hash: &str,
+    language: &str,
+) -> Result<String> {
+    let artifact = SourceArtifact::from_content(
+        file,
+        language,
+        content_hash,
+        None,
+        "",
+        env!("CARGO_PKG_VERSION"),
     );
-    store
-        .query(&cypher)
-        .with_context(|| format!("put_source_artifact {id}"))?;
-    Ok(id)
+    store.put_source(&artifact)?;
+    Ok(artifact.id)
 }
-
-/// Minimal pipe helper used by [`existing_canonical_keys`] to wrap a
-/// `Result` in `Ok`. Kept local to avoid a public trait.
-trait Pipe<T> {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-        Self: Sized,
-    {
-        f(self)
-    }
-}
-
-impl<T> Pipe<T> for T {}
 
 #[cfg(test)]
 mod tests {
@@ -96,8 +88,31 @@ mod tests {
     }
 
     #[test]
-    fn test_pipe_wraps_value_in_ok() {
-        let x: Result<u32> = 42u32.pipe(Ok);
-        assert_eq!(x.unwrap(), 42);
+    fn write_source_artifact_uses_d2_canonical_id() {
+        // R1: id must equal SourceArtifact::id_for(relative_path, content_hash).
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        crate::graph::init(&project, &fs).unwrap();
+        let mut store = crate::store::open_default(&project).unwrap();
+        let id = write_source_artifact(&mut *store, "src/lib.rs", "sha256:abc123", "rust").unwrap();
+        let expected = SourceArtifact::id_for("src/lib.rs", "sha256:abc123");
+        assert_eq!(id, expected, "apply id must match canonical D2 id");
+        assert!(id.starts_with("src:"), "id must use src: prefix");
+        assert_eq!(id.len(), 4 + 32, "src: + 32 hex chars");
+    }
+
+    #[test]
+    fn write_source_artifact_id_changes_with_content_hash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        crate::graph::init(&project, &fs).unwrap();
+        let mut store = crate::store::open_default(&project).unwrap();
+        let id1 =
+            write_source_artifact(&mut *store, "src/lib.rs", "sha256:abc123", "rust").unwrap();
+        let id2 =
+            write_source_artifact(&mut *store, "src/lib.rs", "sha256:def456", "rust").unwrap();
+        assert_ne!(id1, id2, "different content_hash must produce different id");
     }
 }

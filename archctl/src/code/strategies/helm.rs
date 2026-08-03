@@ -80,6 +80,7 @@ impl Strategy for HelmCharts {
                     strategy: self.id().to_string(),
                     confidence,
                     evidences: vec![Evidence {
+                        content_hash: String::new(),
                         file: rel_chart,
                         line: 1,
                         kind: EvidenceKind::Config,

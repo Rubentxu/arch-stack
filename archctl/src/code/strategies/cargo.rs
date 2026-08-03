@@ -54,6 +54,7 @@ impl Strategy for CargoWorkspace {
                 strategy: self.id().to_string(),
                 confidence: self.confidence(),
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: rel_manifest,
                     line: 1,
                     kind: EvidenceKind::Structural,

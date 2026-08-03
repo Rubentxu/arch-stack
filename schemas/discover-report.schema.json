@@ -96,6 +96,10 @@
           "type": "string",
           "description": "Relative path from project root"
         },
+        "contentHash": {
+          "type": "string",
+          "description": "sha256:<hex> of file content (D2 identity input)"
+        },
         "line": {
           "type": "integer",
           "minimum": 1,
