@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# pre-push hook — local-first verification before any push (ADR-025).
+#
+# Runs the cheap tier of scripts/verify-local.sh (Rust
+# test/clippy/fmt/doctor). This is the PREVENTIVE gate: remote CI only
+# fires post-merge on main, so a failing feature branch must be caught
+# here, not on the remote. It is intentionally cheap — the expensive
+# --full tier (web + ADR-019 benchmark regression vs origin/main) is the
+# developer's pre-merge choice, not a per-push tax.
+#
+# Bypass with `git push --no-verify` only after human review.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [ -x "scripts/verify-local.sh" ]; then
+    scripts/verify-local.sh
+else
+    echo "pre-push: scripts/verify-local.sh not found or not executable; skipping local verification" >&2
+    exit 1
+fi
