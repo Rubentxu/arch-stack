@@ -83,7 +83,7 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.21.1`** (verified — pnpm test 40/40 + build OK)
+- **Tag**: **`v0.21.2`** (verified — pnpm test 59/59 + build OK)
 - **Status**: **M17 series complete** (8 cycles, v0.14.0 → v0.21.0)
   - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
   - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
