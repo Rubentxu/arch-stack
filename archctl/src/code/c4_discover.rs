@@ -947,4 +947,30 @@ mod tests {
             result.err()
         );
     }
+
+    #[test]
+    fn c4_language_label_dockerfile_variants() {
+        assert_eq!(c4_language_label("Dockerfile"), "dockerfile");
+        assert_eq!(c4_language_label("dockerfile"), "dockerfile");
+        assert_eq!(c4_language_label("services/api/Dockerfile"), "dockerfile");
+        assert_eq!(c4_language_label("SERVICES/DOCKERFILE"), "dockerfile");
+    }
+
+    #[test]
+    fn c4_language_label_manifest_extensions() {
+        assert_eq!(c4_language_label("Cargo.toml"), "toml");
+        assert_eq!(c4_language_label("foo.TOML"), "toml");
+        assert_eq!(c4_language_label("package.json"), "json");
+        assert_eq!(c4_language_label("Chart.yaml"), "yaml");
+        assert_eq!(c4_language_label("values.yml"), "yaml");
+        assert_eq!(c4_language_label("CHART.YAML"), "yaml");
+    }
+
+    #[test]
+    fn c4_language_label_falls_back_to_manifest() {
+        assert_eq!(c4_language_label("Makefile"), "manifest");
+        assert_eq!(c4_language_label("Procfile"), "manifest");
+        assert_eq!(c4_language_label("no-extension"), "manifest");
+        assert_eq!(c4_language_label("unknown.xyz"), "manifest");
+    }
 }

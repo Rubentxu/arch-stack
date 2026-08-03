@@ -115,4 +115,59 @@ mod tests {
             write_source_artifact(&mut *store, "src/lib.rs", "sha256:def456", "rust").unwrap();
         assert_ne!(id1, id2, "different content_hash must produce different id");
     }
+
+    fn seeded_store_with_canonical_keys(keys: &[&str]) -> Box<dyn GraphStore> {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        crate::graph::init(&project, &fs).unwrap();
+        let mut store = crate::store::open_default(&project).unwrap();
+        store.init().unwrap();
+        for (i, key) in keys.iter().enumerate() {
+            let cypher =
+                format!("MERGE (e:Element {{id: 'el:{i}'}}) SET e.canonical_key = '{key}';");
+            store.query(&cypher).unwrap();
+        }
+        store
+    }
+
+    #[test]
+    fn existing_canonical_keys_empty_on_fresh_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        crate::graph::init(&project, &fs).unwrap();
+        let mut store = crate::store::open_default(&project).unwrap();
+        store.init().unwrap();
+        let keys = existing_canonical_keys(&*store).unwrap();
+        assert!(keys.is_empty(), "fresh store must have no canonical keys");
+    }
+
+    #[test]
+    fn existing_canonical_keys_returns_seeded_keys() {
+        let store = seeded_store_with_canonical_keys(&["a:one", "b:two", "c:three"]);
+        let keys = existing_canonical_keys(&*store).unwrap();
+        assert_eq!(keys.len(), 3, "all seeded keys must be returned");
+        assert!(keys.contains("a:one"));
+        assert!(keys.contains("b:two"));
+        assert!(keys.contains("c:three"));
+    }
+
+    #[test]
+    fn existing_canonical_keys_ignores_elements_without_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        crate::graph::init(&project, &fs).unwrap();
+        let mut store = crate::store::open_default(&project).unwrap();
+        store.init().unwrap();
+        // Element WITH canonical_key + one WITHOUT (id only).
+        store
+            .query("MERGE (e:Element {id: 'el:1'}) SET e.canonical_key = 'k:1';")
+            .unwrap();
+        store.query("MERGE (e:Element {id: 'el:2'});").unwrap();
+        let keys = existing_canonical_keys(&*store).unwrap();
+        assert_eq!(keys.len(), 1, "only the keyed element counts");
+        assert!(keys.contains("k:1"));
+    }
 }
