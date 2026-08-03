@@ -82,8 +82,8 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.20.0`** (verified — pnpm test 26/26 + build OK)
-- **Status**:
+- **Tag**: **`v0.21.0`** (verified — pnpm test 32/32 + build OK)
+- **Status**: **M17 series complete** (8 cycles, v0.14.0 → v0.21.0)
   - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
   - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
   - M17.2 call graph view (v0.16.0): focus + BFS + blast radius
@@ -91,7 +91,11 @@ Fase 3 ✅
   - M17.4 class diagram view (v0.18.0): UML compartments
   - M17.5 package diagram view (v0.19.0): modules + cycles (DFS)
   - M17.6 drift detection (v0.20.0): declared vs actual C4 diff
-- **Próximo**: M17.7 impact analysis (blast radius de un cambio propuesto).
+  - M17.7 impact analysis (v0.21.0): blast radius for changes
+- **Próximo**: M18 reactive runtime (defer 1.x) o M19 wgpu renderer (2.0).
+  Alternativa: refactor cycles (`refactor/extract-code-apply-helpers`,
+  archctl-side) o archview-side enhancements (resize observer,
+  G6 dagre layout, persist UI state).
 
 ## Archivos clave para retomar
 
