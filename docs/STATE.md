@@ -82,7 +82,7 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.19.0`** (verified — pnpm test 21/21 + build OK)
+- **Tag**: **`v0.20.0`** (verified — pnpm test 26/26 + build OK)
 - **Status**:
   - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
   - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
@@ -90,7 +90,8 @@ Fase 3 ✅
   - M17.3 sequence diagram view (v0.17.0): lifelines + arrows
   - M17.4 class diagram view (v0.18.0): UML compartments
   - M17.5 package diagram view (v0.19.0): modules + cycles (DFS)
-- **Próximo**: M17.6 drift detection (C4 declarado vs actual).
+  - M17.6 drift detection (v0.20.0): declared vs actual C4 diff
+- **Próximo**: M17.7 impact analysis (blast radius de un cambio propuesto).
 
 ## Archivos clave para retomar
 
