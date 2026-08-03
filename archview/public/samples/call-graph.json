@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "id": "fn:caller",
+      "name": "caller",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 1
+    },
+    {
+      "id": "fn:helper",
+      "name": "helper",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 5
+    },
+    {
+      "id": "fn:setup",
+      "name": "setup",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/main.rs",
+      "line": 3
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "fn:caller",
+      "target": "fn:helper",
+      "kind": "calls"
+    },
+    {
+      "id": "e2",
+      "source": "fn:setup",
+      "target": "fn:helper",
+      "kind": "calls"
+    }
+  ]
+}

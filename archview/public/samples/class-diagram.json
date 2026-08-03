@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "canonical_key": "rust:src/lib.rs:class:Animal:1",
+      "name": "Animal",
+      "kind": "class",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 1
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:Dog:5",
+      "name": "Dog",
+      "kind": "class",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 5
+    }
+  ],
+  "edges": [
+    {
+      "canonical_key": "rust:src/lib.rs:class:Dog:5→extends→rust:src/lib.rs:class:Animal:1:5",
+      "source": "rust:src/lib.rs:class:Dog:5",
+      "target": "rust:src/lib.rs:class:Animal:1",
+      "predicate": "extends"
+    }
+  ]
+}

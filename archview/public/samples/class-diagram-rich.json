@@ -1,0 +1,187 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "canonical_key": "rust:src/lib.rs:interface:Drawable:1",
+      "name": "Drawable",
+      "kind": "interface",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 1,
+      "members": [
+        {
+          "name": "draw",
+          "member_kind": "fn",
+          "signature": "fn(&self)",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:interface:Serializable:5",
+      "name": "Serializable",
+      "kind": "interface",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 5,
+      "members": [
+        {
+          "name": "serialize",
+          "member_kind": "fn",
+          "signature": "fn(&self) -> String",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:Shape:10",
+      "name": "Shape",
+      "kind": "class",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 10,
+      "members": [
+        {
+          "name": "id",
+          "member_kind": "field",
+          "signature": "u32",
+          "line": 11
+        },
+        {
+          "name": "color",
+          "member_kind": "field",
+          "signature": "String",
+          "line": 12
+        },
+        {
+          "name": "new",
+          "member_kind": "fn",
+          "signature": "fn(id: u32, color: String) -> Self",
+          "line": 14
+        },
+        {
+          "name": "area",
+          "member_kind": "fn",
+          "signature": "fn(&self) -> f64",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:Circle:25",
+      "name": "Circle",
+      "kind": "class",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 25,
+      "members": [
+        {
+          "name": "center",
+          "member_kind": "field",
+          "signature": "Point",
+          "line": 26
+        },
+        {
+          "name": "radius",
+          "member_kind": "field",
+          "signature": "f64",
+          "line": 27
+        },
+        {
+          "name": "new",
+          "member_kind": "fn",
+          "signature": "fn(center: Point, radius: f64) -> Self",
+          "line": 29
+        },
+        {
+          "name": "draw",
+          "member_kind": "fn",
+          "signature": "fn(&self)",
+          "line": 33
+        },
+        {
+          "name": "serialize",
+          "member_kind": "fn",
+          "signature": "fn(&self) -> String",
+          "line": 36
+        }
+      ]
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:trait:Loggable:45",
+      "name": "Loggable",
+      "kind": "trait",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 45,
+      "members": [
+        {
+          "name": "log",
+          "member_kind": "fn",
+          "signature": "fn(&self, level: u8)",
+          "line": 46
+        }
+      ]
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:AuditEntry:55",
+      "name": "AuditEntry",
+      "kind": "class",
+      "language": "rust",
+      "file": "src/lib.rs",
+      "line": 55,
+      "members": [
+        {
+          "name": "shape",
+          "member_kind": "field",
+          "signature": "Box<dyn Shape>",
+          "line": 56
+        },
+        {
+          "name": "timestamp",
+          "member_kind": "field",
+          "signature": "u64",
+          "line": 57
+        },
+        {
+          "name": "log",
+          "member_kind": "fn",
+          "signature": "fn(&self, level: u8)",
+          "line": 60
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "canonical_key": "rust:src/lib.rs:class:Circle:25→extends→rust:src/lib.rs:class:Shape:10:10",
+      "source": "rust:src/lib.rs:class:Circle:25",
+      "target": "rust:src/lib.rs:class:Shape:10",
+      "predicate": "extends"
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:Circle:25→implements→rust:src/lib.rs:interface:Drawable:1:1",
+      "source": "rust:src/lib.rs:class:Circle:25",
+      "target": "rust:src/lib.rs:interface:Drawable:1",
+      "predicate": "implements"
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:Circle:25→implements→rust:src/lib.rs:interface:Serializable:5:5",
+      "source": "rust:src/lib.rs:class:Circle:25",
+      "target": "rust:src/lib.rs:interface:Serializable:5",
+      "predicate": "implements"
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:AuditEntry:55→implements→rust:src/lib.rs:trait:Loggable:45:45",
+      "source": "rust:src/lib.rs:class:AuditEntry:55",
+      "target": "rust:src/lib.rs:trait:Loggable:45",
+      "predicate": "implements"
+    },
+    {
+      "canonical_key": "rust:src/lib.rs:class:AuditEntry:55→composes→rust:src/lib.rs:class:Shape:10:10",
+      "source": "rust:src/lib.rs:class:AuditEntry:55",
+      "target": "rust:src/lib.rs:class:Shape:10",
+      "predicate": "composes"
+    }
+  ]
+}

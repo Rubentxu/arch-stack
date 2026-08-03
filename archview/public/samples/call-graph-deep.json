@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "id": "fn:server",
+      "name": "server::run",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/server.rs",
+      "line": 10
+    },
+    {
+      "id": "fn:handle_request",
+      "name": "server::handle_request",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/server.rs",
+      "line": 25
+    },
+    {
+      "id": "fn:auth",
+      "name": "auth::verify_token",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/auth.rs",
+      "line": 5
+    },
+    {
+      "id": "fn:query_db",
+      "name": "db::query",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/db.rs",
+      "line": 12
+    },
+    {
+      "id": "fn:log",
+      "name": "log::write",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/log.rs",
+      "line": 1
+    },
+    {
+      "id": "fn:metric",
+      "name": "metric::emit",
+      "kind": "function",
+      "language": "rust",
+      "file": "src/metric.rs",
+      "line": 8
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "fn:server",
+      "target": "fn:handle_request",
+      "kind": "calls"
+    },
+    {
+      "id": "e2",
+      "source": "fn:handle_request",
+      "target": "fn:auth",
+      "kind": "calls"
+    },
+    {
+      "id": "e3",
+      "source": "fn:handle_request",
+      "target": "fn:query_db",
+      "kind": "calls"
+    },
+    {
+      "id": "e4",
+      "source": "fn:handle_request",
+      "target": "fn:log",
+      "kind": "calls"
+    },
+    {
+      "id": "e5",
+      "source": "fn:handle_request",
+      "target": "fn:metric",
+      "kind": "calls"
+    },
+    {
+      "id": "e6",
+      "source": "fn:auth",
+      "target": "fn:log",
+      "kind": "calls"
+    },
+    {
+      "id": "e7",
+      "source": "fn:auth",
+      "target": "fn:metric",
+      "kind": "calls"
+    }
+  ]
+}
