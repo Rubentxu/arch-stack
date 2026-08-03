@@ -46,3 +46,18 @@ sddk/
 # commit. (companion: not gitignored in `docs/reports/` so non-HTML files
 # in that directory remain committable if added later.)
 docs/reports/*.html
+
+# --- SDDK Local-Only Artifact Policy (v3.3) ---
+# Merged idempotently by sdd-kernel-init (2026-08-03).
+# ADAPTATION (repo convention): the stock v3.3 template also ignores
+# docs/ROADMAP.md, docs/adr/, docs/reports/, docs/metrics/. This repo
+# deliberately COMMITS those (24 ADRs tracked; ADR-024 on main;
+# `docs(cycle):` archive commits update ROADMAP), so those paths stay
+# tracked and committable. Only the pure SDDK-generated surface is ignored:
+# per-change folders, openspec change specs, and runtime state.
+openspec/changes/
+openspec/changes/archive/
+**/apply-checkpoint.json
+sddk-config.json
+sddk.local.*
+.sddk/
