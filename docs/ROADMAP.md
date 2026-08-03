@@ -330,6 +330,8 @@ Incluye:
 | `m9-relations-decision` | `m9-relations-decision` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.12.0` |
 | `refactor/bench-seed-decomposition` | `refactor/bench-seed-decomposition` (merged to main via --no-ff) | merge commit | **Cerrado** ✅ · tag `v0.12.1` |
 | `m12-class-diagram` | `feat/m12-class-diagram` (merged to main via --no-ff) | `9e665ee` | **Cerrado** ✅ · tag `v0.13.0` |
+| `ci-main-gates` | `test/main-gates-05-contract` (merged to main via --no-ff) | `443b6fe` (merge commit) | **Cerrado** ✅ · tag `v0.13.8` |
+| `release-pipeline` | `release/release-pipeline` (merged to main via --no-ff) | `43748b8` (merge commit) | **Cerrado** ✅ · tag `v0.14.1` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -750,3 +752,17 @@ Razones:
 - **Deuda técnica diferida**: `SourceArtifact` id formula divergence (pre-existing on main, tracked as `refactor/debt-source-artifact-id-1`); `Pipe` trait single-use (drive-by `refactor/extract-code-apply-helpers-pipe-1`).
 - **M16 status**: ENDURECIMIENTO 1.0 — `refactor/extract-code-apply-helpers` cerrado. F3.3 (lbug infra gap), F3.2 (fmt-staged script) y F2.3 (audit code.toml) pendientes.
 - **Próximo candidato**: M17.0 archview scaffold (separate repo `archview`) o F3.3 (lbug doctor infra gap restore).
+
+## Cycle cerrado — `ci-main-gates` (v0.13.8)
+
+- **Fecha**: 2026-08-03
+- **Branch**: `test/main-gates-05-contract` (merged to main via --no-ff)
+- **Tag**: `v0.13.8` (`35bf6a25bf23`)
+- **Verdict**: verify PASS_WITH_WARNINGS · debt-verify PASS_WITH_WARNINGS · archive PASS
+- **Commits**: Feature Branch Chain (children 1-9), 24 commits total
+- **Tests**: 241 passing · 81/81 contract tests
+- **Output**: ADR-025 post-merge CI gates, pre-push hook with local verification, bench-compare with github.event.before baseline, MSRV 1.91, 5/5 original HIGH debt items cleared
+- **DQS**: improved 0.62 → 0.83
+- **CI Run**: https://github.com/Rubentxu/arch-stack/actions/runs/30821895028 (4/4 jobs green)
+- **PR Chain**: PRs #1-#4 (nested debt fixes) → PR #9 (final tracker to main)
+- **Próximo candidato**: M17.0 archview scaffold (separate repo) o next SDD cycle
