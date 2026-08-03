@@ -48,7 +48,9 @@
 
 | ID | Descripción | Bloquea gate | Estado |
 |---|---|---|---|
-| Helper duplication | `apply_to_store` + `apply_diagram_to_store` comparten ~150 LOC | No | `refactor/extract-code-apply-helpers` (defer v0.14.x) |
+| `code::apply` repetition | `code::call_graph::apply` + `code::c4_discover::apply` + `code::class_diagram::apply` comparten ~150 LOC de open-default + init + counters + ApplyReport construction. No extraction hecha — error types y semánticas difieren por dominio. | No | Defer v0.14.x; cada `apply` mantiene su firma pública estable |
+| `diagram::apply` 3-tier | `run_apply` (CLI) → `apply_changeset` (high) → `apply_to_store` (core). Algunas validaciones duplicadas entre niveles. | No | OK por ahora; el core está extraído para testabilidad |
+| `archview` tests | Solo `loader.ts` tiene tests (32). Las views (C4View, CallGraphView, SequenceView, ClassDiagramView, PackageView, DriftView, ImpactView) no tienen tests. | No | Agregar smoke tests por view en v0.22+ |
 
 **Sin deuda bloqueante activa** — `doctor --scopes code` corre en <1s con 0 findings.
 
