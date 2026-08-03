@@ -50,7 +50,6 @@
 |---|---|---|---|
 | `code::apply` repetition | `code::call_graph::apply` + `code::c4_discover::apply` + `code::class_diagram::apply` comparten ~150 LOC de open-default + init + counters + ApplyReport construction. No extraction hecha — error types y semánticas difieren por dominio. | No | Defer v0.14.x; cada `apply` mantiene su firma pública estable |
 | `diagram::apply` 3-tier | `run_apply` (CLI) → `apply_changeset` (high) → `apply_to_store` (core). Algunas validaciones duplicadas entre niveles. | No | OK por ahora; el core está extraído para testabilidad |
-| `archview` tests | Solo `loader.ts` tiene tests (32). Las views (C4View, CallGraphView, SequenceView, ClassDiagramView, PackageView, DriftView, ImpactView) no tienen tests. | No | Agregar smoke tests por view en v0.22+ |
 
 **Sin deuda bloqueante activa** — `doctor --scopes code` corre en <1s con 0 findings.
 
@@ -84,7 +83,7 @@ Fase 3 ✅
 ## Repo satelital: `archview`
 
 - **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.21.0`** (verified — pnpm test 32/32 + build OK)
+- **Tag**: **`v0.21.1`** (verified — pnpm test 40/40 + build OK)
 - **Status**: **M17 series complete** (8 cycles, v0.14.0 → v0.21.0)
   - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
   - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
