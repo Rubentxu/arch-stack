@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::code::apply_common::escape_cypher_string;
 use crate::code::call_graph::MessageKind;
 use crate::store::{GraphStore, LbugStore};
 
@@ -76,13 +77,6 @@ pub enum SequenceError {
     DepthLimitExceeded { actual: u32, max: u32 },
     #[error("graph read failed: {0}")]
     GraphReadFailed(#[from] anyhow::Error),
-}
-
-/// Escape a string for use inside a Cypher single-quoted string.
-/// All single quotes are doubled (Cypher escaping convention).
-/// Private copy matching call_graph.rs:escape_cypher_string.
-fn escape_cypher_string(s: &str) -> String {
-    s.replace('\'', "\\'")
 }
 
 /// Parse a string into a MessageKind.
@@ -665,16 +659,5 @@ mod tests {
         assert_eq!(parsed.interactions.len(), 1);
         assert_eq!(parsed.interactions[0].sender, "main");
         assert_eq!(parsed.duration_ms, 42);
-    }
-
-    #[test]
-    fn test_escape_cypher_string_basic() {
-        // Note: this function only escapes single quotes (Cypher convention).
-        // Backslashes are NOT escaped by this function.
-        assert_eq!(escape_cypher_string("foo"), "foo");
-        assert_eq!(escape_cypher_string("o'reilly"), "o\\'reilly");
-        assert_eq!(escape_cypher_string("a\\b"), "a\\b"); // backslash NOT escaped
-        assert_eq!(escape_cypher_string(""), "");
-        assert_eq!(escape_cypher_string("a'b'c"), "a\\'b\\'c");
     }
 }

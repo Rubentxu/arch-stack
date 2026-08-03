@@ -10,6 +10,8 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
+
+use crate::code::apply_common::escape_cypher_string;
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Parser, Tree};
 
@@ -856,40 +858,6 @@ fn lang_label(lang: &Language) -> &'static str {
 
 // ─── Apply ──────────────────────────────────────────────────────────────────
 
-/// Escape a string for use inside a Cypher single-quoted string.
-/// All single quotes are doubled (Cypher escaping convention).
-/// Private copy matching c4_discover.rs:escape_cypher_string.
-fn escape_cypher_string(s: &str) -> String {
-    s.replace('\'', "\\'")
-}
-
-/// Pipe: pass a value through a function and return the result.
-trait Pipe<T> {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-        Self: Sized,
-    {
-        f(self)
-    }
-}
-
-impl<T> Pipe<T> for T {}
-
-/// Fetch the set of canonical_keys already present in the graph.
-fn existing_canonical_keys(store: &dyn GraphStore) -> Result<std::collections::HashSet<String>> {
-    store
-        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
-        .into_iter()
-        .filter_map(|row| {
-            row.get("e.canonical_key")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .pipe(Ok)
-}
-
 /// Write the Element node for a FunctionNode.
 fn write_function_element(
     store: &mut dyn GraphStore,
@@ -1141,14 +1109,11 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::store::open_default;
+    use crate::code::apply_common::{
+        existing_canonical_keys, open_and_init, write_source_artifact,
+    };
 
-    let mut store =
-        open_default(project_dir).map_err(|e| anyhow::anyhow!("failed to acquire DB lock: {e}"))?;
-    store
-        .init()
-        .context("graph init (call_graph apply)")
-        .map_err(CallGraphError::GraphWrite)?;
+    let mut store = open_and_init(project_dir).map_err(CallGraphError::GraphWrite)?;
 
     // Seed MetaType rows for code.function, code.method, code.closure
     // and Predicate row for code.calls
@@ -1184,7 +1149,7 @@ pub fn apply(
 
         // Get or create SourceArtifact for this file
         if !source_artifact_ids.contains_key(&node.file) {
-            let id = write_source_artifact_for_file(&mut *store, &node.file)?;
+            let id = write_source_artifact(&mut *store, &node.file)?;
             source_artifact_ids.insert(node.file.clone(), id);
             source_artifacts_written += 1;
         }
@@ -1215,7 +1180,7 @@ pub fn apply(
             let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
                 id.clone()
             } else {
-                let id = write_source_artifact_for_file(&mut *store, &edge.file)?;
+                let id = write_source_artifact(&mut *store, &edge.file)?;
                 source_artifact_ids.insert(edge.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id
@@ -1241,25 +1206,6 @@ pub fn apply(
         seed_writes,
         duration_ms: 0,
     })
-}
-
-/// Write SourceArtifact for a file, return its id.
-fn write_source_artifact_for_file(store: &mut dyn GraphStore, file: &str) -> Result<String> {
-    let id = format!("src:{}", blake3::hash(file.as_bytes()).to_hex());
-    let path_escaped = escape_cypher_string(file);
-    let cypher = format!(
-        "MERGE (s:SourceArtifact {{id: '{id}'}}) SET \
-         s.kind = 'manifest', \
-         s.relative_path = '{path_escaped}', \
-         s.language = '', \
-         s.content_hash = '', \
-         s.generated = false, \
-         s.props = '{{}}';"
-    );
-    store
-        .query(&cypher)
-        .with_context(|| format!("put_source_artifact {id}"))?;
-    Ok(id)
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
 use serde::{Deserialize, Serialize};
@@ -1270,22 +1270,16 @@ impl ClassEdge {
 
 // ─── Apply ─────────────────────────────────────────────────────────────────────
 
-/// Escape a string for use inside a Cypher single-quoted string.
-fn escape_cypher_string(s: &str) -> String {
-    s.replace('\'', "\\'")
-}
-
 /// Apply a class-diagram report to the graph store.
 pub fn apply(
     project_dir: &Path,
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::store::open_default;
+    use crate::code::apply_common::{escape_cypher_string, open_and_init};
 
     let start = Instant::now();
-    let mut store = open_default(project_dir).context("open graph store")?;
-    store.init().context("graph init")?;
+    let store = open_and_init(project_dir).map_err(ClassDiagramError::GraphWrite)?;
 
     let mut elements_written = 0;
     let mut elements_skipped = 0;
@@ -1460,13 +1454,6 @@ mod tests {
         assert_eq!(Language::from_extension("py"), Some(Language::Python));
         assert_eq!(Language::from_extension("ts"), Some(Language::TypeScript));
         assert_eq!(Language::from_extension("go"), None);
-    }
-
-    #[test]
-    fn test_escape_cypher_string() {
-        assert_eq!(escape_cypher_string("foo"), "foo");
-        assert_eq!(escape_cypher_string("o'reilly"), "o\\'reilly");
-        assert_eq!(escape_cypher_string(""), "");
     }
 
     #[test]
