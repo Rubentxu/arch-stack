@@ -122,13 +122,18 @@ require "toolchain channel pinned 1.97.1" \
   grep -q 'channel = "1.97.1"' rust-toolchain.toml
 
 # ---------------------------------------------------------------------------
-# 5. MSRV declared in archctl/Cargo.toml.
+# 5. MSRV declared in archctl/Cargo.toml AND the root toolchain comment.
 # NOTE: spec proposed 1.85, but the dependency tree requires 1.91 (validated
 # empirically at apply: cargo-platform@0.3.3 -> rustc 1.91, idna_adapter/ignore/
 # time -> 1.86-1.88). Declaring 1.85 would be false; ADR-025 records the raise.
+# The rust-toolchain.toml comment must match, not drift back to 1.85.
 # ---------------------------------------------------------------------------
 require "MSRV rust-version 1.91 declared" \
   grep -q 'rust-version = "1.91"' archctl/Cargo.toml
+require_not "rust-toolchain.toml comment does not drift to 1.85" \
+  grep -q 'rust-version = "1.85"' rust-toolchain.toml
+require "rust-toolchain.toml comment states MSRV 1.91" \
+  grep -q 'rust-version = "1.91"' rust-toolchain.toml
 
 # ---------------------------------------------------------------------------
 # 6. Clippy repair: filesystem.rs uses .keys(), no lint suppression.
@@ -175,6 +180,14 @@ require "bench-compare.sh synthetic within-threshold exits 0" \
 # path that could disable gates without an explicit CLI option.
 require_not "bench-compare.sh no TEST_FAKE_REGRESSION env bypass" \
   grep -qE '\$\{?TEST_FAKE_REGRESSION' "$BENCH_SCRIPT"
+
+# Worktree hygiene: bench-compare must remove its worktree from disk AND git
+# metadata (git worktree remove --force + prune), not only rm -rf the dir,
+# which is what created the historical stale /tmp/bench-compare.* entries.
+require "bench-compare.sh removes worktree from git metadata" \
+  grep -q 'git worktree remove --force' "$BENCH_SCRIPT"
+require "bench-compare.sh prunes worktree metadata" \
+  grep -q 'git worktree prune' "$BENCH_SCRIPT"
 
 # python3 prerequisite must fail clearly before creating any worktree.
 MINBIN="$(mktemp -d)"
@@ -223,6 +236,19 @@ require "verify-local.sh --full runs bench-compare origin/main" \
   grep -q 'bench-compare.sh origin/main' <<<"$DRY_FULL"
 require "verify-local.sh --full runs bench smoke" \
   grep -q 'bench --bench' <<<"$DRY_FULL"
+
+# --full must wire the contract gates and refresh the benchmark baseline.
+require "verify-local.sh --full runs contract gates" \
+  grep -q 'test-ci-gates.sh' <<<"$DRY_FULL"
+require "verify-local.sh --full fetches fresh origin/main" \
+  grep -q 'git fetch origin main' <<<"$DRY_FULL"
+
+# --baseline <ref> overrides the default origin/main and skips the fetch.
+DRY_BASELINE="$("$VERIFY_SCRIPT" --dry-run --full --baseline HEAD 2>&1 || true)"
+require "verify-local.sh --full --baseline uses explicit ref" \
+  grep -q 'bench-compare.sh HEAD' <<<"$DRY_BASELINE"
+require_not "verify-local.sh --full --baseline skips fetch" \
+  grep -q 'git fetch origin main' <<<"$DRY_BASELINE"
 
 # The former hidden env bypass must be gone: dry-run is now an explicit flag.
 require_not "verify-local.sh no VERIFY_LOCAL_DRY_RUN env bypass" \
