@@ -1,0 +1,7 @@
+# Exact CI/developer toolchain for this repository (see ADR-025).
+# MSRV for consumers is declared separately in archctl/Cargo.toml
+# (rust-version = "1.85"); CI deliberately runs above MSRV on 1.97.1.
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

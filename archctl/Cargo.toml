@@ -2,6 +2,12 @@
 name = "archctl"
 version = "0.1.0"
 edition = "2024"
+# MSRV = consumer compile floor, validated empirically at apply: the current
+# dependency tree requires rustc 1.91 (cargo-platform@0.3.3) and 1.86-1.88
+# elsewhere (idna_adapter, ignore, time). Spec proposed 1.85 but deps demand
+# more; proposal risk table authorized "raise in its own commit" (see ADR-025).
+# CI runs above MSRV on the exact pin 1.97.1 (root rust-toolchain.toml).
+rust-version = "1.91"
 description = "Sidecar CLI for OpenCode Architecture Diagrammer. Implements M1 (skillset reproducible) of docs/ROADMAP.md."
 license = "MIT"
 publish = false
