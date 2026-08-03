@@ -26,6 +26,12 @@ import type {
   GraphNode,
   SequenceInteraction,
 } from "../bundle/loader";
+import {
+  extractParticipants,
+  orderInteractions,
+  participantColumns,
+  type Participant,
+} from "./SequenceGraph";
 
 export interface SequenceViewProps {
   nodes: GraphNode[];
@@ -33,44 +39,20 @@ export interface SequenceViewProps {
   onSelect: (id: string | null) => void;
 }
 
-interface Participant {
-  key: string;
-  name: string;
-  file?: string;
-}
-
 export const SequenceView: Component<SequenceViewProps> = (props) => {
-  /**
-   * Build the participant list from interactions. A participant is
-   * uniquely identified by file:name (matches loader's key scheme).
-   */
-  const participants = createMemo<Participant[]>(() => {
-    const map = new Map<string, Participant>();
-    for (const i of props.interactions) {
-      for (const side of [
-        { name: i.caller.name, file: i.caller.file },
-        { name: i.callee.name, file: i.callee.file },
-      ] as const) {
-        if (!side.name) continue;
-        const key = `${side.file ?? ""}:${side.name}`;
-        if (!map.has(key)) {
-          map.set(key, { key, name: side.name, file: side.file });
-        }
-      }
-    }
-    return [...map.values()];
-  });
+  /** Participant list (unique file:name, first-appearance order). */
+  const participants = createMemo<Participant[]>(() =>
+    extractParticipants(props.interactions),
+  );
 
   /** Index: participant key → column index. */
-  const colIndex = createMemo<Map<string, number>>(() => {
-    const m = new Map<string, number>();
-    participants().forEach((p, i) => m.set(p.key, i));
-    return m;
-  });
+  const colIndex = createMemo<Map<string, number>>(() =>
+    participantColumns(participants()),
+  );
 
   /** Interactions sorted by `order`. */
   const orderedInteractions = createMemo<SequenceInteraction[]>(() =>
-    [...props.interactions].sort((a, b) => a.order - b.order),
+    orderInteractions(props.interactions),
   );
 
   const handleParticipantClick = (p: Participant) => {

@@ -3,7 +3,7 @@
  *
  * Renders different views depending on the bundle shape:
  * - sequence → SequenceView (lifelines + arrows, M17.3)
- * - call-graph → PackageView (modules + cycles, M17.5)
+ * - call-graph → ImpactView (blast radius, M17.7)
  * - class-diagram → ClassDiagramView (UML compartments, M17.4)
  * - C4 → C4View (hierarchical with drill-down, M17.1)
  * - drift mode (M17.6): two C4 bundles side-by-side diff
@@ -17,7 +17,6 @@ import { C4View } from "./views/C4View";
 import { CallGraphView } from "./views/CallGraphView";
 import { SequenceView } from "./views/SequenceView";
 import { ClassDiagramView } from "./views/ClassDiagramView";
-import { PackageView } from "./views/PackageView";
 import { DriftView } from "./views/DriftView";
 import { ImpactView } from "./views/ImpactView";
 
@@ -302,13 +301,11 @@ const GraphView: Component<{
   selectedId: string | null;
   onSelect: (node: GraphNode | null) => void;
 }> = (props) => {
-  let canvasRef: HTMLDivElement | undefined;
   let renderer: GraphRenderer | undefined;
 
   // SolidJS doesn't have onMount lifecycle for DOM ref initialization
   // in the same way React does; we use a createEffect to wire up.
   const mount = (el: HTMLDivElement) => {
-    canvasRef = el;
     if (renderer) {
       renderer.destroy();
     }

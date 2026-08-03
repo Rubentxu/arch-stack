@@ -12,7 +12,7 @@
  */
 
 import { Graph } from "@antv/g6";
-import type { GraphBundle } from "./loader";
+import type { GraphBundle } from "../bundle/loader";
 
 export interface RendererOptions {
   container: HTMLElement;

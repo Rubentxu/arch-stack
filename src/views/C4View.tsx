@@ -14,6 +14,11 @@
 
 import { For, Show, createMemo, createSignal, type Component } from "solid-js";
 import type { GraphNode } from "../bundle/loader";
+import {
+  visibleNodesForFocus,
+  visibleEdgesFor,
+  groupNodesByLevel,
+} from "./C4Graph";
 
 export interface C4ViewProps {
   nodes: GraphNode[];
@@ -35,42 +40,18 @@ export const C4View: Component<C4ViewProps> = (props) => {
     return props.nodes.find((n) => n.id === id) ?? null;
   });
 
-  /**
-   * When focused on a node, the visible set is: the focus itself +
-   * its children (one level down) + the parent context (if any) for
-   * orientation. Otherwise all nodes are visible.
-   */
-  const visibleNodes = createMemo<GraphNode[]>(() => {
-    const f = focus();
-    if (!f) return props.nodes;
-    const children = props.nodes.filter((n) => n.parentId === f.id);
-    const result: GraphNode[] = [f, ...children];
-    // Include the parent context for orientation
-    if (f.parentId) {
-      const parent = props.nodes.find((n) => n.id === f.parentId);
-      if (parent) result.push(parent);
-    }
-    return result;
-  });
-
-  const visibleIds = createMemo(() => new Set(visibleNodes().map((n) => n.id)));
-
-  const visibleEdges = createMemo(() =>
-    props.edges.filter(
-      (e) => visibleIds().has(e.source) && visibleIds().has(e.target),
-    ),
+  /** Visible set: focus + children + parent (or all when unfocused). */
+  const visibleNodes = createMemo<GraphNode[]>(() =>
+    visibleNodesForFocus(props.nodes, focusId()),
   );
 
-  const groupedByLevel = createMemo(() => {
-    const groups = new Map<number, GraphNode[]>();
-    for (const n of visibleNodes()) {
-      const level = n.level ?? 0;
-      const arr = groups.get(level) ?? [];
-      arr.push(n);
-      groups.set(level, arr);
-    }
-    return [...groups.entries()].sort(([a], [b]) => a - b);
-  });
+  const visibleEdges = createMemo(() =>
+    visibleEdgesFor(props.edges, visibleNodes()),
+  );
+
+  const groupedByLevel = createMemo(() =>
+    groupNodesByLevel(visibleNodes()),
+  );
 
   const handleNodeClick = (id: string) => {
     props.onSelect(id);

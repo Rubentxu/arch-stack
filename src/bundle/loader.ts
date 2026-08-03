@@ -355,7 +355,7 @@ function genericToEdge(e: Record<string, unknown>): GraphEdge {
     source: stringOr(e.source, ""),
     target: stringOr(e.target, ""),
     kind: stringOrUndefined(e.kind),
-    label: stringOr(e.kind, undefined),
+    label: stringOrUndefined(e.kind),
     meta: { ...e },
   };
 }
