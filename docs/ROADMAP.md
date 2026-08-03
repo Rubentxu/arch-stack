@@ -128,7 +128,7 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 
 **Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
 
-> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **Pendiente**: WebGPU/ADR-019 (0% implementado), fixture exporter-derived cuando archctl arregle el mismatch `category c4 vs container` (`c4_discover.rs:231` vs `diagram/queries.rs:72`), PackageView onSelect `pkg.name`→node follow-up.
+> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **`fix-m17-package-view-onselect` cerrado ✅ (v0.14.5)** — PackageView onSelect `pkg.name`→node agora povoa o sidebar via synthetic `GraphNode` (Option D, `buildPackageNode`). **Pendiente**: WebGPU/ADR-019 (0% implementado), fixture exporter-derived cuando archctl arregle el mismatch `category c4 vs container` (`c4_discover.rs:231` vs `diagram/queries.rs:72`).
 
 - **M17.0**: SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline. **Single PR → tag v0.14.0 en repo separado `archview`**. Scope MVP: bundle loader + pan/zoom + sidebar de evidencias. Mínimo para que los bundles de M11/M12 sean visualizables.
 - **M17.1**: Semantic zoom para C4 (Context → Container → Component → Code).
@@ -337,6 +337,7 @@ Incluye:
 | `archview-lint` | `chore/archview-lint` (merged to main via --no-ff) | `d6c89f2` (merge commit) | **Cerrado** ✅ · tag `v0.14.2` |
 | `m17-contract-alignment` | `feat/m17-contract-alignment` (merged to main via PR #17) | `d98e1de` (merge commit) | **Cerrado** ✅ · tag `v0.14.3` |
 | `m17-routing-fix` | `feat/m17-routing-fix` (merged to main via PR #19) | `2b08140` (merge commit) | **Cerrado** ✅ · tag `v0.14.4` |
+| `fix-m17-package-view-onselect` | `fix/m17-package-view-onselect` (merged to main via PR #21) | `cd661e6` (merge commit) | **Cerrado** ✅ · tag `v0.14.5` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -771,3 +772,16 @@ Razones:
 - **CI Run**: https://github.com/Rubentxu/arch-stack/actions/runs/30821895028 (4/4 jobs green)
 - **PR Chain**: PRs #1-#4 (nested debt fixes) → PR #9 (final tracker to main)
 - **Próximo candidato**: M17.0 archview scaffold (separate repo) o next SDD cycle
+
+## Cycle cerrado — `fix-m17-package-view-onselect` (v0.14.5)
+
+- **Fecha**: 2026-08-03
+- **Branch**: `fix/m17-package-view-onselect` (merged to main via PR #21)
+- **Tag**: `v0.14.5` (`cd661e6`)
+- **Verdict**: verify PASS · debt-verify PASS_WITH_WARNINGS (0 CRIT, 0 HIGH, 12 LOW) · archive PASS
+- **Commits**: 1 (atomic: TDD RED→GREEN + regression suite)
+- **Tests**: 101/101 passing (+4 new: primary click, triangulation, idempotent re-click, view-switch persistence)
+- **Output**: click en package card agora correctly povoa o sidebar usando synthetic `GraphNode` via `buildPackageNode(pkgName, nodes)`. Constructs `{ id, label, kind: "package", meta: { evidence_refs } }` from package name + file list. Reuses existing `packageForFile` derivation. Isolated in `PackageGraph.ts`; forwarded by App's Package `Match` handler.
+- **Design decision**: Option D (synthetic node) — correct pattern when a domain entity (package) has no physical node in the bundle but must participate in UI selection.
+- **Deuda técnica**: C-001 (6 copy-paste `onSelect` handlers in `App.tsx:223-292`, pre-existing main debt) — follow-up: `refactor/extract-select-handler`.
+- **Próximo candidato**: `refactor/extract-select-handler` (C-001) o M17 archview scaffold.
