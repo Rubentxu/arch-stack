@@ -1,9 +1,12 @@
 name: CI
 
+# Post-merge detection only (ADR-025): CI runs exclusively when a push
+# updates main. Feature branches are verified locally via
+# scripts/verify-local.sh (pre-push hook) — remote CI is evidence, not
+# prevention. No pull_request / workflow_dispatch / schedule triggers.
 on:
   push:
     branches: [main]
-  pull_request:
 
 jobs:
   rust:
@@ -25,8 +28,10 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('archctl/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
+      # Toolchain pinned exactly in root rust-toolchain.toml (1.97.1);
+      # rustup materializes it from the pin. No floating stable install.
+      - name: Resolve pinned toolchain
+        run: rustup show active-toolchain
 
       - name: Build
         run: cargo build --quiet
@@ -43,7 +48,7 @@ jobs:
       - name: Doctor (repo-root cwd)
         run: |
           cargo build --quiet --release
-          ../target/release/archctl doctor --scopes code --cwd ..
+          ./target/release/archctl doctor --scopes code --cwd ..
 
   bench-smoke:
     name: archctl (benchmark smoke)
@@ -64,18 +69,19 @@ jobs:
           key: cargo-bench-${{ runner.os }}-${{ hashFiles('archctl/Cargo.lock') }}
           restore-keys: cargo-bench-${{ runner.os }}-
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
+      - name: Resolve pinned toolchain
+        run: rustup show active-toolchain
 
       # ADR-019: benchmark smoke gate (deterministic, quick mode).
       - name: Benchmark smoke (export pipeline)
         run: cargo bench --bench export_pipeline -- --quick
 
   bench-compare:
-    name: archctl (bench regression >10% vs main)
+    name: archctl (bench regression >10% vs previous main)
     runs-on: ubuntu-latest
-    # Only PRs: main has nothing to compare against.
-    if: github.event_name == 'pull_request'
+    # Post-merge: compares merged HEAD against the previous main SHA
+    # (github.event.before). Zero-SHA and unreachable baselines are
+    # rejected inside scripts/bench-compare.sh (exit 2).
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,13 +97,13 @@ jobs:
           key: cargo-benchcompare-${{ runner.os }}-${{ hashFiles('archctl/Cargo.lock') }}
           restore-keys: cargo-benchcompare-${{ runner.os }}-
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
+      - name: Resolve pinned toolchain
+        run: rustup show active-toolchain
 
-      # ADR-019 enforcement: fail the PR when any benchmark degrades >10%
-      # vs the origin/main baseline.
-      - name: Benchmark regression compare (vs main)
-        run: scripts/bench-compare.sh
+      # ADR-019 enforcement post-merge: fail when any benchmark degrades
+      # >10% vs the previous main commit.
+      - name: Benchmark regression compare (vs previous main)
+        run: scripts/bench-compare.sh "${{ github.event.before }}"
 
   web:
     name: archview (test/build/bundle-cap)
