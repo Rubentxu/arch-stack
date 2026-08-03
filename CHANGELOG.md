@@ -3,6 +3,28 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.21.1] — 2026-08-02 — view test coverage (M17.5 PackageGraph extract)
+
+### Added
+- **`src/views/PackageGraph.ts`** — pure helpers extracted from
+  `PackageView.tsx` so they can be unit-tested without pulling JSX
+  through the vitest transform pipeline:
+    - `packageForFile(file)` — derive package from file path
+    - `buildPackageEdges(nodes, edges)` — inter-package edges with
+      weight = call-site count
+    - `detectCycles(edges)` — DFS back-edge cycle detection
+- **`src/__tests__/PackageView.test.ts`** — 8 new tests covering:
+    - `buildPackageEdges`: empty list when no cross-package edges,
+      weight aggregation from multiple call sites, ignores unknown
+      files, handles Rust workspace `crates/[name]/src/[file]` pattern
+    - `detectCycles`: empty set for acyclic, 2-node cycle, 3-node
+      cycle, cycle in subset of edges
+- Test count: 32 → 40 (25% increase).
+
+### Refs
+- Cycle: `test/view-coverage`
+- Closes STATE.md debt entry `archview: only loader.ts has tests`
+
 ## [v0.21.0] — 2026-08-02 — M17.7 impact analysis (M17 series complete)
 
 ### Added
