@@ -17,6 +17,11 @@
 
 import { For, Show, createMemo, type Component } from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
+import {
+  partitionMembers,
+  stereotypeFor,
+  groupEdgesByPredicate,
+} from "./ClassDiagramGraph";
 
 export interface ClassDiagramViewProps {
   nodes: GraphNode[];
@@ -24,49 +29,9 @@ export interface ClassDiagramViewProps {
   onSelect: (id: string | null) => void;
 }
 
-interface ClassMember {
-  name: string;
-  member_kind: string;
-  signature?: string;
-  line?: number;
-}
-
 export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
-  /** Partition members by kind (field vs fn). */
-  const partition = (node: GraphNode): { fields: ClassMember[]; methods: ClassMember[] } => {
-    const raw = (node.meta?.members as ClassMember[] | undefined) ?? [];
-    const fields: ClassMember[] = [];
-    const methods: ClassMember[] = [];
-    for (const m of raw) {
-      if (m.member_kind === "field") fields.push(m);
-      else if (m.member_kind === "fn" || m.member_kind === "method") methods.push(m);
-    }
-    return { fields, methods };
-  };
-
-  /** Stereotype (interface / trait / enum) for the header. */
-  const stereotype = (kind: string): string | undefined => {
-    if (kind === "interface") return "<<interface>>";
-    if (kind === "trait") return "<<trait>>";
-    if (kind === "enum") return "<<enum>>";
-    return undefined;
-  };
-
   /** Edges grouped by predicate kind for the bottom panel. */
-  const edgeGroups = createMemo(() => {
-    const groups: Record<string, GraphEdge[]> = {
-      extends: [],
-      implements: [],
-      composes: [],
-      other: [],
-    };
-    for (const e of props.edges) {
-      const k = e.kind ?? "other";
-      if (k in groups) groups[k].push(e);
-      else groups.other.push(e);
-    }
-    return groups;
-  });
+  const edgeGroups = createMemo(() => groupEdgesByPredicate(props.edges));
 
   const nodeById = createMemo<Map<string, GraphNode>>(() => {
     const m = new Map<string, GraphNode>();
@@ -92,14 +57,14 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
         <div class="cd-grid">
           <For each={props.nodes}>
             {(node) => {
-              const { fields, methods } = partition(node);
+              const { fields, methods } = partitionMembers(node);
               return (
                 <article
                   class={`cd-card cd-kind-${node.kind}`}
                   onClick={() => props.onSelect(node.id)}
                 >
                   <header class="cd-card-header">
-                    <Show when={stereotype(node.kind)}>
+                    <Show when={stereotypeFor(node.kind)}>
                       {(s) => <span class="cd-stereotype">{s()}</span>}
                     </Show>
                     <h3 class="cd-name">{node.label}</h3>

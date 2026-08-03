@@ -25,8 +25,15 @@ import {
 } from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import type { SidebarStats } from "../components/Sidebar";
+import {
+  expandLevels,
+  blastRadiusOf,
+  MAX_DEPTH,
+  type CallDirection,
+  type LevelGroup,
+} from "./CallGraphGraph";
 
-export type CallDirection = "callees" | "callers" | "both";
+export type { CallDirection };
 
 export interface CallGraphViewProps {
   nodes: GraphNode[];
@@ -36,15 +43,6 @@ export interface CallGraphViewProps {
   onSelect: (id: string | null) => void;
   onStats?: (stats: SidebarStats) => void;
 }
-
-interface LevelGroup {
-  direction: "callees" | "callers";
-  depth: number;
-  edges: GraphEdge[];
-  nodes: GraphNode[];
-}
-
-const MAX_DEPTH = 5;
 
 export const CallGraphView: Component<CallGraphViewProps> = (props) => {
   const [focusId, setFocusId] = createSignal<string | null>(
@@ -59,70 +57,21 @@ export const CallGraphView: Component<CallGraphViewProps> = (props) => {
     return props.nodes.find((n) => n.id === id) ?? null;
   });
 
-  /**
-   * BFS from focus. At each level, expand nodes by following edges
-   * in the chosen direction. The result is a list of `LevelGroup`s
-   * (one per depth, per direction).
-   */
-  const levelGroups = createMemo<LevelGroup[]>(() => {
-    const f = focus();
-    if (!f) return [];
-    const result: LevelGroup[] = [];
-    const visited = new Set<string>([f.id]);
-
-    const followForward = (from: string): string[] =>
-      props.edges.filter((e) => e.source === from).map((e) => e.target);
-    const followBackward = (from: string): string[] =>
-      props.edges.filter((e) => e.target === from).map((e) => e.source);
-
-    let frontier: string[] = [f.id];
-    for (let d = 1; d <= depth(); d++) {
-      const next: string[] = [];
-      for (const nodeId of frontier) {
-        const targets =
-          direction() === "callees" || direction() === "both"
-            ? followForward(nodeId)
-            : [];
-        const sources =
-          direction() === "callers" || direction() === "both"
-            ? followBackward(nodeId)
-            : [];
-        for (const t of [...targets, ...sources]) {
-          if (!visited.has(t)) {
-            visited.add(t);
-            next.push(t);
-          }
-        }
-      }
-      if (next.length === 0) break;
-      const levelEdges = props.edges.filter(
-        (e) =>
-          visited.has(e.source) &&
-          visited.has(e.target) &&
-          (frontier.includes(e.source) || frontier.includes(e.target)),
-      );
-      const levelNodes = props.nodes.filter((n) => next.includes(n.id));
-      result.push({
-        direction:
-          direction() === "both"
-            ? d === 1
-              ? "callees"
-              : "callers"
-            : (direction() as "callees" | "callers"),
-        depth: d,
-        edges: levelEdges,
-        nodes: levelNodes,
-      });
-      frontier = next;
-    }
-    return result;
-  });
+  /** BFS from focus with direction + depth controls. */
+  const levelGroups = createMemo<LevelGroup[]>(() =>
+    expandLevels(
+      props.nodes,
+      props.edges,
+      focusId() ?? "",
+      depth(),
+      direction(),
+    ),
+  );
 
   /** Blast radius: total unique functions reachable from focus. */
-  const blastRadius = createMemo<number>(() => {
-    const groups = levelGroups();
-    return groups.reduce((acc, g) => acc + g.nodes.length, 0);
-  });
+  const blastRadius = createMemo<number>(() =>
+    blastRadiusOf(levelGroups()),
+  );
 
   // Emit stats to sidebar whenever focus/depth/direction change.
   createEffect(() => {

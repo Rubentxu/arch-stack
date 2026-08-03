@@ -14,7 +14,14 @@
  */
 
 import { For, Show, createMemo, type Component } from "solid-js";
-import type { GraphEdge, GraphNode, GraphBundle } from "../bundle/loader";
+import type { GraphBundle } from "../bundle/loader";
+import {
+  diffElements,
+  diffRelations,
+  driftCounts,
+  type ElementDiff,
+  type RelationDiff,
+} from "./DriftGraph";
 
 export interface DriftViewProps {
   declared: GraphBundle | null;
@@ -22,92 +29,20 @@ export interface DriftViewProps {
   onSelect: (id: string | null) => void;
 }
 
-type ElementDiff =
-  | { kind: "added"; node: GraphNode }
-  | { kind: "removed"; node: GraphNode }
-  | { kind: "changed"; node: GraphNode; changes: string[] };
-
-type RelationDiff =
-  | { kind: "added"; edge: GraphEdge }
-  | { kind: "removed"; edge: GraphEdge }
-  | { kind: "changed"; edge: GraphEdge; changes: string[] };
-
 export const DriftView: Component<DriftViewProps> = (props) => {
   const elementDiffs = createMemo<ElementDiff[]>(() => {
-    const dec = props.declared;
-    const act = props.actual;
-    if (!dec || !act) return [];
-
-    const decMap = new Map<string, GraphNode>();
-    const actMap = new Map<string, GraphNode>();
-    for (const n of dec.nodes) decMap.set(n.id, n);
-    for (const n of act.nodes) actMap.set(n.id, n);
-
-    const result: ElementDiff[] = [];
-
-    // Added: in actual, not in declared
-    for (const [id, node] of actMap) {
-      if (!decMap.has(id)) {
-        result.push({ kind: "added", node });
-      }
-    }
-
-    // Removed: in declared, not in actual
-    for (const [id, node] of decMap) {
-      if (!actMap.has(id)) {
-        result.push({ kind: "removed", node });
-      }
-    }
-
-    // Changed: in both, with property diffs
-    for (const [id, decNode] of decMap) {
-      const actNode = actMap.get(id);
-      if (!actNode) continue;
-      const changes = diffElementProps(decNode, actNode);
-      if (changes.length > 0) {
-        result.push({ kind: "changed", node: actNode, changes });
-      }
-    }
-    return result;
+    if (!props.declared || !props.actual) return [];
+    return diffElements(props.declared.nodes, props.actual.nodes);
   });
 
   const relationDiffs = createMemo<RelationDiff[]>(() => {
-    const dec = props.declared;
-    const act = props.actual;
-    if (!dec || !act) return [];
-
-    const keyOf = (e: GraphEdge): string =>
-      `${e.source}\0${e.target}\0${e.kind ?? ""}`;
-
-    const decMap = new Map<string, GraphEdge>();
-    const actMap = new Map<string, GraphEdge>();
-    for (const e of dec.edges) decMap.set(keyOf(e), e);
-    for (const e of act.edges) actMap.set(keyOf(e), e);
-
-    const result: RelationDiff[] = [];
-
-    for (const [k, edge] of actMap) {
-      if (!decMap.has(k)) result.push({ kind: "added", edge });
-    }
-    for (const [k, edge] of decMap) {
-      if (!actMap.has(k)) result.push({ kind: "removed", edge });
-    }
-    // (no per-relation prop diff for MVP — relations are matched
-    // structurally)
-    return result;
+    if (!props.declared || !props.actual) return [];
+    return diffRelations(props.declared.edges, props.actual.edges);
   });
 
-  const counts = createMemo(() => {
-    const ed = elementDiffs();
-    const rd = relationDiffs();
-    return {
-      added: ed.filter((d) => d.kind === "added").length,
-      removed: ed.filter((d) => d.kind === "removed").length,
-      changed: ed.filter((d) => d.kind === "changed").length,
-      relAdded: rd.filter((d) => d.kind === "added").length,
-      relRemoved: rd.filter((d) => d.kind === "removed").length,
-    };
-  });
+  const counts = createMemo(() =>
+    driftCounts(elementDiffs(), relationDiffs()),
+  );
 
   return (
     <div class="drift-view">
@@ -250,21 +185,3 @@ export const DriftView: Component<DriftViewProps> = (props) => {
     </div>
   );
 };
-
-/** Return a list of human-readable property diffs between two nodes. */
-function diffElementProps(dec: GraphNode, act: GraphNode): string[] {
-  const changes: string[] = [];
-  if (dec.label !== act.label) {
-    changes.push(`label: "${dec.label}" → "${act.label}"`);
-  }
-  if (dec.kind !== act.kind) {
-    changes.push(`kind: ${dec.kind} → ${act.kind}`);
-  }
-  if ((dec.meta?.description as string) !== (act.meta?.description as string)) {
-    changes.push(`description changed`);
-  }
-  if ((dec.meta?.technology as string) !== (act.meta?.technology as string)) {
-    changes.push(`technology changed`);
-  }
-  return changes;
-}

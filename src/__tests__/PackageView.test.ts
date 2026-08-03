@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  buildPackageEdges,
-  detectCycles,
-  packageForFile,
-} from "../views/PackageGraph";
+import { buildPackageEdges, detectCycles } from "../views/PackageGraph";
 
 describe("buildPackageEdges (M17.5 view extract)", () => {
   it("returns empty list when no cross-package edges exist", () => {

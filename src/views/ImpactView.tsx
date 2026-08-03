@@ -16,24 +16,24 @@
  */
 
 import { For, Show, createMemo, createSignal, type Component } from "solid-js";
-import type { GraphEdge, GraphNode } from "../bundle/loader";
+import type { GraphNode } from "../bundle/loader";
 import type { SidebarStats } from "../components/Sidebar";
+import {
+  computeImpact,
+  impactCount as countImpact,
+  maxImpactDepth,
+  type ImpactDirection,
+  type ImpactEntry,
+} from "./ImpactGraph";
 
-export type ImpactDirection = "upstream" | "downstream" | "both";
+export type { ImpactDirection, ImpactEntry };
 
 export interface ImpactViewProps {
   nodes: GraphNode[];
-  edges: GraphEdge[];
+  edges: { source: string; target: string }[];
   initialFocusId?: string;
   onSelect: (id: string | null) => void;
   onStats?: (stats: SidebarStats) => void;
-}
-
-interface ImpactEntry {
-  nodeId: string;
-  depth: number;
-  direction: "upstream" | "downstream";
-  path: string[];
 }
 
 export const ImpactView: Component<ImpactViewProps> = (props) => {
@@ -49,75 +49,10 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
     return props.nodes.find((n) => n.id === id) ?? null;
   });
 
-  /**
-   * BFS from focus in both directions. Returns entries with the
-   * path from focus → leaf for context. Deduplicates nodes that
-   * appear in both directions (they appear once at the shallower
-   * depth).
-   */
-  const impactEntries = createMemo<ImpactEntry[]>(() => {
-    const f = focus();
-    if (!f) return [];
-    const entries: ImpactEntry[] = [];
-    const visited = new Map<string, ImpactEntry>();
-
-    // Add focus itself with depth 0
-    const focusEntry: ImpactEntry = {
-      nodeId: f.id,
-      depth: 0,
-      direction: "upstream", // arbitrary, focus is the source
-      path: [f.id],
-    };
-    entries.push(focusEntry);
-    visited.set(f.id, focusEntry);
-
-    const traverse = (
-      startId: string,
-      dir: "upstream" | "downstream",
-    ) => {
-      let frontier: Array<{ id: string; path: string[] }> = [
-        { id: startId, path: [startId] },
-      ];
-      let depth = 0;
-      const MAX_DEPTH = 5;
-      while (frontier.length > 0 && depth < MAX_DEPTH) {
-        depth++;
-        const next: typeof frontier = [];
-        for (const { id, path } of frontier) {
-          const neighbors = props.edges
-            .filter((e) =>
-              dir === "upstream" ? e.target === id : e.source === id,
-            )
-            .map((e) => (dir === "upstream" ? e.source : e.target));
-          for (const n of neighbors) {
-            if (n === f.id) continue; // don't loop back to focus
-            const newPath = [...path, n];
-            const existing = visited.get(n);
-            if (!existing || existing.depth > depth) {
-              const entry: ImpactEntry = {
-                nodeId: n,
-                depth,
-                direction: dir,
-                path: newPath,
-              };
-              visited.set(n, entry);
-              if (!existing) entries.push(entry);
-              next.push({ id: n, path: newPath });
-            }
-          }
-        }
-        frontier = next;
-      }
-    };
-
-    if (direction() === "upstream" || direction() === "both") {
-      traverse(f.id, "upstream");
-    }
-    if (direction() === "downstream" || direction() === "both") {
-      traverse(f.id, "downstream");
-    }
-    return entries;
-  });
+  /** BFS from focus in both directions with path tracking. */
+  const impactEntries = createMemo<ImpactEntry[]>(() =>
+    computeImpact(props.nodes, props.edges, focusId() ?? "", direction()),
+  );
 
   /** Group entries by depth for hierarchical display. */
   const byDepth = createMemo<Record<number, ImpactEntry[]>>(() => {
@@ -130,11 +65,11 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
   });
 
   /** Stats: count of impacted nodes + max depth. */
-  const impactCount = createMemo<number>(
-    () => impactEntries().filter((e) => e.depth > 0).length,
+  const impactCount = createMemo<number>(() =>
+    countImpact(impactEntries()),
   );
   const maxDepth = createMemo<number>(() =>
-    impactEntries().reduce((m, e) => Math.max(m, e.depth), 0),
+    maxImpactDepth(impactEntries()),
   );
 
   const nodeById = createMemo(() => {
