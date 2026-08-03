@@ -100,7 +100,10 @@ export function diffElementProps(dec: GraphNode, act: GraphNode): string[] {
 /**
  * Summary counts for the drift header.
  */
-export function driftCounts(elements: ElementDiff[], relations: RelationDiff[]) {
+export function driftCounts(
+  elements: ElementDiff[],
+  relations: RelationDiff[],
+) {
   return {
     added: elements.filter((d) => d.kind === "added").length,
     removed: elements.filter((d) => d.kind === "removed").length,

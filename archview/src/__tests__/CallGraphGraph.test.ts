@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { expandLevels, blastRadiusOf, MAX_DEPTH } from "../views/CallGraphGraph";
+import {
+  expandLevels,
+  blastRadiusOf,
+  MAX_DEPTH,
+} from "../views/CallGraphGraph";
 
 // Diamond: a -> b, a -> c, b -> d, c -> d
 const nodes = [
@@ -17,20 +21,38 @@ const edges = [
 
 describe("expandLevels (CallGraphGraph)", () => {
   it("expands 1 level downstream", () => {
-    const groups = expandLevels(nodes as never, edges as never, "a", 1, "callees");
+    const groups = expandLevels(
+      nodes as never,
+      edges as never,
+      "a",
+      1,
+      "callees",
+    );
     expect(groups).toHaveLength(1);
     expect(groups[0].nodes.map((n) => n.id).sort()).toEqual(["b", "c"]);
   });
 
   it("expands 2 levels downstream and dedupes d", () => {
-    const groups = expandLevels(nodes as never, edges as never, "a", 2, "callees");
+    const groups = expandLevels(
+      nodes as never,
+      edges as never,
+      "a",
+      2,
+      "callees",
+    );
     expect(groups).toHaveLength(2);
     expect(groups[0].nodes.map((n) => n.id).sort()).toEqual(["b", "c"]);
     expect(groups[1].nodes.map((n) => n.id)).toEqual(["d"]);
   });
 
   it("expands upstream", () => {
-    const groups = expandLevels(nodes as never, edges as never, "d", 2, "callers");
+    const groups = expandLevels(
+      nodes as never,
+      edges as never,
+      "d",
+      2,
+      "callers",
+    );
     expect(groups[0].nodes.map((n) => n.id).sort()).toEqual(["b", "c"]);
     expect(groups[1].nodes.map((n) => n.id)).toEqual(["a"]);
   });
@@ -41,12 +63,24 @@ describe("expandLevels (CallGraphGraph)", () => {
   });
 
   it("terminates early when frontier is exhausted", () => {
-    const groups = expandLevels(nodes as never, edges as never, "a", 5, "callees");
+    const groups = expandLevels(
+      nodes as never,
+      edges as never,
+      "a",
+      5,
+      "callees",
+    );
     expect(groups).toHaveLength(2);
   });
 
   it("returns empty when focus not found", () => {
-    const groups = expandLevels(nodes as never, edges as never, "ghost", 1, "callees");
+    const groups = expandLevels(
+      nodes as never,
+      edges as never,
+      "ghost",
+      1,
+      "callees",
+    );
     expect(groups).toHaveLength(0);
   });
 
@@ -55,7 +89,13 @@ describe("expandLevels (CallGraphGraph)", () => {
   });
 
   it("computes blast radius as sum of level nodes", () => {
-    const groups = expandLevels(nodes as never, edges as never, "a", 2, "callees");
+    const groups = expandLevels(
+      nodes as never,
+      edges as never,
+      "a",
+      2,
+      "callees",
+    );
     expect(blastRadiusOf(groups)).toBe(3); // b, c, d
   });
 });

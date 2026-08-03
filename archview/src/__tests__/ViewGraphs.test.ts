@@ -1,16 +1,56 @@
 import { describe, it, expect } from "vitest";
-import { visibleNodesForFocus, groupNodesByLevel, breadcrumbTrail } from "../views/C4Graph";
-import { partitionMembers, stereotypeFor, groupEdgesByPredicate } from "../views/ClassDiagramGraph";
+import {
+  visibleNodesForFocus,
+  groupNodesByLevel,
+  breadcrumbTrail,
+} from "../views/C4Graph";
+import {
+  partitionMembers,
+  stereotypeFor,
+  groupEdgesByPredicate,
+} from "../views/ClassDiagramGraph";
 import { extractParticipants, orderInteractions } from "../views/SequenceGraph";
-import { computeImpact, impactCount, maxImpactDepth } from "../views/ImpactGraph";
+import {
+  computeImpact,
+  impactCount,
+  maxImpactDepth,
+} from "../views/ImpactGraph";
 import { diffElements, diffRelations, driftCounts } from "../views/DriftGraph";
 
 describe("C4Graph", () => {
   const nodes = [
-    { id: "sys:1", label: "A", name: "A", kind: "SoftwareSystem", level: 1, parentId: undefined as string | undefined },
-    { id: "ctn:1", label: "A-C1", name: "A-C1", kind: "Container", level: 2, parentId: "sys:1" },
-    { id: "ctn:2", label: "A-C2", name: "A-C2", kind: "Container", level: 2, parentId: "sys:1" },
-    { id: "sys:2", label: "B", name: "B", kind: "SoftwareSystem", level: 1, parentId: undefined },
+    {
+      id: "sys:1",
+      label: "A",
+      name: "A",
+      kind: "SoftwareSystem",
+      level: 1,
+      parentId: undefined as string | undefined,
+    },
+    {
+      id: "ctn:1",
+      label: "A-C1",
+      name: "A-C1",
+      kind: "Container",
+      level: 2,
+      parentId: "sys:1",
+    },
+    {
+      id: "ctn:2",
+      label: "A-C2",
+      name: "A-C2",
+      kind: "Container",
+      level: 2,
+      parentId: "sys:1",
+    },
+    {
+      id: "sys:2",
+      label: "B",
+      name: "B",
+      kind: "SoftwareSystem",
+      level: 1,
+      parentId: undefined,
+    },
   ];
 
   it("returns all nodes when focus is unset", () => {
@@ -65,7 +105,11 @@ describe("ClassDiagramGraph", () => {
   });
 
   it("returns empty partition when no members", () => {
-    const { fields, methods } = partitionMembers({ id: "x", name: "X", kind: "class" } as never);
+    const { fields, methods } = partitionMembers({
+      id: "x",
+      name: "X",
+      kind: "class",
+    } as never);
     expect(fields).toEqual([]);
     expect(methods).toEqual([]);
   });
@@ -93,9 +137,21 @@ describe("ClassDiagramGraph", () => {
 describe("SequenceGraph", () => {
   it("extracts unique participants by file:name", () => {
     const interactions = [
-      { order: 1, caller: { name: "a", file: "lib.rs" }, callee: { name: "b", file: "lib.rs" } },
-      { order: 2, caller: { name: "b", file: "lib.rs" }, callee: { name: "c", file: "db.rs" } },
-      { order: 3, caller: { name: "c", file: "db.rs" }, callee: { name: "a", file: "lib.rs" } },
+      {
+        order: 1,
+        caller: { name: "a", file: "lib.rs" },
+        callee: { name: "b", file: "lib.rs" },
+      },
+      {
+        order: 2,
+        caller: { name: "b", file: "lib.rs" },
+        callee: { name: "c", file: "db.rs" },
+      },
+      {
+        order: 3,
+        caller: { name: "c", file: "db.rs" },
+        callee: { name: "a", file: "lib.rs" },
+      },
     ] as never;
     const participants = extractParticipants(interactions);
     expect(participants).toHaveLength(3);
@@ -156,7 +212,11 @@ describe("ImpactGraph", () => {
 });
 
 describe("DriftGraph", () => {
-  const node = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+  const node = (
+    id: string,
+    name: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
     id,
     label: name,
     name,

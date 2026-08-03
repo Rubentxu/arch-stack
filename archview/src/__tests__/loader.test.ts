@@ -50,12 +50,22 @@ describe("bundle loader", () => {
     const raw = {
       schemaVersion: "1.0",
       nodes: [
-        { id: "fn:a", name: "a", kind: "function", file: "src/lib.rs", line: 1 },
-        { id: "fn:b", name: "b", kind: "function", file: "src/lib.rs", line: 5 },
+        {
+          id: "fn:a",
+          name: "a",
+          kind: "function",
+          file: "src/lib.rs",
+          line: 1,
+        },
+        {
+          id: "fn:b",
+          name: "b",
+          kind: "function",
+          file: "src/lib.rs",
+          line: 5,
+        },
       ],
-      edges: [
-        { id: "e1", source: "fn:a", target: "fn:b", kind: "calls" },
-      ],
+      edges: [{ id: "e1", source: "fn:a", target: "fn:b", kind: "calls" }],
     };
     const bundle = normalizeBundle(raw, "test");
     expect(bundle.rawKind).toBe("call-graph");
@@ -115,9 +125,7 @@ describe("bundle loader", () => {
         { id: "el:1", name: "WebApp", kind: "Container" },
         { id: "el:2", name: "DB", kind: "Container" },
       ],
-      relations: [
-        { source: "el:1", target: "el:2", predicate_id: "uses" },
-      ],
+      relations: [{ source: "el:1", target: "el:2", predicate_id: "uses" }],
     };
     const bundle = normalizeBundle(raw, "test");
     expect(bundle.rawKind).toBe("c4");
@@ -181,12 +189,7 @@ describe("c4LevelForKind", () => {
 
 describe("call-graph BFS expansion (M17.2)", () => {
   // Diamond: a -> b, a -> c, b -> d, c -> d
-  const nodes = [
-    { id: "a" },
-    { id: "b" },
-    { id: "c" },
-    { id: "d" },
-  ];
+  const nodes = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
   const edges = [
     { source: "a", target: "b" },
     { source: "a", target: "c" },
@@ -232,9 +235,7 @@ describe("call-graph async flow (M17.2)", () => {
         { id: "fn:a", name: "a", kind: "function" },
         { id: "fn:b", name: "b", kind: "function" },
       ],
-      edges: [
-        { id: "e1", source: "fn:a", target: "fn:b", kind: "AsyncCall" },
-      ],
+      edges: [{ id: "e1", source: "fn:a", target: "fn:b", kind: "AsyncCall" }],
     };
     const bundle = normalizeBundle(raw, "test");
     expect(bundle.rawKind).toBe("call-graph");
@@ -277,10 +278,30 @@ describe("sequence bundle (M17.3)", () => {
     const raw = {
       schemaVersion: "1.0",
       interactions: [
-        { order: 1, message_kind: "SyncCall", caller: { name: "a" }, callee: { name: "b" } },
-        { order: 2, message_kind: "SyncCall", caller: { name: "b" }, callee: { name: "c" } },
-        { order: 3, message_kind: "Reply",    caller: { name: "c" }, callee: { name: "b" } },
-        { order: 4, message_kind: "Reply",    caller: { name: "b" }, callee: { name: "a" } },
+        {
+          order: 1,
+          message_kind: "SyncCall",
+          caller: { name: "a" },
+          callee: { name: "b" },
+        },
+        {
+          order: 2,
+          message_kind: "SyncCall",
+          caller: { name: "b" },
+          callee: { name: "c" },
+        },
+        {
+          order: 3,
+          message_kind: "Reply",
+          caller: { name: "c" },
+          callee: { name: "b" },
+        },
+        {
+          order: 4,
+          message_kind: "Reply",
+          caller: { name: "b" },
+          callee: { name: "a" },
+        },
       ],
     };
     const bundle = normalizeBundle(raw, "test");
@@ -297,7 +318,12 @@ describe("sequence bundle (M17.3)", () => {
     const raw = {
       schemaVersion: "1.0",
       interactions: [
-        { order: 1, message_kind: "SyncCall", caller: {}, callee: { name: "b" } },
+        {
+          order: 1,
+          message_kind: "SyncCall",
+          caller: {},
+          callee: { name: "b" },
+        },
       ],
     };
     const bundle = normalizeBundle(raw, "test");
@@ -320,7 +346,12 @@ describe("class-diagram bundle (M17.4)", () => {
           line: 1,
           members: [
             { name: "x", member_kind: "field", signature: "i32", line: 2 },
-            { name: "new", member_kind: "fn", signature: "fn() -> Self", line: 4 },
+            {
+              name: "new",
+              member_kind: "fn",
+              signature: "fn() -> Self",
+              line: 4,
+            },
           ],
         },
       ],
@@ -411,8 +442,14 @@ describe("package derivation (M17.5)", () => {
 describe("drift detection (M17.6)", () => {
   // Helper that replicates the diff logic for testing.
   function diffBundles(
-    declared: { nodes: { id: string; name: string; meta?: Record<string, unknown> }[]; edges: { source: string; target: string; kind?: string }[] },
-    actual: { nodes: { id: string; name: string; meta?: Record<string, unknown> }[]; edges: { source: string; target: string; kind?: string }[] },
+    declared: {
+      nodes: { id: string; name: string; meta?: Record<string, unknown> }[];
+      edges: { source: string; target: string; kind?: string }[];
+    },
+    actual: {
+      nodes: { id: string; name: string; meta?: Record<string, unknown> }[];
+      edges: { source: string; target: string; kind?: string }[];
+    },
   ): {
     added: string[];
     removed: string[];
@@ -425,10 +462,10 @@ describe("drift detection (M17.6)", () => {
     const added: string[] = [];
     const removed: string[] = [];
     const changed: { id: string; changes: string[] }[] = [];
-    for (const [id, n] of actMap) {
+    for (const [id] of actMap) {
       if (!decMap.has(id)) added.push(id);
     }
-    for (const [id, n] of decMap) {
+    for (const [id] of decMap) {
       if (!actMap.has(id)) removed.push(id);
     }
     for (const [id, dec] of decMap) {
@@ -486,15 +523,11 @@ describe("drift detection (M17.6)", () => {
   it("detects changed elements (description diff)", () => {
     const result = diffBundles(
       {
-        nodes: [
-          { id: "a", name: "A", meta: { description: "old" } },
-        ],
+        nodes: [{ id: "a", name: "A", meta: { description: "old" } }],
         edges: [],
       },
       {
-        nodes: [
-          { id: "a", name: "A", meta: { description: "new" } },
-        ],
+        nodes: [{ id: "a", name: "A", meta: { description: "new" } }],
         edges: [],
       },
     );
@@ -556,7 +589,9 @@ describe("impact analysis (M17.7)", () => {
         const next: string[] = [];
         for (const id of frontier) {
           const ns = edges
-            .filter((e) => (dir === "upstream" ? e.target === id : e.source === id))
+            .filter((e) =>
+              dir === "upstream" ? e.target === id : e.source === id,
+            )
             .map((e) => (dir === "upstream" ? e.source : e.target));
           for (const n of ns) {
             if (n === focusId) continue;
@@ -570,18 +605,15 @@ describe("impact analysis (M17.7)", () => {
         frontier = next;
       }
     };
-    if (direction === "upstream" || direction === "both") traverse(focusId, "upstream");
-    if (direction === "downstream" || direction === "both") traverse(focusId, "downstream");
+    if (direction === "upstream" || direction === "both")
+      traverse(focusId, "upstream");
+    if (direction === "downstream" || direction === "both")
+      traverse(focusId, "downstream");
     return entries.filter((e) => e.depth > 0);
   }
 
   it("returns empty impact for isolated node", () => {
-    const result = computeImpact(
-      [{ id: "a" }, { id: "b" }],
-      [],
-      "a",
-      "both",
-    );
+    const result = computeImpact([{ id: "a" }, { id: "b" }], [], "a", "both");
     expect(result).toHaveLength(0);
   });
 
@@ -635,13 +667,7 @@ describe("impact analysis (M17.7)", () => {
     // upstream of e with maxDepth=2: d (depth 1), c (depth 2)
     // a and b are at depth 3+ and excluded
     const result = computeImpact(
-      [
-        { id: "a" },
-        { id: "b" },
-        { id: "c" },
-        { id: "d" },
-        { id: "e" },
-      ],
+      [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }, { id: "e" }],
       [
         { source: "a", target: "b" },
         { source: "b", target: "c" },

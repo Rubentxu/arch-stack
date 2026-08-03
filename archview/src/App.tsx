@@ -9,7 +9,14 @@
  * - drift mode (M17.6): two C4 bundles side-by-side diff
  */
 
-import { Match, Show, Switch, createSignal, type Component } from "solid-js";
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createSignal,
+  type Component,
+} from "solid-js";
 import { GraphRenderer } from "./renderer/g6";
 import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
 import { Sidebar, type SidebarStats } from "./components/Sidebar";
@@ -57,8 +64,9 @@ export const App: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [stats, setStats] = createSignal<SidebarStats | undefined>(undefined);
   const [driftMode, setDriftMode] = createSignal(false);
-  const [declaredBundle, setDeclaredBundle] =
-    createSignal<GraphBundle | null>(null);
+  const [declaredBundle, setDeclaredBundle] = createSignal<GraphBundle | null>(
+    null,
+  );
   const [actualBundle, setActualBundle] = createSignal<GraphBundle | null>(
     null,
   );
@@ -96,9 +104,11 @@ export const App: Component = () => {
       <header class="topbar">
         <h1>archview</h1>
         <nav class="bundle-loader">
-          {SAMPLE_BUNDLES.map((s) => (
-            <button onClick={() => void handleLoad(s.url)}>{s.label}</button>
-          ))}
+          <For each={SAMPLE_BUNDLES}>
+            {(s) => (
+              <button onClick={() => void handleLoad(s.url)}>{s.label}</button>
+            )}
+          </For>
           <input
             type="text"
             placeholder={
@@ -138,11 +148,13 @@ export const App: Component = () => {
             <button
               onClick={() => {
                 const dec =
-                  (document.getElementById("declared-url") as HTMLInputElement)
-                    ?.value.trim() || "";
+                  (
+                    document.getElementById("declared-url") as HTMLInputElement
+                  )?.value.trim() || "";
                 const act =
-                  (document.getElementById("actual-url") as HTMLInputElement)
-                    ?.value.trim() || "";
+                  (
+                    document.getElementById("actual-url") as HTMLInputElement
+                  )?.value.trim() || "";
                 if (dec && act) void handleDriftLoad(dec, act);
               }}
             >
@@ -172,7 +184,7 @@ export const App: Component = () => {
                   selectedId={selected()?.id ?? null}
                   onSelect={(id) => {
                     const node = id
-                      ? b().nodes.find((n) => n.id === id) ?? null
+                      ? (b().nodes.find((n) => n.id === id) ?? null)
                       : null;
                     setSelected(node);
                   }}
@@ -184,7 +196,7 @@ export const App: Component = () => {
                   interactions={b().interactions ?? []}
                   onSelect={(id) => {
                     const node = id
-                      ? b().nodes.find((n) => n.id === id) ?? null
+                      ? (b().nodes.find((n) => n.id === id) ?? null)
                       : null;
                     setSelected(node);
                   }}
@@ -202,7 +214,7 @@ export const App: Component = () => {
                       edges={b().edges}
                       onSelect={(id) => {
                         const node = id
-                          ? b().nodes.find((n) => n.id === id) ?? null
+                          ? (b().nodes.find((n) => n.id === id) ?? null)
                           : null;
                         setSelected(node);
                       }}
@@ -215,7 +227,7 @@ export const App: Component = () => {
                       edges={b().edges}
                       onSelect={(id) => {
                         const node = id
-                          ? b().nodes.find((n) => n.id === id) ?? null
+                          ? (b().nodes.find((n) => n.id === id) ?? null)
                           : null;
                         setSelected(node);
                       }}
@@ -230,7 +242,7 @@ export const App: Component = () => {
                   edges={b().edges}
                   onSelect={(id) => {
                     const node = id
-                      ? b().nodes.find((n) => n.id === id) ?? null
+                      ? (b().nodes.find((n) => n.id === id) ?? null)
                       : null;
                     setSelected(node);
                   }}
@@ -256,7 +268,7 @@ export const App: Component = () => {
                 ...(declaredBundle()?.nodes ?? []),
                 ...(actualBundle()?.nodes ?? []),
               ];
-              const node = id ? all.find((n) => n.id === id) ?? null : null;
+              const node = id ? (all.find((n) => n.id === id) ?? null) : null;
               setSelected(node);
             }}
           />

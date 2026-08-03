@@ -69,9 +69,7 @@ export const CallGraphView: Component<CallGraphViewProps> = (props) => {
   );
 
   /** Blast radius: total unique functions reachable from focus. */
-  const blastRadius = createMemo<number>(() =>
-    blastRadiusOf(levelGroups()),
-  );
+  const blastRadius = createMemo<number>(() => blastRadiusOf(levelGroups()));
 
   // Emit stats to sidebar whenever focus/depth/direction change.
   createEffect(() => {
@@ -208,7 +206,9 @@ export const CallGraphView: Component<CallGraphViewProps> = (props) => {
                             {(e) => (
                               <li>
                                 <code>{e.source}</code>
-                                <span class={`callgraph-edge-kind kind-${e.kind ?? "default"}`}>
+                                <span
+                                  class={`callgraph-edge-kind kind-${e.kind ?? "default"}`}
+                                >
                                   {e.kind ?? "calls"}
                                 </span>
                                 <code>{e.target}</code>

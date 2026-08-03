@@ -67,8 +67,8 @@ export const PackageView: Component<PackageViewProps> = (props) => {
       <header class="pkg-header">
         <h2>Package diagram</h2>
         <p class="muted">
-          {packages().length} packages · {packageEdges().length}{" "}
-          inter-package edges
+          {packages().length} packages · {packageEdges().length} inter-package
+          edges
           {cycleEdges().size > 0 ? " · ⚠ cycle" : ""}
         </p>
       </header>

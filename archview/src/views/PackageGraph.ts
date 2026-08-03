@@ -71,7 +71,9 @@ export function detectCycles(edges: PackageEdge[]): Set<string> {
     adj.set(e.source, set);
   }
   const inCycle = new Set<string>();
-  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const WHITE = 0,
+    GRAY = 1,
+    BLACK = 2;
   const color = new Map<string, number>();
   for (const v of adj.keys()) color.set(v, WHITE);
 
