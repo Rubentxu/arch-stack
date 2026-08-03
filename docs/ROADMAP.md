@@ -128,7 +128,7 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 
 **Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
 
-> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **Pendiente**: `m17-routing-fix` (CallGraphView/PackageView inalcanzables en App.tsx — H4/H5), WebGPU/ADR-019 (0% implementado), fixture exporter-derived cuando archctl arregle el mismatch `category c4 vs container` (`c4_discover.rs:231` vs `diagram/queries.rs:72`).
+> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **Pendiente**: WebGPU/ADR-019 (0% implementado), fixture exporter-derived cuando archctl arregle el mismatch `category c4 vs container` (`c4_discover.rs:231` vs `diagram/queries.rs:72`), PackageView onSelect `pkg.name`→node follow-up.
 
 - **M17.0**: SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline. **Single PR → tag v0.14.0 en repo separado `archview`**. Scope MVP: bundle loader + pan/zoom + sidebar de evidencias. Mínimo para que los bundles de M11/M12 sean visualizables.
 - **M17.1**: Semantic zoom para C4 (Context → Container → Component → Code).
@@ -336,6 +336,7 @@ Incluye:
 | `release-pipeline` | `release/release-pipeline` (merged to main via --no-ff) | `43748b8` (merge commit) | **Cerrado** ✅ · tag `v0.14.1` · dup-002 fix: PR #12 ✅ |
 | `archview-lint` | `chore/archview-lint` (merged to main via --no-ff) | `d6c89f2` (merge commit) | **Cerrado** ✅ · tag `v0.14.2` |
 | `m17-contract-alignment` | `feat/m17-contract-alignment` (merged to main via PR #17) | `d98e1de` (merge commit) | **Cerrado** ✅ · tag `v0.14.3` |
+| `m17-routing-fix` | `feat/m17-routing-fix` (merged to main via PR #19) | `2b08140` (merge commit) | **Cerrado** ✅ · tag `v0.14.4` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
