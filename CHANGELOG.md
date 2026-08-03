@@ -4,6 +4,41 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v0.13.8
+
+### Changed
+- **CI post-merge (ADR-025)**: `.github/workflows/ci.yml` triggers only on
+  `push` to `main` (removed `pull_request` trigger). Feature branches are
+  verified locally instead of on the remote. All four gate groups remain:
+  rust (build/test/clippy/fmt/doctor), bench-smoke, bench-compare, web
+  (test/build/bundle-cap ≤2MB gzipped).
+- **Toolchain pinned exactly**: root `rust-toolchain.toml` pins `1.97.1`
+  (profile minimal, rustfmt + clippy); floating `rustup toolchain install
+  stable` steps removed. MSRV declared `1.91` in `archctl/Cargo.toml`
+  (spec proposed 1.85; dependency tree requires 1.91 — validated at apply).
+- **`bench-compare` baseline**: `scripts/bench-compare.sh <ref>` compares
+  against an explicit baseline (default `origin/main`). Post-merge CI passes
+  `github.event.before`; local `--full` passes `origin/main`. All-zero SHA
+  and absent/invalid/unreachable baselines fail with exit 2.
+- **Doctor path fixed**: the CI doctor step now runs
+  `./target/release/archctl` (from `archctl/`), not `../target/...`.
+
+### Added
+- **`scripts/verify-local.sh`**: tiered local verification. Cheap mode
+  (default): Rust test/clippy/fmt/doctor. `--full`: adds web
+  test/build/bundle-cap, benchmark smoke, and ADR-019 comparison vs
+  `origin/main`. Exit 0 = pass, 1 = gate failure, 2 = usage/prerequisite.
+- **`.githooks/pre-push`**: runs cheap `verify-local.sh` on every push
+  (installed via `core.hooksPath` by `scripts/install-hooks.sh`).
+- **`scripts/test-ci-gates.sh`**: deterministic checks for trigger policy,
+  preserved jobs, baseline wiring, zero-SHA/error behavior, local verify
+  modes, hook wiring, toolchain pin, and MSRV.
+- **ADR-025**: decision record for post-merge CI + pinned toolchain +
+  local-first prevention, including trade-offs and rollback.
+
+### Refs
+- Cycle: `ci-main-gates`
+
 ## [Unreleased] — v0.13.7
 
 ### Added
