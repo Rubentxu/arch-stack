@@ -10,6 +10,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 HOOKS_DIR="${REPO_ROOT}/.githooks"
 HOOK_FILE="${HOOKS_DIR}/commit-msg"
+PRE_PUSH_FILE="${HOOKS_DIR}/pre-push"
 
 if [[ ! -f "${HOOK_FILE}" ]]; then
   echo "install-hooks: missing ${HOOK_FILE}" >&2
@@ -18,6 +19,9 @@ if [[ ! -f "${HOOK_FILE}" ]]; then
 fi
 
 chmod +x "${HOOK_FILE}"
+if [[ -f "${PRE_PUSH_FILE}" ]]; then
+  chmod +x "${PRE_PUSH_FILE}"
+fi
 
 # `git config --local` writes to .git/config, not the user's
 # global gitconfig. This is the per-clone configuration we want.
@@ -25,6 +29,7 @@ git config --local core.hooksPath .githooks
 
 echo "install-hooks: core.hooksPath = .githooks"
 echo "  hook: ${HOOK_FILE} (executable)"
+echo "  hook: ${PRE_PUSH_FILE} (executable)"
 echo
 echo "Validating against the current HEAD commit history:"
 

@@ -4,31 +4,73 @@
 # group degrades more than THRESHOLD_PCT (default 10%).
 #
 # Usage:
-#   scripts/bench-compare.sh [--help]
+#   scripts/bench-compare.sh [--help] [--fake-regression N] [baseline-ref]
+#
+#   --fake-regression N  test mode: simulate a synthetic N% regression
+#                        without running real benchmarks. Deterministic.
+#                        Replaces the former TEST_FAKE_REGRESSION env var.
+#   baseline-ref         git ref/SHA to compare the current tree against
+#                        (default: origin/main). CI passes github.event.before;
+#                        local --full verification passes origin/main.
 #
 # Env:
 #   BENCH_NAME     benchmark binary (default: export_pipeline)
 #   THRESHOLD_PCT  regression threshold (default: 10)
 #   BENCH_DIR      crate dir relative to repo root (default: archctl)
-#   TEST_FAKE_REGRESSION  if set to N>0, fake a synthetic N% regression
-#                         (test mode — no real worktree/bench runs)
 #
 # The script:
-#   1. Benchmarks `main` in a temporary worktree (--save-baseline main)
+#   1. Benchmarks the baseline ref in a temporary worktree (--save-baseline main)
 #   2. Benchmarks the current tree (--save-baseline pr)
 #   3. Compares median.point_estimate (ns) per group; fails if pr > main*1.10
 #
-# Exit codes: 0 = no regression, 1 = regression detected, 2 = usage/error.
+# Exit codes: 0 = no regression, 1 = regression detected, 2 = baseline/usage error.
 
 set -euo pipefail
 
+# ---- prerequisites ---------------------------------------------------------
+# python3 is required to parse criterion estimates.json. Detect it before
+# creating any worktree so the failure is a clear prerequisite error, not a
+# confusing mid-benchmark crash.
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 required for benchmark comparison; install python3" >&2
+    exit 2
+fi
+
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '1,25p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '1,34p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
+fi
+
+# ---- test mode --------------------------------------------------------------
+# --fake-regression N simulates a synthetic regression deterministically,
+# exercising the ADR-019 threshold logic without real benchmark runs. It still
+# validates the baseline first (zero-SHA / unreachable refs exit 2).
+FAKE_REGRESSION=""
+if [ "${1:-}" = "--fake-regression" ]; then
+    FAKE_REGRESSION="${2:-}"
+    shift 2 || true
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+BASELINE_REF="${1:-origin/main}"
+
+# ---- baseline validation ---------------------------------------------------
+# A baseline must be a real, reachable commit. The all-zero SHA (first push
+# to an empty repository or history rewrite) is not a valid baseline and MUST
+# NOT pass; an absent/invalid/unreachable ref fails the same way. This is the
+# ADR-019 regression contract under the post-merge flow.
+ZERO_SHA="0000000000000000000000000000000000000000"
+if [ "$BASELINE_REF" = "$ZERO_SHA" ]; then
+    echo "error: baseline ref is the all-zero SHA (first push or history rewrite); no previous main to compare against" >&2
+    exit 2
+fi
+
+if ! git rev-parse --verify --quiet "${BASELINE_REF}^{commit}" >/dev/null; then
+    echo "error: baseline ref not resolvable to a commit: ${BASELINE_REF}" >&2
+    exit 2
+fi
 
 BENCH_NAME="${BENCH_NAME:-export_pipeline}"
 THRESHOLD_PCT="${THRESHOLD_PCT:-10}"
@@ -40,29 +82,39 @@ SAMPLE_SIZE="${SAMPLE_SIZE:-30}"
 MEASUREMENT_TIME="${MEASUREMENT_TIME:-5}"
 WARM_UP_TIME="${WARM_UP_TIME:-1}"
 WORKTREE_DIR="$(mktemp -d /tmp/bench-compare.XXXXXX)"
-trap 'rm -rf "$WORKTREE_DIR"' EXIT
+# Remove the worktree from disk AND git metadata on any exit. A plain
+# rm -rf would leave stale .git/worktrees entries (the historical
+# /tmp/bench-compare.* pollution); git worktree remove + prune cleans both.
+cleanup_worktrees() {
+    if [ -d "$WORKTREE_DIR/main" ]; then
+        git worktree remove --force "$WORKTREE_DIR/main" >/dev/null 2>&1 || true
+    fi
+    git worktree prune >/dev/null 2>&1 || true
+    rm -rf "$WORKTREE_DIR"
+}
+trap cleanup_worktrees EXIT
 
 # ---- test mode -----------------------------------------------------------
-if [ -n "${TEST_FAKE_REGRESSION:-}" ]; then
-    echo "TEST MODE: fake regression ${TEST_FAKE_REGRESSION}%"
+if [ -n "$FAKE_REGRESSION" ]; then
+    echo "TEST MODE: fake regression ${FAKE_REGRESSION}%"
     groups=("export_base_revision_hash" "export_query_elements_small")
     for g in "${groups[@]}"; do
         base=$((RANDOM % 10000 + 1000))
-        pr=$((base * (100 + TEST_FAKE_REGRESSION) / 100))
-        echo "$g: main=${base}ns pr=${pr}ns delta=+${TEST_FAKE_REGRESSION}%"
+        pr=$((base * (100 + FAKE_REGRESSION) / 100))
+        echo "$g: main=${base}ns pr=${pr}ns delta=+${FAKE_REGRESSION}%"
     done
     # Deterministic rule: the requested fake delta IS the simulated delta.
-    if [ "$TEST_FAKE_REGRESSION" -gt "$THRESHOLD_PCT" ]; then
-        echo "REGRESSION DETECTED: +${TEST_FAKE_REGRESSION}% > ${THRESHOLD_PCT}%"
+    if [ "$FAKE_REGRESSION" -gt "$THRESHOLD_PCT" ]; then
+        echo "REGRESSION DETECTED: +${FAKE_REGRESSION}% > ${THRESHOLD_PCT}%"
         exit 1
     fi
     echo "OK: within threshold"
     exit 0
 fi
 
-# ---- 1. benchmark main in a worktree -------------------------------------
-echo "== Benchmarking main (baseline) =="
-git worktree add --detach "$WORKTREE_DIR/main" origin/main >/dev/null
+# ---- 1. benchmark baseline in a worktree ----------------------------------
+echo "== Benchmarking baseline (${BASELINE_REF}) =="
+git worktree add --detach "$WORKTREE_DIR/main" "$BASELINE_REF" >/dev/null
 (
     cd "$WORKTREE_DIR/main/$BENCH_DIR"
     cargo bench --bench "$BENCH_NAME" -- --sample-size "$SAMPLE_SIZE" \
@@ -143,5 +195,5 @@ if [ "$failed" -eq 1 ]; then
     echo "FAIL: performance regression detected (threshold ${THRESHOLD_PCT}%)."
     exit 1
 fi
-echo "PASS: no regression > ${THRESHOLD_PCT}% vs main."
+echo "PASS: no regression > ${THRESHOLD_PCT}% vs ${BASELINE_REF}."
 exit 0
