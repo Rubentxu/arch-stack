@@ -3,10 +3,15 @@
  *
  * Renders different views depending on the bundle shape:
  * - sequence → SequenceView (lifelines + arrows, M17.3)
- * - call-graph → ImpactView (blast radius, M17.7)
+ * - call-graph → ImpactView by default (blast radius, M17.7), with a
+ *   selector to switch to CallGraphView (focus + BFS, M17.2) or
+ *   PackageView (package diagram, M17.5)
  * - class-diagram → ClassDiagramView (UML compartments, M17.4)
  * - C4 → C4View (hierarchical with drill-down, M17.1)
  * - drift mode (M17.6): two C4 bundles side-by-side diff
+ *
+ * Routing decisions are delegated to `resolveView` (pure mapping,
+ * R3) so exactly one specialized view renders per bundle kind.
  */
 
 import {
@@ -20,12 +25,14 @@ import {
 import { GraphRenderer } from "./renderer/g6";
 import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
 import { Sidebar, type SidebarStats } from "./components/Sidebar";
+import { resolveView, type CallGraphMode } from "./routing";
 import { C4View } from "./views/C4View";
 import { CallGraphView } from "./views/CallGraphView";
 import { SequenceView } from "./views/SequenceView";
 import { ClassDiagramView } from "./views/ClassDiagramView";
 import { DriftView } from "./views/DriftView";
 import { ImpactView } from "./views/ImpactView";
+import { PackageView } from "./views/PackageView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -70,6 +77,9 @@ export const App: Component = () => {
   const [actualBundle, setActualBundle] = createSignal<GraphBundle | null>(
     null,
   );
+  /** Selector state for call-graph bundles: Impact (default) | Call graph | Package. */
+  const [callGraphMode, setCallGraphMode] =
+    createSignal<CallGraphMode>("impact");
 
   const handleLoad = async (url: string) => {
     setError(null);
@@ -78,6 +88,7 @@ export const App: Component = () => {
       setBundle(b);
       setSelected(null);
       setStats(undefined);
+      setCallGraphMode("impact");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -175,53 +186,60 @@ export const App: Component = () => {
             )
           }
         >
-          {(b) => (
-            <Switch>
-              <Match when={b().rawKind === "c4"}>
-                <C4View
-                  nodes={b().nodes}
-                  edges={b().edges}
-                  selectedId={selected()?.id ?? null}
-                  onSelect={(id) => {
-                    const node = id
-                      ? (b().nodes.find((n) => n.id === id) ?? null)
-                      : null;
-                    setSelected(node);
-                  }}
-                />
-              </Match>
-              <Match when={b().rawKind === "sequence"}>
-                <SequenceView
-                  nodes={b().nodes}
-                  interactions={b().interactions ?? []}
-                  onSelect={(id) => {
-                    const node = id
-                      ? (b().nodes.find((n) => n.id === id) ?? null)
-                      : null;
-                    setSelected(node);
-                  }}
-                />
-              </Match>
-              <Match
-                when={
-                  b().rawKind === "call-graph" || b().rawKind === "sequence"
-                }
-              >
+          {(b) => {
+            const kind = () => resolveView(b().rawKind, callGraphMode());
+            return (
+              <>
+                <Show when={b().rawKind === "call-graph"}>
+                  <nav class="view-selector" aria-label="View selector">
+                    <button
+                      class={callGraphMode() === "impact" ? "active" : ""}
+                      onClick={() => setCallGraphMode("impact")}
+                    >
+                      Impact
+                    </button>
+                    <button
+                      class={callGraphMode() === "call-graph" ? "active" : ""}
+                      onClick={() => setCallGraphMode("call-graph")}
+                    >
+                      Call graph
+                    </button>
+                    <button
+                      class={callGraphMode() === "package" ? "active" : ""}
+                      onClick={() => setCallGraphMode("package")}
+                    >
+                      Package
+                    </button>
+                  </nav>
+                </Show>
+
                 <Switch>
-                  <Match when={b().rawKind === "call-graph"}>
-                    <ImpactView
+                  <Match when={kind() === "c4"}>
+                    <C4View
                       nodes={b().nodes}
                       edges={b().edges}
+                      selectedId={selected()?.id ?? null}
                       onSelect={(id) => {
                         const node = id
                           ? (b().nodes.find((n) => n.id === id) ?? null)
                           : null;
                         setSelected(node);
                       }}
-                      onStats={setStats}
                     />
                   </Match>
-                  <Match when={b().rawKind === "sequence"}>
+                  <Match when={kind() === "sequence"}>
+                    <SequenceView
+                      nodes={b().nodes}
+                      interactions={b().interactions ?? []}
+                      onSelect={(id) => {
+                        const node = id
+                          ? (b().nodes.find((n) => n.id === id) ?? null)
+                          : null;
+                        setSelected(node);
+                      }}
+                    />
+                  </Match>
+                  <Match when={kind() === "call-graph"}>
                     <CallGraphView
                       nodes={b().nodes}
                       edges={b().edges}
@@ -234,29 +252,54 @@ export const App: Component = () => {
                       onStats={setStats}
                     />
                   </Match>
+                  <Match when={kind() === "package"}>
+                    <PackageView
+                      nodes={b().nodes}
+                      edges={b().edges}
+                      onSelect={(id) => {
+                        const node = id
+                          ? (b().nodes.find((n) => n.id === id) ?? null)
+                          : null;
+                        setSelected(node);
+                      }}
+                    />
+                  </Match>
+                  <Match when={kind() === "impact"}>
+                    <ImpactView
+                      nodes={b().nodes}
+                      edges={b().edges}
+                      onSelect={(id) => {
+                        const node = id
+                          ? (b().nodes.find((n) => n.id === id) ?? null)
+                          : null;
+                        setSelected(node);
+                      }}
+                      onStats={setStats}
+                    />
+                  </Match>
+                  <Match when={kind() === "class-diagram"}>
+                    <ClassDiagramView
+                      nodes={b().nodes}
+                      edges={b().edges}
+                      onSelect={(id) => {
+                        const node = id
+                          ? (b().nodes.find((n) => n.id === id) ?? null)
+                          : null;
+                        setSelected(node);
+                      }}
+                    />
+                  </Match>
+                  <Match when={true}>
+                    <GraphView
+                      bundle={b()}
+                      selectedId={selected()?.id ?? null}
+                      onSelect={(node) => setSelected(node)}
+                    />
+                  </Match>
                 </Switch>
-              </Match>
-              <Match when={b().rawKind === "class-diagram"}>
-                <ClassDiagramView
-                  nodes={b().nodes}
-                  edges={b().edges}
-                  onSelect={(id) => {
-                    const node = id
-                      ? (b().nodes.find((n) => n.id === id) ?? null)
-                      : null;
-                    setSelected(node);
-                  }}
-                />
-              </Match>
-              <Match when={true}>
-                <GraphView
-                  bundle={b()}
-                  selectedId={selected()?.id ?? null}
-                  onSelect={(node) => setSelected(node)}
-                />
-              </Match>
-            </Switch>
-          )}
+              </>
+            );
+          }}
         </Show>
 
         <Show when={driftMode()}>
