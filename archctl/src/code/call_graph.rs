@@ -1133,9 +1133,8 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::{
-        existing_canonical_keys, open_and_init, write_source_artifact,
-    };
+    use crate::code::apply_common::{existing_canonical_keys, write_source_artifact};
+    use crate::store::open_and_init;
 
     let mut store = open_and_init(project_dir).map_err(CallGraphError::GraphWrite)?;
 
