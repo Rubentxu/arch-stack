@@ -55,31 +55,43 @@ require_not() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Trigger policy: ci.yml must trigger ONLY on push to main.
+# 1. Trigger policy: ci.yml must trigger ONLY on push to main. Validated
+#    SEMANTICALLY via scripts/check-ci-yaml.sh (ruby stdlib YAML), not by
+#    positional awk/grep extraction.
 # ---------------------------------------------------------------------------
 WORKFLOW=".github/workflows/ci.yml"
+CI_YAML="scripts/check-ci-yaml.sh"
 require "ci.yml exists" test -f "$WORKFLOW"
-require "ci.yml has 'on:'" grep -q '^on:' "$WORKFLOW"
+require "check-ci-yaml.sh exists" test -x "$CI_YAML"
 
-# Extract the trigger block between 'on:' and the first job key ('name:' or 'jobs:').
-TRIGGER_BLOCK="$(awk '/^on:/{f=1;next} /^jobs:/{f=0} f' "$WORKFLOW")"
-
-require "trigger block contains push" \
-  grep -q 'push:' <<<"$TRIGGER_BLOCK"
-require "push targets main only" \
-  grep -q 'branches: \[main\]' <<<"$TRIGGER_BLOCK"
-require_not "no pull_request trigger" \
-  grep -q 'pull_request' <<<"$TRIGGER_BLOCK"
-require_not "no workflow_dispatch trigger" \
-  grep -q 'workflow_dispatch' <<<"$TRIGGER_BLOCK"
-require_not "no schedule trigger" \
-  grep -q 'schedule' <<<"$TRIGGER_BLOCK"
-# Every branches: line in the trigger block must target exactly [main].
-BRANCH_LINES="$(grep -c 'branches:' <<<"$TRIGGER_BLOCK" || true)"
-if [ "$BRANCH_LINES" -eq 1 ] && grep -q 'branches: \[main\]' <<<"$TRIGGER_BLOCK"; then
-  note_pass "only branch trigger is main"
+# Behavioral: valid ci.yml passes semantic validation when ruby is present;
+# missing declared runtime (ruby) fails clearly instead of silently passing.
+if command -v ruby >/dev/null 2>&1; then
+  require "ci.yml semantic validation passes" "$CI_YAML"
+  require_not "ci.yml semantic validation rejects missing push" \
+    bash -c '
+      tmp=$(mktemp)
+      printf "on:\n  push:\n    branches: [dev]\n" > "$tmp"
+      "$1" "$tmp"; rc=$?
+      rm -f "$tmp"
+      exit "$rc"
+    ' _ "$CI_YAML"
+  # Comments / multi-line YAML are harmless to a semantic parser.
+  require "ci.yml semantic validation tolerates comments and multi-line branches" \
+    bash -c '
+      tmp=$(mktemp)
+      printf "name: CI\n# comment after name\non:\n  push:\n    branches:\n      - main\njobs:\n  rust:\n    name: archctl\n    steps:\n      - run: cargo test\n  bench-smoke:\n    name: archctl bench\n    steps:\n      - run: cargo bench\n  bench-compare:\n    name: bench compare\n    steps:\n      - run: scripts/bench-compare.sh \"\${{ github.event.before }}\"\n  web:\n    name: archview\n    steps:\n      - run: pnpm test\n" > "$tmp"
+      "$1" "$tmp"; rc=$?
+      rm -f "$tmp"
+      exit "$rc"
+    ' _ "$CI_YAML"
 else
-  note_fail "only branch trigger is main (branches lines: ${BRANCH_LINES})"
+  require_not "ci.yml semantic validation fails clearly without ruby" \
+    "$CI_YAML"
+  # The failure must name the missing runtime, not silently pass.
+  YAML_ERR="$("$CI_YAML" 2>&1 || true)"
+  require "ci.yml semantic validation missing-runtime message mentions ruby" \
+    grep -q 'ruby' <<<"$YAML_ERR"
 fi
 
 # ---------------------------------------------------------------------------
@@ -93,13 +105,12 @@ require "job web present" grep -q '^  web:' "$WORKFLOW"
 # ---------------------------------------------------------------------------
 # 3. bench-compare baseline wiring (post-merge, github.event.before).
 # ---------------------------------------------------------------------------
-BENCH_COMPARE_JOB="$(awk '/^  bench-compare:/{f=1;next} /^  [a-z-]+:/{f=0} f' "$WORKFLOW")"
 require "bench-compare has fetch-depth 0" \
-  grep -q 'fetch-depth: 0' <<<"$BENCH_COMPARE_JOB"
+  grep -q 'fetch-depth: 0' "$WORKFLOW"
 require "bench-compare uses github.event.before" \
-  grep -q 'github.event.before' <<<"$BENCH_COMPARE_JOB"
+  grep -q 'github.event.before' "$WORKFLOW"
 require_not "bench-compare not PR-gated" \
-  grep -q 'github.event_name == .pull_request' <<<"$BENCH_COMPARE_JOB"
+  grep -q 'github.event_name == .pull_request' "$WORKFLOW"
 
 # ---------------------------------------------------------------------------
 # 4. No floating toolchain steps; pinned via root rust-toolchain.toml.
