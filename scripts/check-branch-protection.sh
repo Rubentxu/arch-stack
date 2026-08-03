@@ -29,7 +29,8 @@ BRANCH="${2:-main}"
 
 if [ -z "$REPO" ]; then
     REMOTE="$(git remote get-url origin 2>/dev/null || true)"
-    REPO="$(printf '%s' "$REMOTE" | sed -E 's#^.*github\.com[:/]([^/]+/[^/]+)(\.git)?$#\1#')"
+    REMOTE="${REMOTE%.git}"
+    REPO="$(printf '%s' "$REMOTE" | sed -E 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#')"
 fi
 if [ -z "$REPO" ]; then
     echo "check-branch-protection: cannot determine repo; pass owner/repo" >&2
