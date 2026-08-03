@@ -8,7 +8,7 @@ import { normalizeBundle } from "../bundle/loader";
  *
  * The four C4 samples MUST use viewer-bundle fields
  * (manifest/projection/evidence/styles) and MUST NOT retain legacy
- * `elements`, `relations`, or `predicate_id`. Each sample is loaded
+ * element/relation fields. Each sample is loaded
  * through the real normalizer to prove the consuming path works.
  */
 
