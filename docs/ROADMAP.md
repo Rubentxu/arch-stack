@@ -191,6 +191,15 @@ Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejempl
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
+## Mejoras futuras — `workflowctl`
+
+> Documentadas en [ADR-024](adr/ADR-024-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-024; cualquier cambio de estado requiere abrir un nuevo ADR.
+
+- MVP local-first: `workflowctl` se ejecuta en el host del desarrollador con `gh act` + Podman rootless, encapsulado en `systemd-run --user`. Concurrencia 1 workflow / 2 jobs internos. Perfiles estándar (4 CPU / 8 GiB), pesado (8 / 16) y benchmark (12 / 16 exclusivo). Snapshot copiado, sin `--bind`, sin `--reuse`, `--container-daemon-socket -`, cache/artifacts solo en `127.0.0.1`.
+- Compatibilidad GitHub documentada por workflow y por job (`rust`, `web`, `bench-smoke`, `bench-compare`, `test-unit`, `test-e2e/ui/all`). Jobs con `nested-container` (Podman dentro del workflow) **no se ejecutan** en MVP.
+- Diferido: runner remoto efímero dedicado (host bare-metal, identidad de servicio, secret store, `systemd` slice, auth por runner group); coordinator híbrido local + remoto; imagen base propia `act-runner:arch`; `forgejo-runner` o equivalente; perfiles declarativos por repositorio.
+- Regla de promoción: exige simultáneamente host dedicado, demanda medida (contención, varios hosts pidiendo cola o workstation apagado bloqueando runs), suite de compatibilidad común, pin SHA en todas las actions, política única de routing, subuid/subgid disjuntos y SELinux en enforcing. Si falla una sola, se mantiene el MVP local.
+
 ---
 
 # `archview` — proyecto ortogonal (NO parte de `archctl`)

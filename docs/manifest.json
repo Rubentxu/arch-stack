@@ -40,6 +40,7 @@
     "adr/ADR-011-renderers-locales-y-bloqueo-de-publicos.md",
     "adr/ADR-012-adopcion-incremental-crates-analisis.md",
     "adr/ADR-013-viewer-ortogonal.md",
+    "adr/ADR-024-workflowctl-local-multi-repo.md",
     "adr/README.md",
     "manifest.json",
     "schema/001_initial_schema.cypher",

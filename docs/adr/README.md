@@ -31,6 +31,7 @@
 | [ADR-021](ADR-021-cognitive-layer.md) | Cognitive Layer (Agentic Intelligence) — 7-layer architecture, contract uniforme, escalation ladder, MCP boundary | Aceptado (nuevo 2026-07-31) |
 | [ADR-022](ADR-022-agent-catalog.md) | Agent catalog — 9 agentes especializados (Semantic Curator, Architecture, Projection, Investigation, Impact, Planning, Documentation, Presenter, Review/Critic) | Aceptado (nuevo 2026-07-31) |
 | [ADR-023](ADR-023-action-proposal-and-policy.md) | Action Proposal & Policy Engine — ActionProposal estructurado, Policy Engine TOML, MCP gateway, audit log inmutable | Aceptado (nuevo 2026-07-31) |
+| [ADR-024](ADR-024-workflowctl-local-multi-repo.md) | Ejecutor local manual de GitHub workflows (multi-repo) — `workflowctl` en topología local-first, runner remoto e híbrido quedan como mejoras futuras no implementadas | Aceptado (nuevo 2026-08-03) |
 | [ADR-016](ADR-016-activegraph-packs-investigacion.md) | Investigación de `activegraph-packs` + 3 bloques de mejoras para `archctl` (B1 evidence graph, B2 manifest+gates, B3 trust-by-origin) | Investigación cerrada, decisiones pendientes |
 
 ## Cómo se relacionan
@@ -52,6 +53,9 @@ ADR-005 (LadybugDB) ──► ADR-007 (proyecciones) ──► ADR-013 (bundle c
 
 ADR-011 (renderers locales) ──► ADR-013 (mismo principio en archview por construcción)
                               └─► ADR-019/020 (nota de performance para archview)
+
+ADR-010 (sin daemon) ──► ADR-024 (workflowctl: local-first, sin runner remoto en MVP)
+ADR-011 (todo local) ┘
 ```
 
 ## Documentos relacionados
