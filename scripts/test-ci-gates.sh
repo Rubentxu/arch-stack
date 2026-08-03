@@ -224,6 +224,19 @@ require "verify-local.sh --full runs bench-compare origin/main" \
 require "verify-local.sh --full runs bench smoke" \
   grep -q 'bench --bench' <<<"$DRY_FULL"
 
+# --full must wire the contract gates and refresh the benchmark baseline.
+require "verify-local.sh --full runs contract gates" \
+  grep -q 'test-ci-gates.sh' <<<"$DRY_FULL"
+require "verify-local.sh --full fetches fresh origin/main" \
+  grep -q 'git fetch origin main' <<<"$DRY_FULL"
+
+# --baseline <ref> overrides the default origin/main and skips the fetch.
+DRY_BASELINE="$("$VERIFY_SCRIPT" --dry-run --full --baseline HEAD 2>&1 || true)"
+require "verify-local.sh --full --baseline uses explicit ref" \
+  grep -q 'bench-compare.sh HEAD' <<<"$DRY_BASELINE"
+require_not "verify-local.sh --full --baseline skips fetch" \
+  grep -q 'git fetch origin main' <<<"$DRY_BASELINE"
+
 # The former hidden env bypass must be gone: dry-run is now an explicit flag.
 require_not "verify-local.sh no VERIFY_LOCAL_DRY_RUN env bypass" \
   grep -q 'VERIFY_LOCAL_DRY_RUN' "$VERIFY_SCRIPT"
