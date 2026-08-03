@@ -50,6 +50,38 @@ jobs:
           cargo build --quiet --release
           ./target/release/archctl doctor --scopes code --cwd ..
 
+  version-sync:
+    name: Version sync guard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: archctl
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Cargo version
+        id: cargo_version
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          echo "cargo_version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get latest git tag
+        id: git_tag
+        run: |
+          # Latest tag by creatordate; strip leading v AND any pre-release/build
+          # suffix so v0.14.0-rc1 compares as 0.14.0 (spec: guard strips suffix).
+          TAG=$(git tag --sort=-creatordate | head -1 | sed -E 's/^v([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "git_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Check version match
+        run: |
+          if [ "${{ steps.cargo_version.outputs.cargo_version }}" != "${{ steps.git_tag.outputs.git_tag }}" ]; then
+            echo "ERROR: CARGO_PKG_VERSION (${{ steps.cargo_version.outputs.cargo_version }}) != latest git tag (${{ steps.git_tag.outputs.git_tag }})"
+            exit 1
+          fi
+
   bench-smoke:
     name: archctl (benchmark smoke)
     runs-on: ubuntu-latest

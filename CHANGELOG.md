@@ -4,7 +4,7 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — v0.13.8
+## [v0.13.8] — 2026-08-03
 
 ### Changed
 - **CI post-merge (ADR-025)**: `.github/workflows/ci.yml` triggers only on

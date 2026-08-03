@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      # Idempotency (spec): a re-push of an existing tag MUST NOT create a
+      # duplicate release and MUST log the skip reason.
+      - name: Check if release exists
+        id: check_release
+        run: |
+          if gh release view "v${{ steps.version.outputs.VERSION }}" --repo "${{ github.repository }}" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          targets: x86_64-unknown-linux-musl
+
+      - name: Build release
+        working-directory: archctl
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      # CHANGELOG promotion (spec): replace the Unreleased header with the
+      # released version + date. Idempotent: skip when already promoted so a
+      # re-run does not corrupt the document or fail on an empty commit.
+      - name: Promote CHANGELOG
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          DATE=$(date '+%Y-%m-%d')
+          if grep -q "^## \[v${VERSION}\]" CHANGELOG.md; then
+            echo "CHANGELOG already promoted for v${VERSION}, skipping"
+            exit 0
+          fi
+          sed -i "s/^## \[Unreleased\] — v${VERSION}/## [v${VERSION}] — ${DATE}/" CHANGELOG.md
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(changelog): promote to v${VERSION}"
+
+      - name: Create GH Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.check_release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref }}
+          name: Release v${{ steps.version.outputs.VERSION }}
+          body_path: CHANGELOG.md
+          files: archctl/target/x86_64-unknown-linux-musl/release/archctl
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip (release exists)
+        if: steps.check_release.outputs.exists == 'true'
+        run: echo "Release v${{ steps.version.outputs.VERSION }} already exists, skipping"
