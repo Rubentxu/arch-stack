@@ -534,3 +534,141 @@ describe("drift detection (M17.6)", () => {
     expect(result.relRemoved).toEqual([]);
   });
 });
+
+describe("impact analysis (M17.7)", () => {
+  // Mirror of ImpactView's BFS for testing.
+  function computeImpact(
+    nodes: { id: string }[],
+    edges: { source: string; target: string }[],
+    focusId: string,
+    direction: "upstream" | "downstream" | "both",
+    maxDepth = 5,
+  ): { nodeId: string; depth: number; direction: string }[] {
+    const visited = new Set<string>([focusId]);
+    const entries: { nodeId: string; depth: number; direction: string }[] = [
+      { nodeId: focusId, depth: 0, direction: "upstream" },
+    ];
+    const traverse = (start: string, dir: "upstream" | "downstream") => {
+      let frontier = [start];
+      let depth = 0;
+      while (frontier.length > 0 && depth < maxDepth) {
+        depth++;
+        const next: string[] = [];
+        for (const id of frontier) {
+          const ns = edges
+            .filter((e) => (dir === "upstream" ? e.target === id : e.source === id))
+            .map((e) => (dir === "upstream" ? e.source : e.target));
+          for (const n of ns) {
+            if (n === focusId) continue;
+            if (!visited.has(n)) {
+              visited.add(n);
+              entries.push({ nodeId: n, depth, direction: dir });
+              next.push(n);
+            }
+          }
+        }
+        frontier = next;
+      }
+    };
+    if (direction === "upstream" || direction === "both") traverse(focusId, "upstream");
+    if (direction === "downstream" || direction === "both") traverse(focusId, "downstream");
+    return entries.filter((e) => e.depth > 0);
+  }
+
+  it("returns empty impact for isolated node", () => {
+    const result = computeImpact(
+      [{ id: "a" }, { id: "b" }],
+      [],
+      "a",
+      "both",
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it("finds upstream impact (callers)", () => {
+    // a -> b -> c; impact on b is {a}
+    const result = computeImpact(
+      [{ id: "a" }, { id: "b" }, { id: "c" }],
+      [
+        { source: "a", target: "b" },
+        { source: "b", target: "c" },
+      ],
+      "b",
+      "upstream",
+    );
+    expect(result.map((e) => e.nodeId)).toEqual(["a"]);
+  });
+
+  it("finds downstream impact (callees)", () => {
+    const result = computeImpact(
+      [{ id: "a" }, { id: "b" }, { id: "c" }],
+      [
+        { source: "a", target: "b" },
+        { source: "b", target: "c" },
+      ],
+      "b",
+      "downstream",
+    );
+    expect(result.map((e) => e.nodeId)).toEqual(["c"]);
+  });
+
+  it("finds both directions and dedups at shallower depth", () => {
+    // Diamond: a -> b -> c, a -> c directly
+    // upstream of c: a (depth 1), b (depth 1)
+    // downstream of c: none
+    const result = computeImpact(
+      [{ id: "a" }, { id: "b" }, { id: "c" }],
+      [
+        { source: "a", target: "b" },
+        { source: "b", target: "c" },
+        { source: "a", target: "c" },
+      ],
+      "c",
+      "upstream",
+    );
+    const ids = result.map((e) => e.nodeId).sort();
+    expect(ids).toEqual(["a", "b"]);
+  });
+
+  it("respects maxDepth", () => {
+    // Chain: a -> b -> c -> d -> e (focus)
+    // upstream of e with maxDepth=2: d (depth 1), c (depth 2)
+    // a and b are at depth 3+ and excluded
+    const result = computeImpact(
+      [
+        { id: "a" },
+        { id: "b" },
+        { id: "c" },
+        { id: "d" },
+        { id: "e" },
+      ],
+      [
+        { source: "a", target: "b" },
+        { source: "b", target: "c" },
+        { source: "c", target: "d" },
+        { source: "d", target: "e" },
+      ],
+      "e",
+      "upstream",
+      2,
+    );
+    const ids = result.map((e) => e.nodeId).sort();
+    expect(ids).toEqual(["c", "d"]);
+    expect(ids).not.toContain("a");
+    expect(ids).not.toContain("b");
+  });
+
+  it("does not loop back to focus", () => {
+    // a <-> b (cycle); impact on a (upstream) should be {b} only
+    const result = computeImpact(
+      [{ id: "a" }, { id: "b" }],
+      [
+        { source: "a", target: "b" },
+        { source: "b", target: "a" },
+      ],
+      "a",
+      "upstream",
+    );
+    expect(result.map((e) => e.nodeId)).toEqual(["b"]);
+  });
+});

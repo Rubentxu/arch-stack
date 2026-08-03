@@ -19,6 +19,7 @@ import { SequenceView } from "./views/SequenceView";
 import { ClassDiagramView } from "./views/ClassDiagramView";
 import { PackageView } from "./views/PackageView";
 import { DriftView } from "./views/DriftView";
+import { ImpactView } from "./views/ImpactView";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -197,7 +198,7 @@ export const App: Component = () => {
               >
                 <Switch>
                   <Match when={b().rawKind === "call-graph"}>
-                    <PackageView
+                    <ImpactView
                       nodes={b().nodes}
                       edges={b().edges}
                       onSelect={(id) => {
@@ -206,6 +207,7 @@ export const App: Component = () => {
                           : null;
                         setSelected(node);
                       }}
+                      onStats={setStats}
                     />
                   </Match>
                   <Match when={b().rawKind === "sequence"}>
