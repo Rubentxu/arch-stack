@@ -12,7 +12,7 @@
  */
 
 import { Graph } from "@antv/g6";
-import type { GraphBundle } from "../bundle/loader";
+import type { RendererBundle } from "../types";
 
 export interface RendererOptions {
   container: HTMLElement;
@@ -22,7 +22,7 @@ export interface RendererOptions {
 
 export class GraphRenderer {
   private graph: Graph | null = null;
-  private currentBundle: GraphBundle | null = null;
+  private currentBundle: RendererBundle | null = null;
 
   constructor(private options: RendererOptions) {
     this.init();
@@ -49,7 +49,7 @@ export class GraphRenderer {
     });
   }
 
-  setData(bundle: GraphBundle): void {
+  setData(bundle: RendererBundle): void {
     this.currentBundle = bundle;
     if (!this.graph) return;
     void this.graph.setData({
@@ -82,7 +82,7 @@ export class GraphRenderer {
     }
   }
 
-  get bundle(): GraphBundle | null {
+  get bundle(): RendererBundle | null {
     return this.currentBundle;
   }
 }
