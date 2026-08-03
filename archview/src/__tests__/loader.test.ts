@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { c4LevelForKind, normalizeBundle } from "../bundle/loader";
+import { c4LevelForType, normalizeBundle } from "../bundle/loader";
 
 /** BFS expansion logic (mirrors CallGraphView's levelGroups). */
 function expandLevels(
@@ -118,14 +118,33 @@ describe("bundle loader", () => {
     expect(bundle.edges[0].target).toBe("lib.rs:b");
   });
 
-  it("normalizes a C4 bundle with elements + relations", () => {
+  it("normalizes a C4 bundle with canonical viewer-bundle sections", () => {
     const raw = {
-      schemaVersion: "1.0",
-      elements: [
-        { id: "el:1", name: "WebApp", kind: "Container" },
-        { id: "el:2", name: "DB", kind: "Container" },
-      ],
-      relations: [{ source: "el:1", target: "el:2", predicate_id: "uses" }],
+      manifest: {
+        schemaVersion: "1.0.0",
+        format: "viewer-bundle",
+        viewSelector: "container:*",
+        baseRevision:
+          "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        generatedAt: "2026-08-03T12:00:00Z",
+        elementCount: 2,
+        edgeCount: 1,
+        evidenceCount: 0,
+      },
+      projection: {
+        nodes: [
+          { id: "el:1", type: "container", name: "WebApp" },
+          { id: "el:2", type: "container", name: "DB" },
+        ],
+        edges: [{ id: "r1", source: "el:1", target: "el:2", predicate: "uses" }],
+      },
+      evidence: { evidence: [] },
+      styles: {
+        theme: "default",
+        version: "1.0.0",
+        elementColors: {},
+        edgeColors: {},
+      },
     };
     const bundle = normalizeBundle(raw, "test");
     expect(bundle.rawKind).toBe("c4");
@@ -133,26 +152,44 @@ describe("bundle loader", () => {
     expect(bundle.edges[0].kind).toBe("uses");
   });
 
-  it("derives C4 level and parentId for hierarchical rendering", () => {
+  it("derives C4 level and parentId from canonical type + canonicalKey", () => {
     const raw = {
-      schemaVersion: "1.0",
-      elements: [
-        {
-          id: "sys:1",
-          kind: "SoftwareSystem",
-          name: "Platform",
-          parent: null,
-        },
-        {
-          id: "ctn:1",
-          kind: "Container",
-          name: "API",
-          technology: "Rust",
-          description: "HTTP entry",
-          parent: "sys:1",
-        },
-      ],
-      relations: [],
+      manifest: {
+        schemaVersion: "1.0.0",
+        format: "viewer-bundle",
+        viewSelector: "context:*",
+        baseRevision:
+          "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        generatedAt: "2026-08-03T12:00:00Z",
+        elementCount: 2,
+        edgeCount: 0,
+        evidenceCount: 0,
+      },
+      projection: {
+        nodes: [
+          {
+            id: "sys:1",
+            type: "context",
+            name: "Platform",
+            canonicalKey: "platform",
+          },
+          {
+            id: "ctn:1",
+            type: "container",
+            name: "API",
+            canonicalKey: "platform/api",
+            description: "HTTP entry",
+          },
+        ],
+        edges: [],
+      },
+      evidence: { evidence: [] },
+      styles: {
+        theme: "default",
+        version: "1.0.0",
+        elementColors: {},
+        edgeColors: {},
+      },
     };
     const bundle = normalizeBundle(raw, "test");
     const sys = bundle.nodes.find((n) => n.id === "sys:1")!;
@@ -161,29 +198,22 @@ describe("bundle loader", () => {
     expect(sys.parentId).toBeUndefined();
     expect(ctn.level).toBe(2);
     expect(ctn.parentId).toBe("sys:1");
-    expect(ctn.meta.technology).toBe("Rust");
     expect(ctn.meta.description).toBe("HTTP entry");
   });
 });
 
-describe("c4LevelForKind", () => {
-  it("maps C4 kinds to hierarchy levels", () => {
-    expect(c4LevelForKind("Person")).toBe(1);
-    expect(c4LevelForKind("SoftwareSystem")).toBe(1);
-    expect(c4LevelForKind("Container")).toBe(2);
-    expect(c4LevelForKind("Component")).toBe(3);
-    expect(c4LevelForKind("Code")).toBe(4);
+describe("c4LevelForType", () => {
+  it("maps canonical c4 types to hierarchy levels", () => {
+    expect(c4LevelForType("context")).toBe(1);
+    expect(c4LevelForType("container")).toBe(2);
+    expect(c4LevelForType("component")).toBe(3);
+    expect(c4LevelForType("dynamic")).toBe(1);
+    expect(c4LevelForType("deployment")).toBe(1);
   });
 
-  it("handles instance variants and kind:variant form", () => {
-    expect(c4LevelForKind("ContainerInstance")).toBe(2);
-    expect(c4LevelForKind("ComponentInstance")).toBe(3);
-    expect(c4LevelForKind("foo:Container")).toBe(2);
-  });
-
-  it("returns 0 for unknown kinds", () => {
-    expect(c4LevelForKind("UnknownKind")).toBe(0);
-    expect(c4LevelForKind("")).toBe(0);
+  it("returns 0 for unknown types", () => {
+    expect(c4LevelForType("UnknownKind")).toBe(0);
+    expect(c4LevelForType("")).toBe(0);
   });
 });
 

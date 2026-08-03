@@ -5,72 +5,39 @@
  * - `call-graph` → `archctl/code/call-graph-report.schema.json`
  * - `sequence` → `archctl/code/sequence-report.schema.json`
  * - `class-diagram` → `archctl/schemas/class-diagram-report.schema.json`
- * - `c4` → `archctl/diagram/projection.schema.json`
+ * - `c4` → canonical `viewer-bundle` (`schemas/diagram-projection.schema.json`)
  *
- * The loader is intentionally schema-tolerant: it accepts any
- * JSON object that has either `nodes`+`edges` or `elements`+`relations`
- * shape, and normalizes to a uniform `GraphBundle` for the renderer.
+ * The canonical C4 bundle has four sections: `manifest`, `projection`,
+ * `evidence`, and `styles`. The loader rejects incomplete canonical
+ * bundles, maps `projection.nodes[].type` → C4 level and
+ * `projection.edges[].predicate` → edge label, preserves `evidenceRefs`
+ * on node metadata, and derives `parentId` from slash-delimited
+ * `canonicalKey` namespaces. Normalization is deterministic: `loadedAt`
+ * comes from `manifest.generatedAt`, never from the wall clock.
  */
 
-export interface GraphNode {
-  id: string;
-  label: string;
-  kind: string;
-  language?: string;
-  file?: string;
-  line?: number;
-  /**
-   * C4 hierarchy level (1-4). Derived from `kind` for C4 bundles:
-   * 1 = Person / SoftwareSystem (Context level)
-   * 2 = Container
-   * 3 = Component
-   * 4 = Code (defer to M17.5+)
-   * Undefined for non-C4 bundles.
-   */
-  level?: number;
-  /** Parent element id (for C4 drill-down). */
-  parentId?: string;
-  meta?: Record<string, unknown>;
-}
+import type {
+  RendererBundle,
+  RendererEdge,
+  RendererNode,
+  SequenceInteraction,
+} from "../types";
 
-export interface GraphEdge {
-  id: string;
-  source: string;
-  target: string;
-  label?: string;
-  kind?: string;
-  meta?: Record<string, unknown>;
-}
-
-export interface SequenceInteraction {
-  order: number;
-  label?: string;
-  message_kind?: string;
-  caller: { name?: string; file?: string; line?: number };
-  callee: { name?: string; file?: string; line?: number };
-}
-
-export interface GraphBundle {
-  schemaVersion: string;
-  source: string;
-  loadedAt: string;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  /** Bundle shape that produced this normalized bundle. */
-  rawKind: "call-graph" | "sequence" | "class-diagram" | "c4" | "unknown";
-  /**
-   * Original interactions, only populated for `rawKind === "sequence"`.
-   * SequenceView uses this to render lifelines + arrows in time order.
-   */
-  interactions?: SequenceInteraction[];
-}
+// Backwards-compatible aliases consumed by views. The renderer consumes
+// the shared contract from `types.ts` directly (R3).
+export type {
+  RendererBundle as GraphBundle,
+  RendererEdge as GraphEdge,
+  RendererNode as GraphNode,
+  SequenceInteraction,
+} from "../types";
 
 /**
  * Load a bundle from a JSON path. Works for both `file://` URLs
  * (via the open-file dialog) and `http://localhost:18080/samples/...`
  * (via the dev server).
  */
-export async function loadBundle(url: string): Promise<GraphBundle> {
+export async function loadBundle(url: string): Promise<RendererBundle> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(
@@ -82,21 +49,24 @@ export async function loadBundle(url: string): Promise<GraphBundle> {
 }
 
 /**
- * Normalize an arbitrary bundle JSON into the uniform `GraphBundle`
- * shape. The detection is based on the presence of `schemaVersion`
- * and the per-domain shape discriminators (`interactions` for
- * sequence, `nodes`+`edges` for the rest).
+ * Normalize an arbitrary bundle JSON into the uniform renderer contract.
+ * The detection is based on the presence of `schemaVersion`, the
+ * per-domain shape discriminators (`interactions` for sequence,
+ * `nodes`+`edges` for code diagrams), and `manifest.format` for the
+ * canonical `viewer-bundle`.
  */
 export function normalizeBundle(
   raw: Record<string, unknown>,
   source: string,
-): GraphBundle {
-  const schemaVersion = stringOr(raw.schemaVersion, "unknown");
+): RendererBundle {
   const rawKind = detectKind(raw);
 
-  let nodes: GraphNode[] = [];
-  let edges: GraphEdge[] = [];
+  let nodes: RendererNode[] = [];
+  let edges: RendererEdge[] = [];
   let interactions: SequenceInteraction[] | undefined;
+  let schemaVersion = stringOr(raw.schemaVersion, "unknown");
+  let evidence: unknown;
+  let styles: unknown;
 
   switch (rawKind) {
     case "call-graph":
@@ -126,13 +96,40 @@ export function normalizeBundle(
       );
       break;
     case "c4":
-      // C4 bundle uses `elements` + `relations` per the projection schema.
-      nodes = (
-        (raw.elements as Record<string, unknown>[] | undefined) ?? []
-      ).map(c4ElementToNode);
-      edges = (
-        (raw.relations as Record<string, unknown>[] | undefined) ?? []
-      ).map(c4RelationToEdge);
+      // Canonical viewer-bundle: manifest + projection + evidence + styles.
+      // R1 — incomplete bundles are rejected with the missing section named.
+      {
+        const manifest = raw.manifest as
+          | Record<string, unknown>
+          | undefined;
+        const projection = raw.projection as
+          | Record<string, unknown>
+          | undefined;
+        const missing: string[] = [];
+        if (manifest === undefined) missing.push("manifest");
+        if (projection === undefined) missing.push("projection");
+        if (raw.evidence === undefined) missing.push("evidence");
+        if (raw.styles === undefined) missing.push("styles");
+        if (missing.length > 0) {
+          throw new Error(
+            `viewer-bundle is missing required section(s): ${missing.join(", ")}`,
+          );
+        }
+
+        schemaVersion = stringOr(manifest.schemaVersion, "unknown");
+        evidence = raw.evidence;
+        styles = raw.styles;
+
+        const rawNodes =
+          (projection.nodes as Record<string, unknown>[] | undefined) ?? [];
+        const rawEdges =
+          (projection.edges as Record<string, unknown>[] | undefined) ?? [];
+        nodes = rawNodes.map(c4NodeToNode);
+        edges = rawEdges.map(c4EdgeToEdge);
+        // R7 — derive parentId from slash-delimited canonicalKey namespaces
+        // only when the closest prefix names an existing node.
+        nodes = deriveParentIds(nodes);
+      }
       break;
     default:
       // Fallback: try `nodes`+`edges` keys with lenient typing.
@@ -147,16 +144,24 @@ export function normalizeBundle(
   return {
     schemaVersion,
     source,
-    loadedAt: new Date().toISOString(),
+    // R2 — deterministic: never `new Date()`, always manifest.generatedAt.
+    loadedAt: stringOr(
+      (raw.manifest as Record<string, unknown> | undefined)?.generatedAt,
+      "unknown",
+    ),
     nodes,
     edges,
     rawKind,
     interactions,
+    evidence,
+    styles,
   };
 }
 
-function detectKind(raw: Record<string, unknown>): GraphBundle["rawKind"] {
+function detectKind(raw: Record<string, unknown>): RendererBundle["rawKind"] {
   if (Array.isArray(raw.interactions)) return "sequence";
+  const manifest = raw.manifest as Record<string, unknown> | undefined;
+  if (manifest && manifest.format === "viewer-bundle") return "c4";
   if (Array.isArray(raw.nodes) && Array.isArray(raw.edges)) {
     const firstNode = raw.nodes[0] as Record<string, unknown> | undefined;
     if (firstNode && typeof firstNode.kind === "string") {
@@ -172,15 +177,12 @@ function detectKind(raw: Record<string, unknown>): GraphBundle["rawKind"] {
     }
     return "unknown";
   }
-  if (Array.isArray(raw.elements) && Array.isArray(raw.relations)) {
-    return "c4";
-  }
   return "unknown";
 }
 
 // -- per-shape normalizers -------------------------------------------------
 
-function callGraphNodeToNode(n: Record<string, unknown>): GraphNode {
+function callGraphNodeToNode(n: Record<string, unknown>): RendererNode {
   return {
     id: stringOr(n.id, ""),
     label: stringOr(n.name, "?"),
@@ -192,7 +194,7 @@ function callGraphNodeToNode(n: Record<string, unknown>): GraphNode {
   };
 }
 
-function callGraphEdgeToEdge(e: Record<string, unknown>): GraphEdge {
+function callGraphEdgeToEdge(e: Record<string, unknown>): RendererEdge {
   return {
     id: stringOr(e.id, `${e.source}->${e.target}`),
     source: stringOr(e.source, ""),
@@ -203,7 +205,7 @@ function callGraphEdgeToEdge(e: Record<string, unknown>): GraphEdge {
   };
 }
 
-function classDiagramNodeToNode(n: Record<string, unknown>): GraphNode {
+function classDiagramNodeToNode(n: Record<string, unknown>): RendererNode {
   return {
     id: stringOr(n.canonical_key, ""),
     label: stringOr(n.name, "?"),
@@ -215,7 +217,7 @@ function classDiagramNodeToNode(n: Record<string, unknown>): GraphNode {
   };
 }
 
-function classDiagramEdgeToEdge(e: Record<string, unknown>): GraphEdge {
+function classDiagramEdgeToEdge(e: Record<string, unknown>): RendererEdge {
   return {
     id: stringOr(e.canonical_key, `${e.source}->${e.target}`),
     source: stringOr(e.source, ""),
@@ -226,61 +228,93 @@ function classDiagramEdgeToEdge(e: Record<string, unknown>): GraphEdge {
   };
 }
 
-function c4ElementToNode(e: Record<string, unknown>): GraphNode {
-  const kind = stringOr(e.kind, "Element");
+/**
+ * Normalize a canonical projection node. `type` is the schema enum and
+ * becomes both the renderer `kind` and the C4 level source; `evidenceRefs`
+ * stay on `meta` for consumers (R1). `parentId` is derived later from
+ * `canonicalKey` namespaces (R7).
+ */
+function c4NodeToNode(n: Record<string, unknown>): RendererNode {
+  const type = stringOr(n.type, "unknown");
   return {
-    id: stringOr(e.id, ""),
-    label: stringOr(e.name, "?"),
-    kind,
-    language: undefined,
-    file: undefined,
-    line: undefined,
-    level: c4LevelForKind(kind),
-    parentId: stringOrUndefined(e.parent),
-    meta: { ...e },
+    id: stringOr(n.id, ""),
+    label: stringOr(n.name, "?"),
+    kind: type,
+    level: c4LevelForType(type),
+    meta: { ...n },
   };
 }
 
-function c4RelationToEdge(e: Record<string, unknown>): GraphEdge {
+/**
+ * Normalize a canonical projection edge. The schema `predicate` becomes
+ * both the renderer `kind` and `label` (R1); the raw edge is preserved
+ * on `meta`.
+ */
+function c4EdgeToEdge(e: Record<string, unknown>): RendererEdge {
+  const predicate = stringOr(e.predicate, "unknown");
   return {
-    id: `${e.source}->${e.target}`,
+    id: stringOr(e.id, `${e.source}->${e.target}`),
     source: stringOr(e.source, ""),
     target: stringOr(e.target, ""),
-    kind: stringOr(e.predicate_id, "unknown"),
-    label: stringOr(e.predicate_id, ""),
+    kind: predicate,
+    label: predicate,
     meta: { ...e },
   };
 }
 
 /**
- * Map a C4 element kind to its hierarchy level (1-4).
- * Context = 1 (Person, SoftwareSystem)
- * Container = 2
- * Component = 3
- * Code = 4 (defer to M17.5+ for code-level rendering)
- * Unknown / Workspace = 0 (treat as out-of-band)
+ * Map a canonical C4 type to its hierarchy level (R1):
+ * `context` = 1, `container` = 2, `component` = 3,
+ * `dynamic`/`deployment` = 1 (same band as context).
+ * Unknown types map to 0 (out-of-band).
  */
-export function c4LevelForKind(kind: string): number {
-  const k = kind.toLowerCase();
-  if (k === "person" || k === "softwaresystem" || k === "system") return 1;
-  if (
-    k === "container" ||
-    k === "containerinstance" ||
-    k.endsWith(":container")
-  )
-    return 2;
-  if (
-    k === "component" ||
-    k === "componentinstance" ||
-    k.endsWith(":component")
-  )
-    return 3;
-  if (k === "code" || k === "codeinstance" || k.endsWith(":code")) return 4;
-  return 0;
+export function c4LevelForType(type: string): number {
+  switch (type) {
+    case "context":
+      return 1;
+    case "container":
+      return 2;
+    case "component":
+      return 3;
+    case "dynamic":
+    case "deployment":
+      return 1;
+    default:
+      return 0;
+  }
 }
 
-function extractSequenceNodes(raw: Record<string, unknown>): GraphNode[] {
-  const map = new Map<string, GraphNode>();
+/**
+ * Derive `parentId` for nodes from slash-delimited `canonicalKey`
+ * namespaces (R7). A node's parent is the node whose `canonicalKey`
+ * is the closest exact prefix of its own key. Flat keys, keys with no
+ * matching prefix, and keys with no ancestor all stay root (no
+ * `parentId`). No hierarchy is invented beyond the existing keys.
+ */
+function deriveParentIds(nodes: RendererNode[]): RendererNode[] {
+  const byKey = new Map<string, string>();
+  for (const n of nodes) {
+    const key = n.meta?.canonicalKey;
+    if (typeof key === "string" && key.length > 0) byKey.set(key, n.id);
+  }
+  return nodes.map((n) => {
+    const key = n.meta?.canonicalKey;
+    if (typeof key !== "string" || key.length === 0) return n;
+    const parts = key.split("/");
+    // Walk from the longest prefix down to the shortest exact prefix.
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const prefix = parts.slice(0, i).join("/");
+      const parentId = byKey.get(prefix);
+      if (parentId && parentId !== n.id) {
+        return { ...n, parentId };
+      }
+    }
+    return n;
+  });
+}
+
+function extractSequenceNodes(raw: Record<string, unknown>): RendererNode[] {
+  const map = new Map<string, RendererNode>();
   for (const i of (raw.interactions as Record<string, unknown>[]) ?? []) {
     for (const side of ["caller", "callee"] as const) {
       const ref = i[side] as Record<string, unknown> | undefined;
@@ -303,8 +337,8 @@ function extractSequenceNodes(raw: Record<string, unknown>): GraphNode[] {
   return [...map.values()];
 }
 
-function extractSequenceEdges(raw: Record<string, unknown>): GraphEdge[] {
-  const edges: GraphEdge[] = [];
+function extractSequenceEdges(raw: Record<string, unknown>): RendererEdge[] {
+  const edges: RendererEdge[] = [];
   let order = 0;
   for (const i of (raw.interactions as Record<string, unknown>[]) ?? []) {
     const caller = i.caller as Record<string, unknown> | undefined;
@@ -350,7 +384,7 @@ function normalizeInteraction(i: Record<string, unknown>): SequenceInteraction {
   };
 }
 
-function genericToNode(n: Record<string, unknown>): GraphNode {
+function genericToNode(n: Record<string, unknown>): RendererNode {
   return {
     id: stringOr(n.id, ""),
     label: stringOr(n.name, stringOr(n.label, "?")),
@@ -359,7 +393,7 @@ function genericToNode(n: Record<string, unknown>): GraphNode {
   };
 }
 
-function genericToEdge(e: Record<string, unknown>): GraphEdge {
+function genericToEdge(e: Record<string, unknown>): RendererEdge {
   return {
     id: stringOr(e.id, `${e.source}->${e.target}`),
     source: stringOr(e.source, ""),
