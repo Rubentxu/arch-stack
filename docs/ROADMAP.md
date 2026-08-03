@@ -151,9 +151,13 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 **Pivot v2.4:** Si cosmos.gl + G6 WebGPU no cubren el caso de grafos de millones de elementos con latencia sub-16ms, construir un renderer custom en Rust + wgpu + WGSL. 2.0. Defer a menos que el benchmark suite (M17) muestre insuficiencia.
 
-## M20 — Performance validation cycle — **NUEVO, PRIORIDAD 1**
+## M20 — Performance validation cycle — **PARCIALMENTE COMPLETO (CI gate ✅ 2026-08-03)**
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
+
+**Hecho (v0.10.0 + v0.13.6):** harness criterion (export/apply/query/class-diagram pipelines), 3 datasets canónicos, doctor scope gate, **CI gate GitHub Actions** (build/test/clippy/fmt/doctor + bench smoke + bundle cap ≤2MB ADR-019).
+
+**Pendiente (backlog):** comparación de regresión >10% (baselines criterion + PR-comment), profiling-on-regression flamegraph.
 
 ## M21 — Cognitive Layer foundation — **NUEVO, PRIORIDAD 1 (1.x)**
 
