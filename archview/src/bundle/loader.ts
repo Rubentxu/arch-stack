@@ -100,10 +100,10 @@ export function normalizeBundle(
 
   switch (rawKind) {
     case "call-graph":
-      nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
+      nodes = ((raw.nodes as Record<string, unknown>[] | undefined) ?? []).map(
         callGraphNodeToNode,
       );
-      edges = (raw.edges as Record<string, unknown>[] | undefined ?? []).map(
+      edges = ((raw.edges as Record<string, unknown>[] | undefined) ?? []).map(
         callGraphEdgeToEdge,
       );
       break;
@@ -113,33 +113,33 @@ export function normalizeBundle(
       // (for the SequenceView timeline render).
       nodes = extractSequenceNodes(raw);
       edges = extractSequenceEdges(raw);
-      interactions = (raw.interactions as Record<string, unknown>[] ?? []).map(
-        normalizeInteraction,
-      );
+      interactions = (
+        (raw.interactions as Record<string, unknown>[]) ?? []
+      ).map(normalizeInteraction);
       break;
     case "class-diagram":
-      nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
+      nodes = ((raw.nodes as Record<string, unknown>[] | undefined) ?? []).map(
         classDiagramNodeToNode,
       );
-      edges = (raw.edges as Record<string, unknown>[] | undefined ?? []).map(
+      edges = ((raw.edges as Record<string, unknown>[] | undefined) ?? []).map(
         classDiagramEdgeToEdge,
       );
       break;
     case "c4":
       // C4 bundle uses `elements` + `relations` per the projection schema.
-      nodes = (raw.elements as Record<string, unknown>[] | undefined ?? []).map(
-        c4ElementToNode,
-      );
-      edges = (raw.relations as Record<string, unknown>[] | undefined ?? []).map(
-        c4RelationToEdge,
-      );
+      nodes = (
+        (raw.elements as Record<string, unknown>[] | undefined) ?? []
+      ).map(c4ElementToNode);
+      edges = (
+        (raw.relations as Record<string, unknown>[] | undefined) ?? []
+      ).map(c4RelationToEdge);
       break;
     default:
       // Fallback: try `nodes`+`edges` keys with lenient typing.
-      nodes = (raw.nodes as Record<string, unknown>[] | undefined ?? []).map(
+      nodes = ((raw.nodes as Record<string, unknown>[] | undefined) ?? []).map(
         genericToNode,
       );
-      edges = (raw.edges as Record<string, unknown>[] | undefined ?? []).map(
+      edges = ((raw.edges as Record<string, unknown>[] | undefined) ?? []).map(
         genericToEdge,
       );
   }
@@ -263,15 +263,25 @@ function c4RelationToEdge(e: Record<string, unknown>): GraphEdge {
 export function c4LevelForKind(kind: string): number {
   const k = kind.toLowerCase();
   if (k === "person" || k === "softwaresystem" || k === "system") return 1;
-  if (k === "container" || k === "containerinstance" || k.endsWith(":container")) return 2;
-  if (k === "component" || k === "componentinstance" || k.endsWith(":component")) return 3;
+  if (
+    k === "container" ||
+    k === "containerinstance" ||
+    k.endsWith(":container")
+  )
+    return 2;
+  if (
+    k === "component" ||
+    k === "componentinstance" ||
+    k.endsWith(":component")
+  )
+    return 3;
   if (k === "code" || k === "codeinstance" || k.endsWith(":code")) return 4;
   return 0;
 }
 
 function extractSequenceNodes(raw: Record<string, unknown>): GraphNode[] {
   const map = new Map<string, GraphNode>();
-  for (const i of raw.interactions as Record<string, unknown>[] ?? []) {
+  for (const i of (raw.interactions as Record<string, unknown>[]) ?? []) {
     for (const side of ["caller", "callee"] as const) {
       const ref = i[side] as Record<string, unknown> | undefined;
       if (!ref) continue;
@@ -296,7 +306,7 @@ function extractSequenceNodes(raw: Record<string, unknown>): GraphNode[] {
 function extractSequenceEdges(raw: Record<string, unknown>): GraphEdge[] {
   const edges: GraphEdge[] = [];
   let order = 0;
-  for (const i of raw.interactions as Record<string, unknown>[] ?? []) {
+  for (const i of (raw.interactions as Record<string, unknown>[]) ?? []) {
     const caller = i.caller as Record<string, unknown> | undefined;
     const callee = i.callee as Record<string, unknown> | undefined;
     if (!caller || !callee) continue;

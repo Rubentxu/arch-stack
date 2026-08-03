@@ -16,16 +16,8 @@
  * activation bars) without changing the data shape.
  */
 
-import {
-  For,
-  Show,
-  createMemo,
-  type Component,
-} from "solid-js";
-import type {
-  GraphNode,
-  SequenceInteraction,
-} from "../bundle/loader";
+import { For, Show, createMemo, type Component } from "solid-js";
+import type { GraphNode, SequenceInteraction } from "../bundle/loader";
 import {
   extractParticipants,
   orderInteractions,
@@ -74,11 +66,7 @@ export const SequenceView: Component<SequenceViewProps> = (props) => {
 
       <Show
         when={orderedInteractions().length > 0}
-        fallback={
-          <p class="empty">
-            No interactions in this sequence bundle.
-          </p>
-        }
+        fallback={<p class="empty">No interactions in this sequence bundle.</p>}
       >
         <div
           class="sequence-grid"
@@ -104,17 +92,11 @@ export const SequenceView: Component<SequenceViewProps> = (props) => {
           <For each={orderedInteractions()}>
             {(interaction, idx) => (
               <>
-                <div
-                  class="sequence-row-meta"
-                  style={`grid-column: 1 / -1;`}
-                >
+                <div class="sequence-row-meta" style={`grid-column: 1 / -1;`}>
                   <span class="sequence-step">{idx() + 1}</span>
                   <span class="sequence-order">order={interaction.order}</span>
                 </div>
-                <div
-                  class="sequence-row"
-                  style={`grid-column: 1 / -1;`}
-                >
+                <div class="sequence-row" style={`grid-column: 1 / -1;`}>
                   <SequenceArrow
                     interaction={interaction}
                     participants={participants()}
@@ -153,10 +135,7 @@ const SequenceArrow: Component<{
 
   return (
     <div class={`arrow-row kind-${kind()}`}>
-      <div
-        class="arrow-source"
-        style={`grid-column: ${sourceCol() + 1};`}
-      >
+      <div class="arrow-source" style={`grid-column: ${sourceCol() + 1};`}>
         <Show when={props.interaction.caller.name}>
           {props.interaction.caller.name}
         </Show>
@@ -168,13 +147,11 @@ const SequenceArrow: Component<{
         <span class="arrow-line-stem" />
         <span class="arrow-head" />
         <span class="arrow-label">
-          {props.interaction.label ?? `${props.interaction.caller.name ?? "?"} → ${props.interaction.callee.name ?? "?"}`}
+          {props.interaction.label ??
+            `${props.interaction.caller.name ?? "?"} → ${props.interaction.callee.name ?? "?"}`}
         </span>
       </div>
-      <div
-        class="arrow-target"
-        style={`grid-column: ${targetCol() + 1};`}
-      >
+      <div class="arrow-target" style={`grid-column: ${targetCol() + 1};`}>
         <Show when={props.interaction.callee.name}>
           {props.interaction.callee.name}
         </Show>

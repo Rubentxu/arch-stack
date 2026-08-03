@@ -55,16 +55,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             <dl>
               <dt>blast radius</dt>
               <dd>
-                <strong>{props.stats!.blastRadius}</strong> reachable
-                functions
+                <strong>{props.stats!.blastRadius}</strong> reachable functions
               </dd>
               <Show when={props.stats?.depth !== undefined}>
                 <dt>depth</dt>
                 <dd>
                   {props.stats!.depth}{" "}
-                  <span class="muted">
-                    ({props.stats?.direction})
-                  </span>
+                  <span class="muted">({props.stats?.direction})</span>
                 </dd>
               </Show>
             </dl>
@@ -73,9 +70,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
         <Show
           when={props.node}
-          fallback={
-            <p class="empty">Select a node to inspect its evidence.</p>
-          }
+          fallback={<p class="empty">Select a node to inspect its evidence.</p>}
         >
           {(node) => (
             <div class="node-detail">
@@ -111,7 +106,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                 <Show when={node().file}>
                   <dt>file</dt>
                   <dd>
-                    <code>{node().file}:{node().line ?? "?"}</code>
+                    <code>
+                      {node().file}:{node().line ?? "?"}
+                    </code>
                   </dd>
                 </Show>
                 <Show when={node().parentId}>
@@ -126,8 +123,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                 <For each={extractEvidence(node())}>
                   {(ev) => (
                     <li>
-                      <code>{ev.file}:{ev.line}</code>
-                      <span class="confidence">confidence: {ev.confidence}</span>
+                      <code>
+                        {ev.file}:{ev.line}
+                      </code>
+                      <span class="confidence">
+                        confidence: {ev.confidence}
+                      </span>
                     </li>
                   )}
                 </For>

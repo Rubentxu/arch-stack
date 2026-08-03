@@ -36,10 +36,7 @@ export function computeImpact(
   const visited = new Map<string, ImpactEntry>();
   const entries: ImpactEntry[] = [];
 
-  const traverse = (
-    startId: string,
-    dir: "upstream" | "downstream",
-  ) => {
+  const traverse = (startId: string, dir: "upstream" | "downstream") => {
     let frontier: Array<{ id: string; path: string[] }> = [
       { id: startId, path: [startId] },
     ];
@@ -49,7 +46,9 @@ export function computeImpact(
       const next: typeof frontier = [];
       for (const { id, path } of frontier) {
         const neighbors = edges
-          .filter((e) => (dir === "upstream" ? e.target === id : e.source === id))
+          .filter((e) =>
+            dir === "upstream" ? e.target === id : e.source === id,
+          )
           .map((e) => (dir === "upstream" ? e.source : e.target));
         for (const n of neighbors) {
           if (n === focusId) continue; // don't loop back to focus

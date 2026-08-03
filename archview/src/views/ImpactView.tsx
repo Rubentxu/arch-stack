@@ -40,8 +40,7 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
   const [focusId, setFocusId] = createSignal<string | null>(
     props.initialFocusId ?? props.nodes[0]?.id ?? null,
   );
-  const [direction, setDirection] =
-    createSignal<ImpactDirection>("both");
+  const [direction, setDirection] = createSignal<ImpactDirection>("both");
 
   const focus = createMemo(() => {
     const id = focusId();
@@ -65,12 +64,8 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
   });
 
   /** Stats: count of impacted nodes + max depth. */
-  const impactCount = createMemo<number>(() =>
-    countImpact(impactEntries()),
-  );
-  const maxDepth = createMemo<number>(() =>
-    maxImpactDepth(impactEntries()),
-  );
+  const impactCount = createMemo<number>(() => countImpact(impactEntries()));
+  const maxDepth = createMemo<number>(() => maxImpactDepth(impactEntries()));
 
   const nodeById = createMemo(() => {
     const m = new Map<string, GraphNode>();
@@ -164,7 +159,11 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
             >
               <section class="impact-zones">
                 <h3>Blast radius by depth</h3>
-                <For each={Object.entries(byDepth()).sort(([a], [b]) => Number(a) - Number(b))}>
+                <For
+                  each={Object.entries(byDepth()).sort(
+                    ([a], [b]) => Number(a) - Number(b),
+                  )}
+                >
                   {([depth, entries]) => (
                     <div class="impact-depth">
                       <h4>
@@ -182,10 +181,14 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
                                   class={`impact-node ${entry.direction}`}
                                   onClick={() => props.onSelect(node.id)}
                                 >
-                                  <span class={`impact-arrow-${entry.direction}`}>
+                                  <span
+                                    class={`impact-arrow-${entry.direction}`}
+                                  >
                                     {entry.direction === "upstream" ? "↑" : "↓"}
                                   </span>
-                                  <span class="impact-node-name">{node.label}</span>
+                                  <span class="impact-node-name">
+                                    {node.label}
+                                  </span>
                                   <Show when={node.file}>
                                     <span class="impact-node-file">
                                       {node.file}:{node.line ?? "?"}

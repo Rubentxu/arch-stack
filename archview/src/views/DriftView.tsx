@@ -40,9 +40,7 @@ export const DriftView: Component<DriftViewProps> = (props) => {
     return diffRelations(props.declared.edges, props.actual.edges);
   });
 
-  const counts = createMemo(() =>
-    driftCounts(elementDiffs(), relationDiffs()),
-  );
+  const counts = createMemo(() => driftCounts(elementDiffs(), relationDiffs()));
 
   return (
     <div class="drift-view">
@@ -106,7 +104,9 @@ export const DriftView: Component<DriftViewProps> = (props) => {
               )}
             </For>
             <Show
-              when={elementDiffs().filter((d) => d.kind === "added").length === 0}
+              when={
+                elementDiffs().filter((d) => d.kind === "added").length === 0
+              }
             >
               <li class="muted">none</li>
             </Show>
@@ -133,8 +133,9 @@ export const DriftView: Component<DriftViewProps> = (props) => {
               )}
             </For>
             <Show
-              when={elementDiffs().filter((d) => d.kind === "removed")
-                .length === 0}
+              when={
+                elementDiffs().filter((d) => d.kind === "removed").length === 0
+              }
             >
               <li class="muted">none</li>
             </Show>
@@ -150,7 +151,7 @@ export const DriftView: Component<DriftViewProps> = (props) => {
             <For each={elementDiffs().filter((d) => d.kind === "changed")}>
               {(d) => (
                 <Show when={d.kind === "changed"}>
-                  {(_) => (
+                  {() => (
                     <li>
                       <button
                         class="drift-element"
@@ -160,7 +161,7 @@ export const DriftView: Component<DriftViewProps> = (props) => {
                         <span class="drift-element-id">{d.node.id}</span>
                       </button>
                       <Show when={d.kind === "changed"}>
-                        {(_) => (
+                        {() => (
                           <ul class="drift-changes">
                             <For each={d.changes}>
                               {(change) => <li>{change}</li>}
@@ -174,8 +175,9 @@ export const DriftView: Component<DriftViewProps> = (props) => {
               )}
             </For>
             <Show
-              when={elementDiffs().filter((d) => d.kind === "changed")
-                .length === 0}
+              when={
+                elementDiffs().filter((d) => d.kind === "changed").length === 0
+              }
             >
               <li class="muted">none</li>
             </Show>

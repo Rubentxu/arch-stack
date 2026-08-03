@@ -50,9 +50,7 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
 
       <Show
         when={props.nodes.length > 0}
-        fallback={
-          <p class="empty">No classes in this bundle.</p>
-        }
+        fallback={<p class="empty">No classes in this bundle.</p>}
       >
         <div class="cd-grid">
           <For each={props.nodes}>
@@ -111,9 +109,7 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
                                 {m.name || "(anon)"}()
                               </span>
                               <Show when={m.signature}>
-                                <span class="cd-member-sig">
-                                  {m.signature}
-                                </span>
+                                <span class="cd-member-sig">{m.signature}</span>
                               </Show>
                             </li>
                           )}
@@ -146,7 +142,9 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
                           return (
                             <li>
                               <code>{from?.label ?? e.source}</code>
-                              <span class={`cd-arrow-kind kind-${kind}`}>─▸</span>
+                              <span class={`cd-arrow-kind kind-${kind}`}>
+                                ─▸
+                              </span>
                               <code>{to?.label ?? e.target}</code>
                             </li>
                           );

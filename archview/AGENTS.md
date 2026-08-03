@@ -60,6 +60,7 @@ pnpm format           # prettier write
 
 - `pnpm build` exit 0
 - `pnpm test` exit 0 (>= 4 tests passing, one per bundle shape)
+- `pnpm lint` exit 0
 - `pnpm format:check` exit 0
 - No `console.error` en dev (revisar DevTools console)
 - Para cambios en `loader.ts`: tests cubren los 4 shapes

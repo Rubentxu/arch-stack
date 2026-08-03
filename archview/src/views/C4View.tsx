@@ -49,9 +49,7 @@ export const C4View: Component<C4ViewProps> = (props) => {
     visibleEdgesFor(props.edges, visibleNodes()),
   );
 
-  const groupedByLevel = createMemo(() =>
-    groupNodesByLevel(visibleNodes()),
-  );
+  const groupedByLevel = createMemo(() => groupNodesByLevel(visibleNodes()));
 
   const handleNodeClick = (id: string) => {
     props.onSelect(id);
@@ -114,11 +112,9 @@ export const C4View: Component<C4ViewProps> = (props) => {
                             )}
                           </Show>
                           <Show
-                            when={
-                              props.nodes.some(
-                                (n) => n.parentId === node.id,
-                              )
-                            }
+                            when={props.nodes.some(
+                              (n) => n.parentId === node.id,
+                            )}
                           >
                             <span class="c4-drill-hint">▸ drill in</span>
                           </Show>
