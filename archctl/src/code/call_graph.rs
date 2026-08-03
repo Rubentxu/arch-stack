@@ -34,6 +34,9 @@ pub struct FunctionNode {
     pub language: Language,
     /// Relative to --cwd (string, like c4 Evidence.file)
     pub file: String,
+    /// `"sha256:<hex>"` of the file content (D2 identity input).
+    #[serde(default, rename = "contentHash")]
+    pub content_hash: String,
     /// 1-based
     pub line: u32,
     pub name: String,
@@ -55,6 +58,9 @@ pub struct CallEdge {
     /// callee name (unresolved in MVP — Phase 2 symbol table)
     pub callee: String,
     pub file: String,
+    /// `"sha256:<hex>"` of the file content (D2 identity input).
+    #[serde(default, rename = "contentHash")]
+    pub content_hash: String,
     /// 1-based call-site line
     pub line: u32,
     pub kind: CallKind,
@@ -261,6 +267,17 @@ pub fn extract(
             &mut all_edges,
             depth_limit,
         );
+
+        // Thread the file content hash into this file's carriers (D2 identity
+        // input). Computed once per file — the source is already in memory
+        // for the tree-sitter parse; no extra I/O.
+        let content_hash = crate::evidence::content_hash_of(&source);
+        for n in all_nodes.iter_mut().filter(|n| n.file == file_str) {
+            n.content_hash = content_hash.clone();
+        }
+        for e in all_edges.iter_mut().filter(|e| e.file == file_str) {
+            e.content_hash = content_hash.clone();
+        }
     }
 
     let duration_ms = start.elapsed().as_millis() as u64;
@@ -424,6 +441,7 @@ fn extract_rust_function(
         kind: FunctionKind::Function,
         language: lang,
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         name,
         fq_name,
@@ -450,6 +468,7 @@ fn extract_rust_closure(
         kind: FunctionKind::Closure,
         language: lang,
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         name,
         fq_name,
@@ -490,6 +509,7 @@ fn extract_ts_function(
         kind: FunctionKind::Function,
         language: lang,
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         name,
         fq_name,
@@ -530,6 +550,7 @@ fn extract_ts_method(
         kind: FunctionKind::Method,
         language: lang,
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         name,
         fq_name,
@@ -556,6 +577,7 @@ fn extract_ts_arrow(
         kind: FunctionKind::Closure,
         language: lang,
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         name,
         fq_name,
@@ -602,6 +624,7 @@ fn extract_python_function(
         kind,
         language: lang,
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         name,
         fq_name,
@@ -841,6 +864,7 @@ fn make_call_edge(
         caller,
         callee: callee.to_string(),
         file: file.to_string(),
+        content_hash: String::new(),
         line,
         kind,
         message_kind,
@@ -1149,7 +1173,12 @@ pub fn apply(
 
         // Get or create SourceArtifact for this file
         if !source_artifact_ids.contains_key(&node.file) {
-            let id = write_source_artifact(&mut *store, &node.file)?;
+            let id = write_source_artifact(
+                &mut *store,
+                &node.file,
+                &node.content_hash,
+                lang_label(&node.language),
+            )?;
             source_artifact_ids.insert(node.file.clone(), id);
             source_artifacts_written += 1;
         }
@@ -1180,7 +1209,20 @@ pub fn apply(
             let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
                 id.clone()
             } else {
-                let id = write_source_artifact(&mut *store, &edge.file)?;
+                // CallEdge carries no Language field; derive the label from
+                // the `<lang>:` prefix of its canonical_key.
+                let lang_label_edge = edge
+                    .canonical_key
+                    .split(':')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                let id = write_source_artifact(
+                    &mut *store,
+                    &edge.file,
+                    &edge.content_hash,
+                    &lang_label_edge,
+                )?;
                 source_artifact_ids.insert(edge.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id

@@ -4,6 +4,31 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v0.13.3
+
+### Fixed
+- **`SourceArtifact` identity divergence (D2)**: `code::apply_common::write_source_artifact`
+  used a path-only `blake3(file)` id with `kind='manifest'` and empty fields,
+  contradicting ADR-017 §D2 (`"src:" + blake3(path + content_hash)[..16]`,
+  `kind='source_file'`). `code/*` apply pipelines and the `evidence` pipeline
+  wrote different nodes for the same file. Now: `content_hash` is threaded
+  through `FunctionNode`/`CallEdge` carriers (computed once per file at
+  extraction) and computed in c4 `apply` via the injected Filesystem;
+  `write_source_artifact` routes through `SourceArtifact::from_content` +
+  `store.put_source` (canonical path). Cross-pipeline joins on
+  `SourceArtifact.id` now align.
+- **Removed single-use `Pipe` trait** (O-AE-1) from `apply_common` — `.pipe(Ok)`
+  replaced with `Ok(...)`.
+
+### Changed
+- Report schemas (`call-graph-report`, `discover-report`) declare optional
+  `contentHash` on node/edge/evidence items (`schemaVersion` stays `"1.0"`).
+
+### Refs
+- Cycle: `refactor/source-artifact-id`
+- Closes backlog `refactor/debt-source-artifact-id-1` (C-HD-1) and
+  `refactor/extract-code-apply-helpers-pipe-1` (O-AE-1)
+
 ## [Unreleased] — v0.13.2
 
 ### Changed

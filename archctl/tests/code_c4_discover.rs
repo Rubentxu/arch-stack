@@ -300,6 +300,7 @@ fn cross_strategy_merge_integration() {
             strategy: "cargo-workspace".to_string(),
             confidence: 0.85,
             evidences: vec![Evidence {
+                content_hash: String::new(),
                 file: "Cargo.toml".to_string(),
                 line: 8,
                 kind: EvidenceKind::Structural,
@@ -312,6 +313,7 @@ fn cross_strategy_merge_integration() {
             strategy: "dockerfile".to_string(),
             confidence: 0.60,
             evidences: vec![Evidence {
+                content_hash: String::new(),
                 file: "services/auth/Dockerfile".to_string(),
                 line: 1,
                 kind: EvidenceKind::Structural,
@@ -398,6 +400,7 @@ fn apply_idempotent_integration() {
             confidence: 0.85,
             merged_from: vec!["cargo-workspace".to_string()],
             evidences: vec![Evidence {
+                content_hash: String::new(),
                 file: "Cargo.toml".to_string(),
                 line: 5,
                 kind: EvidenceKind::Structural,
@@ -456,12 +459,14 @@ fn json_roundtrip_against_schema() {
                 merged_from: vec!["cargo-workspace".to_string()],
                 evidences: vec![
                     Evidence {
+                        content_hash: String::new(),
                         file: "Cargo.toml".to_string(),
                         line: 8,
                         kind: EvidenceKind::Structural,
                         text: "Cargo workspace member: auth-svc".to_string(),
                     },
                     Evidence {
+                        content_hash: String::new(),
                         file: "src/main.rs".to_string(),
                         line: 1,
                         kind: EvidenceKind::Lexical,
@@ -476,6 +481,7 @@ fn json_roundtrip_against_schema() {
                 confidence: 0.60,
                 merged_from: vec!["dockerfile".to_string()],
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "services/api/Dockerfile".to_string(),
                     line: 1,
                     kind: EvidenceKind::Config,
@@ -530,6 +536,7 @@ fn apply_roundtrip_to_export() {
             confidence: 0.85,
             merged_from: vec!["cargo-workspace".to_string()],
             evidences: vec![Evidence {
+                content_hash: String::new(),
                 file: "Cargo.toml".to_string(),
                 line: 5,
                 kind: EvidenceKind::Structural,

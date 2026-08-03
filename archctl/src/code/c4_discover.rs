@@ -32,6 +32,10 @@ pub struct ContainerCandidate {
 pub struct Evidence {
     /// Relative path from project root
     pub file: String,
+    /// `"sha256:<hex>"` of the file content (D2 identity input).
+    /// Populated at apply time via the injected Filesystem.
+    #[serde(default, rename = "contentHash")]
+    pub content_hash: String,
     /// 1-based line number
     pub line: u32,
     pub kind: EvidenceKind,
@@ -189,6 +193,27 @@ pub fn discover(
         discovered,
         errors,
     })
+}
+
+/// Derive a SourceArtifact language label from a manifest file name.
+/// Manifests are `Cargo.toml`, `package.json`, `Dockerfile`, `Chart.yaml`,
+/// etc. — none of them is a programming language, so the label is the file
+/// extension (or a stable slug). Must pass `validate_identifier` (alnum,
+/// `. - _ : /`, non-empty).
+fn c4_language_label(file: &str) -> &'static str {
+    let lower = file.to_ascii_lowercase();
+    if lower.ends_with("dockerfile") {
+        return "dockerfile";
+    }
+    match lower.rsplit_once('.') {
+        Some((_, ext)) => match ext {
+            "toml" => "toml",
+            "json" => "json",
+            "yaml" | "yml" => "yaml",
+            _ => "manifest",
+        },
+        None => "manifest",
+    }
 }
 
 /// Write the Element node for a Container. Returns the element_id.
@@ -382,7 +407,7 @@ fn write_evidence(
 pub fn apply(
     project_dir: &Path,
     report: &DiscoverReport,
-    _fs: &dyn Filesystem,
+    fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::{
         existing_canonical_keys, open_and_init, write_source_artifact,
@@ -426,7 +451,20 @@ pub fn apply(
             let sa_id = if let Some(id) = source_artifact_ids.get(&evidence.file) {
                 id.clone()
             } else {
-                let id = write_source_artifact(&mut *store, &evidence.file)?;
+                // Compute the D2 content hash by re-reading the manifest via
+                // the injected Filesystem. Manifests are small (Cargo.toml,
+                // package.json, Dockerfile) and the dedup map bounds this to
+                // one read per unique file per apply.
+                let content_hash = fs
+                    .read_to_string(&project_dir.join(&evidence.file))
+                    .map(|s| crate::evidence::content_hash_of(&s))
+                    .unwrap_or_default();
+                // Manifests are TOML/JSON/YAML or Dockerfile — derive a
+                // language label from the file name (validate_identifier
+                // rejects empty strings).
+                let lang_label = c4_language_label(&evidence.file);
+                let id =
+                    write_source_artifact(&mut *store, &evidence.file, &content_hash, lang_label)?;
                 source_artifact_ids.insert(evidence.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id
@@ -506,6 +544,7 @@ mod tests {
                 strategy: "cargo-workspace".to_string(),
                 confidence: 0.85,
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "Cargo.toml".to_string(),
                     line: 8,
                     kind: EvidenceKind::Structural,
@@ -518,6 +557,7 @@ mod tests {
                 strategy: "dockerfile".to_string(),
                 confidence: 0.60,
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "auth-svc/Dockerfile".to_string(),
                     line: 1,
                     kind: EvidenceKind::Structural,
@@ -572,6 +612,7 @@ mod tests {
                 strategy: "s1".to_string(),
                 confidence: 0.90,
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "file1.txt".to_string(),
                     line: 1,
                     kind: EvidenceKind::Structural,
@@ -584,6 +625,7 @@ mod tests {
                 strategy: "s2".to_string(),
                 confidence: 0.80,
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "file2.txt".to_string(),
                     line: 2,
                     kind: EvidenceKind::Config,
@@ -761,6 +803,7 @@ mod tests {
                 confidence: 0.85,
                 merged_from: vec!["cargo-workspace".to_string()],
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "Cargo.toml".to_string(),
                     line: 5,
                     kind: EvidenceKind::Structural,
@@ -800,6 +843,7 @@ mod tests {
                 confidence: 0.85,
                 merged_from: vec!["cargo-workspace".to_string()],
                 evidences: vec![Evidence {
+                    content_hash: String::new(),
                     file: "Cargo.toml".to_string(),
                     line: 5,
                     kind: EvidenceKind::Structural,
@@ -852,12 +896,14 @@ mod tests {
                     merged_from: vec!["cargo-workspace".to_string()],
                     evidences: vec![
                         Evidence {
+                            content_hash: String::new(),
                             file: "Cargo.toml".to_string(),
                             line: 8,
                             kind: EvidenceKind::Structural,
                             text: "Cargo workspace member: auth-svc".to_string(),
                         },
                         Evidence {
+                            content_hash: String::new(),
                             file: "src/main.rs".to_string(),
                             line: 1,
                             kind: EvidenceKind::Lexical,
@@ -872,6 +918,7 @@ mod tests {
                     confidence: 0.60,
                     merged_from: vec!["dockerfile".to_string()],
                     evidences: vec![Evidence {
+                        content_hash: String::new(),
                         file: "services/api/Dockerfile".to_string(),
                         line: 1,
                         kind: EvidenceKind::Config,

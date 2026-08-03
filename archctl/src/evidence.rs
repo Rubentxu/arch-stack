@@ -381,7 +381,7 @@ fn line_at_byte(source: &str, byte: usize) -> usize {
         .count()
 }
 
-fn content_hash_of(source: &str) -> String {
+pub(crate) fn content_hash_of(source: &str) -> String {
     let digest = Sha256::digest(source.as_bytes());
     format!("sha256:{}", hex::encode(digest))
 }

@@ -94,6 +94,7 @@ impl Strategy for NpmWorkspace {
                     strategy: self.id().to_string(),
                     confidence: self.confidence(),
                     evidences: vec![Evidence {
+                        content_hash: String::new(),
                         file: rel_path,
                         line,
                         kind: EvidenceKind::Structural,
