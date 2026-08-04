@@ -21,6 +21,11 @@ impl XdgLayout {
     pub fn sources_root(&self) -> PathBuf {
         self.skills_root().join("sources")
     }
+    /// Path to the policies directory (TOML rule files).
+    /// Falls back to `$XDG_CONFIG_HOME/archctl/policies/`.
+    pub fn policies_root(&self) -> PathBuf {
+        self.config.join("policies")
+    }
 }
 
 /// Resolve the user's home directory via the `Environment` port, with
@@ -107,8 +112,41 @@ pub fn ensure_xdg(layout: &XdgLayout, fs: &dyn Filesystem) -> anyhow::Result<()>
         layout.lib_root(),
         layout.projects_root(),
         layout.sources_root(),
+        layout.policies_root(),
     ] {
         fs.create_dir_all(&dir)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn policies_root_joins_config() {
+        let layout = XdgLayout {
+            data: PathBuf::from("/home/user/.local/share/archctl"),
+            config: PathBuf::from("/home/user/.config/archctl"),
+            state: PathBuf::from("/home/user/.local/state/archctl"),
+            cache: PathBuf::from("/home/user/.cache/archctl"),
+        };
+        assert_eq!(
+            layout.policies_root(),
+            PathBuf::from("/home/user/.config/archctl/policies")
+        );
+    }
+
+    #[test]
+    fn policies_root_default_under_archctl() {
+        let layout = XdgLayout {
+            data: PathBuf::from("/home/user/.local/share/archctl"),
+            config: PathBuf::from("/home/user/.config/archctl"),
+            state: PathBuf::from("/home/user/.local/state/archctl"),
+            cache: PathBuf::from("/home/user/.cache/archctl"),
+        };
+        let policies = layout.policies_root();
+        assert!(policies.to_str().unwrap().ends_with("archctl/policies"));
+    }
 }

@@ -129,6 +129,10 @@ pub enum McpAction {
         /// Output as JSON instead of human-readable.
         #[arg(long)]
         json: bool,
+        /// Run this invocation through PolicyGate (governed mode).
+        /// The input must include an ActionProposal field.
+        #[arg(long)]
+        governed: bool,
     },
 }
 
@@ -758,10 +762,16 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 }
                 Ok(0)
             }
-            McpAction::Invoke { tool, data, json } => {
+            McpAction::Invoke {
+                tool,
+                data,
+                json,
+                governed,
+            } => {
+                use crate::cognitive::PolicyGate;
                 use crate::cognitive::{McpGateway, ToolResult};
                 use std::io::{self, Read};
-                let args = if let Some(path) = data {
+                let input_json: serde_json::Value = if let Some(path) = data {
                     if path.as_os_str() == "-" {
                         let mut buf = String::new();
                         io::stdin().read_to_string(&mut buf)?;
@@ -777,25 +787,60 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 } else {
                     serde_json::Value::Object(serde_json::Map::new())
                 };
-                let req = serde_json::json!({ "tool": tool, "args": args });
-                let gw = McpGateway::new();
-                let result = gw.handle_raw(&serde_json::to_string(&req).unwrap());
-                if json {
-                    println!("{}", result);
-                } else {
-                    let parsed: ToolResult = serde_json::from_str(&result).unwrap();
-                    if let Some(err) = parsed.error {
-                        eprintln!("error: {}", err);
-                        return Ok(1);
+                if governed {
+                    // Governed path: route through PolicyGate
+                    use crate::cognitive::policy::PolicyContext;
+                    let ctx = PolicyContext::default();
+                    let gate = PolicyGate::new();
+                    let input_str = serde_json::to_string(&input_json)
+                        .map_err(|e| anyhow::anyhow!("serialize governed input: {}", e))?;
+                    let governed_result = gate
+                        .handle_governed(&input_str, &ctx)
+                        .map_err(|e| anyhow::anyhow!("governed invocation failed: {e}"))?;
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&governed_result).map_err(|e| {
+                                anyhow::anyhow!("serialize governed result: {}", e)
+                            })?
+                        );
+                    } else {
+                        print_governed_result(&governed_result);
                     }
-                    println!("tool: {}", parsed.tool);
-                    if let Some(data) = parsed.data {
-                        println!("result: {}", serde_json::to_string_pretty(&data).unwrap());
+                } else {
+                    // Direct path: use McpGateway
+                    let req = serde_json::json!({ "tool": tool, "args": input_json });
+                    let gw = McpGateway::new();
+                    let result = gw.handle_raw(&serde_json::to_string(&req).unwrap());
+                    if json {
+                        println!("{}", result);
+                    } else {
+                        let parsed: ToolResult = serde_json::from_str(&result).unwrap();
+                        if let Some(err) = parsed.error {
+                            eprintln!("error: {}", err);
+                            return Ok(1);
+                        }
+                        println!("tool: {}", parsed.tool);
+                        if let Some(data) = parsed.data {
+                            println!("result: {}", serde_json::to_string_pretty(&data).unwrap());
+                        }
                     }
                 }
                 Ok(0)
             }
         },
+    }
+}
+
+fn print_governed_result(r: &crate::cognitive::GovernedToolResult) {
+    println!("policy.outcome: {:?}", r.policy.outcome);
+    if let Some(ref err) = r.tool.error {
+        eprintln!("tool error: {}", err);
+    } else {
+        println!("tool: {}", r.tool.tool);
+        if let Some(ref data) = r.tool.data {
+            println!("result: {}", serde_json::to_string_pretty(data).unwrap());
+        }
     }
 }
 
