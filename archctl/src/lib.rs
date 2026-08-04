@@ -2,6 +2,7 @@ pub mod astgrep;
 pub mod cli;
 pub mod clock;
 pub mod code;
+pub mod cognitive;
 pub mod diagram;
 pub mod doctor;
 pub mod environment;

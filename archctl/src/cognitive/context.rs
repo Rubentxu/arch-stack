@@ -1,0 +1,116 @@
+//! Agent execution context.
+
+use serde::{Deserialize, Serialize};
+
+use super::descriptor::AgentBudget;
+
+/// The context passed to an agent on each invocation.
+/// v1.0: built by SyncDispatcher from user goal + graph query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentContext {
+    /// The goal the user asked.
+    pub goal: String,
+    /// Optional event that triggered this invocation (v1.0 = None for direct invoke).
+    pub triggering_event: Option<String>,
+    /// Subset of the graph relevant to the goal.
+    pub graph_view: GraphView,
+    /// Source code fragments backing the analysis.
+    pub source_fragments: Vec<SourceFragment>,
+    /// Evidence nodes available for citation.
+    pub evidence: Vec<Evidence>,
+    /// Rules applicable to this context.
+    pub applicable_rules: Vec<crate::cognitive::Rule>,
+    /// Tools the agent may call.
+    pub available_tools: Vec<crate::cognitive::ToolDescriptor>,
+    /// Budget for this invocation.
+    pub budget: AgentBudget,
+}
+
+/// A subgraph extracted for agent consumption.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GraphView {
+    pub elements: Vec<Element>,
+    pub edges: Vec<Edge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Element {
+    pub id: String,
+    pub kind_id: String,
+    pub name: String,
+    pub canonical_key: String,
+    pub properties: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Edge {
+    pub id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceFragment {
+    pub file: String,
+    pub lang: String,
+    pub snippet: String,
+    pub line_range: LineRange,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Evidence {
+    pub id: String,
+    pub provenance_id: ProvenanceId,
+    pub content_hash: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum ProvenanceId {
+    #[serde(rename = "file")]
+    File { path: String, line: u32 },
+    #[serde(rename = "sem")]
+    Semantic { scheme: String, value: String },
+    #[serde(rename = "sa")]
+    SourceArtifact { id: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_context_serde() {
+        let ctx = AgentContext {
+            goal: "what couples A and B".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: AgentContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.goal, "what couples A and B");
+    }
+
+    #[test]
+    fn provenance_id_serde() {
+        let p = ProvenanceId::File {
+            path: "src/main.rs".into(),
+            line: 42,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains(r#""kind":"file""#));
+    }
+}
