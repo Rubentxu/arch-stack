@@ -11,7 +11,7 @@ use super::tools::{
 };
 
 /// The 3 allowed tools in v1.0. No others.
-const ALLOWED_TOOLS: &[&str] = &["graph_query", "schema_validate", "run_tests_local"];
+pub const ALLOWED_TOOLS: &[&str] = &["graph_query", "schema_validate", "run_tests_local"];
 
 /// MCP gateway that handles JSON-RPC-like requests from stdin.
 #[derive(Default)]

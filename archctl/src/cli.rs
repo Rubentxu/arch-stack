@@ -94,6 +94,45 @@ pub enum SkillsAction {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum AgentAction {
+    /// List all registered agents and their descriptors.
+    List {
+        /// Output as JSON instead of human-readable table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Dispatch a goal to the cognitive layer and return structured output.
+    Dispatch {
+        /// Natural-language goal for the agent system.
+        goal: String,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum McpAction {
+    /// List all allowed MCP tools in the gateway allowlist.
+    ListTools {
+        /// Output as JSON instead of human-readable table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Invoke an MCP tool by name with JSON args from stdin.
+    Invoke {
+        /// Name of the tool to invoke.
+        tool: String,
+        /// Path to a file containing JSON args (or - for stdin).
+        #[arg(long, short = 'd')]
+        data: Option<PathBuf>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum InventoryAction {
     Tree {
         #[arg(long)]
@@ -421,6 +460,14 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillsAction,
     },
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
+    Mcp {
+        #[command(subcommand)]
+        action: McpAction,
+    },
 }
 
 /// CLI entry point. Builds a [`CliContext`] with the production
@@ -607,6 +654,148 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             } => code_state_machine_cmd(&cwd, apply, json, &lang),
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
+        Command::Agent { action } => match action {
+            AgentAction::List { json } => {
+                use crate::cognitive::{AgentDescriptor, AgentRegistry};
+                let reg = AgentRegistry::new();
+                let agents: Vec<AgentDescriptor> = reg.ids().filter_map(|id| reg.get(id)).collect();
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&agents)?);
+                } else if agents.is_empty() {
+                    println!("No agents registered.");
+                } else {
+                    println!(
+                        "{:<20} {:<10} {:<15} Deterministic",
+                        "ID", "Version", "ModelPolicy"
+                    );
+                    println!("{}", "-".repeat(60));
+                    for a in &agents {
+                        println!(
+                            "{:<20} {:<10} {:<15} {}",
+                            a.id,
+                            a.version,
+                            format!("{:?}", a.model_policy),
+                            a.deterministic
+                        );
+                    }
+                }
+                Ok(0)
+            }
+            AgentAction::Dispatch { goal, json } => {
+                use crate::cognitive::{AgentContext, AgentOutput, AgentRegistry, SyncDispatcher};
+                let reg = AgentRegistry::new();
+                // v1.0: no agents registered yet, dispatcher returns NoAction
+                let disp = SyncDispatcher::new(&reg);
+                let ctx = AgentContext {
+                    goal,
+                    triggering_event: None,
+                    graph_view: Default::default(),
+                    source_fragments: vec![],
+                    evidence: vec![],
+                    applicable_rules: vec![],
+                    available_tools: vec![],
+                    budget: Default::default(),
+                };
+                let out = disp.dispatch(&ctx)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&out)?);
+                } else {
+                    match &out {
+                        AgentOutput::NoAction(r) => {
+                            println!("No action: [{:?}] {}", r.code, r.message);
+                        }
+                        AgentOutput::FindingCandidate(f) => {
+                            println!(
+                                "FindingCandidate: {} [{:.0}%]",
+                                f.title,
+                                f.confidence * 100.0
+                            );
+                        }
+                        AgentOutput::ActionProposal(p) => {
+                            println!(
+                                "ActionProposal: {} (approval_required={})",
+                                p.goal, p.approval_required
+                            );
+                        }
+                        AgentOutput::Hypothesis(h) => {
+                            println!("Hypothesis: {} [{:.0}%]", h.statement, h.confidence * 100.0);
+                        }
+                        AgentOutput::QueryPlan(q) => {
+                            println!("QueryPlan: {} steps", q.cypher_steps.len());
+                        }
+                        AgentOutput::ProjectionSpec(p) => {
+                            println!("ProjectionSpec: {:?}", p.view_kind);
+                        }
+                        AgentOutput::ActionPlan(a) => {
+                            println!("ActionPlan: {} steps", a.steps.len());
+                        }
+                        AgentOutput::DocumentationPatch(d) => {
+                            println!("DocumentationPatch: {} ({:?})", d.file, d.patch_type);
+                        }
+                        AgentOutput::ContextRequest(c) => {
+                            println!(
+                                "ContextRequest: {} ({} missing)",
+                                c.request_id,
+                                c.missing.len()
+                            );
+                        }
+                    }
+                }
+                Ok(0)
+            }
+        },
+        Command::Mcp { action } => match action {
+            McpAction::ListTools { json } => {
+                use crate::cognitive::ALLOWED_TOOLS;
+                if json {
+                    let tools: Vec<&str> = ALLOWED_TOOLS.to_vec();
+                    println!("{}", serde_json::to_string_pretty(&tools)?);
+                } else {
+                    println!("Allowed MCP tools (v1.0 read-only allowlist):");
+                    for tool in ALLOWED_TOOLS {
+                        println!("  - {}", tool);
+                    }
+                }
+                Ok(0)
+            }
+            McpAction::Invoke { tool, data, json } => {
+                use crate::cognitive::{McpGateway, ToolResult};
+                use std::io::{self, Read};
+                let args = if let Some(path) = data {
+                    if path.as_os_str() == "-" {
+                        let mut buf = String::new();
+                        io::stdin().read_to_string(&mut buf)?;
+                        serde_json::from_str(&buf)
+                            .map_err(|e| anyhow::anyhow!("invalid JSON from stdin: {}", e))?
+                    } else {
+                        let contents = std::fs::read_to_string(&path)
+                            .map_err(|e| anyhow::anyhow!("read {}: {}", path.display(), e))?;
+                        serde_json::from_str(&contents).map_err(|e| {
+                            anyhow::anyhow!("invalid JSON in {}: {}", path.display(), e)
+                        })?
+                    }
+                } else {
+                    serde_json::Value::Object(serde_json::Map::new())
+                };
+                let req = serde_json::json!({ "tool": tool, "args": args });
+                let gw = McpGateway::new();
+                let result = gw.handle_raw(&serde_json::to_string(&req).unwrap());
+                if json {
+                    println!("{}", result);
+                } else {
+                    let parsed: ToolResult = serde_json::from_str(&result).unwrap();
+                    if let Some(err) = parsed.error {
+                        eprintln!("error: {}", err);
+                        return Ok(1);
+                    }
+                    println!("tool: {}", parsed.tool);
+                    if let Some(data) = parsed.data {
+                        println!("result: {}", serde_json::to_string_pretty(&data).unwrap());
+                    }
+                }
+                Ok(0)
+            }
+        },
     }
 }
 
