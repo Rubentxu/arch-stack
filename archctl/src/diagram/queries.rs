@@ -10,7 +10,7 @@ use crate::store::GraphStore;
 use anyhow::Context;
 
 /// An element row from Query 1.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElementRow {
     pub id: String,
     pub kind_id: String,
@@ -23,7 +23,7 @@ pub struct ElementRow {
 }
 
 /// A semantic edge row from Query 2.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SemanticEdgeRow {
     pub relation_id: String,
     pub predicate_id: String,

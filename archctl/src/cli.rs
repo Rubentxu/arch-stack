@@ -156,6 +156,22 @@ pub enum DiagramAction {
         #[arg(long)]
         json: bool,
     },
+    /// Project graph elements to editable DSL source (PlantUML, Mermaid, Structurizr).
+    Project {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// View selector in the form `<kind>:<scope>` (e.g., `class:*`, `c4-container:orders`).
+        #[arg(long)]
+        view: String,
+        /// Output format: plantuml, mermaid, or structurizr.
+        #[arg(long, default_value = "plantuml")]
+        format: String,
+        /// Output file path.
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -234,6 +250,22 @@ pub enum CodeAction {
         /// Selector: `file:<path>` or `module:<id>`, or omit for whole project.
         #[arg(long)]
         selector: Option<String>,
+    },
+    /// Extract state machines from source code (Rust enum+match, TypeScript state pattern, Python transitions).
+    StateMachine {
+        /// Project directory to scan. Defaults to the current working directory.
+        #[arg(long, default_value = ".")]
+        cwd: PathBuf,
+        /// Persist extracted nodes + edges to the graph store.
+        #[arg(long)]
+        apply: bool,
+        /// Emit machine-readable JSON to stdout.
+        #[arg(long)]
+        json: bool,
+        /// Comma-separated languages to process (rust, typescript, python).
+        /// If omitted, all supported languages are processed.
+        #[arg(long, value_enum, value_delimiter = ',')]
+        lang: Vec<crate::code::state_machine::Language>,
     },
 }
 
@@ -465,6 +497,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             DiagramAction::Apply { cwd, changes, json } => {
                 diagram_apply_cmd(cwd, changes, json, ctx)
             }
+            DiagramAction::Project {
+                cwd,
+                view,
+                format,
+                output,
+                json,
+            } => diagram_project_cmd(cwd, &view, &format, &output, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -560,6 +599,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 lang,
                 selector,
             } => code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref()),
+            CodeAction::StateMachine {
+                cwd,
+                apply,
+                json,
+                lang,
+            } => code_state_machine_cmd(&cwd, apply, json, &lang),
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
     }
@@ -1264,6 +1309,76 @@ fn diagram_apply_cmd(
     Ok(0)
 }
 
+fn diagram_project_cmd(
+    cwd: Option<PathBuf>,
+    view: &str,
+    format: &str,
+    output: &Path,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::diagram::project::OutputFormat;
+
+    // Parse format (SCN-418)
+    let fmt = OutputFormat::parse(format).ok_or_else(|| {
+        anyhow::anyhow!("unknown format: \"{format}\" (supported: plantuml, mermaid, structurizr)")
+    })?;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = store::open_and_init(&info.project_dir)?;
+
+    // Parse selector (SCN-413, SCN-417)
+    let selector = crate::diagram::project_selector::ProjectSelector::parse(view)
+        .with_context(|| format!("invalid view selector: {view}"))?;
+
+    // Run queries (reuse query_elements / query_semantic_edges — category-agnostic)
+    let elements = crate::diagram::queries::query_elements(
+        &*store,
+        selector.category(),
+        selector.scope_ident(),
+    )
+    .context("query_elements failed")?;
+
+    let edges = crate::diagram::queries::query_semantic_edges(&*store, selector.category())
+        .context("query_semantic_edges failed")?;
+
+    // Project to DSL
+    let (dsl, report) = crate::diagram::project::project_dsl(&selector, &elements, &edges, fmt);
+
+    // Write output file (SCN-416)
+    if let Some(parent) = output.parent() {
+        ctx.fs
+            .create_dir_all(parent)
+            .with_context(|| format!("creating output directory {}", parent.display()))?;
+    }
+    ctx.fs
+        .write(output, dsl.as_bytes())
+        .with_context(|| format!("write output to {}", output.display()))?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "elements": report.elements,
+                "edges": report.edges,
+                "format": report.format,
+                "output": output.display().to_string(),
+            }))?
+        );
+    } else {
+        println!(
+            "Projected {} elements, {} edges to {} ({})",
+            report.elements,
+            report.edges,
+            output.display(),
+            report.format
+        );
+    }
+
+    Ok(0)
+}
+
 /// Parse a --from selector string into a FromSelector.
 fn parse_from_selector(s: &str) -> Result<crate::code::sequence::FromSelector, String> {
     use crate::code::sequence::FromSelector;
@@ -1432,6 +1547,50 @@ fn code_class_diagram_cmd(
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         crate::code::output::print_class_diagram_table(&report);
+    }
+
+    Ok(0)
+}
+
+fn code_state_machine_cmd(
+    cwd: &Path,
+    apply: bool,
+    json: bool,
+    lang: &[crate::code::state_machine::Language],
+) -> Result<i32> {
+    let fs = filesystem::system_filesystem();
+
+    let report = crate::code::state_machine::extract(cwd, lang, &*fs)
+        .map_err(|e| anyhow::anyhow!("state-machine extraction failed: {e}"))?;
+
+    if apply {
+        let apply_report = crate::code::state_machine::apply(cwd, &report, &*fs)
+            .map_err(|e| anyhow::anyhow!("state-machine apply failed: {e}"))?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&apply_report)?);
+        } else {
+            println!(
+                "Applied {} elements ({} skipped), {} relations ({} skipped), {} seed writes ({} ms).",
+                apply_report.elements_written,
+                apply_report.elements_skipped,
+                apply_report.relations_written,
+                apply_report.relations_skipped,
+                apply_report.seed_writes,
+                apply_report.duration_ms
+            );
+        }
+    } else if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "Extracted {} state machines from {} files ({} languages).",
+            report.machines.len(),
+            report.project.files_scanned,
+            report.project.languages.len()
+        );
+        for sm in &report.machines {
+            println!("  {} (confidence: {:.2})", sm.name, sm.confidence);
+        }
     }
 
     Ok(0)
