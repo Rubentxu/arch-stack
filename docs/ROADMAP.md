@@ -161,15 +161,16 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 **Pendiente opcional (no bloqueante):** profiling-on-regression flamegraph, PR-comment bot.
 
-## M21 — Cognitive Layer foundation — **IN PROGRESS** 🚧
+## M21 — Cognitive Layer foundation — **COMPLETE** ✅
 
-**Estado:** PR1 (cognitive/ module + contract types) ✅ merged. PR2 (dispatcher + escalation + MCP gateway) submitted as PR #27. PR3 (CLI integration) pendiente.
+**Estado:** Implementado en v0.15.0 (PR #27 mergeado). Foundation sienta las bases para M22.
 
 **Pivot v2.5 (2026-07-31, post-capa-cognitiva):** Substrate sobre el cual corren los agentes especializados. Outputs:
 - Contrato `ReactiveObserver` + `AgentContext` + `AgentOutput` (ver [ADR-021](adr/ADR-021-cognitive-layer.md))
 - ModelPolicy + AgentBudget + escalation ladder (heurística → local → potente → humana)
 - MCP gateway mínimo (3 tools read-only: `graph_query`, `schema_validate`, `run_tests_local`)
-- 2 agentes proof-of-concept (heurística pura): **Architecture Agent** + **Projection Agent**
+- CLI: `agent list/dispatch` y `mcp list-tools/invoke` subcommands
+- 9 E2E tests para agent/mcp commands
 
 Output verificable: queries del workbench responden con output estructurado (no solo texto). Foundation sienta las bases para M22.
 
