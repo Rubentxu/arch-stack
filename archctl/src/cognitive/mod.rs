@@ -3,6 +3,7 @@
 //! v1.0: synchronous dispatcher, deterministic heuristics only.
 
 mod agents;
+pub mod audit;
 pub mod context;
 pub mod descriptor;
 mod dispatcher;
@@ -12,6 +13,7 @@ pub mod observer;
 pub mod output;
 
 pub use agents::*;
+pub use audit::*;
 pub use context::*;
 pub use descriptor::*;
 pub use dispatcher::*;
