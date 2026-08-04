@@ -988,12 +988,31 @@ fn evidence_supersede_cmd(
     Ok(0)
 }
 
-/// Input schema for `evidence put` JSON batch.
+/// Parse evidence input that may be either:
+/// - `{facts: [...]}` — object with facts array (SCN-400)
+/// - `[{...}]` — top-level array of facts (SCN-400, SCN-401)
+fn parse_evidence_input(input: &str) -> Result<Vec<EvidencePutFact>> {
+    // Try parsing as object with `facts` key first
+    if let Ok(req) = serde_json::from_str::<EvidencePutRequest>(input) {
+        return Ok(req.facts);
+    }
+    // Try parsing as top-level array (SCN-400, SCN-401)
+    if let Ok(facts) = serde_json::from_str::<Vec<EvidencePutFact>>(input) {
+        return Ok(facts);
+    }
+    anyhow::bail!(
+        "input must be either {{facts: [...]}} or [{{...}}]; \
+         got neither a valid object with 'facts' key nor a JSON array"
+    );
+}
+
+/// Input schema for `evidence put` JSON batch — object form.
 #[derive(Debug, serde::Deserialize)]
 struct EvidencePutRequest {
     facts: Vec<EvidencePutFact>,
 }
 
+/// One fact in an evidence put batch.
 #[derive(Debug, serde::Deserialize)]
 struct EvidencePutFact {
     kind: Option<String>,
@@ -1002,11 +1021,25 @@ struct EvidencePutFact {
     props: serde_json::Map<String, serde_json::Value>,
 }
 
+/// Result of processing a single fact.
+struct ProcessedFact {
+    evidence: Evidence,
+    evidence_id: String,
+    source: SourceArtifact,
+}
+
+/// Error details for a single fact that failed processing.
+struct FactError {
+    index: usize,
+    claim: Option<String>,
+    error: String,
+}
+
 fn evidence_put_cmd(
     cwd: Option<PathBuf>,
     file: Option<&PathBuf>,
     json_flag: bool,
-    kind: EvidenceKind,
+    kind_flag: EvidenceKind,
     ctx: &CliContext,
 ) -> Result<i32> {
     use crate::evidence::semantic_evidence_id;
@@ -1021,9 +1054,8 @@ fn evidence_put_cmd(
     graph::init(&info.project_dir, &crate::filesystem::SystemFilesystem)?;
 
     // Read JSON input from --file or stdin
-    let request: EvidencePutRequest = if let Some(path) = file {
-        let content = ctx.fs.read_to_string(path).context("read --file")?;
-        serde_json::from_str(&content).context("parse JSON from --file")?
+    let raw_input = if let Some(path) = file {
+        ctx.fs.read_to_string(path).context("read --file")?
     } else if json_flag {
         // --json means read facts array from stdin
         let mut buf = String::new();
@@ -1032,7 +1064,7 @@ fn evidence_put_cmd(
                 eprintln!("error: --json requires stdin input but stdin is empty");
                 return Ok(1);
             }
-            Ok(_) => {}
+            Ok(_) => buf,
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 eprintln!("error: --json requires stdin input");
                 return Ok(1);
@@ -1041,32 +1073,102 @@ fn evidence_put_cmd(
                 return Err(anyhow::anyhow!("read stdin: {}", e));
             }
         }
-        serde_json::from_str(&buf).context("parse JSON from stdin")?
     } else {
         anyhow::bail!("evidence put requires either --file or --json flag");
     };
 
-    // Validate facts: kind and claim required (SCN-402)
-    let mut valid_facts: Vec<(Evidence, Option<String>, SourceArtifact)> = Vec::new();
+    // Parse input — accepts both {facts:[...]} and [...] formats (SCN-400, SCN-401)
+    let facts = match parse_evidence_input(&raw_input) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: parse JSON: {}", e);
+            return Ok(1);
+        }
+    };
 
-    for (idx, fact) in request.facts.into_iter().enumerate() {
-        // Validate required fields
-        let claim = fact
-            .claim
-            .ok_or_else(|| anyhow::anyhow!("fact[{}]: missing required field 'claim'", idx))?;
+    if facts.is_empty() {
+        eprintln!("error: no facts provided");
+        return Ok(1);
+    }
+
+    // Process each fact, collecting successes and failures (partial success, SCN-402)
+    let mut processed: Vec<ProcessedFact> = Vec::new();
+    let mut errors: Vec<FactError> = Vec::new();
+
+    for (idx, fact) in facts.into_iter().enumerate() {
+        // Validate required 'claim' field
+        let claim = match &fact.claim {
+            Some(c) => c.clone(),
+            None => {
+                errors.push(FactError {
+                    index: idx,
+                    claim: None,
+                    error: "missing required field 'claim'".to_string(),
+                });
+                continue;
+            }
+        };
 
         // Validate claim max length
         if claim.len() > 255 {
-            anyhow::bail!("fact[{}]: 'claim' exceeds 255 characters", idx);
+            errors.push(FactError {
+                index: idx,
+                claim: Some(claim),
+                error: "'claim' exceeds 255 characters".to_string(),
+            });
+            continue;
         }
 
-        // kind defaults to the CLI flag if not specified in JSON
-        let fact_kind = if let Some(kind_str) = &fact.kind {
-            EvidenceKind::parse_label(kind_str)
-                .ok_or_else(|| anyhow::anyhow!("fact[{}]: unknown kind '{}'", idx, kind_str))?
-        } else {
-            kind
+        // Resolve kind: fact must have a kind field (SCN-402 — reject if missing)
+        let fact_kind = match &fact.kind {
+            Some(kind_str) => match EvidenceKind::parse_label(kind_str) {
+                Some(k) => k,
+                None => {
+                    errors.push(FactError {
+                        index: idx,
+                        claim: Some(claim),
+                        error: format!("unknown kind '{}'", kind_str),
+                    });
+                    continue;
+                }
+            },
+            None => {
+                // SCN-402: missing kind is an error, no silent default to CLI flag
+                errors.push(FactError {
+                    index: idx,
+                    claim: Some(claim),
+                    error: "missing required field 'kind' (use --kind flag to set batch default)"
+                        .to_string(),
+                });
+                continue;
+            }
         };
+
+        // SCN-407: if --kind semantic is set, each fact must have value.semantic: true
+        if kind_flag == EvidenceKind::Semantic {
+            match fact.props.get("semantic") {
+                Some(serde_json::Value::Bool(true)) => {}
+                Some(v) => {
+                    errors.push(FactError {
+                        index: idx,
+                        claim: Some(claim),
+                        error: format!(
+                            "--kind semantic requires fact prop 'semantic: true', got {:?}",
+                            v
+                        ),
+                    });
+                    continue;
+                }
+                None => {
+                    errors.push(FactError {
+                        index: idx,
+                        claim: Some(claim),
+                        error: "--kind semantic requires fact prop 'semantic: true'".to_string(),
+                    });
+                    continue;
+                }
+            }
+        }
 
         // Compute semantic evidence id (SCN-404)
         let evidence_id = semantic_evidence_id(
@@ -1122,37 +1224,63 @@ fn evidence_put_cmd(
             status: crate::evidence::EvidenceStatus::Drafted,
         };
 
-        valid_facts.push((evidence, Some(evidence_id.clone()), sa));
+        processed.push(ProcessedFact {
+            evidence,
+            evidence_id,
+            source: sa,
+        });
+    }
+
+    // Report errors (SCN-402 partial success)
+    let total = processed.len() + errors.len();
+    for err in &errors {
+        let claim_str = err
+            .claim
+            .as_deref()
+            .map(|s| format!(" (claim: {})", s))
+            .unwrap_or_default();
+        eprintln!("error: fact[{}]{}: {}", err.index, claim_str, err.error);
+    }
+
+    if processed.is_empty() {
+        eprintln!("error: 0 facts succeeded");
+        return Ok(1);
     }
 
     // Persist via put_with_source (SCN-400, SCN-405)
     // Each fact gets a synthetic SourceArtifact linked via SUPPORTED_BY
-    let evidence: Vec<_> = valid_facts.iter().map(|(e, _, _)| e.clone()).collect();
-    let sources: Vec<_> = valid_facts.iter().map(|(_, _, sa)| sa.clone()).collect();
+    let evidence: Vec<_> = processed.iter().map(|p| p.evidence.clone()).collect();
+    let sources: Vec<_> = processed.iter().map(|p| p.source.clone()).collect();
     let written =
         crate::evidence::put_with_source(&info.project_dir, &evidence, Some(&sources), None, clock)
             .context("persist evidence")?;
 
     // Output results (SCN-408)
-    let ids: Vec<_> = valid_facts
-        .into_iter()
-        .filter_map(|(_, id, _)| id)
-        .collect();
+    let ids: Vec<_> = processed.iter().map(|p| p.evidence_id.clone()).collect();
     if json_flag {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
+                "processed": total,
+                "succeeded": written,
+                "failed": errors.len(),
                 "persisted": written,
                 "evidence_ids": ids
             }))?
         );
     } else {
-        println!("persisted: {}", written);
+        println!(
+            "processed: {}, succeeded: {}, failed: {}",
+            total,
+            written,
+            errors.len()
+        );
         for id in &ids {
             println!("  {}", id);
         }
     }
 
+    // SCN-402: exit 0 if ≥1 succeeded
     Ok(0)
 }
 

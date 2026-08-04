@@ -1181,12 +1181,18 @@ pub fn apply(
             }
         }
 
+        // Build a prefix for state keys: <lang>:<file>
+        // machine.canonical_key is <lang>:<file>:state_machine:<name>:<line>
+        let lang_file_prefix = machine
+            .canonical_key
+            .split_once(":state_machine:")
+            .map(|(prefix, _)| prefix)
+            .unwrap_or(&machine.canonical_key);
+
         // Write state elements
         for state in &machine.states {
-            let state_key = format!(
-                "{}:state:{}:{}",
-                machine.canonical_key, state.name, state.line
-            );
+            // State canonical key: <lang>:<file>:state:<name>:<line> (per SCN-424)
+            let state_key = format!("{}:state:{}:{}", lang_file_prefix, state.name, state.line);
             let state_id = format!("sm:state:{}", state_key);
 
             if !existing_keys.contains(&state_key) {
@@ -1216,42 +1222,100 @@ pub fn apply(
             }
         }
 
-        // Write transitions as semantic edges
+        // Write transitions as Elements with proper keys, then link to states
         for transition in &machine.transitions {
-            // Find source and target element IDs
-            let src_key = format!("{}:state:{}:0", machine.canonical_key, transition.from);
-            let tgt_key = format!("{}:state:{}:0", machine.canonical_key, transition.to);
+            // Find source and target state line numbers by matching state names
+            let src_state = machine.states.iter().find(|s| s.name == transition.from);
+            let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
 
-            let src_id = format!("sm:state:{}", src_key);
-            let tgt_id = format!("sm:state:{}", tgt_key);
-            let rel_id = format!("sm:trans:{}:{}:{}", src_key, tgt_key, transition.line);
-
-            let pred_id = "behavior.has_transition";
-            let pred_props = serde_json::json!({
-                "predicate_id": pred_id,
-                "trigger": transition.trigger,
-                "guard": transition.guard,
-                "confidence": machine.confidence,
-            });
-            let pred_props_str = pred_props.to_string();
-            let pred_props_escaped = escape_cypher_string(&pred_props_str);
-
-            let cypher = format!(
-                "MATCH (s:Element {{id: '{src}'}}), (t:Element {{id: '{tgt}'}}) \
-                 MERGE (s)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(t) \
-                 SET r.predicate_id = '{pred}', \
-                 r.props = '{props}', \
-                 r.active = true;",
-                src = src_id,
-                tgt = tgt_id,
-                rel = rel_id,
-                pred = pred_id,
-                props = pred_props_escaped,
+            // Transition canonical key: <lang>:<file>:transition:<from>_<to>:<line>
+            let transition_key = format!(
+                "{}:transition:{}_{}:{}",
+                lang_file_prefix, transition.from, transition.to, transition.line
             );
-            if store.query(&cypher).is_ok() {
-                relations_written += 1;
+            let trans_id = format!("sm:transition:{}", transition_key);
+
+            // Write transition element if not exists
+            if !existing_keys.contains(&transition_key) {
+                let key_escaped = escape_cypher_string(&transition_key);
+                let trigger_str = transition.trigger.as_deref().unwrap_or("");
+                let guard_str = transition.guard.as_deref().unwrap_or("");
+                let transition_name = format!("{}_to_{}", transition.from, transition.to);
+
+                let cypher = format!(
+                    "MERGE (e:Element {{id: '{id}'}}) SET \
+                     e.kind_id = 'uml.transition', \
+                     e.category = 'uml', \
+                     e.canonical_key = '{key}', \
+                     e.current_name = '{name}', \
+                     e.current_status = 'active', \
+                     e.current_confidence = {conf}, \
+                     e.current_version_id = '{vid}', \
+                     e.source_state = '{src}', \
+                     e.target_state = '{tgt}', \
+                     e.trigger = '{trigger}', \
+                     e.guard = '{guard}';",
+                    id = trans_id,
+                    key = key_escaped,
+                    name = transition_name,
+                    conf = machine.confidence,
+                    vid = version_id,
+                    src = transition.from,
+                    tgt = transition.to,
+                    trigger = escape_cypher_string(trigger_str),
+                    guard = escape_cypher_string(guard_str),
+                );
+                if store.query(&cypher).is_ok() {
+                    elements_written += 1;
+                }
             } else {
-                relations_skipped += 1;
+                elements_skipped += 1;
+            }
+
+            // Create transition→source_state edge (if we found the source state)
+            if let Some(src) = src_state {
+                let src_key = format!("{}:state:{}:{}", lang_file_prefix, src.name, src.line);
+                let src_id = format!("sm:state:{}", src_key);
+
+                let edge_rel_id =
+                    format!("sm:edge:transition:{}:source:{}", transition_key, src.name);
+                let cypher = format!(
+                    "MATCH (tr:Element {{id: '{tr}'}}), (s:Element {{id: '{src}'}}) \
+                     MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(s) \
+                     SET r.predicate_id = 'behavior.source_state', \
+                     r.active = true;",
+                    tr = trans_id,
+                    src = src_id,
+                    rel = edge_rel_id,
+                );
+                if store.query(&cypher).is_ok() {
+                    relations_written += 1;
+                } else {
+                    relations_skipped += 1;
+                }
+            }
+
+            // Create transition→target_state edge (if we found the target state)
+            if let Some(tgt) = tgt_state {
+                let tgt_key = format!("{}:state:{}:{}", lang_file_prefix, tgt.name, tgt.line);
+                let tgt_id = format!("sm:state:{}", tgt_key);
+
+                let edge_rel_id =
+                    format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name);
+                let cypher = format!(
+                    "MATCH (tr:Element {{id: '{tr}'}}), (t:Element {{id: '{tgt}'}}) \
+                     MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(t) \
+                     SET r.predicate_id = 'behavior.target_state', \
+                     r.active = true;",
+                    tr = trans_id,
+                    tgt = tgt_id,
+                    rel = edge_rel_id,
+                );
+                if store.query(&cypher).is_ok() {
+                    relations_written += 1;
+                } else {
+                    relations_skipped += 1;
+                }
             }
         }
     }

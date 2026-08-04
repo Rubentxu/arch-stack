@@ -16,6 +16,23 @@ use crate::store::GraphStore;
 pub const DISCOVER_REPORT_SCHEMA: &str =
     include_str!("../../../schemas/discover-report.schema.json");
 
+/// Strategy ID used to route apply logic to the correct persistence path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrategyId {
+    Components,
+    Containers,
+}
+
+impl StrategyId {
+    /// Parse a strategy string into a StrategyId.
+    fn from_str(s: &str) -> Self {
+        match s {
+            "components" => StrategyId::Components,
+            _ => StrategyId::Containers,
+        }
+    }
+}
+
 /// One Container detected by one strategy. Multiple ContainerCandidate
 /// rows with the same canonical_key are merged into one Container.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -317,6 +334,107 @@ fn link_element_edges(
     Ok(())
 }
 
+/// Write the Element node for a Component. Returns the element_id.
+fn write_component_element(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    component: &Container,
+    version_id: &str,
+) -> Result<()> {
+    let canonical_key_escaped = escape_cypher_string(&component.canonical_key);
+    let name_escaped = escape_cypher_string(&component.name);
+    let cypher = format!(
+        "MERGE (e:Element {{id: '{element_id}'}}) SET \
+         e.kind_id = 'mt.component', \
+         e.category = 'c4', \
+         e.canonical_key = '{canonical_key_escaped}', \
+         e.current_name = '{name_escaped}', \
+         e.current_status = 'active', \
+         e.current_confidence = {confidence}, \
+         e.current_version_id = '{version_id}';",
+        element_id = element_id,
+        canonical_key_escaped = canonical_key_escaped,
+        name_escaped = name_escaped,
+        confidence = component.confidence,
+        version_id = version_id,
+    );
+    store
+        .query(&cypher)
+        .with_context(|| format!("put_component_element {element_id}"))?;
+    Ok(())
+}
+
+/// Write the ElementVersion node for a Component. Returns the version_id.
+fn write_component_element_version(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    component: &Container,
+) -> Result<String> {
+    let version_props = serde_json::json!({
+        "inferred": true,
+        "strategy": component.strategy,
+        "confidence": component.confidence,
+        "merged_from": component.merged_from,
+        "discovery_schema_version": "1.0",
+    });
+    let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+    let version_id = format!(
+        "blake3:{}",
+        blake3::hash(version_props_str.as_bytes()).to_hex()
+    );
+    let version_props_escaped = escape_cypher_string(&version_props_str);
+    let name_escaped = escape_cypher_string(&component.name);
+
+    let cypher = format!(
+        "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
+         v.element_id = '{element_id}', \
+         v.name = '{name_escaped}', \
+         v.status = 'drafted', \
+         v.origin = 'c4-discover', \
+         v.confidence = {confidence}, \
+         v.props = '{version_props_escaped}';",
+        version_id = version_id,
+        element_id = element_id,
+        name_escaped = name_escaped,
+        confidence = component.confidence,
+        version_props_escaped = version_props_escaped,
+    );
+    store
+        .query(&cypher)
+        .with_context(|| format!("put_component_element_version {version_id}"))?;
+    Ok(version_id)
+}
+
+/// Write the CURRENT_VERSION, VERSION_OF, and OF_TYPE edges for a Component Element.
+fn link_component_element_edges(
+    store: &mut dyn GraphStore,
+    element_id: &str,
+    version_id: &str,
+) -> Result<()> {
+    // CURRENT_VERSION: Element → ElementVersion
+    let cypher = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}), (v:ElementVersion {{id: '{version_id}'}}) \
+         MERGE (e)-[:CURRENT_VERSION]->(v);"
+    );
+    store.query(&cypher).ok(); // best-effort edge creation
+
+    // VERSION_OF: ElementVersion → Element
+    let cypher = format!(
+        "MATCH (v:ElementVersion {{id: '{version_id}'}}), (e:Element {{id: '{element_id}'}}) \
+         MERGE (v)-[:VERSION_OF]->(e);"
+    );
+    store.query(&cypher).ok(); // best-effort edge creation
+
+    // OF_TYPE: Element → MetaType (component)
+    let cypher = format!(
+        "MATCH (e:Element {{id: '{element_id}'}}), (mt:MetaType {{id: 'mt.component'}}) \
+         MERGE (e)-[:OF_TYPE]->(mt);"
+    );
+    store.query(&cypher).ok(); // best-effort edge creation
+
+    Ok(())
+}
+
 /// Write an Evidence node and its two edges (SUPPORTED_BY, EXTRACTED_FROM).
 fn write_evidence(
     store: &mut dyn GraphStore,
@@ -415,12 +533,20 @@ pub fn apply(
     let mut store = open_and_init(project_dir)?;
 
     // Seed mt.container MetaType if it doesn't exist
-    let seed_metatype = r#"
+    let seed_metatype_container = r#"
         MERGE (mt:MetaType {id: 'mt.container'})
         SET mt.namespace = 'c4', mt.name = 'container', mt.category = 'structure'
         RETURN mt.id;
     "#;
-    store.query(seed_metatype).ok(); // best-effort; non-fatal if it fails
+    store.query(seed_metatype_container).ok(); // best-effort; non-fatal if it fails
+
+    // Seed mt.component MetaType if it doesn't exist
+    let seed_metatype_component = r#"
+        MERGE (mt:MetaType {id: 'mt.component'})
+        SET mt.namespace = 'c4', mt.name = 'component', mt.category = 'structure'
+        RETURN mt.id;
+    "#;
+    store.query(seed_metatype_component).ok(); // best-effort; non-fatal if it fails
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
@@ -435,49 +561,96 @@ pub fn apply(
             continue;
         }
 
-        let element_id = format!("c4:container:{}", container.canonical_key);
+        let strategy_id = StrategyId::from_str(&container.strategy);
 
-        // version_id must be computed before write_element so we can embed it
-        let version_id = write_element_version(&mut *store, &element_id, container)?;
-        write_element(&mut *store, &element_id, container, &version_id)?;
-        elements_written += 1;
+        match strategy_id {
+            StrategyId::Components => {
+                // Component-specific apply path: use mt.component
+                let element_id = format!("c4:component:{}", container.canonical_key);
 
-        link_element_edges(&mut *store, &element_id, &version_id)?;
+                let version_id =
+                    write_component_element_version(&mut *store, &element_id, container)?;
+                write_component_element(&mut *store, &element_id, container, &version_id)?;
+                elements_written += 1;
 
-        // SourceArtifact deduplication map (keyed by file path)
-        let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
-        for evidence in &container.evidences {
-            let sa_id = if let Some(id) = source_artifact_ids.get(&evidence.file) {
-                id.clone()
-            } else {
-                // Compute the D2 content hash by re-reading the manifest via
-                // the injected Filesystem. Manifests are small (Cargo.toml,
-                // package.json, Dockerfile) and the dedup map bounds this to
-                // one read per unique file per apply.
-                let content_hash = fs
-                    .read_to_string(&project_dir.join(&evidence.file))
-                    .map(|s| crate::evidence::content_hash_of(&s))
-                    .unwrap_or_default();
-                // Manifests are TOML/JSON/YAML or Dockerfile — derive a
-                // language label from the file name (validate_identifier
-                // rejects empty strings).
-                let lang_label = c4_language_label(&evidence.file);
-                let id =
-                    write_source_artifact(&mut *store, &evidence.file, &content_hash, lang_label)?;
-                source_artifact_ids.insert(evidence.file.clone(), id.clone());
-                source_artifacts_written += 1;
-                id
-            };
+                link_component_element_edges(&mut *store, &element_id, &version_id)?;
 
-            write_evidence(
-                &mut *store,
-                &element_id,
-                &version_id,
-                &sa_id,
-                evidence,
-                &container.strategy,
-            )?;
-            evidences_written += 1;
+                // SourceArtifact deduplication map (keyed by file path)
+                let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
+                for evidence in &container.evidences {
+                    let sa_id = if let Some(id) = source_artifact_ids.get(&evidence.file) {
+                        id.clone()
+                    } else {
+                        let content_hash = fs
+                            .read_to_string(&project_dir.join(&evidence.file))
+                            .map(|s| crate::evidence::content_hash_of(&s))
+                            .unwrap_or_default();
+                        let lang_label = c4_language_label(&evidence.file);
+                        let id = write_source_artifact(
+                            &mut *store,
+                            &evidence.file,
+                            &content_hash,
+                            lang_label,
+                        )?;
+                        source_artifact_ids.insert(evidence.file.clone(), id.clone());
+                        source_artifacts_written += 1;
+                        id
+                    };
+
+                    write_evidence(
+                        &mut *store,
+                        &element_id,
+                        &version_id,
+                        &sa_id,
+                        evidence,
+                        &container.strategy,
+                    )?;
+                    evidences_written += 1;
+                }
+            }
+            StrategyId::Containers => {
+                // Existing container apply path unchanged
+                let element_id = format!("c4:container:{}", container.canonical_key);
+
+                let version_id = write_element_version(&mut *store, &element_id, container)?;
+                write_element(&mut *store, &element_id, container, &version_id)?;
+                elements_written += 1;
+
+                link_element_edges(&mut *store, &element_id, &version_id)?;
+
+                // SourceArtifact deduplication map (keyed by file path)
+                let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
+                for evidence in &container.evidences {
+                    let sa_id = if let Some(id) = source_artifact_ids.get(&evidence.file) {
+                        id.clone()
+                    } else {
+                        let content_hash = fs
+                            .read_to_string(&project_dir.join(&evidence.file))
+                            .map(|s| crate::evidence::content_hash_of(&s))
+                            .unwrap_or_default();
+                        let lang_label = c4_language_label(&evidence.file);
+                        let id = write_source_artifact(
+                            &mut *store,
+                            &evidence.file,
+                            &content_hash,
+                            lang_label,
+                        )?;
+                        source_artifact_ids.insert(evidence.file.clone(), id.clone());
+                        source_artifacts_written += 1;
+                        id
+                    };
+
+                    write_evidence(
+                        &mut *store,
+                        &element_id,
+                        &version_id,
+                        &sa_id,
+                        evidence,
+                        &container.strategy,
+                    )?;
+                    evidences_written += 1;
+                }
+            }
         }
     }
 

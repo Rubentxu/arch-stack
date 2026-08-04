@@ -41,8 +41,3 @@ each use case to the scenarios it is realised by.
 - Hiding actors behind a UI shorthand (the diagram is the projection,
   not the UI).
 - Mixing `c4-component` kinds into a use-case view.
-- `archctl graph query --kind` — not available; use Cypher directly.
-- `archctl graph query --predicate` with flags — not available; use
-  Cypher directly instead.
-- `archctl diagram put` / `archctl diagram materialize` — not available;
-  use `diagram project` instead.

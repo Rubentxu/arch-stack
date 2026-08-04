@@ -39,5 +39,3 @@ extracts and records with provenance.
   (ADR-011).
 - Editing the upstream `SKILL.md` in place; the wrapper stays
   separate.
-- `archctl run start` / `archctl run close` — session system not
-  available; facts are written directly to the graph.

@@ -34,7 +34,3 @@ path stored in the graph.
 - Cross-cutting between unrelated scenarios without justification.
 - Rendering via `kroki.io` / `plantuml.com` (ADR-011).
 - Replacing a participant name with a UI label.
-- `archctl scenario` — not available; use `archctl code sequence` instead.
-- `archctl graph aggregate` — not available; group in the agent.
-- `archctl diagram put` / `archctl diagram materialize` — not available;
-  use `diagram project` instead.

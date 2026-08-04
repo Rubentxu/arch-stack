@@ -124,19 +124,42 @@ fn project_state_view(output: &mut String, elements: &[ElementRow], edges: &[Sem
         }
     }
 
-    // Transitions
+    // Transitions: per ADR-026, transitions join source_state → transition → target_state
+    // behavior.source_state: source=source_state element, target=transition element
+    // behavior.target_state: source=transition element, target=target_state element
+    //
+    // Step 1: collect transition → source_state from source_state edges
+    let mut transition_to_source: std::collections::HashMap<&str, &str> =
+        std::collections::HashMap::new();
+    // Step 2: collect transition → target_state from target_state edges
+    let mut transition_to_target: std::collections::HashMap<&str, &str> =
+        std::collections::HashMap::new();
+
     for edge in edges {
-        let Some(&src_name) = name_map.get(edge.source_id.as_str()) else {
-            continue;
-        };
         let Some(&tgt_name) = name_map.get(edge.target_id.as_str()) else {
             continue;
         };
 
-        // behavior.source_state / behavior.target_state
         if edge.predicate_id == "behavior.source_state" {
-            let arrow = "-->";
-            output.push_str(&format!("{}{}{}\n", src_name, arrow, tgt_name));
+            // edge.source is the source_state, edge.target is the transition
+            if let Some(&src_name) = name_map.get(edge.source_id.as_str()) {
+                transition_to_source.insert(tgt_name, src_name);
+            }
+        } else if edge.predicate_id == "behavior.target_state" {
+            // edge.source is the transition, edge.target is the target_state
+            if let Some(&src_name) = name_map.get(edge.source_id.as_str()) {
+                transition_to_target.insert(src_name, tgt_name);
+            }
+        }
+    }
+
+    // Step 3: emit joined transitions
+    for (transition_id, &source_name) in &transition_to_source {
+        if let Some(&target_name) = transition_to_target.get(transition_id) {
+            output.push_str(&format!(
+                "{} --> {} --> {}\n",
+                source_name, transition_id, target_name
+            ));
         }
     }
 }
@@ -151,9 +174,8 @@ fn project_usecase_view(output: &mut String, elements: &[ElementRow], edges: &[S
     for element in elements {
         match element.kind_id.as_str() {
             "uml.actor" => {
-                output.push_str("actor ");
-                output.push_str(&element.current_name);
-                output.push('\n');
+                // SCN-412: Use [ActorName] bracket shape (NOT (ActorName))
+                output.push_str(&format!("[{}]\n", element.current_name));
             }
             "uml.use_case" => {
                 output.push_str("usecase ");
@@ -300,17 +322,25 @@ mod tests {
 
     #[test]
     fn state_view_produces_valid_plantuml() {
+        // Per ADR-026: transitions join through the transition node
+        // Pending --[source_state]--> SubmitOrder --[target_state]--> Confirmed
         let elements = vec![
             make_element("e1", "uml.state", "Pending", "uml"),
             make_element("e2", "uml.state", "Confirmed", "uml"),
+            make_element("e3", "uml.state", "SubmitOrder", "uml"),
         ];
-        let edges = vec![make_edge("r1", "behavior.source_state", "e1", "e2")];
+        let edges = vec![
+            make_edge("r1", "behavior.source_state", "e1", "e3"),
+            make_edge("r2", "behavior.target_state", "e3", "e2"),
+        ];
         let selector = ProjectSelector::parse("state:*").unwrap();
 
         let dsl = project(&elements, &edges, &selector);
 
         assert!(dsl.contains("state Pending"));
         assert!(dsl.contains("state Confirmed"));
+        assert!(dsl.contains("state SubmitOrder"));
+        assert!(dsl.contains("Pending --> SubmitOrder --> Confirmed"));
     }
 
     #[test]
@@ -327,6 +357,7 @@ mod tests {
 
     #[test]
     fn usecase_view_produces_valid_plantuml() {
+        // SCN-412: actors use [ActorName] bracket shape
         let elements = vec![
             make_element("e1", "uml.actor", "Customer", "uml"),
             make_element("e2", "uml.use_case", "PlaceOrder", "uml"),
@@ -336,7 +367,9 @@ mod tests {
 
         let dsl = project(&elements, &edges, &selector);
 
-        assert!(dsl.contains("actor Customer"));
+        // SCN-412: bracket shape not actor keyword
+        assert!(dsl.contains("[Customer]"));
+        assert!(!dsl.contains("actor Customer"));
         assert!(dsl.contains("usecase PlaceOrder"));
         assert!(dsl.contains("Customer --> PlaceOrder"));
     }

@@ -54,7 +54,3 @@ run.
 - Skipping the graph-vs-spec comparison.
 - Allowing drawio-only deliveries to bypass the structural check
   (drawio is a projection, still reviewed).
-- `archctl diagram spec` — not available; use graph queries to
-  reconstruct the spec.
-- `archctl review put` — not available; use `archctl evidence put
-  --kind semantic` instead.

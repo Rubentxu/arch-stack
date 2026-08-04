@@ -48,5 +48,3 @@ projection; the graph is the source of truth.
 - Including Components or Classes in a Context view.
 - Inventing relationships to make the diagram "look complete".
 - Rendering against `kroki.io` / `plantuml.com` (ADR-011).
-- `archctl diagram put` — not available; use `diagram project` instead.
-- `archctl diagram materialize` — not available; render directly from DSL output.

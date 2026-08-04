@@ -40,7 +40,3 @@ diagram.
   canonical name.
 - Editing the upstream `mermaid-skill` — this wrapper stands alone
   (mermaid is optional).
-- `archctl class members` — not available; use graph query instead.
-- `archctl diagram put` / `archctl diagram materialize` — not available;
-  use `diagram project` instead.
-- `archctl graph query --kind` — not available; use Cypher directly.
