@@ -2,14 +2,16 @@
 //!
 //! v1.0: synchronous dispatcher, deterministic heuristics only.
 
-mod context;
+mod agents;
+pub mod context;
 pub mod descriptor;
 mod dispatcher;
 mod escalation;
 mod mcp;
-mod observer;
-mod output;
+pub mod observer;
+pub mod output;
 
+pub use agents::*;
 pub use context::*;
 pub use descriptor::*;
 pub use dispatcher::*;
