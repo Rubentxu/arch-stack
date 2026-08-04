@@ -4,7 +4,7 @@
 //! Mirrors the escalation/ladder.rs pattern (TOML load + first-match evaluate).
 
 pub use super::output::{ApprovalLevel, ApprovalRequirement, DeploymentEnv, SecurityImpact};
-pub use context::PolicyContext;
+pub use context::{CostCeiling, PolicyContext};
 pub use decision::{PolicyDecision, PolicyResult};
 pub use engine::{Policy, PolicyEngine};
 
