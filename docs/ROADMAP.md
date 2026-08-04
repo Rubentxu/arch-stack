@@ -212,6 +212,22 @@ Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejempl
 
 **Referencias:** `docs/adr/ADR-026-state-machine-metamodel.md`, `docs/adr/ADR-027-evidence-put.md`, `docs/adr/ADR-028-diagram-project.md`, `docs/adr/ADR-029-c4-component-light.md`, `sddk/diagram-authoring-toolchain/{proposal,spec,design}.md`
 
+## M25 — Strategy pattern refactor (follow-up) — **COMPLETO** ✅
+
+**Estado:** Implementado en v0.14.7. PR #25 mergeado.
+
+**Objetivo:** Eliminar duplicación identificada en debt-verify de M24. El patrón Strategy tenía dos ramas de código paralelas (`StrategyId::Components` vs `StrategyId::Containers`) que diferían solo en el metatype destino.
+
+**Cambios:**
+- `trait Strategy` gana `fn metatype(&self) -> &'static str` (ADR-026)
+- Implementado en 5 estrategias concretas: cargo/npm/dockerfile/helm → `mt.container`, components → `mt.component`
+- Eliminado `enum StrategyId` y 3 funciones duplicadas: `write_component_element`, `write_component_element_version`, `link_component_element_edges`
+- `apply()` unificado en ruta única que deriva `(metatype, element_prefix)` del nombre del strategy
+
+**Resultado:** -88 LOC net en archivos de producción. 290 lib + 90 integration tests passing.
+
+**Referencias:** PR #25, commit 47ae361
+
 ## Mejoras futuras — `workflowctl`
 
 > Documentadas en [ADR-024](adr/ADR-024-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-024; cualquier cambio de estado requiere abrir un nuevo ADR.
