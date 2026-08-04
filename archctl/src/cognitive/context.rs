@@ -70,6 +70,9 @@ pub struct Evidence {
     pub provenance_id: ProvenanceId,
     pub content_hash: String,
     pub text: String,
+    /// Optional structured metadata (confidence, source, etc.)
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub properties: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
