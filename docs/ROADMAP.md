@@ -193,9 +193,9 @@ Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejempl
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
-## M24 — Diagram authoring toolchain — **DOCUMENTADO (planificado 2026-08-04)**
+## M24 — Diagram authoring toolchain — **COMPLETO** ✅
 
-**Estado:** ADRs + specs aprobados en `sddk/diagram-authoring-toolchain/`. Implementación pendiente (mismo ciclo SDDK, fase apply).
+**Estado:** Implementado en v0.14.6. PR #23 mergeado. ADRs 026-029 respetados.
 
 **Objetivo:** Cerrar el pipeline de creación de diagramas donde `archctl` = herramientas (extracción → grafo → proyección → DSL) y las skills de `profile/skills/` = inteligencia (qué diagrama, qué destacar, cómo). Los agentes crean y dan sentido a los diagramas usando las herramientas de archctl.
 
