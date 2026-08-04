@@ -22,16 +22,14 @@ extracts and records with provenance.
    OK.
 2. `archctl project resolve` — capture the `project_id` and
    `sourceIdentity` once per session.
-3. Open a run: `archctl run start --skill architecture-discovery`.
-4. Call the upstream `c4-codebase-architecture` procedure for the
+3. Call the upstream `c4-codebase-architecture` procedure for the
    inventory pass, but redirect every read to an `archctl` adapter:
    - directory tree → `archctl inventory tree <path>`,
    - language detection → `archctl inventory languages <path>`,
    - dependency edges → `archctl inventory depends <path>`.
-5. Reject any fact that lacks evidence. Persist with
-   `archctl evidence put --file <json>`.
-6. Close the run: `archctl run close`.
-7. Hand back the run id, the element counts, and the coverage report.
+4. Reject any fact that lacks evidence. Persist with
+   `archctl evidence put --kind semantic --file <json>`.
+5. Hand back the element counts and the coverage report.
 
 # Forbidden
 
@@ -41,3 +39,5 @@ extracts and records with provenance.
   (ADR-011).
 - Editing the upstream `SKILL.md` in place; the wrapper stays
   separate.
+- `archctl run start` / `archctl run close` — session system not
+  available; facts are written directly to the graph.

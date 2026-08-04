@@ -18,26 +18,21 @@ each use case to the scenarios it is realised by.
 
 # Required process
 
-1. `archctl graph query --kind uml.actor` to enumerate the actors.
-2. For each actor, `archctl graph query --predicate uml.participates_in
-   --from <actor-id>` to enumerate goal candidates.
+1. Enumerate actors via Cypher:
+   ```
+   archctl graph query "MATCH (e:Element) WHERE e.kind_id = 'uml.actor' RETURN e.id, e.current_name"
+   ```
+2. For each actor, enumerate goal candidates via Cypher:
+   ```
+   archctl graph query "MATCH (a:Element {id: '<actor-id>'})-[r]-(e:Element) WHERE r.predicate_id CONTAINS 'participates' RETURN e.id, e.current_name"
+   ```
 3. Classify each candidate:
    - `confirmed`: at least one scenario in the graph references it.
    - `inferred`: only static evidence (file, doc, symbol).
 4. Reject candidates with zero evidence.
-5. Build the use-case spec:
-   ```json
-   {
-     "id": "view:usecase:checkout",
-     "view_type": "uml-usecase",
-     "system": "c4:system:checkout",
-     "include_inferred": false,
-     "actors": ["actor:customer", "actor:staff"],
-     "use_cases": ["uc:place-order", "uc:apply-coupon"]
-   }
-   ```
-6. `archctl diagram put` + `archctl diagram materialize`.
-7. Render via local PlantUML (Kroki) — never `plantuml.com`.
+5. Project to PlantUML with
+   `archctl diagram project --view usecase:<scope> --format plantuml`.
+6. Render via local PlantUML (Kroki) — never `plantuml.com`.
 
 # Forbidden
 
@@ -46,3 +41,8 @@ each use case to the scenarios it is realised by.
 - Hiding actors behind a UI shorthand (the diagram is the projection,
   not the UI).
 - Mixing `c4-component` kinds into a use-case view.
+- `archctl graph query --kind` — not available; use Cypher directly.
+- `archctl graph query --predicate` with flags — not available; use
+  Cypher directly instead.
+- `archctl diagram put` / `archctl diagram materialize` — not available;
+  use `diagram project` instead.

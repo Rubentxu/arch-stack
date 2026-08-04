@@ -19,8 +19,11 @@ run.
 # Required process
 
 1. Receive the `view-id` and the rendered artefact path.
-2. Re-derive the view spec from the graph:
-   archctl diagram spec ... (deferred — no current subcommand).
+2. Re-derive the view spec from the graph via Cypher queries:
+   ```
+   archctl graph query "MATCH (e:Element {id: '<view-id>'}) RETURN e"
+   ```
+   Then query related elements and edges to reconstruct the spec.
 3. Compare the render with the spec:
    - Every member in the spec is present in the render.
    - Every relationship in the spec is present and oriented correctly.
@@ -40,7 +43,7 @@ run.
      "extra_relationships": []
    }
    ```
-6. Persist with `archctl review put <verdict>`.
+6. Persist verdict with `archctl evidence put --kind semantic --file <json>`.
 7. If verdict is `fail`, the orchestrator must NOT proceed to
    archive/release.
 
@@ -51,3 +54,7 @@ run.
 - Skipping the graph-vs-spec comparison.
 - Allowing drawio-only deliveries to bypass the structural check
   (drawio is a projection, still reviewed).
+- `archctl diagram spec` — not available; use graph queries to
+  reconstruct the spec.
+- `archctl review put` — not available; use `archctl evidence put
+  --kind semantic` instead.

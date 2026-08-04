@@ -19,25 +19,14 @@ path stored in the graph.
 # Required process
 
 1. Receive a scenario id (or `from`/`to` pair) from the orchestrator.
-2. archctl scenario ... (deferred — no current CLI subcommand) to gather ordered
-   interactions.
-3. Optionally re-project:
-   archctl scenario ... (deferred — no current CLI subcommand).
-4. Group technical calls into meaningful participants using
-   archctl graph aggregate ... (deferred — no current subcommand).
-5. Build the sequence spec:
-   ```json
-   {
-     "id": "view:sequence:create-order",
-     "view_type": "uml-sequence",
-     "scenario": "behavior:scenario:orders/create-order/success",
-     "projection_level": "component",
-     "include_fragments": true,
-     "hide_returns": false
-   }
-   ```
-6. `archctl diagram put` + `archctl diagram materialize`.
-7. Render via local PlantUML (Kroki).
+2. Extract ordered interactions:
+   `archctl code sequence --from <selector>`.
+3. Optionally re-project with a different depth or max_interactions.
+4. Group technical calls into meaningful participants (do this in the
+   agent; `archctl graph aggregate` is not available).
+5. Project to PlantUML with
+   `archctl diagram project --view sequence:<id> --format plantuml`.
+6. Render via local PlantUML (Kroki).
 
 # Forbidden
 
@@ -45,3 +34,7 @@ path stored in the graph.
 - Cross-cutting between unrelated scenarios without justification.
 - Rendering via `kroki.io` / `plantuml.com` (ADR-011).
 - Replacing a participant name with a UI label.
+- `archctl scenario` — not available; use `archctl code sequence` instead.
+- `archctl graph aggregate` — not available; group in the agent.
+- `archctl diagram put` / `archctl diagram materialize` — not available;
+  use `diagram project` instead.

@@ -19,24 +19,18 @@ diagram.
 
 1. Receive a scope (module, aggregate, component, collaboration) from
    the orchestrator.
-2. `archctl graph query --kind uml.class --scope <scope-id>`.
+2. Query classes via Cypher:
+   ```
+   archctl graph query "MATCH (e:Element) WHERE e.kind_id = 'uml.class' AND e.current_name STARTS WITH '<scope>' RETURN e.id, e.current_name"
+   ```
 3. Filter: drop classes with zero relationships inside the scope,
    unless they are interfaces declared as public contracts.
-4. Resolve attributes and operations:
-   archctl class members ... (deferred — no current subcommand).
-5. Build the class spec:
-   ```json
-   {
-     "id": "view:class:orders.aggregate",
-     "view_type": "uml-class",
-     "scope": "agg:orders",
-     "include_private": false,
-     "include_operations": true,
-     "layout": "sugiyama"
-   }
+4. Resolve attributes and operations via graph query:
    ```
-6. `archctl diagram put` + `archctl diagram materialize`.
-7. Render via local PlantUML (Kroki).
+   archctl graph query "MATCH (e:Element {kind_id: 'uml.class'})-[r]-(a:Element {kind_id: 'uml.attribute'}) WHERE e.current_name = '<class>' RETURN a.id, a.current_name"
+   ```
+5. Project to PlantUML with `archctl diagram project --view class:<scope> --format plantuml`.
+6. Render via local PlantUML (Kroki).
 
 # Forbidden
 
@@ -46,3 +40,7 @@ diagram.
   canonical name.
 - Editing the upstream `mermaid-skill` — this wrapper stands alone
   (mermaid is optional).
+- `archctl class members` — not available; use graph query instead.
+- `archctl diagram put` / `archctl diagram materialize` — not available;
+  use `diagram project` instead.
+- `archctl graph query --kind` — not available; use Cypher directly.
