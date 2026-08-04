@@ -8,6 +8,7 @@ use crate::code::c4_discover::ContainerCandidate;
 use crate::filesystem::Filesystem;
 
 pub mod cargo;
+pub mod components;
 pub mod dockerfile;
 pub mod helm;
 pub mod npm;
@@ -39,5 +40,6 @@ pub fn register_strategies() -> Vec<Box<dyn Strategy>> {
         Box::new(crate::code::strategies::npm::NpmWorkspace),
         Box::new(crate::code::strategies::dockerfile::DockerfilePerService),
         Box::new(crate::code::strategies::helm::HelmCharts),
+        Box::new(crate::code::strategies::components::ComponentsStrategy),
     ]
 }

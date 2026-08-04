@@ -10,7 +10,7 @@ use crate::store::GraphStore;
 use anyhow::Context;
 
 /// An element row from Query 1.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElementRow {
     pub id: String,
     pub kind_id: String,
@@ -23,7 +23,7 @@ pub struct ElementRow {
 }
 
 /// A semantic edge row from Query 2.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SemanticEdgeRow {
     pub relation_id: String,
     pub predicate_id: String,
@@ -55,7 +55,7 @@ fn cell_as_f64(cell: &crate::row::Cell) -> Option<f64> {
 
 /// Query 1: elements filtered by category and scope.
 ///
-/// scope = Exact("orders"): adds `AND e.canonical_key = 'orders'`
+/// scope = Exact("orders"): adds `AND e.canonical_key STARTS WITH 'orders'`
 /// scope = All ("*"): no canonical_key filter
 pub fn query_elements(
     store: &dyn GraphStore,
@@ -67,10 +67,11 @@ pub fn query_elements(
     let cypher = match scope_ident {
         Some(key) => {
             let safe_key = validate_identifier(key)?;
+            // SCN-417: prefix matching — scope `src/auth` matches `src/auth/user.rs`
             format!(
                 "MATCH (e:Element) \
                  WHERE e.category = '{safe_category}' \
-                   AND e.canonical_key = '{safe_key}' \
+                   AND e.canonical_key STARTS WITH '{safe_key}' \
                  RETURN e.id, e.kind_id, e.category, e.canonical_key, \
                         e.current_name, e.current_status, e.current_confidence, \
                         e.current_version_id;"

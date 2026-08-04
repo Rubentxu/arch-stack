@@ -4,10 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::astgrep::Lang;
-use crate::evidence::{self, EvidenceKind, EvidenceStatus};
+use crate::evidence::{self, Evidence, EvidenceKind, EvidenceStatus};
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
 use crate::skills;
+use crate::source::SourceArtifact;
 use crate::{doctor, environment, filesystem, graph, inventory, render, store};
 
 /// Container for the ports a CLI handler needs.
@@ -155,6 +156,22 @@ pub enum DiagramAction {
         #[arg(long)]
         json: bool,
     },
+    /// Project graph elements to editable DSL source (PlantUML, Mermaid, Structurizr).
+    Project {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// View selector in the form `<kind>:<scope>` (e.g., `class:*`, `c4-container:orders`).
+        #[arg(long)]
+        view: String,
+        /// Output format: plantuml, mermaid, or structurizr.
+        #[arg(long, default_value = "plantuml")]
+        format: String,
+        /// Output file path.
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -234,6 +251,22 @@ pub enum CodeAction {
         #[arg(long)]
         selector: Option<String>,
     },
+    /// Extract state machines from source code (Rust enum+match, TypeScript state pattern, Python transitions).
+    StateMachine {
+        /// Project directory to scan. Defaults to the current working directory.
+        #[arg(long, default_value = ".")]
+        cwd: PathBuf,
+        /// Persist extracted nodes + edges to the graph store.
+        #[arg(long)]
+        apply: bool,
+        /// Emit machine-readable JSON to stdout.
+        #[arg(long)]
+        json: bool,
+        /// Comma-separated languages to process (rust, typescript, python).
+        /// If omitted, all supported languages are processed.
+        #[arg(long, value_enum, value_delimiter = ',')]
+        lang: Vec<crate::code::state_machine::Language>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -279,6 +312,21 @@ pub enum EvidenceAction {
         old_id: String,
         #[arg(long)]
         json: bool,
+    },
+    /// Ingest semantic facts from JSON input (no file source).
+    /// Per ADR-027: persists Evidence with source_origin: UserInput, status: drafted.
+    Put {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Path to JSON file containing facts array.
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Read facts from stdin as JSON array.
+        #[arg(long)]
+        json: bool,
+        /// Evidence kind for all facts in this batch.
+        #[arg(long, value_enum, default_value_t = EvidenceKind::Semantic)]
+        kind: EvidenceKind,
     },
 }
 
@@ -449,6 +497,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             DiagramAction::Apply { cwd, changes, json } => {
                 diagram_apply_cmd(cwd, changes, json, ctx)
             }
+            DiagramAction::Project {
+                cwd,
+                view,
+                format,
+                output,
+                json,
+            } => diagram_project_cmd(cwd, &view, &format, &output, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -470,6 +525,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             EvidenceAction::Supersede { cwd, old_id, json } => {
                 evidence_supersede_cmd(cwd, &old_id, json, ctx)
             }
+            EvidenceAction::Put {
+                cwd,
+                file,
+                json,
+                kind,
+            } => evidence_put_cmd(cwd, file.as_ref(), json, kind, ctx),
         },
         Command::Render {
             source,
@@ -538,6 +599,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 lang,
                 selector,
             } => code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref()),
+            CodeAction::StateMachine {
+                cwd,
+                apply,
+                json,
+                lang,
+            } => code_state_machine_cmd(&cwd, apply, json, &lang),
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
     }
@@ -921,6 +988,302 @@ fn evidence_supersede_cmd(
     Ok(0)
 }
 
+/// Parse evidence input that may be either:
+/// - `{facts: [...]}` — object with facts array (SCN-400)
+/// - `[{...}]` — top-level array of facts (SCN-400, SCN-401)
+fn parse_evidence_input(input: &str) -> Result<Vec<EvidencePutFact>> {
+    // Try parsing as object with `facts` key first
+    if let Ok(req) = serde_json::from_str::<EvidencePutRequest>(input) {
+        return Ok(req.facts);
+    }
+    // Try parsing as top-level array (SCN-400, SCN-401)
+    if let Ok(facts) = serde_json::from_str::<Vec<EvidencePutFact>>(input) {
+        return Ok(facts);
+    }
+    anyhow::bail!(
+        "input must be either {{facts: [...]}} or [{{...}}]; \
+         got neither a valid object with 'facts' key nor a JSON array"
+    );
+}
+
+/// Input schema for `evidence put` JSON batch — object form.
+#[derive(Debug, serde::Deserialize)]
+struct EvidencePutRequest {
+    facts: Vec<EvidencePutFact>,
+}
+
+/// One fact in an evidence put batch.
+#[derive(Debug, serde::Deserialize)]
+struct EvidencePutFact {
+    kind: Option<String>,
+    claim: Option<String>,
+    #[serde(default)]
+    props: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Result of processing a single fact.
+struct ProcessedFact {
+    evidence: Evidence,
+    evidence_id: String,
+    source: SourceArtifact,
+}
+
+/// Error details for a single fact that failed processing.
+struct FactError {
+    index: usize,
+    claim: Option<String>,
+    error: String,
+}
+
+fn evidence_put_cmd(
+    cwd: Option<PathBuf>,
+    file: Option<&PathBuf>,
+    json_flag: bool,
+    kind_flag: EvidenceKind,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::evidence::semantic_evidence_id;
+    use std::io::Read;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
+    let info = resolve_project(&cwd.to_string_lossy());
+    // Ensure the schema is in place without holding the DB lock:
+    // graph::init applies pending migrations and releases the session.
+    // put_with_source then opens the store freely (ADR-010 single-writer).
+    graph::init(&info.project_dir, &crate::filesystem::SystemFilesystem)?;
+
+    // Read JSON input from --file or stdin
+    let raw_input = if let Some(path) = file {
+        ctx.fs.read_to_string(path).context("read --file")?
+    } else if json_flag {
+        // --json means read facts array from stdin
+        let mut buf = String::new();
+        match std::io::stdin().read_to_string(&mut buf) {
+            Ok(0) => {
+                eprintln!("error: --json requires stdin input but stdin is empty");
+                return Ok(1);
+            }
+            Ok(_) => buf,
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                eprintln!("error: --json requires stdin input");
+                return Ok(1);
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("read stdin: {}", e));
+            }
+        }
+    } else {
+        anyhow::bail!("evidence put requires either --file or --json flag");
+    };
+
+    // Parse input — accepts both {facts:[...]} and [...] formats (SCN-400, SCN-401)
+    let facts = match parse_evidence_input(&raw_input) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: parse JSON: {}", e);
+            return Ok(1);
+        }
+    };
+
+    if facts.is_empty() {
+        eprintln!("error: no facts provided");
+        return Ok(1);
+    }
+
+    // Process each fact, collecting successes and failures (partial success, SCN-402)
+    let mut processed: Vec<ProcessedFact> = Vec::new();
+    let mut errors: Vec<FactError> = Vec::new();
+
+    for (idx, fact) in facts.into_iter().enumerate() {
+        // Validate required 'claim' field
+        let claim = match &fact.claim {
+            Some(c) => c.clone(),
+            None => {
+                errors.push(FactError {
+                    index: idx,
+                    claim: None,
+                    error: "missing required field 'claim'".to_string(),
+                });
+                continue;
+            }
+        };
+
+        // Validate claim max length
+        if claim.len() > 255 {
+            errors.push(FactError {
+                index: idx,
+                claim: Some(claim),
+                error: "'claim' exceeds 255 characters".to_string(),
+            });
+            continue;
+        }
+
+        // Resolve kind: fact must have a kind field (SCN-402 — reject if missing)
+        let fact_kind = match &fact.kind {
+            Some(kind_str) => match EvidenceKind::parse_label(kind_str) {
+                Some(k) => k,
+                None => {
+                    errors.push(FactError {
+                        index: idx,
+                        claim: Some(claim),
+                        error: format!("unknown kind '{}'", kind_str),
+                    });
+                    continue;
+                }
+            },
+            None => {
+                // SCN-402: missing kind is an error, no silent default to CLI flag
+                errors.push(FactError {
+                    index: idx,
+                    claim: Some(claim),
+                    error: "missing required field 'kind' (use --kind flag to set batch default)"
+                        .to_string(),
+                });
+                continue;
+            }
+        };
+
+        // SCN-407: if --kind semantic is set, each fact must have value.semantic: true
+        if kind_flag == EvidenceKind::Semantic {
+            match fact.props.get("semantic") {
+                Some(serde_json::Value::Bool(true)) => {}
+                Some(v) => {
+                    errors.push(FactError {
+                        index: idx,
+                        claim: Some(claim),
+                        error: format!(
+                            "--kind semantic requires fact prop 'semantic: true', got {:?}",
+                            v
+                        ),
+                    });
+                    continue;
+                }
+                None => {
+                    errors.push(FactError {
+                        index: idx,
+                        claim: Some(claim),
+                        error: "--kind semantic requires fact prop 'semantic: true'".to_string(),
+                    });
+                    continue;
+                }
+            }
+        }
+
+        // Compute semantic evidence id (SCN-404)
+        let evidence_id = semantic_evidence_id(
+            fact_kind.as_str(),
+            &claim,
+            crate::evidence::SourceOrigin::UserInput,
+            &fact.props,
+        );
+
+        // Build synthetic SourceArtifact (ADR-027 D3)
+        let sa =
+            SourceArtifact::synthetic(fact_kind.as_str(), &claim, clock.now_rfc3339().as_str());
+
+        // Build Evidence row (SCN-403, SCN-400)
+        let evidence = Evidence {
+            id: evidence_id.clone(),
+            kind: fact_kind,
+            claim: claim.clone(),
+            path: "synthetic:".to_string(), // No file for semantic facts (ADR-027 D3)
+            start_line: 0,
+            end_line: 0,
+            start_byte: None,
+            end_byte: None,
+            tool_name: crate::evidence::TOOL_NAME.to_string(),
+            tool_version: crate::evidence::TOOL_VERSION.to_string(),
+            rule_id: format!("evidence:put:{}", fact_kind.as_str()),
+            language: fact
+                .props
+                .get("language")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            observed_at: clock.now_rfc3339(),
+            source_origin: crate::evidence::SourceOrigin::UserInput,
+            content_hash: None,
+            text_preview: Some(claim.clone()),
+            props: {
+                let mut p = fact.props.clone();
+                p.insert(
+                    "status".to_string(),
+                    serde_json::Value::String("drafted".to_string()),
+                );
+                p.insert(
+                    "source_origin".to_string(),
+                    serde_json::Value::String(
+                        crate::evidence::SourceOrigin::UserInput
+                            .as_str()
+                            .to_string(),
+                    ),
+                );
+                p
+            },
+            status: crate::evidence::EvidenceStatus::Drafted,
+        };
+
+        processed.push(ProcessedFact {
+            evidence,
+            evidence_id,
+            source: sa,
+        });
+    }
+
+    // Report errors (SCN-402 partial success)
+    let total = processed.len() + errors.len();
+    for err in &errors {
+        let claim_str = err
+            .claim
+            .as_deref()
+            .map(|s| format!(" (claim: {})", s))
+            .unwrap_or_default();
+        eprintln!("error: fact[{}]{}: {}", err.index, claim_str, err.error);
+    }
+
+    if processed.is_empty() {
+        eprintln!("error: 0 facts succeeded");
+        return Ok(1);
+    }
+
+    // Persist via put_with_source (SCN-400, SCN-405)
+    // Each fact gets a synthetic SourceArtifact linked via SUPPORTED_BY
+    let evidence: Vec<_> = processed.iter().map(|p| p.evidence.clone()).collect();
+    let sources: Vec<_> = processed.iter().map(|p| p.source.clone()).collect();
+    let written =
+        crate::evidence::put_with_source(&info.project_dir, &evidence, Some(&sources), None, clock)
+            .context("persist evidence")?;
+
+    // Output results (SCN-408)
+    let ids: Vec<_> = processed.iter().map(|p| p.evidence_id.clone()).collect();
+    if json_flag {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "processed": total,
+                "succeeded": written,
+                "failed": errors.len(),
+                "persisted": written,
+                "evidence_ids": ids
+            }))?
+        );
+    } else {
+        println!(
+            "processed: {}, succeeded: {}, failed: {}",
+            total,
+            written,
+            errors.len()
+        );
+        for id in &ids {
+            println!("  {}", id);
+        }
+    }
+
+    // SCN-402: exit 0 if ≥1 succeeded
+    Ok(0)
+}
+
 fn evidence_list_cmd(
     cwd: Option<PathBuf>,
     path: Option<String>,
@@ -1071,6 +1434,76 @@ fn diagram_apply_cmd(
             &report.new_revision[..12],
         );
     }
+    Ok(0)
+}
+
+fn diagram_project_cmd(
+    cwd: Option<PathBuf>,
+    view: &str,
+    format: &str,
+    output: &Path,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::diagram::project::OutputFormat;
+
+    // Parse format (SCN-418)
+    let fmt = OutputFormat::parse(format).ok_or_else(|| {
+        anyhow::anyhow!("unknown format: \"{format}\" (supported: plantuml, mermaid, structurizr)")
+    })?;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = store::open_and_init(&info.project_dir)?;
+
+    // Parse selector (SCN-413, SCN-417)
+    let selector = crate::diagram::project_selector::ProjectSelector::parse(view)
+        .with_context(|| format!("invalid view selector: {view}"))?;
+
+    // Run queries (reuse query_elements / query_semantic_edges — category-agnostic)
+    let elements = crate::diagram::queries::query_elements(
+        &*store,
+        selector.category(),
+        selector.scope_ident(),
+    )
+    .context("query_elements failed")?;
+
+    let edges = crate::diagram::queries::query_semantic_edges(&*store, selector.category())
+        .context("query_semantic_edges failed")?;
+
+    // Project to DSL
+    let (dsl, report) = crate::diagram::project::project_dsl(&selector, &elements, &edges, fmt);
+
+    // Write output file (SCN-416)
+    if let Some(parent) = output.parent() {
+        ctx.fs
+            .create_dir_all(parent)
+            .with_context(|| format!("creating output directory {}", parent.display()))?;
+    }
+    ctx.fs
+        .write(output, dsl.as_bytes())
+        .with_context(|| format!("write output to {}", output.display()))?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "elements": report.elements,
+                "edges": report.edges,
+                "format": report.format,
+                "output": output.display().to_string(),
+            }))?
+        );
+    } else {
+        println!(
+            "Projected {} elements, {} edges to {} ({})",
+            report.elements,
+            report.edges,
+            output.display(),
+            report.format
+        );
+    }
+
     Ok(0)
 }
 
@@ -1242,6 +1675,50 @@ fn code_class_diagram_cmd(
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         crate::code::output::print_class_diagram_table(&report);
+    }
+
+    Ok(0)
+}
+
+fn code_state_machine_cmd(
+    cwd: &Path,
+    apply: bool,
+    json: bool,
+    lang: &[crate::code::state_machine::Language],
+) -> Result<i32> {
+    let fs = filesystem::system_filesystem();
+
+    let report = crate::code::state_machine::extract(cwd, lang, &*fs)
+        .map_err(|e| anyhow::anyhow!("state-machine extraction failed: {e}"))?;
+
+    if apply {
+        let apply_report = crate::code::state_machine::apply(cwd, &report, &*fs)
+            .map_err(|e| anyhow::anyhow!("state-machine apply failed: {e}"))?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&apply_report)?);
+        } else {
+            println!(
+                "Applied {} elements ({} skipped), {} relations ({} skipped), {} seed writes ({} ms).",
+                apply_report.elements_written,
+                apply_report.elements_skipped,
+                apply_report.relations_written,
+                apply_report.relations_skipped,
+                apply_report.seed_writes,
+                apply_report.duration_ms
+            );
+        }
+    } else if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "Extracted {} state machines from {} files ({} languages).",
+            report.machines.len(),
+            report.project.files_scanned,
+            report.project.languages.len()
+        );
+        for sm in &report.machines {
+            println!("  {} (confidence: {:.2})", sm.name, sm.confidence);
+        }
     }
 
     Ok(0)

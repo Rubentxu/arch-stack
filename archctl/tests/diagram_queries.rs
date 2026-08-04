@@ -56,11 +56,23 @@ impl TinyGraphStore {
     }
 
     /// Extract category and canonical_key filter from a query_elements cypher string.
+    /// Handles both exact match (=) and prefix match (STARTS WITH) patterns.
     fn extract_element_filter_from_cypher(cypher: &str) -> (Option<String>, Option<String>) {
         let upper = cypher.to_uppercase();
         let category = Self::extract_quoted(&upper, "E.CATEGORY");
-        let canonical_key = Self::extract_quoted(&upper, "E.CANONICAL_KEY");
+        // SCN-417: support STARTS WITH prefix matching
+        let canonical_key = Self::extract_quoted(&upper, "E.CANONICAL_KEY")
+            .or_else(|| Self::extract_key_from_starts_with(&upper, "E.CANONICAL_KEY"));
         (category, canonical_key)
+    }
+
+    /// Extract a key value from `E.CANONICAL_KEY STARTS WITH 'value'` pattern.
+    fn extract_key_from_starts_with(s: &str, key: &str) -> Option<String> {
+        let pattern = format!("{} STARTS WITH '", key);
+        let start = s.find(&pattern)?;
+        let value_start = start + pattern.len();
+        let value_end = s[value_start..].find('\'')?;
+        Some(s[value_start..value_start + value_end].to_string())
     }
 
     /// Extract category filter from a query_semantic_edges cypher string.
@@ -177,9 +189,10 @@ impl GraphStore for TinyGraphStore {
                         .as_ref()
                         .map(|c| row_cat == c.to_uppercase())
                         .unwrap_or(true);
+                    // SCN-417: prefix matching — scope `src/auth` matches `src/auth/user.rs`
                     let key_match = canonical_key
                         .as_ref()
-                        .map(|k| row_key == k.to_uppercase())
+                        .map(|k| row_key.starts_with(&k.to_uppercase()))
                         .unwrap_or(true);
                     cat_match && key_match
                 })

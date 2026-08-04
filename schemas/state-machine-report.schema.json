@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StateMachineReport",
+  "description": "Report from state machine extraction (Rust enum+match, TypeScript state pattern, Python transitions). Per SCN-425: confidence always < 1.0.",
+  "type": "object",
+  "required": ["schemaVersion", "project", "machines"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "project": {
+      "type": "object",
+      "required": ["root", "filesScanned", "languages"],
+      "properties": {
+        "root": { "type": "string" },
+        "filesScanned": { "type": "integer", "minimum": 0 },
+        "languages": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "machines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canonical_key", "name", "file", "content_hash", "states", "transitions", "confidence"],
+        "properties": {
+          "canonical_key": {
+            "type": "string",
+            "description": "<lang>:<file>:state_machine:<name>:<line>"
+          },
+          "name": { "type": "string" },
+          "file": { "type": "string" },
+          "content_hash": { "type": "string" },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "kind", "line"],
+              "properties": {
+                "name": { "type": "string" },
+                "kind": { "type": "string", "enum": ["regular", "initial", "final", "choice"] },
+                "line": { "type": "integer", "minimum": 1 }
+              }
+            }
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["from", "to", "line"],
+              "properties": {
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "trigger": { "type": ["string", "null"] },
+                "guard": { "type": ["string", "null"] },
+                "line": { "type": "integer", "minimum": 1 }
+              }
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0.99,
+            "description": "Always < 1.0 per SCN-425: boundary inferred, guards/events not extracted"
+          }
+        }
+      }
+    }
+  }
+}
