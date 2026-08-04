@@ -111,21 +111,21 @@ pub fn handle_schema_validate(args: SchemaValidateArgs) -> ToolResult {
     }
 
     // Validate projection nodes
-    if let Some(projection) = obj.get("projection") {
-        if let Some(nodes) = projection.get("nodes") {
-            if !nodes.is_array() {
-                errors.push("projection.nodes must be an array".into());
-            } else {
-                for (i, node) in nodes.as_array().unwrap().iter().enumerate() {
-                    if !node.is_object() {
-                        errors.push(format!("projection.nodes[{i}] must be an object"));
-                        continue;
-                    }
-                    let n = node.as_object().unwrap();
-                    for field in ["id", "kind"] {
-                        if !n.contains_key(field) {
-                            errors.push(format!("projection.nodes[{i}] missing field: {field}"));
-                        }
+    if let Some(projection) = obj.get("projection")
+        && let Some(nodes) = projection.get("nodes")
+    {
+        if !nodes.is_array() {
+            errors.push("projection.nodes must be an array".into());
+        } else {
+            for (i, node) in nodes.as_array().unwrap().iter().enumerate() {
+                if !node.is_object() {
+                    errors.push(format!("projection.nodes[{i}] must be an object"));
+                    continue;
+                }
+                let n = node.as_object().unwrap();
+                for field in ["id", "kind"] {
+                    if !n.contains_key(field) {
+                        errors.push(format!("projection.nodes[{i}] missing field: {field}"));
                     }
                 }
             }
