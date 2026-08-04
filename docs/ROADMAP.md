@@ -161,7 +161,9 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 **Pendiente opcional (no bloqueante):** profiling-on-regression flamegraph, PR-comment bot.
 
-## M21 — Cognitive Layer foundation — **NUEVO, PRIORIDAD 1 (1.x)**
+## M21 — Cognitive Layer foundation — **IN PROGRESS** 🚧
+
+**Estado:** PR1 (cognitive/ module + contract types) ✅ merged. PR2 (dispatcher + escalation + MCP gateway) submitted as PR #27. PR3 (CLI integration) pendiente.
 
 **Pivot v2.5 (2026-07-31, post-capa-cognitiva):** Substrate sobre el cual corren los agentes especializados. Outputs:
 - Contrato `ReactiveObserver` + `AgentContext` + `AgentOutput` (ver [ADR-021](adr/ADR-021-cognitive-layer.md))
