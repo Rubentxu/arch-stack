@@ -193,6 +193,25 @@ Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejempl
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
+## M24 — Diagram authoring toolchain — **DOCUMENTADO (planificado 2026-08-04)**
+
+**Estado:** ADRs + specs aprobados en `sddk/diagram-authoring-toolchain/`. Implementación pendiente (mismo ciclo SDDK, fase apply).
+
+**Objetivo:** Cerrar el pipeline de creación de diagramas donde `archctl` = herramientas (extracción → grafo → proyección → DSL) y las skills de `profile/skills/` = inteligencia (qué diagrama, qué destacar, cómo). Los agentes crean y dan sentido a los diagramas usando las herramientas de archctl.
+
+**Alcance (3 gaps + realineación):**
+- **G3 — `evidence put`** ([ADR-027](adr/ADR-027-evidence-put.md)): ingestión de hechos semánticos (actores, use cases, reglas de negocio, semántica de estados) con procedencia `SourceArtifact`. Identity scheme `ev:sem:blake3(...)` para hechos sin archivo. Solo Evidence + SourceArtifact, NO crea Elements.
+- **G4 — `diagram project`** ([ADR-028](adr/ADR-028-diagram-project.md)): grafo → fuente PlantUML/Mermaid/Structurizr editable. `ViewKind` (c4-container/context/component, class, sequence, state, usecase). `ProjectSelector` independiente del `C4Kind` de export (ADR-013).
+- **G1 — `code state-machine`** ([ADR-026](adr/ADR-026-state-machine-metamodel.md)): extractor AST-puro (Rust enums+match, TS unions+switch, Python decoradores). Metamodelo extendido: `uml.state_machine`, `uml.state`, `uml.transition`, `uml.guard`, `uml.event` + predicates (`behavior.source_state`, `behavior.target_state`, `behavior.has_transition`, `behavior.trigger`, `behavior.has_guard`). MERGE apply-time (patrón M11/M12), confidence < 1.0. Guards/eventos complejos → agente vía `evidence put`.
+- **G5 — C4 component light** ([ADR-029](adr/ADR-029-c4-component-light.md)): estrategia `components` en `c4-discover` — módulos internos → candidatos `mt.component` con `confidence < 1.0`; el agente revisa y promueve vía `evidence accept`. Reutiliza framework Strategy existente.
+- **Skills realineadas**: las 6 skills de `profile/skills/` referenciarán SOLO comandos reales (existencia verificada contra el CLI).
+
+**Fuera de alcance:** render SVG nativo de PlantUML/Mermaid (bloqueado por `libgraphviz-dev`, ciclo de vendor separado), `diagram materialize` (requiere diseño de lock/override — deuda ADR-013), `run start/close`, `review put` (cubierto por `evidence put` + `accept`).
+
+**Outputs verificables:** `archctl evidence put` funcional; `archctl diagram project --view <kind> --format <dsl>` emite fuente editable determinista; `archctl code state-machine --apply` puebla grafo con estados/transiciones; `archctl code c4-discover --strategy components` emite candidatos; skills con comandos verificados.
+
+**Referencias:** `docs/adr/ADR-026-state-machine-metamodel.md`, `docs/adr/ADR-027-evidence-put.md`, `docs/adr/ADR-028-diagram-project.md`, `docs/adr/ADR-029-c4-component-light.md`, `sddk/diagram-authoring-toolchain/{proposal,spec,design}.md`
+
 ## Mejoras futuras — `workflowctl`
 
 > Documentadas en [ADR-024](adr/ADR-024-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-024; cualquier cambio de estado requiere abrir un nuevo ADR.
