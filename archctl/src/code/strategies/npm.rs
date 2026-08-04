@@ -18,6 +18,9 @@ impl Strategy for NpmWorkspace {
     fn confidence(&self) -> f64 {
         0.80
     }
+    fn metatype(&self) -> &'static str {
+        "mt.container"
+    }
 
     fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let pkg_json = project_root.join("package.json");

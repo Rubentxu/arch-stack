@@ -35,6 +35,10 @@ impl Strategy for ComponentsStrategy {
         0.65
     }
 
+    fn metatype(&self) -> &'static str {
+        "mt.component"
+    }
+
     fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let mut candidates = Vec::new();
 

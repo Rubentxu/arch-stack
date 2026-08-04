@@ -18,6 +18,9 @@ impl Strategy for CargoWorkspace {
     fn confidence(&self) -> f64 {
         0.85
     }
+    fn metatype(&self) -> &'static str {
+        "mt.container"
+    }
 
     fn detect(&self, project_root: &Path, _fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let cargo_toml = project_root.join("Cargo.toml");

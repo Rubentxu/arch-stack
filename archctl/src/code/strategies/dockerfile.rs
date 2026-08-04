@@ -28,6 +28,9 @@ impl Strategy for DockerfilePerService {
     fn confidence(&self) -> f64 {
         0.60
     }
+    fn metatype(&self) -> &'static str {
+        "mt.container"
+    }
 
     fn detect(&self, project_root: &Path, _fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let mut candidates = Vec::new();
