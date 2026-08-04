@@ -333,6 +333,9 @@ fn cross_strategy_merge_integration() {
         fn confidence(&self) -> f64 {
             1.0
         }
+        fn metatype(&self) -> &'static str {
+            "mt.container"
+        }
         fn detect(
             &self,
             _: &Path,

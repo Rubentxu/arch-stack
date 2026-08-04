@@ -25,6 +25,10 @@ pub trait Strategy: Send + Sync {
     /// Container it detects. Per-strategy hard-coded (D2).
     fn confidence(&self) -> f64;
 
+    /// MetaType id produced by this strategy (e.g. "mt.container", "mt.component").
+    /// Used to route the apply path and link Element→MetaType edges.
+    fn metatype(&self) -> &'static str;
+
     /// Walk the project tree and emit Container candidates.
     /// Errors are captured by the caller into DiscoverReport.errors[],
     /// not propagated (graceful degradation per SCN-103).

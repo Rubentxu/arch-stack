@@ -29,6 +29,9 @@ impl Strategy for HelmCharts {
     fn confidence(&self) -> f64 {
         0.70
     }
+    fn metatype(&self) -> &'static str {
+        "mt.container"
+    }
 
     fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
         let mut candidates = Vec::new();
