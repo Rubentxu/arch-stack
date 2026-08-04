@@ -48,6 +48,10 @@ pub enum EvidenceKind {
     Config,
     /// Annotation observation: a decorator, attribute, tag, etc.
     Annotation,
+    /// Semantic fact ingested via `evidence put` — no file source,
+    /// identity derived from blake3(kind + claim + source_origin + props).
+    /// Per ADR-027 D1.
+    Semantic,
     /// Catch-all when the caller doesn't classify.
     Other,
 }
@@ -59,7 +63,22 @@ impl EvidenceKind {
             EvidenceKind::Lexical => "lexical",
             EvidenceKind::Config => "config",
             EvidenceKind::Annotation => "annotation",
+            EvidenceKind::Semantic => "semantic",
             EvidenceKind::Other => "other",
+        }
+    }
+
+    /// Parse a string label into an EvidenceKind variant.
+    /// Used by `evidence put` to validate kind from JSON input (SCN-402).
+    pub fn parse_label(s: &str) -> Option<Self> {
+        match s {
+            "structural" => Some(Self::Structural),
+            "lexical" => Some(Self::Lexical),
+            "config" => Some(Self::Config),
+            "annotation" => Some(Self::Annotation),
+            "semantic" => Some(Self::Semantic),
+            "other" => Some(Self::Other),
+            _ => None,
         }
     }
 }
@@ -409,6 +428,35 @@ fn evidence_id(path: &str, start: usize, end: usize, text: &str) -> String {
     h.update(&end.to_le_bytes());
     h.update(text.as_bytes());
     format!("ev:{}", hex::encode(&h.finalize().as_bytes()[..16]))
+}
+
+/// SemanticEvidenceId: stable identity for facts without a file.
+///
+/// Computes `blake3(kind + claim + source_origin + sorted_canonical_props)`
+/// and returns `"ev:sem:{hex16}"`. This is parallel to `evidence_id`
+/// (which is for file-based evidence) — it does NOT modify or replace it.
+///
+/// Per ADR-027 D2: identity scheme for facts without a file.
+pub fn semantic_evidence_id(
+    kind: &str,
+    claim: &str,
+    source_origin: SourceOrigin,
+    props: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    let mut h = blake3::Hasher::new();
+    h.update(kind.as_bytes());
+    h.update(claim.as_bytes());
+    h.update(source_origin.as_str().as_bytes());
+    // Canonical props: sorted by key for determinism
+    let mut keys: Vec<_> = props.keys().collect();
+    keys.sort();
+    for k in keys {
+        h.update(k.as_bytes());
+        if let Some(v) = props.get(k) {
+            h.update(v.to_string().as_bytes());
+        }
+    }
+    format!("ev:sem:{}", hex::encode(&h.finalize().as_bytes()[..16]))
 }
 
 /// Build an Evidence row from a `tree-sitter-graph` graph node.
@@ -1219,5 +1267,174 @@ mod tests {
             0,
             "No Evaluation node should be created when evaluation=None"
         );
+    }
+
+    // ─── SemanticEvidenceId tests (SCN-400, SCN-404, SCN-405) ───────────────────────
+
+    /// SCN-404: Two calls with same inputs produce the same id (determinism).
+    #[test]
+    fn semantic_evidence_id_deterministic() {
+        let props = serde_json::Map::new();
+        let id1 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        let id2 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        assert_eq!(id1, id2, "same inputs must produce same id");
+        assert!(id1.starts_with("ev:sem:"), "id must use ev:sem: prefix");
+    }
+
+    /// SCN-404: Different kind produces different id.
+    #[test]
+    fn semantic_evidence_id_different_kind_different_id() {
+        let props = serde_json::Map::new();
+        let id1 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        let id2 = semantic_evidence_id(
+            "structural",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        assert_ne!(id1, id2, "different kind must produce different id");
+    }
+
+    /// SCN-404: Different claim produces different id.
+    #[test]
+    fn semantic_evidence_id_different_claim_different_id() {
+        let props = serde_json::Map::new();
+        let id1 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        let id2 = semantic_evidence_id(
+            "semantic",
+            "Customer cancels order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        assert_ne!(id1, id2, "different claim must produce different id");
+    }
+
+    /// SCN-404: Different source_origin produces different id.
+    #[test]
+    fn semantic_evidence_id_different_origin_different_id() {
+        let props = serde_json::Map::new();
+        let id1 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        let id2 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserWorkspace,
+            &props,
+        );
+        assert_ne!(
+            id1, id2,
+            "different source_origin must produce different id"
+        );
+    }
+
+    /// SCN-404: Different props produce different id.
+    #[test]
+    fn semantic_evidence_id_different_props_different_id() {
+        let mut props1 = serde_json::Map::new();
+        props1.insert(
+            "actor".to_string(),
+            serde_json::Value::String("Customer".to_string()),
+        );
+        let mut props2 = serde_json::Map::new();
+        props2.insert(
+            "actor".to_string(),
+            serde_json::Value::String("Admin".to_string()),
+        );
+
+        let id1 =
+            semantic_evidence_id("semantic", "places order", SourceOrigin::UserInput, &props1);
+        let id2 =
+            semantic_evidence_id("semantic", "places order", SourceOrigin::UserInput, &props2);
+        assert_ne!(id1, id2, "different props values must produce different id");
+    }
+
+    /// SCN-404: Props key order does NOT affect id (sorted canonical).
+    #[test]
+    fn semantic_evidence_id_props_order_independent() {
+        let mut props_abc = serde_json::Map::new();
+        props_abc.insert("a".to_string(), serde_json::Value::String("1".to_string()));
+        props_abc.insert("b".to_string(), serde_json::Value::String("2".to_string()));
+        props_abc.insert("c".to_string(), serde_json::Value::String("3".to_string()));
+
+        let mut props_cba = serde_json::Map::new();
+        props_cba.insert("c".to_string(), serde_json::Value::String("3".to_string()));
+        props_cba.insert("b".to_string(), serde_json::Value::String("2".to_string()));
+        props_cba.insert("a".to_string(), serde_json::Value::String("1".to_string()));
+
+        let id1 = semantic_evidence_id(
+            "semantic",
+            "test claim",
+            SourceOrigin::UserInput,
+            &props_abc,
+        );
+        let id2 = semantic_evidence_id(
+            "semantic",
+            "test claim",
+            SourceOrigin::UserInput,
+            &props_cba,
+        );
+        assert_eq!(
+            id1, id2,
+            "props key order must not affect id (sorted canonical)"
+        );
+    }
+
+    /// SCN-404: Empty props is valid.
+    #[test]
+    fn semantic_evidence_id_empty_props() {
+        let props = serde_json::Map::new();
+        let id = semantic_evidence_id("semantic", "test claim", SourceOrigin::UserInput, &props);
+        assert!(id.starts_with("ev:sem:"), "id must have ev:sem: prefix");
+    }
+
+    /// SCN-405: Idempotency — same fact run twice = same id.
+    #[test]
+    fn semantic_evidence_id_idempotent() {
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "actor".to_string(),
+            serde_json::Value::String("Customer".to_string()),
+        );
+        props.insert(
+            "use_case".to_string(),
+            serde_json::Value::String("PlaceOrder".to_string()),
+        );
+        let id1 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        let id2 = semantic_evidence_id(
+            "semantic",
+            "Customer places order",
+            SourceOrigin::UserInput,
+            &props,
+        );
+        assert_eq!(id1, id2, "idempotent: same fact twice = same id");
     }
 }

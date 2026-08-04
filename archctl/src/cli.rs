@@ -4,10 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::astgrep::Lang;
-use crate::evidence::{self, EvidenceKind, EvidenceStatus};
+use crate::evidence::{self, Evidence, EvidenceKind, EvidenceStatus};
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
 use crate::skills;
+use crate::source::SourceArtifact;
 use crate::{doctor, environment, filesystem, graph, inventory, render, store};
 
 /// Container for the ports a CLI handler needs.
@@ -280,6 +281,21 @@ pub enum EvidenceAction {
         #[arg(long)]
         json: bool,
     },
+    /// Ingest semantic facts from JSON input (no file source).
+    /// Per ADR-027: persists Evidence with source_origin: UserInput, status: drafted.
+    Put {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Path to JSON file containing facts array.
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Read facts from stdin as JSON array.
+        #[arg(long)]
+        json: bool,
+        /// Evidence kind for all facts in this batch.
+        #[arg(long, value_enum, default_value_t = EvidenceKind::Semantic)]
+        kind: EvidenceKind,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -470,6 +486,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             EvidenceAction::Supersede { cwd, old_id, json } => {
                 evidence_supersede_cmd(cwd, &old_id, json, ctx)
             }
+            EvidenceAction::Put {
+                cwd,
+                file,
+                json,
+                kind,
+            } => evidence_put_cmd(cwd, file.as_ref(), json, kind, ctx),
         },
         Command::Render {
             source,
@@ -918,6 +940,174 @@ fn evidence_supersede_cmd(
             }
         }
     }
+    Ok(0)
+}
+
+/// Input schema for `evidence put` JSON batch.
+#[derive(Debug, serde::Deserialize)]
+struct EvidencePutRequest {
+    facts: Vec<EvidencePutFact>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct EvidencePutFact {
+    kind: Option<String>,
+    claim: Option<String>,
+    #[serde(default)]
+    props: serde_json::Map<String, serde_json::Value>,
+}
+
+fn evidence_put_cmd(
+    cwd: Option<PathBuf>,
+    file: Option<&PathBuf>,
+    json_flag: bool,
+    kind: EvidenceKind,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::evidence::semantic_evidence_id;
+    use std::io::Read;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
+    let info = resolve_project(&cwd.to_string_lossy());
+    // Ensure the schema is in place without holding the DB lock:
+    // graph::init applies pending migrations and releases the session.
+    // put_with_source then opens the store freely (ADR-010 single-writer).
+    graph::init(&info.project_dir, &crate::filesystem::SystemFilesystem)?;
+
+    // Read JSON input from --file or stdin
+    let request: EvidencePutRequest = if let Some(path) = file {
+        let content = ctx.fs.read_to_string(path).context("read --file")?;
+        serde_json::from_str(&content).context("parse JSON from --file")?
+    } else if json_flag {
+        // --json means read facts array from stdin
+        let mut buf = String::new();
+        match std::io::stdin().read_to_string(&mut buf) {
+            Ok(0) => {
+                eprintln!("error: --json requires stdin input but stdin is empty");
+                return Ok(1);
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                eprintln!("error: --json requires stdin input");
+                return Ok(1);
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("read stdin: {}", e));
+            }
+        }
+        serde_json::from_str(&buf).context("parse JSON from stdin")?
+    } else {
+        anyhow::bail!("evidence put requires either --file or --json flag");
+    };
+
+    // Validate facts: kind and claim required (SCN-402)
+    let mut valid_facts: Vec<(Evidence, Option<String>, SourceArtifact)> = Vec::new();
+
+    for (idx, fact) in request.facts.into_iter().enumerate() {
+        // Validate required fields
+        let claim = fact
+            .claim
+            .ok_or_else(|| anyhow::anyhow!("fact[{}]: missing required field 'claim'", idx))?;
+
+        // Validate claim max length
+        if claim.len() > 255 {
+            anyhow::bail!("fact[{}]: 'claim' exceeds 255 characters", idx);
+        }
+
+        // kind defaults to the CLI flag if not specified in JSON
+        let fact_kind = if let Some(kind_str) = &fact.kind {
+            EvidenceKind::parse_label(kind_str)
+                .ok_or_else(|| anyhow::anyhow!("fact[{}]: unknown kind '{}'", idx, kind_str))?
+        } else {
+            kind
+        };
+
+        // Compute semantic evidence id (SCN-404)
+        let evidence_id = semantic_evidence_id(
+            fact_kind.as_str(),
+            &claim,
+            crate::evidence::SourceOrigin::UserInput,
+            &fact.props,
+        );
+
+        // Build synthetic SourceArtifact (ADR-027 D3)
+        let sa =
+            SourceArtifact::synthetic(fact_kind.as_str(), &claim, clock.now_rfc3339().as_str());
+
+        // Build Evidence row (SCN-403, SCN-400)
+        let evidence = Evidence {
+            id: evidence_id.clone(),
+            kind: fact_kind,
+            claim: claim.clone(),
+            path: "synthetic:".to_string(), // No file for semantic facts (ADR-027 D3)
+            start_line: 0,
+            end_line: 0,
+            start_byte: None,
+            end_byte: None,
+            tool_name: crate::evidence::TOOL_NAME.to_string(),
+            tool_version: crate::evidence::TOOL_VERSION.to_string(),
+            rule_id: format!("evidence:put:{}", fact_kind.as_str()),
+            language: fact
+                .props
+                .get("language")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            observed_at: clock.now_rfc3339(),
+            source_origin: crate::evidence::SourceOrigin::UserInput,
+            content_hash: None,
+            text_preview: Some(claim.clone()),
+            props: {
+                let mut p = fact.props.clone();
+                p.insert(
+                    "status".to_string(),
+                    serde_json::Value::String("drafted".to_string()),
+                );
+                p.insert(
+                    "source_origin".to_string(),
+                    serde_json::Value::String(
+                        crate::evidence::SourceOrigin::UserInput
+                            .as_str()
+                            .to_string(),
+                    ),
+                );
+                p
+            },
+            status: crate::evidence::EvidenceStatus::Drafted,
+        };
+
+        valid_facts.push((evidence, Some(evidence_id.clone()), sa));
+    }
+
+    // Persist via put_with_source (SCN-400, SCN-405)
+    // Each fact gets a synthetic SourceArtifact linked via SUPPORTED_BY
+    let evidence: Vec<_> = valid_facts.iter().map(|(e, _, _)| e.clone()).collect();
+    let sources: Vec<_> = valid_facts.iter().map(|(_, _, sa)| sa.clone()).collect();
+    let written =
+        crate::evidence::put_with_source(&info.project_dir, &evidence, Some(&sources), None, clock)
+            .context("persist evidence")?;
+
+    // Output results (SCN-408)
+    let ids: Vec<_> = valid_facts
+        .into_iter()
+        .filter_map(|(_, id, _)| id)
+        .collect();
+    if json_flag {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "persisted": written,
+                "evidence_ids": ids
+            }))?
+        );
+    } else {
+        println!("persisted: {}", written);
+        for id in &ids {
+            println!("  {}", id);
+        }
+    }
+
     Ok(0)
 }
 

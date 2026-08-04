@@ -94,6 +94,65 @@ impl SourceArtifact {
         h.update(content_hash.as_bytes());
         format!("src:{}", hex::encode(&h.finalize().as_bytes()[..16]))
     }
+
+    /// Derive a synthetic SourceArtifact id for facts without a file.
+    ///
+    /// Per ADR-027 D3: when a fact has no file source, we create a synthetic
+    /// SourceArtifact with id = `"src:synthetic:" + blake3("synthetic" + kind + claim)`.
+    ///
+    /// Format: `"src:synthetic:" + blake3("synthetic" + kind + claim)[..16]`
+    pub fn synthetic_id(kind: &str, claim: &str) -> String {
+        let mut h = Hasher::new();
+        h.update(b"synthetic");
+        h.update(kind.as_bytes());
+        h.update(claim.as_bytes());
+        format!(
+            "src:synthetic:{}",
+            hex::encode(&h.finalize().as_bytes()[..16])
+        )
+    }
+
+    /// Build a synthetic SourceArtifact for facts without a file source.
+    ///
+    /// Per ADR-027 D3: synthetic SourceArtifacts have empty relative_path,
+    /// empty content_hash, and kind="synthetic".
+    ///
+    /// The id is derived from `blake3("synthetic" + kind + claim)`.
+    pub fn synthetic(kind: &str, claim: &str, first_seen_at: &str) -> Self {
+        let id = Self::synthetic_id(kind, claim);
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "first_seen_at".to_string(),
+            serde_json::Value::String(first_seen_at.to_string()),
+        );
+        props.insert(
+            "extractor".to_string(),
+            serde_json::Value::String("archctl:evidence:put".to_string()),
+        );
+        props.insert(
+            "extractor_version".to_string(),
+            serde_json::Value::String(env!("CARGO_PKG_VERSION").to_string()),
+        );
+        props.insert(
+            "synthetic_kind".to_string(),
+            serde_json::Value::String(kind.to_string()),
+        );
+        props.insert(
+            "synthetic_claim".to_string(),
+            serde_json::Value::String(claim.to_string()),
+        );
+
+        Self {
+            id,
+            kind: "synthetic".to_string(),
+            relative_path: "synthetic:".to_string(),
+            language: "synthetic".to_string(),
+            content_hash: String::new(),
+            commit_hash: None,
+            generated: true,
+            props,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -140,5 +199,37 @@ mod tests {
         // id is derived
         let expected_id = SourceArtifact::id_for("src/main.rs", "sha256:deadbeef");
         assert_eq!(sa.id, expected_id);
+    }
+
+    // ─── Synthetic id tests (ADR-027 D3) ───────────────────────────────────────
+
+    #[test]
+    fn synthetic_id_format() {
+        let id = SourceArtifact::synthetic_id("semantic", "Customer places order");
+        assert!(
+            id.starts_with("src:synthetic:"),
+            "synthetic id must use src:synthetic: prefix"
+        );
+    }
+
+    #[test]
+    fn synthetic_id_deterministic() {
+        let id1 = SourceArtifact::synthetic_id("semantic", "Customer places order");
+        let id2 = SourceArtifact::synthetic_id("semantic", "Customer places order");
+        assert_eq!(id1, id2, "same kind+claim must produce same id");
+    }
+
+    #[test]
+    fn synthetic_id_different_kind() {
+        let id1 = SourceArtifact::synthetic_id("semantic", "Customer places order");
+        let id2 = SourceArtifact::synthetic_id("structural", "Customer places order");
+        assert_ne!(id1, id2, "different kind must produce different id");
+    }
+
+    #[test]
+    fn synthetic_id_different_claim() {
+        let id1 = SourceArtifact::synthetic_id("semantic", "Customer places order");
+        let id2 = SourceArtifact::synthetic_id("semantic", "Customer cancels order");
+        assert_ne!(id1, id2, "different claim must produce different id");
     }
 }
