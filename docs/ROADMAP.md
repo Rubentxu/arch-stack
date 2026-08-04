@@ -174,7 +174,9 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 Output verificable: queries del workbench responden con output estructurado (no solo texto). Foundation sienta las bases para M22.
 
-## M22 — Agent catalog v1 — **NUEVO, 1.x**
+## M22 — Agent catalog v1 — **COMPLETO** ✅
+
+**Estado:** Implementado en v0.15.0 (PR #30 mergeado). ArchitectureAgent + ProjectionAgent como ReactiveObserver heurísticos y deterministas.
 
 **Pivot v2.5:** Catálogo inicial de los 9 agentes especializados (ver [ADR-022](adr/ADR-022-agent-catalog.md)):
 - Semantic Curator · Architecture · Projection · Investigation · Impact · Planning · Documentation · Presenter · Review/Critic
