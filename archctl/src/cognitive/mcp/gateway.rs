@@ -106,9 +106,13 @@ pub struct PolicyGate {
 }
 
 impl PolicyGate {
-    /// Create a new PolicyGate with the default policy engine.
+    /// Create a new PolicyGate with the default policy engine (embedded rules).
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            engine: PolicyEngine::default_engine(),
+            audit: AuditLogger::default(),
+            queue: std::cell::RefCell::new(ApprovalQueue::default()),
+        }
     }
 
     /// Evaluate a proposal under the given context and return a structured result.
@@ -492,5 +496,177 @@ mod tests {
             let back: GateOutcome = serde_json::from_str(&json).unwrap();
             assert_eq!(o, back);
         }
+    }
+
+    #[test]
+    fn handle_governed_execute_allowed_proposal() {
+        // run_tests in Dev with confidence >= 0.6 -> tests-in-dev-auto rule -> Allow -> Execute
+        use crate::cognitive::output::DeploymentEnv;
+        use crate::cognitive::policy::{CostCeiling, PolicyContext};
+
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "graph_query",
+            "args": { "cypher": "MATCH (n) RETURN n", "params": {} },
+            "proposal": {
+                "goal": "check graph health",
+                "command": "run_tests",
+                "approval_required": false,
+                "expected_evidence_old": "",
+                "confidence": 0.9
+            }
+        });
+        let ctx = PolicyContext {
+            user_id: "test-user".into(),
+            environment: DeploymentEnv::Development,
+            security_impact: crate::cognitive::output::SecurityImpact::Low,
+            requesting_capabilities: vec![],
+            affected_components: vec![],
+            cost_ceiling: CostCeiling::default(),
+        };
+
+        let result = gate
+            .handle_governed(&serde_json::to_string(&req).unwrap(), &ctx)
+            .unwrap();
+        // tests-in-dev-auto rule -> Allow -> Execute
+        assert_eq!(result.policy.outcome, GateOutcome::Execute);
+        assert_eq!(result.tool.tool, "graph_query");
+    }
+
+    #[test]
+    fn handle_governed_queue_unknown_command() {
+        // Unknown command -> default RequireApproval -> Queue
+        use crate::cognitive::output::DeploymentEnv;
+        use crate::cognitive::policy::{CostCeiling, PolicyContext};
+
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "graph_query",
+            "args": { "cypher": "MATCH (n) RETURN n", "params": {} },
+            "proposal": {
+                "goal": "unknown action",
+                "command": "delete_the_entire_repo",
+                "approval_required": false,
+                "expected_evidence_old": ""
+            }
+        });
+        let ctx = PolicyContext {
+            user_id: "test-user".into(),
+            environment: DeploymentEnv::Development,
+            security_impact: crate::cognitive::output::SecurityImpact::Low,
+            requesting_capabilities: vec![],
+            affected_components: vec![],
+            cost_ceiling: CostCeiling::default(),
+        };
+
+        let result = gate
+            .handle_governed(&serde_json::to_string(&req).unwrap(), &ctx)
+            .unwrap();
+        assert_eq!(result.policy.outcome, GateOutcome::Queue);
+        assert!(result.tool.error.is_some());
+        assert!(result.tool.error.unwrap().contains("approval"));
+    }
+
+    #[test]
+    fn handle_governed_low_confidence_queues() {
+        // confidence < 0.6 -> RequireApproval -> Queue
+        use crate::cognitive::output::DeploymentEnv;
+        use crate::cognitive::policy::{CostCeiling, PolicyContext};
+
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "schema_validate",
+            "args": {},
+            "proposal": {
+                "goal": "risky mutation",
+                "command": "modify_source",
+                "approval_required": false,
+                "expected_evidence_old": "",
+                "confidence": 0.3
+            }
+        });
+        let ctx = PolicyContext {
+            user_id: "test-user".into(),
+            environment: DeploymentEnv::Development,
+            security_impact: crate::cognitive::output::SecurityImpact::Low,
+            requesting_capabilities: vec![],
+            affected_components: vec![],
+            cost_ceiling: CostCeiling::default(),
+        };
+
+        let result = gate
+            .handle_governed(&serde_json::to_string(&req).unwrap(), &ctx)
+            .unwrap();
+        // low-confidence-require-peer rule -> RequireApproval -> Queue
+        assert_eq!(result.policy.outcome, GateOutcome::Queue);
+    }
+
+    #[test]
+    fn governed_tool_result_serializes() {
+        // Verify GovernedToolResult serializes without panics
+        use crate::cognitive::output::DeploymentEnv;
+        use crate::cognitive::policy::{CostCeiling, PolicyContext};
+
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "graph_query",
+            "args": { "cypher": "RETURN 1", "params": {} },
+            "proposal": {
+                "goal": "test",
+                "command": "run_tests",
+                "approval_required": false,
+                "expected_evidence_old": "",
+                "confidence": 0.9
+            }
+        });
+        let ctx = PolicyContext {
+            user_id: "test-user".into(),
+            environment: DeploymentEnv::Development,
+            security_impact: crate::cognitive::output::SecurityImpact::Low,
+            requesting_capabilities: vec![],
+            affected_components: vec![],
+            cost_ceiling: CostCeiling::default(),
+        };
+
+        let result = gate
+            .handle_governed(&serde_json::to_string(&req).unwrap(), &ctx)
+            .unwrap();
+        // Should serialize to JSON without errors
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.is_empty());
+        // Verify key fields are present in serialized form
+        assert!(json.contains("\"outcome\""));
+        assert!(json.contains("\"Execute\""));
+    }
+
+    #[test]
+    fn policy_gate_result_serializes() {
+        use crate::cognitive::output::DeploymentEnv;
+        use crate::cognitive::policy::{CostCeiling, PolicyContext};
+
+        let gate = PolicyGate::new();
+        let proposal: ActionProposal = serde_json::from_str(
+            r#"{
+            "goal": "test",
+            "command": "run_tests",
+            "approval_required": false,
+            "expected_evidence_old": ""
+        }"#,
+        )
+        .unwrap();
+        let ctx = PolicyContext {
+            user_id: "test-user".into(),
+            environment: DeploymentEnv::Development,
+            security_impact: crate::cognitive::output::SecurityImpact::Low,
+            requesting_capabilities: vec![],
+            affected_components: vec![],
+            cost_ceiling: CostCeiling::default(),
+        };
+
+        let result = gate.check(&proposal, &ctx);
+        // PolicyGateResult should serialize to JSON without errors
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.is_empty());
+        assert!(json.contains("\"outcome\""));
     }
 }
