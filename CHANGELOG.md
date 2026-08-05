@@ -4,6 +4,35 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.14.0] — 2026-08-05
+
+### Added
+- **M18 Reactive Runtime** (3 PRs): event + delta reactive types (PR1),
+  subscriptions + `EventDispatcher` (PR2), integration tests + observer docs (PR3).
+- **M21 Cognitive Layer Foundation (PR #27)**: `AgentContext`, `AgentOutput`,
+  `ReactiveObserver` types; dispatcher, escalation ladder, MCP gateway;
+  `Evidence.properties` field for metadata.
+- **M22 Agent Catalog (PR #30)**: `ArchitectureAgent` + `ProjectionAgent`
+  as `ReactiveObserver`.
+- **M23 PolicyGate + Audit + Governed Invoke** (6 phases):
+  `ActionProposal` v1.0 with backward compat, `PolicyEngine` + default rules,
+  audit module (JSONL log + HITL queue), `PolicyGate` MCP seam,
+  `governed invoke` CLI + xdg `policies_root`, full policy gate flow tests.
+- **M24 Diagram Authoring Toolchain**: G1 state machine extraction,
+  G3 evidence put for semantic facts, G4 diagram project DSL projection,
+  G5 C4 components strategy, G2 metamodel extension
+  (`metamodel-core.json`); ADR-026..029; skills SKILL.md realignment.
+
+### Changed
+- Release pipeline + CI post-merge hardening (dup-002, dup-006).
+- Archview ESLint 9 + Prettier configuration.
+- M17 viewer-bundle contract alignment, routing fixes, package-view onselect.
+
+### Refs
+- Cycles: `m18-reactive-runtime`, `m21-cognitive-layer`, `m22-agent-catalog`,
+  `m23-policygate-audit`, `m24-diagram-authoring`
+- All intermediate v0.13.2–v0.13.7 cycles now nominal tags (consolidated below).
+
 ## [v0.13.8] — 2026-08-03
 
 ### Changed
@@ -39,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Refs
 - Cycle: `ci-main-gates`
 
-## [Unreleased] — v0.13.7
+## [v0.13.7]
 
 ### Added
 - **ADR-019 regression gate**: `scripts/bench-compare.sh` benchmarks
@@ -53,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Cycle: `m20-baseline-comparison`
 - **M20 COMPLETE** (harness + datasets + doctor gate + CI gate + regression gate)
 
-## [Unreleased] — v0.13.6
+## [v0.13.6]
 
 ### Added
 - **CI gate (M20 / ADR-019)**: GitHub Actions workflow with 3 jobs —
@@ -64,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Cycle: `m20-ci-gate`
 - Partially closes M20 (CI gate slice); regression >10% comparison deferred to backlog
 
-## [Unreleased] — v0.13.5
+## [v0.13.5]
 
 ### Changed
 - **`store::open_and_init` promoted to canonical helper**: 8 CLI handlers
@@ -77,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Cycle: `refactor/open-and-init-store`
 - Closes debt-report suggestion from `source-artifact-id` cycle
 
-## [Unreleased] — v0.13.4
+## [v0.13.4]
 
 ### Changed
 - **Test coverage**: unit tests for `c4_language_label` (dockerfile/manifest
@@ -88,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Refs
 - Cycle: `test/apply-common-helpers`
 
-## [Unreleased] — v0.13.3
+## [v0.13.3]
 
 ### Fixed
 - **`SourceArtifact` identity divergence (D2)**: `code::apply_common::write_source_artifact`
@@ -113,7 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Closes backlog `refactor/debt-source-artifact-id-1` (C-HD-1) and
   `refactor/extract-code-apply-helpers-pipe-1` (O-AE-1)
 
-## [Unreleased] — v0.13.2
+## [v0.13.2]
 
 ### Changed
 - **Internal refactor**: shared `code::apply_common` module extracted from four
@@ -333,7 +362,7 @@ Refs: cycle `m12-class-diagram`, PR (pending).
 - Documented limitations: no dynamic dispatch, no cross-file resolution, no macro expansion, no async state machine (Phase 2 via LSP/SCIP).
 - This is M11 PR1. PR2 (`archctl code sequence`) is v0.9.0.
 
-## [unreleased] — v0.6.1 hygiene
+## [v0.6.1] — hygiene
 
 ### Added
 - `AGENTS.md` (root): repository-level operating guidelines for AI agents
