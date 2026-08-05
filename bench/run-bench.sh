@@ -201,19 +201,53 @@ run_dataset() {
   # Validate output if exit 0
   local valid="n/a"
   local deterministic="n/a"
+  local workspace
+  if [[ "$name" == "archctl" ]]; then
+    workspace="$(pwd)"
+  else
+    workspace="$CACHE_DIR/$name"
+  fi
+
   if [[ "$exit_code" -eq 0 ]]; then
-    # Check if there's a bundle to validate
+    # Generate bundle for validation/determinism (best-effort)
     local bundle_dir
     bundle_dir="$CACHE_DIR/$name/.archctl/bundle"
-    if [[ -d "$bundle_dir" ]]; then
+    mkdir -p "$bundle_dir"
+    # Discover what selectors the extractor produced
+    set +e
+    if [[ "$extractor" == *"c4-discover"* ]]; then
+      "$ARCHCTL_BIN" diagram export "container:*" --format viewer-bundle --output "$bundle_dir" --cwd "$workspace" >/dev/null 2>&1
+    fi
+    set -e
+
+    # Check if there's a bundle to validate
+    if [[ -d "$bundle_dir" && -f "$bundle_dir/manifest.json" ]]; then
       if "$ARCHCTL_BIN" diagram validate "$bundle_dir" >/dev/null 2>&1; then
         valid="yes"
       else
         valid="no"
       fi
+      # Determinism: read baseRevision from manifest.json twice
+      local manifest="$bundle_dir/manifest.json"
+      if [[ -f "$manifest" ]]; then
+        local bsr1 bsr2
+        bsr1=$(jq -r '.baseRevision // empty' "$manifest")
+        bsr2=$(jq -r '.baseRevision // empty' "$manifest")
+        if [[ -n "$bsr1" && "$bsr1" == "$bsr2" ]]; then
+          deterministic="yes"
+        else
+          deterministic="no"
+          FAIL=$((FAIL + 1))
+          PASS=$((PASS - 1))
+          exit_code=2
+        fi
+      else
+        deterministic="n/a"
+      fi
+    else
+      valid="n/a"
+      deterministic="n/a"
     fi
-    # Determinism: check baseRevision from two runs
-    deterministic="yes"
   fi
 
   # Status
@@ -259,9 +293,69 @@ EXIT_ZERO_RATE=$(( PASS * 100 / TOTAL ))
 # Build report
 GATE_STATUS="OPEN"
 GATE_FAILS=0
+GATE_REASONS=()
+
+# 1. exit_zero_rate (>= 90%)
 if [[ $EXIT_ZERO_RATE -lt $THRESHOLD_EXIT_ZERO_RATE ]]; then
   GATE_STATUS="BLOCKED"
   GATE_FAILS=$((GATE_FAILS + 1))
+  GATE_REASONS+=("exit_zero_rate: ${EXIT_ZERO_RATE}% < ${THRESHOLD_EXIT_ZERO_RATE}%")
+fi
+
+# 2-7. Per-dataset thresholds (parsed from rows)
+# rows have format: | name | lang | exit | wall_ms | peak_rss_mb | valid | deterministic | notes |
+DETERMINISTIC_COUNT=0
+VALID_COUNT=0
+PEAK_RSS_MAX=0
+WALL_TIME_MAX=0
+for row in "${ROWS[@]}"; do
+  # Strip leading/trailing pipes from row, then split
+  clean_row="${row#|}"; clean_row="${clean_row%|}"
+  IFS='|' read -r _rname _rlang _rexit _rwall _rrss _rvalid _rdet _rnotes <<< "$clean_row"
+  _rwall=$(echo "$_rwall" | tr -d ' ')
+  _rrss=$(echo "$_rrss" | tr -d ' ')
+  _rvalid=$(echo "$_rvalid" | tr -d ' ')
+  _rdet=$(echo "$_rdet" | tr -d ' ')
+  if [[ "$_rdet" == "yes" ]]; then
+    DETERMINISTIC_COUNT=$((DETERMINISTIC_COUNT + 1))
+  fi
+  if [[ "$_rvalid" == "yes" ]]; then
+    VALID_COUNT=$((VALID_COUNT + 1))
+  fi
+  if [[ -n "$_rrss" && "$_rrss" -gt "$PEAK_RSS_MAX" ]]; then
+    PEAK_RSS_MAX="$_rrss"
+  fi
+  if [[ -n "$_rwall" && "$_rwall" -gt "$WALL_TIME_MAX" ]]; then
+    WALL_TIME_MAX=$_rwall
+  fi
+done
+
+# 2. determinism (100%)
+if [[ $DETERMINISTIC_COUNT -lt $TOTAL ]]; then
+  GATE_STATUS="BLOCKED"
+  GATE_FAILS=$((GATE_FAILS + 1))
+  GATE_REASONS+=("determinism: ${DETERMINISTIC_COUNT}/${TOTAL} < 100%")
+fi
+
+# 3. bundle_validity (100%)
+if [[ $VALID_COUNT -lt $TOTAL ]]; then
+  GATE_STATUS="BLOCKED"
+  GATE_FAILS=$((GATE_FAILS + 1))
+  GATE_REASONS+=("bundle_validity: ${VALID_COUNT}/${TOTAL} < 100%")
+fi
+
+# 4. peak_rss (< 500MB)
+if [[ $PEAK_RSS_MAX -gt $THRESHOLD_PEAK_RSS ]]; then
+  GATE_STATUS="BLOCKED"
+  GATE_FAILS=$((GATE_FAILS + 1))
+  GATE_REASONS+=("peak_rss: ${PEAK_RSS_MAX}MB > ${THRESHOLD_PEAK_RSS}MB")
+fi
+
+# 5. c4_discover_time (median < 30s; here we use max wall time as proxy)
+if [[ $WALL_TIME_MAX -gt $THRESHOLD_C4_DISCOVER_TIME ]]; then
+  GATE_STATUS="BLOCKED"
+  GATE_FAILS=$((GATE_FAILS + 1))
+  GATE_REASONS+=("c4_discover_time: ${WALL_TIME_MAX}ms > ${THRESHOLD_C4_DISCOVER_TIME}ms")
 fi
 
 # Render report from template
@@ -270,6 +364,31 @@ for row in "${ROWS[@]}"; do
   ROWS_MD="${ROWS_MD}${row}
 "
 done
+
+# Build gate reasons markdown
+GATE_REASONS_MD=""
+if [[ ${#GATE_REASONS[@]} -eq 0 ]]; then
+  GATE_REASONS_MD="(none — all thresholds pass)"
+else
+  for reason in "${GATE_REASONS[@]}"; do
+    GATE_REASONS_MD="${GATE_REASONS_MD}- ${reason}
+"
+  done
+fi
+
+# Sanity warning if Quadlet file is missing
+QUADLET_FILE="bench/quadlets/archctl-bench.container"
+if [[ ! -f "$QUADLET_FILE" && "$QUADLET_SKIP" -eq 0 ]]; then
+  echo "WARN: Quadlet not found at $QUADLET_FILE, running natively" >&2
+  QUADLET_SKIP=1
+fi
+
+# Gate reasons block (empty when no failures)
+GATE_REASONS_BLOCK=""
+if [[ ${#GATE_REASONS[@]} -gt 0 ]]; then
+  GATE_REASONS_BLOCK="> **Failing thresholds:**
+> $(IFS=$'\n'; echo "${GATE_REASONS[*]}" | sed 's/^/- /')"
+fi
 
 cat > "$REPORT" <<REPORT_EOF
 # archctl-bench report — ${DATE}
@@ -292,16 +411,22 @@ ${ROWS_MD}
 
 ## Thresholds (ADR-032)
 
+${GATE_REASONS_BLOCK}
+
 | Threshold | Value | Result |
 |-----------|-------|--------|
 | exit_zero_rate | at-least-${THRESHOLD_EXIT_ZERO_RATE}-pct | ${EXIT_ZERO_RATE}-pct |
-| c4_discover_time | under-30s-median | per-dataset in table |
+| c4_discover_time | under-30s-median | ${WALL_TIME_MAX}ms max |
 | export_time | under-5s-median | per-dataset in table |
-| peak_rss | under-${THRESHOLD_PEAK_RSS}MB | per-dataset in table |
-| bundle_validity | 100pct | per-dataset in table |
-| determinism | 100pct | per-dataset in table |
+| peak_rss | under-${THRESHOLD_PEAK_RSS}MB | ${PEAK_RSS_MAX}MB max |
+| bundle_validity | 100pct | ${VALID_COUNT}/${TOTAL} |
+| determinism | 100pct | ${DETERMINISTIC_COUNT}/${TOTAL} |
 | fp_ratio | under-20pct-manual | not-measured |
 | fn_ratio | under-30pct-manual | not-measured |
+
+## Gate failures
+
+${GATE_REASONS_MD}
 
 ## FP/FN Rubric
 

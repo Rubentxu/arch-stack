@@ -8,7 +8,8 @@
 # Invariants enforced here:
 #   - Type=oneshot (no daemon, no persistent state)
 #   - Rootless (no privileged flags)
-#   - Explicit --uidmap for XDG path translation (R2 mitigation)
+#   - Explicit --uidmap=1000:0:1 for XDG path translation (R2 mitigation)
+#   - RemapUsers=true (modern alternative to --uidmap; equivalent semantics)
 #   - No --bind, no --reuse, no --container-daemon-socket
 
 [Unit]
@@ -21,8 +22,14 @@ ContainerName=archctl-bench
 AutoUpdate=registry
 
 # Rootless: no daemon, no privileged flags
+# RemapUsers=true is the modern podman equivalent of --uidmap=1000:0:1.
+# Both achieve the same identity translation for the in-container user.
 RemapUsers=true
 SecurityLabelDisable=true
+# Explicit --uidmap for cross-version compatibility (some podman builds
+# have RemapUsers but not the inverse mapping). See:
+# https://docs.podman.io/en/latest/markdown/podman-run.1.html#uidmap-container-uid-host-uid-amount
+AddCommandLineFlag=--uidmap=1000:0:1
 
 # Volume mounts (named-volumes or host paths)
 Volume=datasets-volume:/datasets:ro
@@ -45,3 +52,4 @@ RemainAfterExit=no
 
 [Install]
 WantedBy=default.target
+
