@@ -4,6 +4,17 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.14.9] — 2026-08-05
+
+### Fixed
+- **M26 C4 Contract Integrity (ADR-024)**: Fixed `Element.category` semantic
+  mismatch that broke the C4 discover→export→archview vertical.
+  `export.rs` was deriving `category` from `C4Kind.to_string()` (e.g.,
+  `container`), but `c4_discover` writes `category='c4'` (the canonical
+  diagram family). Now queries use `category='c4' AND kind_id CONTAINS '{kind}'`
+  which correctly matches the `mt.container` format. Unblocks M17 closing
+  → M16 closing → v1.0. No data migration required.
+
 ## [v0.14.8] — 2026-08-05
 
 ### Changed
