@@ -378,6 +378,11 @@ Incluye:
 | `m17-contract-alignment` | `feat/m17-contract-alignment` (merged to main via PR #17) | `d98e1de` (merge commit) | **Cerrado** ✅ · tag `v0.14.3` |
 | `m17-routing-fix` | `feat/m17-routing-fix` (merged to main via PR #19) | `2b08140` (merge commit) | **Cerrado** ✅ · tag `v0.14.4` |
 | `fix-m17-package-view-onselect` | `fix/m17-package-view-onselect` (merged to main via PR #21) | `cd661e6` (merge commit) | **Cerrado** ✅ · tag `v0.14.5` |
+| `diagram-authoring-toolchain` | `feat/diagram-authoring-toolchain` (merged to main via PR #23) | `e8c1146` (merge commit) | **Cerrado** ✅ · tag `v0.14.6` |
+| `m18-reactive-runtime` (PR1+PR2+PR3) | `feat/m18-reactive-runtime` (3 stacked PRs merged to main) | `b50dbfa` | **Cerrado** ✅ · tag `v0.14.0` |
+| `m21-cognitive-layer` | direct commits on `main` (no SDDK cycle — cognitive foundation) | `e0224b8` | **Cerrado** ✅ · tag `v0.15.0` |
+| `m22-agent-catalog` | `feat/m22-agent-catalog` (merged to main via PR #30) | `8b76ef5` | **Cerrado** ✅ · tag `v0.15.0` |
+| `m23-action-proposal-policy` | direct commits on `main` (M23 phases 1–6) | `ae83e61` | **Cerrado** ✅ · tag `v0.18.0` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
