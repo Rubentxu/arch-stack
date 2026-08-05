@@ -55,19 +55,36 @@ fn cell_as_f64(cell: &crate::row::Cell) -> Option<f64> {
 
 /// Query 1: elements filtered by category and scope.
 ///
-/// scope = Exact("orders"): adds `AND e.canonical_key STARTS WITH 'orders'`
-/// scope = All ("*"): no canonical_key filter
+/// `kind`: optional C4Kind string ("container", "component", etc.)
+///         When provided, adds `AND e.kind_id STARTS WITH '{kind}'`
+///         Per ADR-024: kind_id stores the projection-specific identifier
+///         (e.g., "mt.container"), not the bare C4Kind string.
 pub fn query_elements(
     store: &dyn GraphStore,
     category: &str,
     scope_ident: Option<&str>,
+    kind: Option<&str>,
 ) -> anyhow::Result<Vec<ElementRow>> {
     let safe_category = validate_identifier(category)?;
 
-    let cypher = match scope_ident {
-        Some(key) => {
+    let cypher = match (scope_ident, kind) {
+        (Some(key), Some(k)) => {
             let safe_key = validate_identifier(key)?;
+            let safe_kind = validate_identifier(k)?;
             // SCN-417: prefix matching — scope `src/auth` matches `src/auth/user.rs`
+            // ADR-024: kind_id CONTAINS handles both 'container' and 'mt.container' formats
+            format!(
+                "MATCH (e:Element) \
+                 WHERE e.category = '{safe_category}' \
+                   AND e.canonical_key STARTS WITH '{safe_key}' \
+                   AND e.kind_id CONTAINS '{safe_kind}' \
+                 RETURN e.id, e.kind_id, e.category, e.canonical_key, \
+                        e.current_name, e.current_status, e.current_confidence, \
+                        e.current_version_id;"
+            )
+        }
+        (Some(key), None) => {
+            let safe_key = validate_identifier(key)?;
             format!(
                 "MATCH (e:Element) \
                  WHERE e.category = '{safe_category}' \
@@ -77,7 +94,18 @@ pub fn query_elements(
                         e.current_version_id;"
             )
         }
-        None => format!(
+        (None, Some(k)) => {
+            let safe_kind = validate_identifier(k)?;
+            format!(
+                "MATCH (e:Element) \
+                 WHERE e.category = '{safe_category}' \
+                   AND e.kind_id CONTAINS '{safe_kind}' \
+                 RETURN e.id, e.kind_id, e.category, e.canonical_key, \
+                        e.current_name, e.current_status, e.current_confidence, \
+                        e.current_version_id;"
+            )
+        }
+        (None, None) => format!(
             "MATCH (e:Element) \
              WHERE e.category = '{safe_category}' \
              RETURN e.id, e.kind_id, e.category, e.canonical_key, \
