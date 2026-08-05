@@ -76,7 +76,7 @@
 
 ## M7 — `ast-grep-language` y Kotlin
 
-## M8 — `tree-sitter-graph` para extractores declarativos
+## M8 — `tree-sitter-graph` para extractores declarativos — **CLOSED (REMOVED)**
 
 ## M9 — Renderers como librerías (PlantUML, Mermaid, Structurizr propio)
 

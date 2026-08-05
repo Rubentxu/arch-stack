@@ -39,7 +39,6 @@ chrono = { version = "0.4", default-features = false, features = ["std", "serde"
 uuid = { version = "1", features = ["v4"] }
 ast-grep-core = { version = "0.45", features = ["tree-sitter"] }
 ast-grep-language = { version = "0.45.0", features = ["builtin-parser"] }
-basemind-tree-sitter-graph = "0.12"
 ignore = "0.4"
 fs2 = "0.4"
 lbug = "0.18.3"

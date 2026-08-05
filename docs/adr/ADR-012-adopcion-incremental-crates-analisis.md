@@ -51,7 +51,7 @@ Adoptamos **dos cosas** en este ADR:
 | `gix` | 0.86 | API Git in-process | `Command::new("git")` en `identity.rs` |
 | `cargo_metadata` | 0.23 | JSON estable de `cargo metadata` | Parseo manual de `Cargo.toml` |
 | `ast-grep-language` | 0.45 | Lenguajes pre-cableados (con `builtin-parser`) | Boilerplate `impl Language` por gramática |
-| `tree-sitter-graph` | 0.12 | DSL declarativo CST → grafo | Extracción ad-hoc en `evidence.rs` |
+| `tree-sitter-graph` | ~~0.12~~ | ~~DSL declarativo CST → grafo~~ | **REMOVED (2026-08-05):** `basemind-tree-sitter-graph 0.12` rechazaba query patterns necesarios para call-graph; extractores migrated a walks directos de tree-sitter (v0.8.1). Adaptador, rule packs, y dependencia eliminados en `chore/cleanup-m8-tsg-vestigial`. |
 
 ### Renderers adoptados en M9 (renderers como librerías, dentro de `archctl`)
 
@@ -122,8 +122,6 @@ en ADR-006, ahora deprecado pero preservado históricamente):
   JSON estable producido por el propio Cargo.
 - `ast-grep-language` añade **kotlin** sin coste adicional de
   integración (su `builtin-parser` ya lo trae).
-- `tree-sitter-graph` convierte las reglas de extracción en artefactos
-  versionados independientes del binario.
 - Política explícita "no CLIs" cierra la puerta a futuras
   justificaciones de fork+exec para análisis.
 - M9 cierra el último hueco de rendering en `archctl`:
@@ -137,8 +135,6 @@ en ADR-006, ahora deprecado pero preservado históricamente):
 
 - Mayor superficie de dependencias y de versiones a trackear.
 - `gix 0.86` introduce cambios de API no triviales.
-- `tree-sitter-graph` requiere escribir el DSL por framework; sin
-  rule packs mínimos por lenguaje no aporta valor.
 - `ast-grep-language` con `builtin-parser` arrastra ~25 gramáticas;
   tamaño del binario crece. Si molesta, desactivar `default-features`.
 - `merman 0.8` es alpha; `mermaid-render 0.10` es más estable pero
@@ -173,8 +169,7 @@ Cualquier crate de este subset puede eliminarse sin tocar los demás:
 - `cargo_metadata`: revertir a parseo manual de `Cargo.toml`.
 - `ast-grep-language`: revertir al `impl Language for Lang` por
   gramática que ya tenemos en `astgrep.rs`.
-- `tree-sitter-graph`: revertir a `evidence.rs` ad-hoc; el módulo se
-  puede aislar en su propio archivo para borrarlo limpiamente.
+- `tree-sitter-graph`: **ya removido** (2026-08-05). Si se revierte, el extractor de evidence debe re-importar `basemind-tree-sitter-graph 0.12` y repoblar `src/tsg.rs`. No recomendado — el walk directo de tree-sitter es más mantenible.
 - `plantuml-little`: revertir a `plantuml.jar` (reintroduce dependencia
   de JRE).
 - `merman`: revertir a `mmdc` (reintroduce dependencia de Node).
@@ -189,8 +184,6 @@ CLI sea claramente superior.
 
 ## Notas operativas
 
-- `tree-sitter-graph 0.12` requiere el binario de Python del paquete
-  `tree-sitter` para generar parsers; en runtime no es necesario.
 - `ast-grep-language 0.45` con `default-features` trae 25+ gramáticas.
   Si el bloat es inaceptable, custom-features: seleccionar
   explícitamente solo las nuestras.

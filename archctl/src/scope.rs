@@ -770,7 +770,7 @@ description = "for tests"
 id = "M3"
 version = "0.1.0"
 description = "evidence pipeline"
-editable = ["archctl/src/evidence.rs", "archctl/src/tsg.rs"]
+editable = ["archctl/src/evidence.rs"]
 public_symbols = ["Evidence", "GraphStore"]
 must_hold = ["does not call std::fs directly"]
 minimum_tests = 60
@@ -780,7 +780,7 @@ minimum_tests = 60
         eprintln!("DEBUG raw=\n{raw}");
         let m = ScopeManifest::load(tmp.path(), "M3", &fs).unwrap();
         eprintln!("DEBUG m={:#?}", m);
-        assert_eq!(m.editable_files.len(), 2);
+        assert_eq!(m.editable_files.len(), 1);
         assert_eq!(m.public_symbols, vec!["Evidence", "GraphStore"]);
         assert_eq!(m.must_hold.len(), 1);
         assert_eq!(m.minimum_tests, 60);
