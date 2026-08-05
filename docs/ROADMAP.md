@@ -264,7 +264,7 @@ diagram validate    → ✅ Bundle is valid
 
 **Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md), PR #46 (pendiente)
 
-## M27 — Sandbox + Benchmarks (pre-v1.0) — **EN CURSO** (PRs #47, #48, #49, #50 abiertos)
+## M27 — Sandbox + Benchmarks (pre-v1.0) — **CERRADO** (cycle cerrada con verdict PASS — PR #47, #48, #49, #50 listos para review/merge)
 
 **Estado:** Sin implementar. Bloquea v1.0.
 
