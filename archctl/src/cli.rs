@@ -1699,6 +1699,7 @@ fn diagram_project_cmd(
         &*store,
         selector.category(),
         selector.scope_ident(),
+        None, // ProjectSelector doesn't use C4 kind_id filtering
     )
     .context("query_elements failed")?;
 

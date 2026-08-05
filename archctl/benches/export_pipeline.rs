@@ -36,7 +36,8 @@ fn bench_query_elements_small(c: &mut Criterion) {
         b.iter_batched(
             seed_small,
             |(store, _tmp)| {
-                let elements = query_elements(&store, "container", None).expect("query_elements");
+                let elements =
+                    query_elements(&store, "container", None, None).expect("query_elements");
                 criterion::black_box(elements);
             },
             criterion::BatchSize::NumIterations(10),
