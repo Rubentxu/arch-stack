@@ -34,7 +34,6 @@ public_symbols = [
   "ExtractionResult",
   "extract",
   "extract_with_system_clock",
-  "from_tsg_node",
   "put",
   "put_with_clock",
   "put_with_source",

@@ -20,10 +20,6 @@ editable = [
   "archctl/src/code/strategies/dockerfile.rs",
   "archctl/src/code/strategies/helm.rs",
   "archctl/src/code/call_graph.rs",
-  "archctl/src/code/call_rules/mod.rs",
-  "archctl/src/code/call_rules/rust.tsg",
-  "archctl/src/code/call_rules/typescript.tsg",
-  "archctl/src/code/call_rules/python.tsg",
   "archctl/src/code/sequence.rs",
   "archctl/src/code/class_diagram.rs",
 ]
