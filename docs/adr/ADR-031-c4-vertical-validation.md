@@ -15,7 +15,7 @@ había ejecutado**. La suite existente usa `TempDir` + `MockGraphStore` donde
 ambos paths de DB coinciden y los errores de schema se silencian con `.ok()`.
 
 Al ejecutar la pipeline C4 completa contra `tokio-rs/axum` (workspace real con
-4 crates y ~677 archivos Rust), descubrimos **5 bugs reales** que rompían el
+4 crates y ~677 archivos Rust), descubrimos **6 bugs reales** que rompían el
 vertical end-to-end. Este ADR documenta cada uno, su causa raíz, y el fix.
 
 ## Bugs descubiertos
