@@ -602,12 +602,14 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 lang,
                 depth,
             } => {
+                let info = crate::project::resolve_project(&cwd.to_string_lossy());
                 let fs = filesystem::system_filesystem();
                 let report = crate::code::call_graph::extract(&cwd, &lang, depth, &*fs)
                     .map_err(|e| anyhow::anyhow!("extract failed: {e}"))?;
                 if apply {
-                    let apply_report = crate::code::call_graph::apply(&cwd, &report, &*fs)
-                        .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
+                    let apply_report =
+                        crate::code::call_graph::apply(&info.project_dir, &report, &*fs)
+                            .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&apply_report)?);
                     } else {
@@ -1782,9 +1784,12 @@ fn code_sequence_cmd(
     json: bool,
 ) -> Result<i32> {
     use crate::code::output::print_sequence_table;
-    use crate::code::sequence::project_sequence;
+    use crate::code::sequence::project_sequence_with_store;
+    use crate::store::open_and_init;
 
-    let report = project_sequence(cwd, from, depth, max_interactions)
+    let info = crate::project::resolve_project(&cwd.to_string_lossy());
+    let store = open_and_init(&info.project_dir)?;
+    let report = project_sequence_with_store(&*store, from, depth, max_interactions)
         .map_err(|e| anyhow::anyhow!("sequence projection failed: {e}"))?;
 
     if json {
@@ -1809,6 +1814,7 @@ fn code_c4_discover_cmd(
     use crate::code::strategies::register_strategies;
 
     let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = crate::project::resolve_project(&cwd.to_string_lossy());
 
     // Filter strategies if --strategy was given
     let all_strategies = register_strategies();
@@ -1834,7 +1840,7 @@ fn code_c4_discover_cmd(
 
     // Persist if --apply
     if apply {
-        let apply_report = apply_report(&cwd, &report, &*ctx.fs)
+        let apply_report = apply_report(&info.project_dir, &report, &*ctx.fs)
             .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
         if !json {
             println!(
@@ -1891,7 +1897,8 @@ fn code_class_diagram_cmd(
     };
 
     if apply {
-        let apply_report = class_diagram_apply(cwd, &report, &*fs)
+        let info = crate::project::resolve_project(&cwd.to_string_lossy());
+        let apply_report = class_diagram_apply(&info.project_dir, &report, &*fs)
             .map_err(|e| anyhow::anyhow!("class-diagram apply failed: {e}"))?;
         if json {
             println!("{}", serde_json::to_string_pretty(&apply_report)?);
@@ -1927,7 +1934,8 @@ fn code_state_machine_cmd(
         .map_err(|e| anyhow::anyhow!("state-machine extraction failed: {e}"))?;
 
     if apply {
-        let apply_report = crate::code::state_machine::apply(cwd, &report, &*fs)
+        let info = crate::project::resolve_project(&cwd.to_string_lossy());
+        let apply_report = crate::code::state_machine::apply(&info.project_dir, &report, &*fs)
             .map_err(|e| anyhow::anyhow!("state-machine apply failed: {e}"))?;
         if json {
             println!("{}", serde_json::to_string_pretty(&apply_report)?);

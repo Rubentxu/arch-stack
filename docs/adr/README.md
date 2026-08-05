@@ -31,8 +31,10 @@
 | [ADR-021](ADR-021-cognitive-layer.md) | Cognitive Layer (Agentic Intelligence) — 7-layer architecture, contract uniforme, escalation ladder, MCP boundary | Aceptado (nuevo 2026-07-31) |
 | [ADR-022](ADR-022-agent-catalog.md) | Agent catalog — 9 agentes especializados (Semantic Curator, Architecture, Projection, Investigation, Impact, Planning, Documentation, Presenter, Review/Critic) | Aceptado (nuevo 2026-07-31) |
 | [ADR-023](ADR-023-action-proposal-and-policy.md) | Action Proposal & Policy Engine — ActionProposal estructurado, Policy Engine TOML, MCP gateway, audit log inmutable | Aceptado (nuevo 2026-07-31) |
-| [ADR-024](ADR-024-workflowctl-local-multi-repo.md) | Ejecutor local manual de GitHub workflows (multi-repo) — `workflowctl` en topología local-first, runner remoto e híbrido quedan como mejoras futuras no implementadas | Aceptado (nuevo 2026-08-03) |
+| [ADR-024](ADR-024-element-category-semantics.md) | Element.category = diagram family (`c4`/`code`/`uml`); Element.kind_id = projection kind (`mt.container`, etc.) — fix export query pipeline (M26) | Aceptado (nuevo 2026-08-05) |
 | [ADR-025](ADR-025-ci-postmerge-toolchain-fijada.md) | CI post-merge + toolchain fijada + verificación local — disparador `push: [main]`, 1.97.1 pinned, MSRV 1.91, `bench-compare` contra `github.event.before`, pre-push local, protección de `main` con cero checks remotos | Aceptado (nuevo 2026-08-03) |
+| [ADR-030](ADR-030-workflowctl-local-multi-repo.md) | Ejecutor local manual de GitHub workflows (multi-repo) — `workflowctl` en topología local-first, runner remoto e híbrido quedan como mejoras futuras no implementadas | Aceptado (nuevo 2026-08-03) |
+| [ADR-031](ADR-031-c4-vertical-validation.md) | C4 vertical end-to-end validation: 6 bugs discovered por smoke testing con proyectos reales (axum) — apply path, Cypher quoting, write_evidence silent fail, version_id collision, status casing, bundle schema mismatch | Aceptado (nuevo 2026-08-05) |
 | [ADR-026](ADR-026-state-machine-metamodel.md) | State machine metamodelo + extracción AST-pura — metatypes (`uml.state_machine`, `uml.state`, `uml.transition`, `uml.guard`, `uml.event`), predicates (`behavior.source_state`, `behavior.target_state`, `behavior.has_transition`), patrón MERGE apply-time, confidence < 1.0 para heurística | Aceptado (propuesto 2026-08-04) |
 | [ADR-027](ADR-027-evidence-put.md) | Evidence put: identity scheme para hechos sin archivo + separation of concerns — `evidence_id = ev:sem:blake3(kind+claim+source_origin+props)`, `source_origin: UserInput`, `status: drafted`, solo Evidence+SourceArtifact (no Elements) | Aceptado (propuesto 2026-08-04) |
 | [ADR-028](ADR-028-diagram-project.md) | Diagram project: ProjectSelector vs C4Kind + multi-format DSL projection — `ViewKind` enum (C4+UML+behavior), emitters PlantUML/Mermaid/Structurizr, grammar `<kind>:<scope>`, fuente DSL editable, relación con export (viewer-bundle) y render (SVG) | Aceptado (propuesto 2026-08-04) |
@@ -59,7 +61,7 @@ ADR-005 (LadybugDB) ──► ADR-007 (proyecciones) ──► ADR-013 (bundle c
 ADR-011 (renderers locales) ──► ADR-013 (mismo principio en archview por construcción)
                               └─► ADR-019/020 (nota de performance para archview)
 
-ADR-010 (sin daemon) ──► ADR-024 (workflowctl: local-first, sin runner remoto en MVP)
+ADR-010 (sin daemon) ──► ADR-030 (workflowctl: local-first, sin runner remoto en MVP)
 ADR-011 (todo local) ┘
                     └──► ADR-025 (CI post-merge: detección remota + prevención local)
 ```

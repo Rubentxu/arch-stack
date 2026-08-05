@@ -129,7 +129,7 @@ pub fn project_sequence(
 }
 
 /// Internal: BFS projection with a provided store (for testability).
-fn project_sequence_with_store(
+pub fn project_sequence_with_store(
     store: &dyn GraphStore,
     from: FromSelector,
     depth_limit: u32,

@@ -263,9 +263,12 @@ fn write_element_version(
         "discovery_schema_version": "1.0",
     });
     let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+    // Include element_id so each container gets a distinct ElementVersion
+    // (was a bug: all containers hashed to the same blake3 because
+    // version_props was identical for every candidate).
     let version_id = format!(
         "blake3:{}",
-        blake3::hash(version_props_str.as_bytes()).to_hex()
+        blake3::hash(format!("{version_props_str}:{element_id}").as_bytes()).to_hex()
     );
     let version_props_escaped = escape_cypher_string(&version_props_str);
     let name_escaped = escape_cypher_string(&container.name);
@@ -345,7 +348,7 @@ fn write_evidence(
     let evidence_props = serde_json::json!({
         "file_refs": [format!("{}:{}", evidence.file, evidence.line)],
         "text": evidence.text,
-        "status": "Drafted",
+        "status": "drafted",
     });
     let ev_props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
     let ev_props_escaped = escape_cypher_string(&ev_props_json);
@@ -371,10 +374,7 @@ fn write_evidence(
          ev.tool_name = 'archctl', \
          ev.tool_version = '{0}', \
          ev.rule_id = 'c4-discover:{strategy_escaped}', \
-         ev.language = '', \
-         ev.observed_at = '', \
-         ev.props = '{ev_props_escaped}', \
-         ev.status = 'Drafted';",
+         ev.props = '{ev_props_escaped}';",
         env!("CARGO_PKG_VERSION"),
         evidence_id = evidence_id,
         kind = kind_str,
@@ -384,10 +384,12 @@ fn write_evidence(
         strategy_escaped = strategy_escaped,
         ev_props_escaped = ev_props_escaped,
     );
-    // Note: `ev.language` and `ev.status` are not valid lbug Evidence columns.
-    // They live in ev.props. The original code used .ok() here to swallow this
-    // silently; we preserve that behaviour for backwards compatibility.
-    store.query(&cypher).ok();
+    // `status` and `language` live in `ev.props` (per schema v1-initial),
+    // not as top-level Evidence columns. The legacy `.ok()` here silently
+    // swallowed schema errors and produced zero evidence rows — fixed.
+    store
+        .query(&cypher)
+        .context("write_evidence: MERGE Evidence")?;
 
     // SUPPORTED_BY: ElementVersion → Evidence
     let link_ev_cypher = format!(

@@ -1,4 +1,4 @@
-# ADR-024 — Ejecutor local manual de GitHub workflows (multi-repo)
+# ADR-030 — Ejecutor local manual de GitHub workflows (multi-repo)
 
 **Estado:** Aceptado (MVP local-first)
 **Fecha:** 3 de agosto de 2026
