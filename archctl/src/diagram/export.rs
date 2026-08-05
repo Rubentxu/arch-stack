@@ -35,6 +35,23 @@ pub struct ExportReport {
 /// `baseRevision` → writes 5 files (`manifest.json`, `projection.json`,
 /// `evidence.json`, `styles.json`, `assets/`) atomically.
 ///
+/// Map Element.kind_id (`"mt.container"`) → schema-valid node type (`"container"`).
+fn kind_id_to_type(kind_id: &str) -> String {
+    // Strip the `mt.` prefix and any namespace; keep the last segment.
+    kind_id.rsplit('.').next().unwrap_or(kind_id).to_string()
+}
+
+/// Map internal Element status → schema-valid bundle status.
+/// `active` → `drafted` (until evidence is explicitly accepted),
+/// `deprecated` → `superseded`, anything else passes through.
+fn schema_valid_status(current: &str) -> String {
+    match current {
+        "active" => "drafted".to_string(),
+        "deprecated" => "superseded".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Uses `Clock::now_rfc3339()` for `generatedAt` and writes each file
 /// atomically (write-then-rename) for idempotency.
 pub fn run_export(
@@ -98,11 +115,17 @@ pub fn run_export(
 
             ExportNode {
                 id: e.id.clone(),
-                element_type: e.category.clone(),
+                // ADR-024: kind_id holds the projection kind
+                // (`mt.container`, `mt.component`, etc.) — extract the
+                // suffix after the dot to get the schema-valid `type`.
+                element_type: kind_id_to_type(&e.kind_id),
                 name: e.current_name.clone(),
                 description,
                 canonical_key: Some(e.canonical_key.clone()).filter(|s| !s.is_empty()),
-                status: Some(e.current_status.clone()).filter(|s| !s.is_empty()),
+                // Bundle schema accepts only accepted/drafted/superseded.
+                // Internal Element.current_status is "active"/"deprecated";
+                // map to the schema-valid "drafted" until accepted.
+                status: Some(schema_valid_status(&e.current_status)).filter(|s| !s.is_empty()),
                 confidence: Some(e.current_confidence).filter(|&c| c > 0.0),
                 evidence_refs: Some(evidence_refs).filter(|v| !v.is_empty()),
             }

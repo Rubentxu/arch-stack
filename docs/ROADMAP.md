@@ -128,7 +128,7 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 
 **Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
 
-> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **`fix-m17-package-view-onselect` cerrado ✅ (v0.14.5)** — PackageView onSelect `pkg.name`→node agora povoa o sidebar via synthetic `GraphNode` (Option D, `buildPackageNode`). **`m26-c4-contract-integrity` cerrado ✅ (v0.14.8)** — fixture exporter-derived ARREGLADO: `export.rs` ahora usa `category='c4'` y `kind_id STARTS WITH` para matchear `c4_discover` que escribe `category='c4', kind_id='mt.container'`. ADR-024 formaliza la semántica. **Pendiente**: WebGPU/ADR-019 (0% implementado).
+> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **`fix-m17-package-view-onselect` cerrado ✅ (v0.14.5)** — PackageView onSelect `pkg.name`→node agora povoa o sidebar via synthetic `GraphNode` (Option D, `buildPackageNode`). **`m26-c4-contract-integrity` cerrado ✅ (v0.14.9)** — fixture exporter-derived ARREGLADO: `export.rs` ahora usa `category='c4'` y `kind_id CONTAINS` para matchear `c4_discover` que escribe `category='c4', kind_id='mt.container'`. ADR-024 formaliza la semántica. **`m26-c4-vertical-validation` cerrado ✅ (v0.14.10)** — 6 bugs adicionales descubiertos al ejecutar la pipeline contra `tokio-rs/axum` (workspace real): (B1) `apply()` usaba `cwd` directo en lugar de `info.project_dir`; (B2) Cypher inválido por IDs sin comillas en `IN [...]`; (B3) `write_evidence` silenciaba errores con `.ok()`; (B4) `version_id` colisionaba porque el hash no incluía el `element_id`; (B5) inconsistencia `"Drafted"` vs `"drafted"` rompía `evidence accept`; (B6) bundle schema mismatch (`type="c4"`, `status="active"`). ADR-031 documenta cada bug + fix. Vertical C4 ahora produce bundles válidos contra `tokio-rs/axum` (4 containers detectados, 4 evidences aceptadas, `diagram validate` OK). **Pendiente**: WebGPU/ADR-019 (0% implementado), benchmarks M27 sobre 10+ proyectos reales multi-lenguaje antes de v1.0.
 
 - **M17.0**: SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline. **Single PR → tag v0.14.0 en repo separado `archview`**. Scope MVP: bundle loader + pan/zoom + sidebar de evidencias. Mínimo para que los bundles de M11/M12 sean visualizables.
 - **M17.1**: Semantic zoom para C4 (Context → Container → Component → Code).
@@ -233,9 +233,128 @@ Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejempl
 
 **Referencias:** PR #25, commit 47ae361
 
+## M26.5 — C4 vertical end-to-end validation — **COMPLETO** ✅
+
+**Estado:** Implementado en v0.14.10. ADR-031 documenta los 6 bugs.
+
+**Objetivo:** Validar que el vertical C4 (`discover --apply → evidence accept → export → validate`) funciona con proyectos reales de GitHub, no solo con `TempDir` + `MockGraphStore`. El smoke test inicial contra `tokio-rs/axum` descubrió **6 bugs** que no se habían detectado en la suite existente.
+
+**Bugs encontrados (todos arreglados):**
+
+| # | Bug | Severidad | Fix |
+|---|-----|-----------|-----|
+| B1 | `apply()` usaba `cwd` directo, `graph_query` usaba `info.project_dir` (XDG) — DBs distintas | CRÍTICO | Pasar `info.project_dir` a todos los `apply()` |
+| B2 | `query_evidence_for_versions` y `query_version_props`: `IN [id1, id2]` sin comillas → Cypher inválido | CRÍTICO | Envolver IDs en comillas simples |
+| B3 | `write_evidence` silenciaba errores con `.ok()` → 0 evidences persistidas | CRÍTICO | Quitar columnas inválidas del SET, propagar errores |
+| B4 | `version_id = blake3(version_props)` colisionaba — todos los containers al mismo ElementVersion | ALTO | Incluir `element_id` en el hash |
+| B5 | `"status": "Drafted"` (mayúscula) vs `parse_label` solo acepta lowercase → `accept_evidence` no-op | ALTO | Cambiar a `"drafted"` (minúscula) |
+| B6 | Bundle schema mismatch: `type="c4"`, `status="active"` vs schema `enum:["context",…]`, `enum:["accepted",…]` | ALTO | Funciones `kind_id_to_type()` y `schema_valid_status()` |
+
+**Resultado:** Vertical C4 validado contra `tokio-rs/axum`:
+```
+discover --apply    → 4 elements + 4 evidences
+evidence accept     → 4 evidences aceptadas
+diagram export      → bundle con 4 elements + 4 evidence
+diagram validate    → ✅ Bundle is valid
+```
+
+402 tests siguen pasando (no se rompió nada).
+
+**Lecciones:** Los tests `TempDir` ocultan bugs de path. El patrón `.ok()` en queries Cypher primarias es peligroso. El casing de strings es un contrato frágil. **No se puede shippear v1.0 sin smoke tests con proyectos reales.**
+
+**Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md), PR #46 (pendiente)
+
+## M27 — Sandbox + Benchmarks (pre-v1.0) — **PLANIFICADO**
+
+**Estado:** Sin implementar. Bloquea v1.0.
+
+**Objetivo:** Demostrar empíricamente que `archctl` funciona en proyectos reales multi-lenguaje antes de declarar v1.0. Hoy, el vertical C4 está validado contra **un solo proyecto** (axum). Necesitamos datos sistemáticos.
+
+**Scope:**
+
+**Sandbox (Quadlet):**
+- Imagen base: `docker.io/catthehacker/ubuntu:rust-latest` (Rust 1.97.1, matches `rust-toolchain.toml`)
+- Quadlet `archctl-bench.container` con:
+  - `--uidmap` + `--rootless` (rootless sin daemon)
+  - Volúmenes: `/datasets` (proyectos GitHub), `/reports` (output), `~/.cargo` (cache deps)
+  - `Type=oneshot` (no persistente)
+  - Sin `--bind`, sin `--reuse`, `--container-daemon-socket -`
+- `bench/run-bench.sh` orquestador que:
+  1. Verifica prerequisites (podman, catthehacker/ubuntu tag)
+  2. Para cada candidato:
+     - `git clone --depth 1` en `~/.cache/archctl-smoke/`
+     - Ejecuta el vertical C4 completo con timeout
+     - Captura métricas (exit code, wall time, RSS, JSON validity)
+     - Compara con baseline (regression >10% bloquea)
+  3. Genera `bench/reports/<date>.md` con tabla resumen
+
+**Datasets candidatos (10+ multi-lenguaje):**
+
+| Lenguaje | Repo | Tamaño | Estrategia |
+|---|---|---|---|
+| Rust | `tokio-rs/axum` | 6MB | cargo workspace |
+| Rust | `BurntSushi/ripgrep` | 5.7MB | single crate |
+| Rust | `clap-rs/clap` | 21MB | cargo workspace |
+| TypeScript | `pmndrs/zustand` | 8MB | npm workspace |
+| TypeScript | `vueuse/vueuse` | 17MB | npm workspace |
+| JavaScript | `expressjs/express` | 10MB | npm workspace |
+| Go | `labstack/echo` | 7MB | call-graph + state-machine |
+| Python | `psf/requests` | 14MB | call-graph + class-diagram |
+| Java | `square/javapoet` | 2MB | call-graph + class-diagram |
+| Kotlin | `mockk/mockk` | 16MB | call-graph + state-machine |
+| **Dogfood** | `archctl` mismo | varies | TODAS las estrategias |
+
+**Métricas automáticas:**
+
+1. **Exit code** — 0 = OK, non-zero = error (con timeout 60s por extractor)
+2. **Wall time** — `time` en ms (3 corridas, mediana)
+3. **Peak RSS** — `/usr/bin/time -v` o `ps -o rss` durante el run
+4. **Output validity**:
+   - `manifest.json` con `schemaVersion: "1.0.0"` y `format: "viewer-bundle"`
+   - `projection.json` parseable, `nodes[]` no vacío si hay elements
+   - `evidence.json` parseable, `evidence[]` no vacío si hay evidences aceptadas
+   - `diagram validate <bundle>` exit 0
+5. **Determinism** — ejecutar 2 veces, comparar `baseRevision` (debe ser idéntico)
+6. **FP/FN ratio** (manual, no automático):
+   - Comparar `nodes[]` con la realidad del repo (leer README/structure)
+   - True positives = containers reales correctamente detectados
+   - False positives = phantom containers reportados
+   - False negatives = containers reales no detectados
+
+**Criterios de éxito para v1.0:**
+
+| Criterio | Threshold |
+|---|---|
+| Exit code 0 en todos los candidatos para al menos 1 extractor | ≥ 90% |
+| Wall time mediano `c4-discover --apply` | < 30s para proyectos < 30MB |
+| Wall time mediano `diagram export container:*` | < 5s para < 100 nodes |
+| Peak RSS | < 500MB |
+| Bundle validity (`diagram validate`) | 100% (prohibido que un bundle generado sea inválido) |
+| Determinism (baseRevision) | 100% |
+| FP ratio (containers) | < 20% |
+| FN ratio (containers) | < 30% |
+
+**Si algún threshold no se cumple:** NO se shippea v1.0. Se abre un M28 (hotfix específico) o se retrasa v1.0.
+
+**Out of scope:**
+- Benchmarks de stress (10k+ nodes) → M20 ya cubierto
+- Performance budget ADR-019 (TTFP <1s, 60 FPS) → M17 archview, separado
+- Tests de WebGPU/archview → M17 archview, separado
+- CI integration → cuadrar con `bench-compare.sh` existente
+
+**Entregables:**
+1. `bench/run-bench.sh` (~200 LOC bash)
+2. `bench/datasets.toml` (~20 líneas TOML)
+3. `bench/quadlets/archctl-bench.container` (~30 líneas)
+4. `bench/Containerfile` (FROM catthehacker/ubuntu:rust-latest + archctl install)
+5. `bench/reports/<date>.md` (output del run)
+6. `docs/adr/ADR-032-bench-methodology.md` (si surge un patrón nuevo)
+
+**Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md) (predecesor)
+
 ## Mejoras futuras — `workflowctl`
 
-> Documentadas en [ADR-024](adr/ADR-024-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-024; cualquier cambio de estado requiere abrir un nuevo ADR.
+> Documentadas en [ADR-030](adr/ADR-030-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-030; cualquier cambio de estado requiere abrir un nuevo ADR.
 
 - MVP local-first: `workflowctl` se ejecuta en el host del desarrollador con `gh act` + Podman rootless, encapsulado en `systemd-run --user`. Concurrencia 1 workflow / 2 jobs internos. Perfiles estándar (4 CPU / 8 GiB), pesado (8 / 16) y benchmark (12 / 16 exclusivo). Snapshot copiado, sin `--bind`, sin `--reuse`, `--container-daemon-socket -`, cache/artifacts solo en `127.0.0.1`.
 - Compatibilidad GitHub documentada por workflow y por job (`rust`, `web`, `bench-smoke`, `bench-compare`, `test-unit`, `test-e2e/ui/all`). Jobs con `nested-container` (Podman dentro del workflow) **no se ejecutan** en MVP.
@@ -383,7 +502,8 @@ Incluye:
 | `m21-cognitive-layer` | direct commits on `main` (no SDDK cycle — cognitive foundation) | `e0224b8` | **Cerrado** ✅ · tag `v0.15.0` |
 | `m22-agent-catalog` | `feat/m22-agent-catalog` (merged to main via PR #30) | `8b76ef5` | **Cerrado** ✅ · tag `v0.15.0` |
 | `m23-action-proposal-policy` | direct commits on `main` (M23 phases 1–6) | `ae83e61` | **Cerrado** ✅ · tag `v0.18.0` |
-| `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (local, pending push) | — | **Cerrado** ✅ · tag `v0.14.8` |
+| `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (merged to main via PR #44) | `18cf12b` | **Cerrado** ✅ · tag `v0.14.9` |
+| `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (pendiente) | — | **Cerrado** ✅ · tag `v0.14.10` (pendiente) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 

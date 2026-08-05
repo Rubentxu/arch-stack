@@ -32,6 +32,7 @@
 | `v0.13.0` | 2026-08-02 | M12 class-diagram extraction (tree-sitter CST walk) |
 | `v0.13.1` | 2026-08-02 | refactor/clippy-fmt-cleanup + composes edges (closes M12 W4) |
 | `v0.14.8` | 2026-08-05 | M26 C4 contract integrity (ADR-024: category semantics, fix export query pipeline) |
+| `v0.14.9` | 2026-08-05 | M26 C4 vertical validation (ADR-031: 6 bugs found by axum smoke test — apply path, Cypher quoting, silent .ok(), version_id collision, status casing, bundle schema) |
 
 ## Capacidades en backlog
 

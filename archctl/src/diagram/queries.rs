@@ -235,7 +235,11 @@ pub fn query_evidence_for_versions(
         .map(|id| validate_identifier(id).map(|s| s.to_string()))
         .collect();
     let safe_ids = safe_ids.context("version id validation failed")?;
-    let id_list = safe_ids.join(", ");
+    let id_list = safe_ids
+        .iter()
+        .map(|id| format!("'{}'", id))
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let cypher = format!(
         "MATCH (ev:ElementVersion)-[r:SUPPORTED_BY]->(e:Evidence) \
@@ -327,7 +331,11 @@ pub fn query_version_props(
         .map(|id| validate_identifier(id).map(|s| s.to_string()))
         .collect();
     let safe_ids = safe_ids.context("version id validation failed")?;
-    let id_list = safe_ids.join(", ");
+    let id_list = safe_ids
+        .iter()
+        .map(|id| format!("'{}'", id))
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let cypher = format!(
         "MATCH (v:ElementVersion) \

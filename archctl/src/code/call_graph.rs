@@ -1076,7 +1076,7 @@ fn write_call_edge(
     );
     let evidence_props = serde_json::json!({
         "file_refs": [format!("{}:{}", edge.file, edge.line)],
-        "status": "Drafted",
+        "status": "drafted",
         "classification": "derived",
     });
     let ev_props_str = serde_json::to_string(&evidence_props).unwrap_or_default();

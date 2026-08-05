@@ -3,7 +3,7 @@
 **Estado:** Aceptado
 **Fecha:** 3 de agosto de 2026
 **Aplica a:** `arch-stack` (CI de `main`), `archctl` (toolchain Rust), `archview` (gates web)
-**Complementa:** ADR-019 (presupuesto de performance), ADR-024 (ejecutor local-first de workflows)
+**Complementa:** ADR-019 (presupuesto de performance), ADR-030 (ejecutor local-first de workflows)
 **Sustituye en la práctica:** el disparador `pull_request` del CI de ADR-019 §1 y la política flotante de toolchain.
 
 > **Decisión clave:** el CI remoto pasa a **detección post-merge** (solo `push` a `main`).
@@ -143,7 +143,7 @@ Sin migraciones de datos. El presupuesto ADR-019 no cambia.
 ## Referencias
 
 - ADR-019 — presupuesto de performance (gates >10% y 2MB).
-- ADR-024 — workflowctl local-first; CI remoto como evidencia.
+- ADR-030 — workflowctl local-first; CI remoto como evidencia.
 - Proposal `sddk/ci-main-gates` (v2) y spec `sddk/ci-main-gates` (obs 5599/5600).
 - Scripts: `scripts/bench-compare.sh`, `scripts/verify-local.sh`, `scripts/test-ci-gates.sh`,
   `.githooks/pre-push`, `scripts/install-hooks.sh`.
