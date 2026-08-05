@@ -4,6 +4,36 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.14.10] — 2026-08-05
+
+### Fixed
+- **M26.5 C4 Vertical End-to-End Validation (ADR-031)**: 6 bugs discovered by
+  smoke-testing the C4 vertical against `tokio-rs/axum` (real Cargo workspace):
+  - **B1**: `apply()` wrote to `<cwd>/architecture.lbdb`, `graph_query`/`export`
+    read from `<XDG>/.../architecture.lbdb`. Two different DBs. Now `apply()`
+    receives `info.project_dir` consistently.
+  - **B2**: `query_evidence_for_versions` / `query_version_props` generated
+    invalid Cypher (`IN [id1, id2]` without quotes). Wrap IDs in single quotes.
+  - **B3**: `write_evidence` silently swallowed schema errors with `.ok()` —
+    0 evidences persisted. Remove invalid `status`/`language` columns, propagate
+    errors via `?`.
+  - **B4**: `version_id = blake3(version_props)` collided — all containers
+    shared the same ElementVersion. Include `element_id` in hash input.
+  - **B5**: `"status": "Drafted"` (capital) vs `parse_label` lowercase mismatch —
+    `evidence accept` was no-op. Change to `"drafted"`.
+  - **B6**: Bundle export emitted `type="c4"` and `status="active"`, but schema
+    requires `enum:["context",…]` and `enum:["accepted",…]`. Add
+    `kind_id_to_type()` and `schema_valid_status()` mappings.
+
+### Added
+- **`tests/smoke_real_projects.rs`** (#[ignore]): cached clones of mini-redis,
+  echo, express, requests. Run with `cargo test --test smoke_real_projects -- --ignored`.
+
+### Validation
+- 402 lib tests + integration tests passing
+- tokio-rs/axum: discover→apply→accept→export→validate produces a valid bundle
+  (4 containers + 4 evidences detected and accepted)
+
 ## [v0.14.9] — 2026-08-05
 
 ### Fixed
