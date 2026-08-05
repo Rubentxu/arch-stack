@@ -1,8 +1,8 @@
 //! ReactiveObserver trait — contract for all cognitive agents.
 //!
-//! v1.0: synchronous dispatch only. The async/event-driven seam is
-//! designed (trait shape) but backed by SyncDispatcher. When M18
-//! arrives, replace SyncDispatcher with an event bus — no contract churn.
+//! v1.0 (M18): synchronous dispatch via EventDispatcher. The subscription
+//! matcher filters agents first; then `matches()` is called on each candidate.
+//! `triggering_event` in `AgentContext` carries the dispatched event type.
 
 use super::context::AgentContext;
 use super::descriptor::AgentDescriptor;
@@ -28,7 +28,8 @@ pub trait ReactiveObserver: Send + Sync {
     fn descriptor(&self) -> AgentDescriptor;
 
     /// Whether this agent should run for the given context.
-    /// v1.0: always true for direct invoke. M18 will use event patterns.
+    /// Called by EventDispatcher after subscription matching confirms eligibility.
+    /// v1.0: always true for direct invoke.
     fn matches(&self, _context: &AgentContext) -> bool {
         true
     }
