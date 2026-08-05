@@ -27,6 +27,9 @@ target/
 # archctl Rust dev
 .archctl/
 
+# LadybugDB WAL checkpoint — runtime artifact, local to each clone
+**/*.lbdb.wal.checkpoint
+
 # gentle-ai skill registry — auto-generated local index
 .atl/
 
