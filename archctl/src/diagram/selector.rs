@@ -36,6 +36,14 @@ impl C4Kind {
             _ => None,
         }
     }
+
+    /// Category for graph queries: always "c4" for C4 diagrams.
+    ///
+    /// Per ADR-024: `Element.category` = diagram family (`c4`, `code`, `uml`),
+    /// never a C4 level. This distinguishes C4 from other diagram families.
+    pub fn category(&self) -> &'static str {
+        "c4"
+    }
 }
 
 impl fmt::Display for C4Kind {
@@ -190,5 +198,15 @@ mod tests {
         let a = ViewSelector::parse(input).unwrap();
         let b = ViewSelector::parse(input).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn c4_kind_category_returns_c4() {
+        // Per ADR-024: category is the diagram family, always "c4" for C4 variants.
+        assert_eq!(C4Kind::Context.category(), "c4");
+        assert_eq!(C4Kind::Container.category(), "c4");
+        assert_eq!(C4Kind::Component.category(), "c4");
+        assert_eq!(C4Kind::Dynamic.category(), "c4");
+        assert_eq!(C4Kind::Deployment.category(), "c4");
     }
 }

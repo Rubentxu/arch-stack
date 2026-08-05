@@ -2,7 +2,7 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-02, post-`v0.13.0`.
+> Última actualización: 2026-08-05, post-`v0.14.8` (M26).
 
 ## Estado del trunk
 
@@ -10,7 +10,7 @@
 |---|---|
 | Branch principal | `main` |
 | Tip | `65ac6a2` |
-| Versión | `v0.13.0` |
+| Versión | `v0.14.8` |
 | Tests | 254 pasan, 0 fallan, 5 ignorados |
 | Working tree | clean, en sync con `origin/main` |
 | MSRV | sin documentar explícitamente (código usa `?` en main, `let else`, `impl Trait`) |
@@ -31,6 +31,7 @@
 | `v0.12.1` | 2026-08-02 | refactor/bench-seed-decomposition (audit M5 follow-up) |
 | `v0.13.0` | 2026-08-02 | M12 class-diagram extraction (tree-sitter CST walk) |
 | `v0.13.1` | 2026-08-02 | refactor/clippy-fmt-cleanup + composes edges (closes M12 W4) |
+| `v0.14.8` | 2026-08-05 | M26 C4 contract integrity (ADR-024: category semantics, fix export query pipeline) |
 
 ## Capacidades en backlog
 

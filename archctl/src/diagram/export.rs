@@ -48,18 +48,19 @@ pub fn run_export(
     let view: ViewSelector =
         crate::diagram::selector::parse(selector).context("invalid view selector")?;
 
-    let category = view.kind.to_string();
+    // Per ADR-024: category = diagram family ("c4"), not the C4 kind string.
+    let category = view.kind.category();
+    let kind = view.kind.to_string();
     let scope_ident = match &view.scope {
         ScopeFilter::All => None,
         ScopeFilter::Exact(s) => Some(s.as_str()),
     };
 
     // 2. Run queries
-    let element_rows =
-        query_elements(store, &category, scope_ident).context("query_elements failed")?;
+    let element_rows = query_elements(store, category, scope_ident, Some(&kind))
+        .context("query_elements failed")?;
 
-    let edge_rows =
-        query_semantic_edges(store, &category).context("query_semantic_edges failed")?;
+    let edge_rows = query_semantic_edges(store, category).context("query_semantic_edges failed")?;
 
     // Collect version IDs for evidence + version props queries
     let version_ids: Vec<String> = element_rows
@@ -267,22 +268,131 @@ mod tests {
             unimplemented!()
         }
         fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
+            let upper = cypher.to_uppercase();
             // Route based on Cypher pattern
-            if cypher.contains("MATCH (e:Element)") && cypher.contains("e.category") {
-                // query_elements: MATCH (e:Element) ... WHERE e.category = ...
-                Ok(self.elements.clone())
-            } else if cypher.contains("SEMANTIC_EDGE") {
+            if upper.contains("MATCH (E:ELEMENT)") && upper.contains("E.CATEGORY") {
+                // query_elements: apply WHERE filtering
+                let (category, canonical_key, kind_id) = Self::extract_query_filters(&upper);
+                let filtered: Vec<Row> = self
+                    .elements
+                    .iter()
+                    .filter(|row| {
+                        let row_cat = row
+                            .get("e.category")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_uppercase())
+                            .unwrap_or_default();
+                        let row_key = row
+                            .get("e.canonical_key")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_uppercase())
+                            .unwrap_or_default();
+                        let row_kind = row
+                            .get("e.kind_id")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_uppercase())
+                            .unwrap_or_default();
+                        let cat_match = category
+                            .as_ref()
+                            .map(|c| row_cat == c.to_uppercase())
+                            .unwrap_or(true);
+                        let key_match = canonical_key
+                            .as_ref()
+                            .map(|k| row_key.starts_with(&k.to_uppercase()))
+                            .unwrap_or(true);
+                        let kind_match = kind_id
+                            .as_ref()
+                            .map(|k| row_kind.starts_with(&k.to_uppercase()))
+                            .unwrap_or(true);
+                        cat_match && key_match && kind_match
+                    })
+                    .cloned()
+                    .collect();
+                Ok(filtered)
+            } else if upper.contains("SEMANTIC_EDGE") {
                 // query_semantic_edges
                 Ok(self.edges.clone())
-            } else if cypher.contains("SUPPORTED_BY") {
-                // query_evidence_for_versions
-                Ok(self.evidence.clone())
-            } else if cypher.contains("MATCH (v:ElementVersion)") {
+            } else if upper.contains("SUPPORTED_BY") {
+                // query_evidence_for_versions — filter by version IDs
+                let ids = Self::extract_id_list(cypher, "EV.ID");
+                let filtered: Vec<Row> = self
+                    .evidence
+                    .iter()
+                    .filter(|row| {
+                        let vid = row
+                            .get("v.id")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_uppercase())
+                            .unwrap_or_default();
+                        ids.iter().any(|target| vid == target.to_uppercase())
+                    })
+                    .cloned()
+                    .collect();
+                Ok(filtered)
+            } else if upper.contains("MATCH (V:ELEMENTVERSION)") {
                 // query_version_props
                 Ok(self.version_props.clone())
             } else {
                 Ok(Vec::new())
             }
+        }
+    }
+
+    impl MockGraphStore {
+        /// Extract category, canonical_key prefix, and kind_id prefix from a query_elements cypher.
+        fn extract_query_filters(cypher: &str) -> (Option<String>, Option<String>, Option<String>) {
+            let category = Self::extract_quoted(cypher, "E.CATEGORY");
+            // SCN-417: support STARTS WITH prefix matching for canonical_key
+            let canonical_key = Self::extract_key_from_starts_with(cypher, "E.CANONICAL_KEY")
+                .or_else(|| Self::extract_quoted(cypher, "E.CANONICAL_KEY"));
+            // ADR-024: kind_id STARTS WITH filter
+            let kind_id = Self::extract_key_from_starts_with(cypher, "E.KIND_ID");
+            (category, canonical_key, kind_id)
+        }
+
+        fn extract_key_from_starts_with(s: &str, key: &str) -> Option<String> {
+            let upper = s.to_uppercase();
+            let pattern = format!("{} STARTS WITH '", key);
+            let start = upper.find(&pattern)?;
+            let value_start = start + pattern.len();
+            let value_end = s[value_start..].find('\'')?;
+            Some(s[value_start..value_start + value_end].to_string())
+        }
+
+        fn extract_quoted(s: &str, key: &str) -> Option<String> {
+            let upper = s.to_uppercase();
+            let pattern = format!("{} = '", key);
+            let start = upper.find(&pattern)?;
+            let value_start = start + pattern.len();
+            let value_end = s[value_start..].find('\'')?;
+            Some(s[value_start..value_start + value_end].to_string())
+        }
+
+        /// Extract a list of IDs from `KEY IN ['id1', 'id2', ...]`.
+        fn extract_id_list(s: &str, key: &str) -> Vec<String> {
+            let upper = s.to_uppercase();
+            let pattern = format!("{} IN [", key);
+            let start = match upper.find(&pattern) {
+                Some(s) => s,
+                None => return vec![],
+            };
+            let values_start = start + pattern.len();
+            let values_end = s[values_start..].find(']').map(|i| values_start + i);
+            let values_str = values_end
+                .map(|end| &s[values_start..end])
+                .unwrap_or_default();
+            values_str
+                .split(',')
+                .filter_map(|item| {
+                    let trimmed = item.trim().trim_start_matches('\'');
+                    let end = trimmed.find('\'').map(|i| &trimmed[..i]).unwrap_or(trimmed);
+                    if end.is_empty() {
+                        None
+                    } else {
+                        Some(end.to_string())
+                    }
+                })
+                .collect()
         }
     }
 
@@ -363,12 +473,19 @@ mod tests {
         }
     }
 
-    fn make_element_row(id: &str, category: &str, name: &str, version_id: &str) -> Row {
+    fn make_element_row(
+        id: &str,
+        category: &str,
+        name: &str,
+        version_id: &str,
+        kind_id: &str,
+        canonical_key: &str,
+    ) -> Row {
         let mut r = Row::new();
         r.push("e.id", Cell::String(id.to_string()));
-        r.push("e.kind_id", Cell::String("struct".to_string()));
+        r.push("e.kind_id", Cell::String(kind_id.to_string()));
         r.push("e.category", Cell::String(category.to_string()));
-        r.push("e.canonical_key", Cell::String("orders".to_string()));
+        r.push("e.canonical_key", Cell::String(canonical_key.to_string()));
         r.push("e.current_name", Cell::String(name.to_string()));
         r.push("e.current_status", Cell::String("accepted".to_string()));
         r.push("e.current_confidence", Cell::Float(0.9));
@@ -426,9 +543,29 @@ mod tests {
 
     #[test]
     fn export_produces_all_bundle_files() {
+        // Per ADR-024: category must be "c4" (diagram family), not "container" (C4 kind).
+        // The kind filter is passed via the kind parameter to query_elements.
+        // For "container:orders" selector, we need:
+        // - category = 'c4'
+        // - canonical_key STARTS WITH 'orders'
+        // - kind_id STARTS WITH 'container'
         let elements = vec![
-            make_element_row("el:1", "container", "OrderService", "v:1"),
-            make_element_row("el:2", "container", "PaymentService", "v:2"),
+            make_element_row(
+                "el:1",
+                "c4",
+                "OrderService",
+                "v:1",
+                "mt.container",
+                "orders",
+            ),
+            make_element_row(
+                "el:2",
+                "c4",
+                "PaymentService",
+                "v:2",
+                "mt.container",
+                "payments",
+            ),
         ];
         let edges = vec![make_edge_row("rel:1", "el:1", "el:2")];
         let evidence = vec![
@@ -447,10 +584,11 @@ mod tests {
 
         let report = run_export(&store, "container:orders", &out_dir, &clock, &fs).unwrap();
 
-        // Verify report
-        assert_eq!(report.element_count, 2);
+        // Verify report — container:orders matches only el:1 (canonical_key STARTS WITH 'orders')
+        // el:2 has canonical_key='payments' which doesn't match 'orders'
+        assert_eq!(report.element_count, 1);
         assert_eq!(report.edge_count, 1);
-        assert_eq!(report.evidence_count, 2);
+        assert_eq!(report.evidence_count, 1);
         assert_eq!(report.manifest.schema_version, "1.0.0");
         assert_eq!(report.manifest.format, "viewer-bundle");
         assert_eq!(report.manifest.view_selector, "container:orders");
@@ -460,19 +598,21 @@ mod tests {
         // Verify manifest.json
         let manifest_json = fs.read_to_string(&out_dir.join("manifest.json")).unwrap();
         let manifest: Manifest = serde_json::from_str(&manifest_json).unwrap();
-        assert_eq!(manifest.element_count, 2);
+        // container:orders matches only el:1 (canonical_key STARTS WITH 'orders')
+        assert_eq!(manifest.element_count, 1);
         assert_eq!(manifest.edge_count, 1);
 
         // Verify projection.json
         let projection_json = fs.read_to_string(&out_dir.join("projection.json")).unwrap();
         let projection: Projection = serde_json::from_str(&projection_json).unwrap();
-        assert_eq!(projection.nodes.len(), 2);
+        assert_eq!(projection.nodes.len(), 1);
         assert_eq!(projection.edges.len(), 1);
 
         // Verify evidence.json
         let evidence_json = fs.read_to_string(&out_dir.join("evidence.json")).unwrap();
         let bundle: EvidenceBundle = serde_json::from_str(&evidence_json).unwrap();
-        assert_eq!(bundle.evidence.len(), 2);
+        // Only evidence for v:1 (el:1's version)
+        assert_eq!(bundle.evidence.len(), 1);
 
         // Verify styles.json
         let styles_json = fs.read_to_string(&out_dir.join("styles.json")).unwrap();
@@ -492,11 +632,11 @@ mod tests {
 
     #[test]
     fn export_with_all_scope_returns_only_matching_category() {
-        // Only container elements - the mock doesn't filter, it returns all elements as-is.
-        // To test category filtering, we only put container elements here.
+        // Per ADR-024: category must be "c4" (diagram family).
+        // For "container:*", the query filters by category='c4' AND kind_id STARTS WITH 'container'
         let elements = vec![
-            make_element_row("el:1", "container", "ServiceA", "v:1"),
-            make_element_row("el:2", "container", "ServiceB", "v:2"),
+            make_element_row("el:1", "c4", "ServiceA", "v:1", "mt.container", "svc-a"),
+            make_element_row("el:2", "c4", "ServiceB", "v:2", "mt.container", "svc-b"),
         ];
         let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
@@ -517,7 +657,16 @@ mod tests {
 
     #[test]
     fn export_idempotent_on_same_input() {
-        let elements = vec![make_element_row("el:1", "container", "Svc", "v:1")];
+        // Per ADR-024: category must be "c4" (diagram family).
+        // kind_id must match the query filter (container:*)
+        let elements = vec![make_element_row(
+            "el:1",
+            "c4",
+            "Svc",
+            "v:1",
+            "mt.container",
+            "svc",
+        )];
         let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
