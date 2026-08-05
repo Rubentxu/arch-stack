@@ -327,14 +327,15 @@ fn query_elements_filtered_by_category() {
 
     // SCN-050: query with container + orders scope
     // The actual query_function filters by category and scope in cypher
-    let result = query_elements(&store, "container", Some("orders")).unwrap();
+    // kind=None since these tests don't exercise C4 kind_id filtering
+    let result = query_elements(&store, "container", Some("orders"), None).unwrap();
     // Result includes only el:1 (container + orders namespace)
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].id, "el:1");
     assert_eq!(result[0].current_name, "OrderService");
 
     // Query with component + orders scope
-    let result2 = query_elements(&store, "component", Some("orders")).unwrap();
+    let result2 = query_elements(&store, "component", Some("orders"), None).unwrap();
     assert_eq!(result2.len(), 1);
     assert_eq!(result2[0].id, "el:3");
 }
@@ -356,7 +357,7 @@ fn query_elements_returns_empty_when_no_match() {
     let store = TinyGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
 
     // No container elements in "payments" namespace → empty
-    let result = query_elements(&store, "container", Some("payments")).unwrap();
+    let result = query_elements(&store, "container", Some("payments"), None).unwrap();
     assert!(result.is_empty());
 }
 
