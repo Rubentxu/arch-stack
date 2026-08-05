@@ -116,9 +116,8 @@ impl TinyGraphStore {
                 break;
             }
             // Extract ID — strip surrounding single quotes if present.
-            let (id_start, id_end) = if current.starts_with('\'') {
-                // Quoted: skip opening quote, find closing quote
-                let rest = &current[1..];
+            let (id_start, id_end) = if let Some(rest) = current.strip_prefix('\'') {
+                // Quoted: find closing quote in `rest`
                 let end = rest.find('\'').unwrap_or(rest.len());
                 (1, 1 + end)
             } else {
