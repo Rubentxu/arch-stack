@@ -4,6 +4,15 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.14.8] — 2026-08-05
+
+### Changed
+- **M8 TSG Vestigial Cleanup**: removed dead `tsg.rs` adapter (229 LOC),
+  `call_rules/` module + 3 `.tsg` files (~378 LOC), and `from_tsg_node`
+  from evidence pipeline. The `basemind-tree-sitter-graph` crate dependency
+  was removed. ADR-012 amended to mark TSG as REMOVED. All extractors use
+  direct tree-sitter walks since v0.8.1 — no functional change.
+
 ## [v0.14.0] — 2026-08-05
 
 ### Added
