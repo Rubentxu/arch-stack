@@ -1,0 +1,113 @@
+# archctl-bench datasets
+#
+# Each entry declares a pinned git SHA, language, extractor, and timeout.
+# Used by bench/datasets.sh to clone and by bench/run-bench.sh to drive
+# each extractor run.
+#
+# Referenced from: docs/specs/bench-harness.md (Requirement: Datasets)
+# Methodology:      docs/adr/ADR-032-bench-methodology.md
+
+# Default timeout (seconds) when a dataset does not override.
+default_timeout = 60
+
+# Default cache directory for cloned repos.
+cache_dir = "~/.cache/archctl-smoke"
+
+# Dataset declaration: [[datasets]] entry.
+# Fields:
+#   name       — "<owner>/<repo>" (used as clone path)
+#   sha        — pinned full commit SHA (do NOT use branch names; SHA pins
+#                the dataset to a reproducible version)
+#   language   — "rust" | "typescript" | "javascript" | "go" | "python" |
+#                "java" | "kotlin"
+#   extractor  — archctl command to run (e.g. "code c4-discover --apply")
+#   timeout    — seconds (overrides default_timeout)
+#   notes      — rationale, expectations (free text)
+
+[[datasets]]
+name = "tokio-rs/axum"
+sha = "c9a911b7999de50e9e5023942ca072e9725ae943"
+language = "rust"
+extractor = "code c4-discover --apply"
+timeout = 60
+notes = "6MB cargo workspace. Predecessor: ADR-031 found 6 bugs here (fixed in v0.14.10)."
+
+[[datasets]]
+name = "BurntSushi/ripgrep"
+sha = "3fce3b5bb0236da2df6d99672afb8a719642eca7"
+language = "rust"
+extractor = "code c4-discover --apply"
+timeout = 60
+notes = "5.7MB single crate. Strategy: cargo metadata + AST walk."
+
+[[datasets]]
+name = "clap-rs/clap"
+sha = "4684d7abc545cef1d78708864cfe8c7668ed49c1"
+language = "rust"
+extractor = "code c4-discover --apply"
+timeout = 90
+notes = "21MB cargo workspace. Largest Rust candidate. R5 mitigation: 90s timeout."
+
+[[datasets]]
+name = "pmndrs/zustand"
+sha = "beca84e600e4e250f6b244d22878e72948f331c7"
+language = "typescript"
+extractor = "code c4-discover --apply"
+timeout = 60
+notes = "8MB npm workspace. Strategy: npm workspaces + AST walk."
+
+[[datasets]]
+name = "vueuse/vueuse"
+sha = "c5a0850254d04cfc13697541d3222cfdafc2c512"
+language = "typescript"
+extractor = "code c4-discover --apply"
+timeout = 90
+notes = "17MB monorepo. R5 mitigation: 90s timeout."
+
+[[datasets]]
+name = "expressjs/express"
+sha = "a3714473feb3d2908add734d340e7755fd85e0a3"
+language = "javascript"
+extractor = "code c4-discover --apply"
+timeout = 60
+notes = "10MB npm workspace. Predecessor: already in tests/smoke_real_projects.rs."
+
+[[datasets]]
+name = "labstack/echo"
+sha = "05489dc1730161df26b72d1ae2a3ba6fb8178fc7"
+language = "go"
+extractor = "code call-graph"
+timeout = 60
+notes = "7MB Go repo. Go has no c4-discover strategy; use call-graph instead."
+
+[[datasets]]
+name = "psf/requests"
+sha = "1f6589ec3a1ee910f9a65cc3ceac60b26677bc0e"
+language = "python"
+extractor = "code class-diagram"
+timeout = 60
+notes = "14MB Python repo. Test class-diagram MST walk."
+
+[[datasets]]
+name = "square/javapoet"
+sha = "b9017a9503b76e11b4ad4c1a9f050e2d29112cb0"
+language = "java"
+extractor = "code class-diagram"
+timeout = 60
+notes = "2MB Java repo. Smallest dataset; tests Java class extraction."
+
+[[datasets]]
+name = "mockk/mockk"
+sha = "8a078fde31ef7dc43a7861afaf00fc195e9bd2ac"
+language = "kotlin"
+extractor = "code call-graph"
+timeout = 90
+notes = "16MB Kotlin repo. R5 mitigation: 90s timeout. R7: state-machine also available."
+
+[[datasets]]
+name = "archctl"
+sha = "HEAD"
+language = "rust"
+extractor = "code c4-discover --apply"
+timeout = 90
+notes = "Self-dogfood: the archctl repo itself. SHA = HEAD of the local checkout, not pinned."
