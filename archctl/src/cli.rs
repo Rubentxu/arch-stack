@@ -1784,9 +1784,12 @@ fn code_sequence_cmd(
     json: bool,
 ) -> Result<i32> {
     use crate::code::output::print_sequence_table;
-    use crate::code::sequence::project_sequence;
+    use crate::code::sequence::project_sequence_with_store;
+    use crate::store::open_and_init;
 
-    let report = project_sequence(cwd, from, depth, max_interactions)
+    let info = crate::project::resolve_project(&cwd.to_string_lossy());
+    let store = open_and_init(&info.project_dir)?;
+    let report = project_sequence_with_store(&*store, from, depth, max_interactions)
         .map_err(|e| anyhow::anyhow!("sequence projection failed: {e}"))?;
 
     if json {

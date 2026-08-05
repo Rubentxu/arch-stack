@@ -93,16 +93,17 @@ impl TinyGraphStore {
     }
 
     /// Extract version IDs from a query_evidence_for_versions cypher WHERE clause.
-    /// e.g., "WHERE ev.id IN [v:1, v:2]" -> ["v:1", "v:2"]
+    /// e.g., "WHERE ev.id IN ['v:1', 'v:2']" -> ["v:1", "v:2"]
+    /// Strips surrounding single quotes added by the query builder.
     fn extract_version_ids_from_cypher(cypher: &str) -> Vec<String> {
-        let upper = cypher.to_uppercase();
-        // Find "EV.ID IN [" pattern
-        let pattern = "EV.ID IN [";
-        let start = match upper.find(pattern) {
+        let lower = cypher.to_lowercase();
+        // Find "ev.id in [" pattern
+        let pattern = "ev.id in [";
+        let start = match lower.find(pattern) {
             Some(pos) => pos + pattern.len(),
             None => return Vec::new(),
         };
-        let rest = &upper[start..];
+        let rest = &lower[start..];
         // Extract IDs inside brackets
         let mut ids = Vec::new();
         let mut current = rest;
@@ -114,15 +115,24 @@ impl TinyGraphStore {
             if current.is_empty() || current.starts_with(']') {
                 break;
             }
-            // Extract ID (alphanumeric with colon and dash)
-            let end = current
-                .find(|c: char| [']', ',', ' '].contains(&c))
-                .unwrap_or(current.len());
-            let id = &current[..end];
+            // Extract ID — strip surrounding single quotes if present.
+            let (id_start, id_end) = if current.starts_with('\'') {
+                // Quoted: skip opening quote, find closing quote
+                let rest = &current[1..];
+                let end = rest.find('\'').unwrap_or(rest.len());
+                (1, 1 + end)
+            } else {
+                // Unquoted: find next terminator
+                let end = current
+                    .find(|c: char| [']', ',', ' '].contains(&c))
+                    .unwrap_or(current.len());
+                (0, end)
+            };
+            let id = &current[id_start..id_end];
             if !id.is_empty() {
                 ids.push(id.to_string());
             }
-            current = &current[end..];
+            current = &current[id_end..];
         }
         ids
     }
