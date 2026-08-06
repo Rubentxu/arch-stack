@@ -547,6 +547,35 @@ repos medianos.
 `archctl/src/store.rs` (L384-391 `query`), lbug 0.18.3 docs,
 M30 amendment (este documento)
 
+## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — detectado durante M30 (primer push tras el repair).
+
+**Objetivo:** el pre-push hook (ADR-025, `.githooks/pre-push`) pueda pasar
+en worktrees frescos sin intervención manual.
+
+**Problema detectado (evidencia):**
+- `archctl/assets-stack/` es generado por `scripts/embed-stack.sh` desde
+  `profile/` (ADR-033, rust-embed) y está gitignored.
+- `verify-local.sh` (cheap tier) NO bootstrapa assets-stack; el hook hace
+  checkout de cada commit en worktree temporal y corre `cargo test` →
+  `#[derive(RustEmbed)] folder '<wt>/archctl/assets-stack/' does not exist`
+  → 8+ errores E0599 → el push se bloquea para CUALQUIER commit.
+- Workaround actual: `git push --no-verify` tras verificación manual local
+  (documentado en el hook, pero frágil).
+
+**Alcance:**
+1. `scripts/verify-local.sh` (cheap): si `archctl/assets-stack/` no existe,
+   ejecutar `scripts/embed-stack.sh` antes de las gates (idempotente).
+2. Verificar que pre-push pasa en un clone fresco sin `--no-verify`.
+
+**Criterios de éxito:**
+- `git push` de una branch con gates verdes pasa el pre-push sin bypass.
+- Sin cambio de comportamiento cuando assets-stack ya existe.
+
+**Referencias:** `.githooks/pre-push`, `scripts/verify-local.sh`,
+`scripts/embed-stack.sh`, ADR-025, ADR-033
+
 ## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **NUEVO (2026-08-06)**
 
 **Estado:** NUEVO — detectado durante el human-loop sandbox (M29.4).
