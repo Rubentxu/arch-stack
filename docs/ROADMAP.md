@@ -467,9 +467,9 @@ Spec: [`docs/specs/e2e-sandbox.md`](specs/e2e-sandbox.md)
 **Referencias:** [ADR-034](adr/ADR-034-e2e-coverage-expansion.md), specs
 `e2e-installation.md`, `e2e-render.md`, `e2e-sandbox.md`
 
-## M30 — Call-graph: visibilidad de lenguajes no soportados — **EN CURSO (2026-08-06)**
+## M30 — Call-graph: visibilidad de lenguajes no soportados — **COMPLETO ✅ (2026-08-06, release v1.1.0)**
 
-**Estado:** EN CURSO — decisión: soporte Go real (tree-sitter-go) vía ast-grep-language builtin-parser.
+**Estado:** COMPLETO ✅ — soporte Go real (tree-sitter-go) vía ast-grep-language builtin-parser; released as v1.1.0 (PR #72, commit f3a00a7).
 
 **Objetivo:** `archctl code call-graph` (y por consistencia `class-diagram` /
 `state-machine`) comunican claramente cuándo no escanean archivos por el
