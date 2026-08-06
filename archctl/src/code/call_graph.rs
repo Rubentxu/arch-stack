@@ -84,6 +84,7 @@ pub enum Language {
     Rust,
     TypeScript,
     Python,
+    Go,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -149,7 +150,7 @@ pub struct ApplyReport {
 /// Errors during extraction or graph write.
 #[derive(Debug, thiserror::Error)]
 pub enum CallGraphError {
-    #[error("invalid --lang: {0} (MVP: rust, typescript, python)")]
+    #[error("invalid --lang: {0} (MVP: rust, typescript, python, go)")]
     InvalidLanguage(String),
     #[error("TSG execution failed for {path}: {message}")]
     TsgExecution { path: String, message: String },
@@ -160,7 +161,7 @@ pub enum CallGraphError {
 // ─── Extract ─────────────────────────────────────────────────────────────────
 
 /// Extract function nodes + call edges from `cwd`, filtered to `languages`
-/// (empty = all MVP languages). Pure: no graph writes. Deterministic.
+/// (empty = all MVP languages: rust, typescript, python, go). Pure: no graph writes. Deterministic.
 pub fn extract(
     cwd: &Path,
     languages: &[Language],
@@ -193,6 +194,7 @@ pub fn extract(
             "ts" | "tsx" => (Some(Language::TypeScript), "typescript"),
             "js" | "jsx" | "mjs" | "cjs" => (Some(Language::TypeScript), "typescript"),
             "py" => (Some(Language::Python), "python"),
+            "go" => (Some(Language::Go), "go"),
             _ => (None, ""),
         };
         let Some(lang) = lang else { continue };
@@ -227,6 +229,7 @@ pub fn extract(
             Language::Rust => SupportLang::Rust,
             Language::TypeScript => SupportLang::TypeScript,
             Language::Python => SupportLang::Python,
+            Language::Go => SupportLang::Go,
         };
 
         // Parse with tree-sitter
@@ -395,6 +398,25 @@ fn find_function_definitions<'tree>(
                         }
                     }
                 }
+                return;
+            }
+        }
+        Language::Go => {
+            // function_declaration: regular functions (including main, init)
+            if kind == "function_declaration" {
+                if let Some(fn_node) = extract_go_function(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "method_declaration" {
+                // Methods (receiver functions)
+                if let Some(fn_node) = extract_go_method(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "func_literal" {
+                // func_literal is NOT a FunctionNode — anonymous, calls attributed to enclosing named function
+                // Do NOT recurse into func_literal body (same guard as Rust closure_expression)
                 return;
             }
         }
@@ -633,6 +655,122 @@ fn extract_python_function(
     })
 }
 
+fn extract_go_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    _parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    // Go function name is in identifier child
+    let mut name = String::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "identifier"
+        {
+            name = source
+                .get(child.start_byte()..child.end_byte())?
+                .to_string();
+            break;
+        }
+    }
+    if name.is_empty() {
+        return None;
+    }
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.85;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Function,
+        language: lang,
+        file: file.to_string(),
+        content_hash: String::new(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: None,
+    })
+}
+
+fn extract_go_method(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    _parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    // Go method name is in field_identifier child
+    let mut name = String::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32)
+            && child.kind() == "field_identifier"
+        {
+            name = source
+                .get(child.start_byte()..child.end_byte())?
+                .to_string();
+            break;
+        }
+    }
+    if name.is_empty() {
+        return None;
+    }
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
+    let confidence = 0.85;
+
+    Some(FunctionNode {
+        canonical_key,
+        kind: FunctionKind::Method,
+        language: lang,
+        file: file.to_string(),
+        content_hash: String::new(),
+        line,
+        name,
+        fq_name,
+        confidence,
+        parent: None,
+    })
+}
+
+fn extract_go_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
+    // Go call_expression can be:
+    // - identifier: helper() -> extract identifier
+    // - selector_expression: pkg.Func() or s.Save() -> extract field_identifier
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32) {
+            let child_kind = child.kind();
+            if child_kind == "identifier" {
+                return Some(
+                    source
+                        .get(child.start_byte()..child.end_byte())?
+                        .to_string(),
+                );
+            } else if child_kind == "selector_expression" {
+                // For s.Save() or fmt.Println(), extract the field_identifier
+                for j in 0..child.child_count() {
+                    if let Some(field_child) = child.child(j as u32)
+                        && field_child.kind() == "field_identifier"
+                    {
+                        return Some(
+                            source
+                                .get(field_child.start_byte()..field_child.end_byte())?
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Walk tree-sitter tree to find call expressions and resolve enclosing function.
 fn extract_call_edges(
     tree: &Tree,
@@ -730,6 +868,33 @@ fn find_call_expressions<'tree>(
                 if !callee.is_empty() {
                     let line = (node.start_position().row + 1) as u32;
                     let call_kind = if is_method {
+                        CallKind::MethodCall
+                    } else {
+                        CallKind::DirectCall
+                    };
+                    edges.push(make_call_edge(
+                        nodes,
+                        lang,
+                        file,
+                        &callee,
+                        line,
+                        call_kind,
+                        MessageKind::SyncCall,
+                    ));
+                }
+            }
+        }
+        Language::Go => {
+            if kind == "call_expression" {
+                // Go call_expression: identifier calls like helper() or pkg.Func()
+                // For method calls (s.Save()) and package-qualified (fmt.Println):
+                // selector_expression -> field_identifier child
+                if let Some(callee) = extract_go_callee(node, source) {
+                    let line = (node.start_position().row + 1) as u32;
+                    let call_kind = if node
+                        .children(&mut node.walk())
+                        .any(|c| c.kind() == "selector_expression")
+                    {
                         CallKind::MethodCall
                     } else {
                         CallKind::DirectCall
@@ -848,6 +1013,7 @@ fn make_call_edge(
         Language::Rust => 0.90,
         Language::TypeScript => 0.85,
         Language::Python => 0.80,
+        Language::Go => 0.85,
     };
 
     let canonical_key = format!(
@@ -877,6 +1043,7 @@ fn lang_label(lang: &Language) -> &'static str {
         Language::Rust => "rust",
         Language::TypeScript => "typescript",
         Language::Python => "python",
+        Language::Go => "go",
     }
 }
 
@@ -1260,6 +1427,7 @@ mod tests {
         assert_eq!(lang_label(&Language::Rust), "rust");
         assert_eq!(lang_label(&Language::TypeScript), "typescript");
         assert_eq!(lang_label(&Language::Python), "python");
+        assert_eq!(lang_label(&Language::Go), "go");
     }
 
     #[test]
@@ -1288,9 +1456,11 @@ mod tests {
         let rust_conf = 0.90;
         let ts_conf = 0.85;
         let py_conf = 0.80;
+        let go_conf = 0.85;
         assert_eq!(rust_conf, 0.90);
         assert_eq!(ts_conf, 0.85);
         assert_eq!(py_conf, 0.80);
+        assert_eq!(go_conf, 0.85);
     }
 
     #[test]
