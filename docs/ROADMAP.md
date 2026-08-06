@@ -390,9 +390,27 @@ datasets pasan** (FP <20%, FN <30%). v1.0 desbloqueado.
 **Referencias:** `bench/reports/fpfn-rubric-2026-08-06.md` (v2),
 ADR-032 §Counting scope
 
-## M29 — E2E coverage expansion: install, deploy, render, multi-language — **EN PLANIFICACIÓN**
+## M29 — E2E coverage expansion: install, deploy, render, multi-language — **COMPLETO** ✅ (2026-08-06)
 
-**Estado:** Planificado (ADR-034, specs listas). Pendiente de implementación.
+**Estado:** Implementado (PR #68). ADR-034 aceptado. Las 4 suites corren y pasan.
+
+**Resultados verificados:**
+
+| Suite | Checks | Resultado |
+|---|---|---|
+| M29.1 `e2e/install_e2e.sh` | 29 | ✅ PASS (HOME aislado, drift, idempotencia, doctor, view) |
+| M29.2 `e2e/render_e2e.py` | 20 | ✅ PASS (5 samples + 4 bundles reales multi-lenguaje + 0 JS errors) |
+| M29.3 `smoke_real_projects` v2 | 6/6 | ✅ PASS (rust/go/js/python/typescript, vertical completo) |
+| M29.4 `bench/sandbox-e2e.sh` | 6 | ✅ PASS (in-container vertical + JSON verdict) |
+| M29.5 integración | — | ✅ verify-local --full + post-release check |
+
+**Bugs descubiertos por las suites (corregidos en el mismo ciclo):**
+- CORS entre origins localhost en el diseño del render E2E (resuelto navegando al origin del server por-repo)
+- Smoke no determinista: XDG compartida hacía `--apply` reportar "Applied: 0" por grafos previos (aislado por repo)
+- `bash -c` con argumento posicional: el dataset se convertía en `$0` (sandbox)
+
+**Referencias:** [ADR-034](adr/ADR-034-e2e-coverage-expansion.md), specs
+`e2e-installation.md`, `e2e-render.md`, `e2e-sandbox.md`
 
 **Objetivo:** Cerrar los 4 gaps E2E verificados en la revisión de 2026-08-06:
 instalación, despliegue, render y multi-lenguaje no están cubiertos por

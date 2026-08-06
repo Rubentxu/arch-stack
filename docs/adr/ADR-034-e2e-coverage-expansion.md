@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-08-06
+Accepted — 2026-08-06 (M29 implemented)
 
 ## Context
 
