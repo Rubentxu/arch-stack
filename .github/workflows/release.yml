@@ -44,6 +44,20 @@ jobs:
           toolchain: "${{ steps.toolchain.outputs.channel }}"
           targets: x86_64-unknown-linux-musl
 
+      # Static musl build with zig as linker. lbug/zstd-sys need a C
+      # toolchain for musl; zig provides it without system musl-tools
+      # (and works identically on ubuntu runners). Local builds use the
+      # same path (cargo-zigbuild), keeping CI == local.
+      - name: Install cargo-zigbuild + zig
+        run: |
+          curl -sSfL -o /tmp/czb.tar.xz "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.23.0/cargo-zigbuild-x86_64-unknown-linux-gnu.tar.xz"
+          tar -xf /tmp/czb.tar.xz -C /tmp
+          sudo mv /tmp/cargo-zigbuild-x86_64-unknown-linux-gnu/cargo-zigbuild /usr/local/bin/
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+          tar -xf /tmp/zig.tar.xz -C /tmp
+          sudo mv /tmp/zig-x86_64-linux-0.14.1/zig /usr/local/bin/
+          cargo-zigbuild --version && zig version
+
       # ADR-033: the release binary embeds the archview workbench and the
       # agent skills/agents/plugin. Build both, embed, then compile.
       - name: Setup pnpm
@@ -71,7 +85,7 @@ jobs:
 
       - name: Build release (embedded workbench + stack)
         working-directory: archctl
-        run: cargo build --release --target x86_64-unknown-linux-musl
+        run: cargo-zigbuild zigbuild --release --target x86_64-unknown-linux-musl
 
       # CHANGELOG promotion (spec): replace the Unreleased header with the
       # released version + date. Idempotent: skip when already promoted so a
