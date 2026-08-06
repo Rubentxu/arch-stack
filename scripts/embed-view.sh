@@ -14,15 +14,21 @@ if [[ ! -d "${SRC}" ]]; then
   exit 1
 fi
 
+# Preserve the tracked placeholder README across the rm -rf (it explains
+# the folder; the dist never contains one, but guard against future layouts).
+README_SRC="${REPO_ROOT}/archctl/assets-view/README.md"
+if [[ -f "${README_SRC}" ]]; then
+  README_CONTENT="$(cat "${README_SRC}")"
+fi
+
 rm -rf "${DST}"
 mkdir -p "${DST}"
 # Copy everything except sourcemaps (dev-only, ~7MB of the 8MB dist).
 (cd "${SRC}" && tar --exclude='*.map' -cf - .) | (cd "${DST}" && tar -xf -)
-# Preserve the tracked placeholder README (it explains the folder).
-if [[ -f "${REPO_ROOT}/archctl/assets-view/README.md" ]]; then :; fi
-# Re-create README if the previous copy overwrote it (it never does: dist
-# has no README.md, but guard against future dist layouts).
-if [[ ! -f "${DST}/README.md" ]]; then
+# Restore the tracked README.
+if [[ -n "${README_CONTENT:-}" ]]; then
+  printf '%s\n' "${README_CONTENT}" > "${DST}/README.md"
+else
   cat > "${DST}/README.md" << 'EOF'
 # assets-view
 

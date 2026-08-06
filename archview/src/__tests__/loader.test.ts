@@ -75,6 +75,22 @@ describe("bundle loader", () => {
     expect(bundle.edges[0].label).toBe("calls");
   });
 
+  it("classifies call-graph nodes with a language field as call-graph (regression)", () => {
+    // Real samples carry kind:"function" AND language — the language
+    // check used to win and misclassify as class-diagram, so the G6
+    // canvas never mounted for call-graph bundles.
+    const raw = {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "fn:caller", name: "caller", kind: "function", language: "rust" },
+        { id: "fn:callee", name: "callee", kind: "function", language: "rust" },
+      ],
+      edges: [{ id: "e1", source: "fn:caller", target: "fn:callee", kind: "calls" }],
+    };
+    const bundle = normalizeBundle(raw, "test");
+    expect(bundle.rawKind).toBe("call-graph");
+  });
+
   it("normalizes a class-diagram bundle", () => {
     const raw = {
       schemaVersion: "1.0",
