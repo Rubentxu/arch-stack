@@ -42,24 +42,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "${{ steps.toolchain.outputs.channel }}"
-          targets: x86_64-unknown-linux-musl
 
-      # Static musl build with zig as linker. lbug/zstd-sys need a C
-      # toolchain for musl; zig provides it without system musl-tools
-      # (and works identically on ubuntu runners). Local builds use the
-      # same path (cargo-zigbuild), keeping CI == local.
-      - name: Install cargo-zigbuild + zig
+      # NOTE (2026-08-06): the static musl build is IMPOSSIBLE with lbug
+      # 0.18.3 — its prebuilt liblbug.a (112MB) is glibc and zig/musl-gcc
+      # cannot link it (all 10+ release runs failed with exit 101).
+      # Release uses glibc (gnu) instead: built on ubuntu-latest, runs on
+      # any modern Linux distro. The M27 sandbox container (ubuntu:24.04,
+      # glibc) compiles archctl natively in-container for its own runs.
+      - name: Embed workbench + stack assets
         run: |
-          curl -sSfL -o /tmp/czb.tar.xz "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.23.0/cargo-zigbuild-x86_64-unknown-linux-gnu.tar.xz"
-          tar -xf /tmp/czb.tar.xz -C /tmp
-          sudo mv /tmp/cargo-zigbuild-x86_64-unknown-linux-gnu/cargo-zigbuild /usr/local/bin/
-          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
-          tar -xf /tmp/zig.tar.xz -C /tmp
-          # zig needs its full installation tree (lib/, libc/, etc.), not
-          # just the binary — move the whole extracted dir.
-          sudo mv /tmp/zig-x86_64-linux-0.14.1 /usr/local/zig
-          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
-          cargo-zigbuild --version && zig version
+          ./scripts/embed-view.sh
+          ./scripts/embed-stack.sh
+
+      - name: Build release (embedded workbench + stack)
+        working-directory: archctl
+        run: cargo build --release
 
       # ADR-033: the release binary embeds the archview workbench and the
       # agent skills/agents/plugin. Build both, embed, then compile.
@@ -88,7 +85,7 @@ jobs:
 
       - name: Build release (embedded workbench + stack)
         working-directory: archctl
-        run: cargo-zigbuild zigbuild --release --target x86_64-unknown-linux-musl
+        run: cargo build --release
 
       # CHANGELOG promotion (spec): replace the Unreleased header with the
       # released version + date. Idempotent: skip when already promoted so a
@@ -114,7 +111,7 @@ jobs:
           tag_name: ${{ github.ref }}
           name: Release v${{ steps.version.outputs.VERSION }}
           body_path: CHANGELOG.md
-          files: archctl/target/x86_64-unknown-linux-musl/release/archctl
+          files: archctl/target/release/archctl
           draft: false
           prerelease: false
         env:
