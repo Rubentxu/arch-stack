@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** propuesta revisada (pivot a Code Knowledge Graph Workbench performance-first)
-**Versión:** 2.4
-**Fecha:** 31 de julio de 2026
-**Cambios vs 2.3:** Pivot a "Code Knowledge Graph Workbench" (no BI dashboard). M9 reescrito como workbench de 5 vistas coordinadas con performance-first stack. Nuevos ADRs: **ADR-019 (Performance budget — hard contract)** y **ADR-020 (Renderer stack: G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM)**. ADR-007/011/013 revisados con el nuevo stack. M17 (archview workbench) promovido a prioridad 1. M11/M12 promovidos. M10/M14 deferred a 1.x. Ver `docs/Librerías-visualización-grafos-BI.md` para la investigación que sustenta el pivot.
+**Estado:** v1.0.0 ALCANZADO (2026-08-06) — M27 automated thresholds pass, tag v1.0.0 pushed.
+**Versión:** 2.6
+**Fecha:** 6 de agosto de 2026
+**Cambios vs 2.4/2.5:** M27 Sandbox + Benchmarks shipped (v0.22.0). v1.0.0 tag applied (2026-08-06). Benchmark: exit 100%, c4_time 311ms, RSS 144MB, bundle_valid 7/7, determinism 7/7. FP/FN manual pending. archctl is ready for v1.0 distribution.
 
 ---
 
