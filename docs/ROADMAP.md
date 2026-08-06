@@ -467,6 +467,118 @@ Spec: [`docs/specs/e2e-sandbox.md`](specs/e2e-sandbox.md)
 **Referencias:** [ADR-034](adr/ADR-034-e2e-coverage-expansion.md), specs
 `e2e-installation.md`, `e2e-render.md`, `e2e-sandbox.md`
 
+## M30 — Call-graph: visibilidad de lenguajes no soportados — **EN CURSO (2026-08-06)**
+
+**Estado:** EN CURSO — decisión: soporte Go real (tree-sitter-go) vía ast-grep-language builtin-parser.
+
+**Objetivo:** `archctl code call-graph` (y por consistencia `class-diagram` /
+`state-machine`) comunican claramente cuándo no escanean archivos por el
+límite de lenguajes MVP, en vez de devolver silencio. Eliminar la cobertura
+falsa del smoke. Añadir Go como lenguaje soportado.
+
+**Decisión tomada (2026-08-06):** Soporte Go real vía tree-sitter-go 0.25.0 (bundled en ast-grep-language 0.45.0 builtin-parser). No se añade nuevo crate. Confidence 0.85 (mismo que TypeScript).
+
+**Alcance implementado:**
+1. Go function extraction: `function_declaration` → FunctionNode, `method_declaration` → MethodNode, `func_literal` → NO node (calls attributed to enclosing named function).
+2. Go call-edge extraction: direct calls (`identifier`), method calls (`selector_expression` → `field_identifier`).
+3. Smoke: `smoke_echo()` assert extracción Go real (filesScanned > 0, nodes > 0) + `smoke_go_apply_fixture` (apply-path sobre fixture pequeño `tests/fixtures/go_callgraph/`).
+4. Human loop: Fase 6 actualizada (Go soportado), Fase 9.2 actualizada (extracción rápida; apply-path cubierto por fixture smoke).
+5. Error message actualizado: MVP lista = rust, typescript, python, go.
+
+**Amendment (2026-08-06, ver M32):** el writer `--apply` es lento a escala
+(~0.43s/elemento; zustand 212 el → 92s, echo 1307 el → 483s) — problema
+preexistente expuesto por Go. Por eso el smoke y el human loop usan
+extracción rápida + fixture pequeño para el apply-path; el fix del writer
+se trackea en M32.
+
+**Criterios de éxito:**
+- `archctl code call-graph --cwd <go-repo> --json` devuelve `nodes.len() > 0` + `edges.len() > 0`.
+- Smoke `smoke_echo` pasa con extracción Go real (rápido) + `smoke_go_apply_fixture` con `elements_written > 0` y `relations_written > 0`.
+- Human loop Fase 9.2 pasa con Go produciendo extracción > 0 (rápido).
+- ADR-035 documenta las decisiones de extracción.
+
+**Referencias:** `archctl/src/code/call_graph.rs`, `archctl/tests/smoke_real_projects.rs`,
+`archctl/tests/fixtures/go_callgraph/`, `e2e/HUMAN_LOOP_TEST.md` (Fase 6, 9.2),
+`docs/adr/ADR-035-go-call-graph-extraction.md`
+
+## M32 — Apply writer performance: batching de transacciones — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — detectado durante M30 (el soporte Go expone el writer).
+
+**Objetivo:** `archctl code call-graph --apply` (y por consistencia los
+writers de class-diagram/state-machine/sequence) no tarden minutos en
+repos medianos.
+
+**Problema detectado (evidencia medida):**
+
+| Dataset | Lenguaje | Elementos | Tiempo --apply |
+|---|---|---|---|
+| pmndrs/zustand | typescript | 212 | 92s |
+| labstack/echo | go | 1307 | 483s |
+
+- ~0.43s por elemento, escalado lineal: `apply()` (`call_graph.rs` L1298)
+  abre el store UNA vez pero emite ~5-6 queries por nodo + 2 por edge
+  (write_function_version, write_function_element, 3× link_function_edges,
+  write_call_edge + evidence) — ~10.500 queries para echo.
+- lbug 0.18.3 (SQLite-backed) con autocommit por `query()` (`store.rs`
+  L384-391): cada statement = commit/fsync individual, sin batching.
+- Preexistente desde m11 (call-graph) — invisible hasta ahora porque Go
+  escaneaba 0 archivos. M30 lo expone; el human loop y smoke M29.3 se
+  degradarían a 10+ min sin el amendment de M30.
+
+**Alcance:**
+1. Investigar API de transacción en lbug 0.18.3 (BEGIN/COMMIT vía
+   `session.conn`, `execute_batch`, o envoltorio de transacción en
+   `GraphStore`).
+2. Envolver los loops de nodes + edges de `apply()` en UNA transacción
+   (commit único al final), manteniendo semántica (MERGE idempotente,
+   skip de existentes).
+3. Aplicar el mismo patrón a los writers hermanos si comparten estructura
+   (class_diagram.rs, state_machine.rs, sequence.rs).
+4. Benchmark antes/después: objetivo echo < 10s; suite smoke M29.3 total < 60s.
+
+**Criterios de éxito:**
+- `call-graph --apply` en labstack/echo < 10s (hoy 483s).
+- Sin cambio de comportamiento: mismos elementos/relaciones escritos
+  (idempotencia y skip de existentes intactos).
+- Unit tests del writer verdes + smoke fixture Go < 5s.
+
+**Referencias:** `archctl/src/code/call_graph.rs` (L1050-1290),
+`archctl/src/store.rs` (L384-391 `query`), lbug 0.18.3 docs,
+M30 amendment (este documento)
+
+## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — detectado durante el human-loop sandbox (M29.4).
+
+**Objetivo:** Definir una única semántica para "export sin proyecto/grafo"
+y alinearla entre CLI, server del workbench, tests y documentación.
+
+**Problema detectado (evidencia — incoherencia CLI vs server):**
+- CLI: `archctl diagram export container:* --cwd /tmp` → `exit 0`, salida
+  "Exported 0 elements, 0 edges, 0 evidence" (éxito vacío).
+- Server: `GET /api/export` del workbench sin `project_dir` → **HTTP 500**
+  con error JSON (`archctl/src/view.rs` L311-317
+  `export_without_project_is_500_json`).
+- El guion humano original asumía error (`exit != 0`) — la ambigüedad es
+  del producto, no del test.
+
+**Alcance:**
+1. Decidir semántica única: (a) error claro `exit != 0` cuando no hay
+   proyecto/grafo, o (b) éxito vacío + warning explícito en stderr
+   ("no graph found — exported 0").
+2. Alinear CLI + server (`/api/export`) + `HUMAN_LOOP_TEST.md` (Fase 9.1) +
+   tests unitarios.
+3. Actualizar el human-loop sandbox a la semántica decidida.
+
+**Criterios de éxito:**
+- Misma semántica en CLI y server (test que cubra ambos).
+- Comportamiento documentado en `docs/` y reflejado en el guion humano.
+
+**Referencias:** `archctl/src/diagram/export.rs` (`export_rejects_malformed_selector`),
+`archctl/src/view.rs` (`export_without_project_is_500_json`),
+`e2e/human_loop_sandbox.sh` (Fase 9)
+
 ## Mejoras futuras — `workflowctl`
 
 > Documentadas en [ADR-030](adr/ADR-030-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-030; cualquier cambio de estado requiere abrir un nuevo ADR.
