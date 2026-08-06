@@ -93,6 +93,9 @@ kill %1
 1. `e2e/install_e2e.sh` (~80 líneas bash, idempotente, exit != 0 en fallo).
 2. `e2e/README.md` — cómo correr la suite.
 3. Integración en `verify-local.sh --full` (gate manual).
+4. **`e2e/HUMAN_LOOP_TEST.md`** — guion de pruebas manuales human-in-the-loop
+   (complementa la suite automática: cubre UX subjetiva, render percibido,
+   skills del agente, errores). Ejecutar antes de cada release.
 
 ## Referencias
 
