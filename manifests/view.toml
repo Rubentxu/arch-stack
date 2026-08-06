@@ -1,0 +1,48 @@
+# scope: view
+#
+# Embedded archview workbench server (ADR-033). One-shot HTTP server on
+# 127.0.0.1 serving the archview static bundle embedded via rust-embed,
+# plus a read-only API (/api/health, /api/export) connecting the
+# workbench to the LadybugDB graph.
+#
+# Invariants: bind ONLY 127.0.0.1 (ADR-011), COOP/COEP headers for
+# SharedArrayBuffer (ADR-020), no daemon (ADR-010), no public network.
+
+id = "view"
+version = "0.1.0"
+description = "Embedded archview workbench server (one-shot, 127.0.0.1 only)"
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/view.rs",
+]
+
+public_symbols = [
+  "handle_request",
+  "run",
+  "ViewOptions",
+  "ServerInfo",
+  "parse_port",
+  "looks_like_project_dir",
+]
+
+must_hold = [
+  "127.0.0.1",
+  "Cross-Origin-Opener-Policy",
+  "Cross-Origin-Embedder-Policy",
+  "Cross-Origin-Resource-Policy",
+  "tiny_http",
+  "rust_embed",
+  "api/health",
+  "api/export",
+]
+
+minimum_tests = 10
+
+must_not_contain = [
+  "0.0.0.0",
+  "reqwest",
+  "tokio::",
+  "hyper",
+  "async fn",
+]

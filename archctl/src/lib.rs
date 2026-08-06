@@ -21,6 +21,7 @@ pub mod skills;
 pub mod source;
 pub mod store;
 pub mod telemetry;
+pub mod view;
 pub mod xdg;
 
 pub use cli::{
