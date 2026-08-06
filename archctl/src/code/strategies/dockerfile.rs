@@ -50,11 +50,22 @@ impl Strategy for DockerfilePerService {
                 .and_then(|s| s.to_str())
                 .unwrap_or_default();
             let lower = file_name.to_ascii_lowercase();
-            // Match: Dockerfile, Dockerfile.dev, Dockerfile.prod, *.dockerfile
-            if !(lower == "dockerfile"
-                || lower.starts_with("dockerfile.")
-                || lower.ends_with(".dockerfile"))
-            {
+            // Match: Dockerfile, Dockerfile.{dev,prod,staging,test,local,...},
+            // or *.dockerfile. A bare `starts_with("dockerfile.")` would
+            // also match the strategy's own source `dockerfile.rs` (and any
+            // `dockerfile.*` doc file) — restrict the dotted variant to a
+            // known environment suffix.
+            let dotted_env = lower
+                .strip_prefix("dockerfile.")
+                .filter(|suffix| {
+                    !suffix.is_empty()
+                        && matches!(
+                            *suffix,
+                            "dev" | "prod" | "production" | "staging" | "test" | "local" | "debug"
+                        )
+                })
+                .is_some();
+            if !(lower == "dockerfile" || dotted_env || lower.ends_with(".dockerfile")) {
                 continue;
             }
             let rel_path = path

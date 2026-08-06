@@ -114,6 +114,17 @@ fn make_dockerfile_repo(project: &Path) {
     );
     // Examples Dockerfile (should be excluded)
     write(project, "examples/test/Dockerfile", "FROM alpine:latest\n");
+    // Dockerfile.dev variant (should be detected)
+    write(
+        project,
+        "services/web/Dockerfile.dev",
+        "FROM node:20\nWORKDIR /app\n",
+    );
+    // Lookalike non-Dockerfile files (must NOT be detected — FP guard:
+    // `dockerfile.rs` and `dockerfile.md` start with "dockerfile." but are
+    // NOT Dockerfile variants; regression for the self-detection bug).
+    write(project, "src/strategies/dockerfile.rs", "fn detect() {}\n");
+    write(project, "docs/dockerfile.md", "# Dockerfile guide\n");
 }
 
 fn make_helm_repo(project: &Path) {
@@ -250,6 +261,26 @@ fn dockerfile_integration() {
             .iter()
             .any(|p| p.contains("services/api/Dockerfile")),
         "services/api/Dockerfile should be detected; got {:?}",
+        all_paths
+    );
+    // services/web/Dockerfile.dev should be detected
+    assert!(
+        all_paths
+            .iter()
+            .any(|p| p.contains("services/web/Dockerfile.dev")),
+        "Dockerfile.dev variant should be detected; got {:?}",
+        all_paths
+    );
+    // Lookalikes must NOT be detected (regression: `dockerfile.rs` and
+    // `dockerfile.md` were falsely matched by a bare `starts_with`).
+    assert!(
+        !all_paths.iter().any(|p| p.contains("dockerfile.rs")),
+        "strategy source dockerfile.rs must not self-detect; got {:?}",
+        all_paths
+    );
+    assert!(
+        !all_paths.iter().any(|p| p.contains("dockerfile.md")),
+        "dockerfile.md must not be detected; got {:?}",
         all_paths
     );
 }
