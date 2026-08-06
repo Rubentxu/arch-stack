@@ -4,6 +4,37 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.0.2] — 2026-08-06
+
+### Added
+- **M29 E2E coverage expansion (ADR-034)**: 4 suites versionadas que cierran
+  los gaps de instalación, despliegue, render y multi-lenguaje:
+  - `e2e/install_e2e.sh` (29 checks): instalación del producto contra HOME
+    aislado — stack install, drift none, idempotencia, doctor, view health,
+    frontmatter SKILL.md
+  - `e2e/render_e2e.py` (20 checks): playwright asserts DOM por tipo de
+    bundle (C4/sequence/class/call-graph) + bundles reales multi-lenguaje
+    (axum 4, ripgrep 11, zustand 1, express 1) + 0 errores JS + screenshots
+  - `bench/sandbox-e2e.sh` (6 checks): sandbox reproducible — build image,
+    compilar archctl in-container, vertical C4 con asserts, veredicto JSON
+  - `smoke_real_projects.rs` v2 (6/6): vertical completo por lenguaje
+    (c4+accept rust/js/ts, call-graph go, class-diagram python), XDG
+    aislada por repo, zustand añadido
+- **M29.5 integración**: verify-local.sh --full ejecuta install+render+
+  sandbox; release.yml añade post-release binary verification (version +
+  view + stack status del binario subido)
+
+### Fixed
+- **CORS entre origins localhost** en el diseño del render E2E (navegar al
+  origin del server por-repo)
+- **Smoke no determinista**: XDG compartida hacía `--apply` reportar
+  "Applied: 0" por grafos previos — aislada por repo
+- **`bash -c` positional arg** en sandbox-e2e (dataset se convertía en $0)
+
+### Validation
+- ADR-034 aceptado, M29 completo en ROADMAP
+- 523 tests + 6 smoke + 29 install + 20 render checks verdes
+
 ## [v1.0.1] — 2026-08-06
 
 ### Added
