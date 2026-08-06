@@ -55,7 +55,10 @@ jobs:
           sudo mv /tmp/cargo-zigbuild-x86_64-unknown-linux-gnu/cargo-zigbuild /usr/local/bin/
           curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
           tar -xf /tmp/zig.tar.xz -C /tmp
-          sudo mv /tmp/zig-x86_64-linux-0.14.1/zig /usr/local/bin/
+          # zig needs its full installation tree (lib/, libc/, etc.), not
+          # just the binary — move the whole extracted dir.
+          sudo mv /tmp/zig-x86_64-linux-0.14.1 /usr/local/zig
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
           cargo-zigbuild --version && zig version
 
       # ADR-033: the release binary embeds the archview workbench and the
