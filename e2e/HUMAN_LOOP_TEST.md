@@ -166,19 +166,21 @@ kill %1
 
 ## Fase 6 — Extractor por lenguaje (call-graph / class-diagram)
 
+> call-graph MVP soporta **rust/ts/python/go**. class-diagram soporta **python**.
+
 ```bash
 cd /tmp/hlt
-git clone --depth 1 https://github.com/labstack/echo.git 2>/dev/null || true
-cd echo
-/tmp/hlt/archctl code call-graph --apply --json | jq '.elements | length'
+git clone --depth 1 https://github.com/pmndrs/zustand.git 2>/dev/null || true
+cd zustand
+/tmp/hlt/archctl code call-graph --apply --json | jq '.elements_written'
 git clone --depth 1 https://github.com/psf/requests.git 2>/dev/null || true
 cd ../requests
-/tmp/hlt/archctl code class-diagram --apply --json | jq '.elements | length'
+/tmp/hlt/archctl code class-diagram --apply --json | jq '.elements_written'
 ```
 
 | # | Check | Resultado esperado | Verdicto |
 |---|---|---|---|
-| 6.1 | call-graph (go) | número de funciones/edges > 0 | [ ] |
+| 6.1 | call-graph (typescript) | número de funciones/edges > 0 | [ ] |
 | 6.2 | class-diagram (python) | número de clases > 0 | [ ] |
 | 6.3 | JSON válido | jq no da error (sin logs contaminando stdout) | [ ] |
 
@@ -241,11 +243,12 @@ echo "# hacked" >> $HOME/.config/opencode/skills/stack-management/SKILL.md
 
 | # | Escenario | Resultado esperado | Verdicto |
 |---|---|---|---|
-| 9.1 | `archctl diagram export container:*` sin grafo | error claro, exit ≠ 0, NO panic | [ ] |
-| 9.2 | `archctl view` sin assets (binario mal build) | "view assets not embedded — run: ..." | [ ] |
-| 9.3 | `stack install` con HOME sin permisos | error claro de filesystem | [ ] |
-| 9.4 | `evidence accept` con id inexistente | "not found" claro | [ ] |
-| 9.5 | Ctrl+C en `view` | server para limpiamente, sin proceso zombie | [ ] |
+| 9.1 | `archctl diagram export nope:*` (selector inválido) | error claro, exit ≠ 0, NO panic | [ ] |
+| 9.2 | `call-graph` sobre repo Go (soportado desde M30) | extracción real: `project.filesScanned > 0` (rápida; apply-path cubierto por `smoke_go_apply_fixture`) | [ ] |
+| 9.3 | `archctl view` sin assets (binario mal build) | "view assets not embedded — run: ..." | [ ] |
+| 9.4 | `stack install` con HOME sin permisos | error claro de filesystem | [ ] |
+| 9.5 | `evidence accept` con id inexistente | "not found" claro | [ ] |
+| 9.6 | Ctrl+C en `view` | server para limpiamente, sin proceso zombie | [ ] |
 
 **Observaciones Fase 9:**
 ```
