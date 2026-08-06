@@ -162,14 +162,18 @@ function detectKind(raw: Record<string, unknown>): RendererBundle["rawKind"] {
   if (Array.isArray(raw.nodes) && Array.isArray(raw.edges)) {
     const firstNode = raw.nodes[0] as Record<string, unknown> | undefined;
     if (firstNode && typeof firstNode.kind === "string") {
+      // Call-graph nodes are `function`/`method` and ALSO carry a
+      // `language` field — the function check must win (bugfix: the
+      // language check previously misclassified call-graphs as
+      // class-diagrams, so the G6 canvas never mounted).
+      if (firstNode.kind === "function" || firstNode.kind === "method") {
+        return "call-graph";
+      }
       if (
         ["class", "interface", "trait", "enum"].includes(firstNode.kind) ||
         (firstNode.language && typeof firstNode.language === "string")
       ) {
         return "class-diagram";
-      }
-      if (firstNode.kind === "function" || firstNode.kind === "method") {
-        return "call-graph";
       }
     }
     return "unknown";
