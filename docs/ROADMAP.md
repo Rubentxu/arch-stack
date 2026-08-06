@@ -390,6 +390,65 @@ datasets pasan** (FP <20%, FN <30%). v1.0 desbloqueado.
 **Referencias:** `bench/reports/fpfn-rubric-2026-08-06.md` (v2),
 ADR-032 §Counting scope
 
+## M29 — E2E coverage expansion: install, deploy, render, multi-language — **EN PLANIFICACIÓN**
+
+**Estado:** Planificado (ADR-034, specs listas). Pendiente de implementación.
+
+**Objetivo:** Cerrar los 4 gaps E2E verificados en la revisión de 2026-08-06:
+instalación, despliegue, render y multi-lenguaje no están cubiertos por
+suites versionadas. La lección de ADR-031 (unit tests pasan, bugs de
+integración sobreviven) se aplica al producto completo.
+
+**Alcance (4 suites, especificadas):**
+
+### M29.1 — E2E de instalación — `e2e/install_e2e.sh`
+Flujo de usuario final contra HOME limpio (temp dir):
+1. `archctl stack install` → skills/agents/plugin en paths OpenCode/ZCode
+2. `stack status` → drift none
+3. Idempotencia (re-install = 0 cambios)
+4. `doctor` OK
+5. Frontmatter SKILL.md válido
+6. `view` sirve `/api/health`
+Spec: [`docs/specs/e2e-installation.md`](specs/e2e-installation.md)
+
+### M29.2 — E2E de render — `e2e/render_e2e.py` (playwright, versionado)
+Por cada tipo de bundle (C4 context/container, sequence, class-diagram,
+call-graph) + bundles REALES multi-lenguaje:
+1. `archctl view` → cargar bundle en workbench
+2. **Assert de DOM**: nodes visibles, labels, relaciones, vista activa
+3. Cero errores de consola JS
+4. Screenshots como artifacts
+Habría detectado el bug `detectKind` (PR #57) en el primer run.
+Spec: [`docs/specs/e2e-render.md`](specs/e2e-render.md)
+
+### M29.3 — Smoke multi-lenguaje ampliado — `smoke_real_projects.rs`
+Vertical COMPLETO por lenguaje (hoy solo discover→export→validate en 4
+repos): c4-discover + evidence accept + export + validate para rust/js/ts;
+call-graph + apply para go; class-diagram + apply para python.
+
+### M29.4 — Sandbox reproducible — `bench/sandbox-e2e.sh`
+Reemplaza el one-off manual de 2026-08-06:
+1. Build container → compilar archctl DENTRO (glibc ubuntu:24.04)
+2. Vertical C4 completo contra axum con asserts
+3. Veredicto JSON (`PASS`/`FAIL`) para tooling/CI
+Spec: [`docs/specs/e2e-sandbox.md`](specs/e2e-sandbox.md)
+
+### M29.5 — Integración
+- `verify-local.sh --full` ejecuta las suites disponibles (condicional a
+  podman/playwright)
+- Post-release check: descargar binario → smoke mínimo (`--version`,
+  `view`, `stack status`) → marcar release verificado
+- Workflow CI opcional (no bloqueante de PR): gates manuales primero
+
+**Criterios de éxito:**
+- Las 4 suites corren de punta a punta y pasan en un entorno limpio.
+- El render E2E detecta un bug de clasificación de bundle (regresión
+  detectKind) si se reintroduce.
+- La instalación E2E valida el flujo de producto sin tocar la config real.
+
+**Referencias:** [ADR-034](adr/ADR-034-e2e-coverage-expansion.md), specs
+`e2e-installation.md`, `e2e-render.md`, `e2e-sandbox.md`
+
 ## Mejoras futuras — `workflowctl`
 
 > Documentadas en [ADR-030](adr/ADR-030-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-030; cualquier cambio de estado requiere abrir un nuevo ADR.

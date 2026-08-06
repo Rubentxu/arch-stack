@@ -40,6 +40,9 @@
 | [ADR-028](ADR-028-diagram-project.md) | Diagram project: ProjectSelector vs C4Kind + multi-format DSL projection — `ViewKind` enum (C4+UML+behavior), emitters PlantUML/Mermaid/Structurizr, grammar `<kind>:<scope>`, fuente DSL editable, relación con export (viewer-bundle) y render (SVG) | Aceptado (propuesto 2026-08-04) |
 | [ADR-029](ADR-029-c4-component-light.md) | C4 component light — estrategia `components` en `c4-discover`: módulos internos → candidatos `mt.component` con confidence < 1.0, revisión y promoción por el agente (misma filosofía que ADR-026) | Aceptado (propuesto 2026-08-04) |
 | [ADR-016](ADR-016-activegraph-packs-investigacion.md) | Investigación de `activegraph-packs` + 3 bloques de mejoras para `archctl` (B1 evidence graph, B2 manifest+gates, B3 trust-by-origin) | Investigación cerrada, decisiones pendientes |
+| [ADR-032](ADR-032-bench-methodology.md) | Bench methodology — métricas, thresholds del release gate v1.0, FP/FN manual rubric, conteo solo mt.container (M28) | Aceptado (nuevo 2026-08-05) |
+| [ADR-033](ADR-033-archctl-view-embedded-workbench.md) | `archctl view`: workbench embebido como servicio local one-shot — rust-embed + tiny_http, 127.0.0.1, COOP/COEP, stack distribuido como UN producto | Aceptado (nuevo 2026-08-06) |
+| [ADR-034](ADR-034-e2e-coverage-expansion.md) | E2E coverage expansion: install + deploy + render + multi-language — 4 suites versionadas (install_e2e, render_e2e, smoke ampliado, sandbox-e2e) | **Propuesto** (2026-08-06) |
 
 ## Cómo se relacionan
 
