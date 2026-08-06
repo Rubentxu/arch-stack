@@ -40,6 +40,9 @@ archctl/assets-view/*
 # profile/ (tracked); the embed is a build artifact.
 archctl/assets-stack/
 
+# E2E render artifacts (M29, ADR-034) — screenshots generated per run.
+e2e/artifacts/
+
 # gentle-ai skill registry — auto-generated local index
 .atl/
 
