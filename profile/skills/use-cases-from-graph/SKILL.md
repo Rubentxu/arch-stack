@@ -1,12 +1,11 @@
 ---
 name: use-cases-from-graph
-description: Derive UML use cases from actors and confirmed goals in the graph. Use when the user asks for use cases, the system landscape needs actor mapping, or a class view requires its collaborators first. Wraps `c4-model`.
+description: Derive UML use cases from actors and confirmed goals in the graph. Use when the user asks for use cases, actor mapping, or system landscape analysis. Combines `code state-machine` extraction with `evidence put` for semantic facts.
 license: MIT
 compatibility: opencode
 metadata:
-  version: "0.1.0"
+  version: "1.0.0"
   maturity: experimental
-  wraps: c4-model
   output-schema: uml-usecase-spec-v1
 ---
 
@@ -14,30 +13,41 @@ metadata:
 
 Identify actors and use cases, distinguish candidates inferred from
 the codebase from use cases confirmed by tests or docs, and relate
-each use case to the scenarios it is realised by.
+each use case to the scenarios that realise it.
 
 # Required process
 
-1. Enumerate actors via Cypher:
+1. Extract state machines (behavioral states = candidate use-case
+   flows):
+   ```bash
+   archctl code state-machine --cwd <dir> --json
+   # Persist states/transitions
+   archctl code state-machine --cwd <dir> --apply
    ```
-   archctl graph query "MATCH (e:Element) WHERE e.kind_id = 'uml.actor' RETURN e.id, e.current_name"
+2. Ingest confirmed semantic facts (from docs, tests, user input) as
+   evidence — never as Elements:
+   ```bash
+   # Single fact via file or stdin (--json reads stdin array)
+   archctl evidence put --cwd <dir> --json --kind usecase <<< '{"claim":"User can place an order","source_origin":"UserInput"}'
    ```
-2. For each actor, enumerate goal candidates via Cypher:
+3. Query the graph for actors (external systems / entry points):
+   ```bash
+   archctl graph query --cwd <dir> "MATCH (e:Element) WHERE e.category='c4' AND e.kind_id CONTAINS 'mt.container' RETURN e.id, e.label"
    ```
-   archctl graph query "MATCH (a:Element {id: '<actor-id>'})-[r]-(e:Element) WHERE r.predicate_id CONTAINS 'participates' RETURN e.id, e.current_name"
+4. Project a use-case view if a UML projection is requested:
+   ```bash
+   archctl diagram project --view usecase:<scope> --format plantuml --output uc.puml --cwd <dir>
    ```
-3. Classify each candidate:
-   - `confirmed`: at least one scenario in the graph references it.
-   - `inferred`: only static evidence (file, doc, symbol).
-4. Reject candidates with zero evidence.
-5. Project to PlantUML with
-   `archctl diagram project --view usecase:<scope> --format plantuml`.
-6. Render via local PlantUML (Kroki) — never `plantuml.com`.
+
+# Discipline
+
+- Candidates (inferred) vs confirmed (evidence-accepted): label them
+  differently in the output.
+- `evidence put` records facts with provenance — it does NOT create
+  Elements in the graph (ADR-027).
+- Never promote a candidate to confirmed without an accepted evidence.
 
 # Forbidden
 
-- Promoting an `inferred` candidate to `confirmed` without explicit
-  user/test evidence.
-- Hiding actors behind a UI shorthand (the diagram is the projection,
-  not the UI).
-- Mixing `c4-component` kinds into a use-case view.
+- Fabricating actors or use cases without graph/evidence backing.
+- Using `evidence put` to inject invented architecture.

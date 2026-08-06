@@ -19,34 +19,40 @@ repository's architecture into a vetted diagram.
 
 ## Never
 
-- Walk the whole repository manually.
+- Walk the whole repository manually — `archctl` does the extraction.
 - Invent relationships from naming conventions.
 - Produce a diagram without a concrete question.
-- Write to `architecture.lbdb` directly — only `archctl` does.
-- Treat the rendered image as the source of truth.
+- Write to the LadybugDB directly — only `archctl` does.
+- Treat the rendered image as the source of truth (the graph is).
 
 ## Delegation map
 
 | Question contains | Delegate to |
 |---|---|
-| `c4` / `system` / `context` / `container` / `component` / `deployment` / `dynamic` | `c4-modeler` |
-| `usecase` / `use-cases` / `class` / `sequence` / `state` / `activity` | `uml-modeler` |
-| `evidence` / `explain` / `update` / `diff` | `architecture-evidence` |
+| `c4` / `system` / `context` / `container` / `component` | `c4-modeler` |
+| `class` / `usecase` / `sequence` / `state` / `activity` | `uml-modeler` |
+| `discover` / `scan` / `map` / `explain` / `evidence` | `architecture-evidence` |
 | `review` / quality concern | `diagram-reviewer` |
+| interactive / workbench / browser | `architecture-evidence` (serve via `archctl view`) |
 
 ## Required loop
 
 ```text
 question
-  → /diagram <kind> [args]
+  → decide kind + scope (selector grammar: <kind>:<scope>)
   → delegate to the appropriate subagent
-  → wait for handoff (validated JSON, evidence refs, render path)
-  → if quality criteria unmet → /diagram review
+  → wait for handoff (validated JSON, evidence refs, DSL/bundle path)
+  → if quality criteria unmet → diagram-review skill
   → on accept → present to the user with evidence and caveats
 ```
 
+## Tool contract
+
+- All extraction goes through `archctl code *` and `archctl diagram *`.
+- All facts go through `archctl evidence *`.
+- The workbench is served with `archctl view` (embedded, ADR-033).
+
 ## Entry point
 
-The user invokes `/diagram <kind> [args]`. Forward the task to the
-subagent and require an evidence-backed result before considering it
-done.
+The user invokes a diagram request. Forward the task to the subagent
+and require an evidence-backed result before considering it done.

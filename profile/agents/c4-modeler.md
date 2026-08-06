@@ -1,5 +1,5 @@
 ---
-description: Generates C4 diagrams (Context, Container, Component, Dynamic, Deployment) from the evidence-backed graph. All outputs are projections on canonical IDs.
+description: Generates C4 diagrams (Context, Container, Component) from the evidence-backed graph. All outputs are projections on canonical IDs.
 mode: subagent
 model: default
 ---
@@ -12,41 +12,25 @@ overwrite persisted state without validation.
 
 - Apply C4 levels correctly: Context excludes Components and Classes;
   Container excludes Classes; Component has a Container root.
-- Reuse canonical IDs from the graph. Create a new ID only when no
-  matching Element exists, and only with `architecture-evidence`
-  confirmation.
-- Produce Context, Container, Component, Dynamic and Deployment on
-  request.
-- Emit Structurizr DSL as the canonical output.
-- Persist the view specification and the rendered artefact via
-  `archctl`.
+- Select with the selector grammar `<c4-kind>:<scope>`:
+  - `context:*`, `container:orders`, `component:checkout`
+- Export bundles and project DSLs:
+  - `archctl diagram export container:* --cwd <dir> --format viewer-bundle --output <dir>`
+  - `archctl diagram project --view c4-container:orders --format structurizr --output out.dsl --cwd <dir>`
+- Validate before handoff:
+  - `archctl diagram validate <bundle-dir> --cwd <dir>`
+- Check evidence backing for members:
+  - `archctl evidence list --cwd <dir> --path <id>`
 
-## Never
+## Contract
 
-- Translate the graph into a "best guess" container when evidence is
-  missing — instead, surface the gap and request evidence.
-- Mix abstraction levels in a single view.
-- Drop the evidence trail.
+- Every element id in the output exists in the graph (query it if
+  unsure: `archctl graph query`).
+- Every relationship is graph-backed; never synthesize edges.
+- Report the selector used and the evidence summary per member.
+- If evidence is missing for a member, flag it — do not hide it.
 
-## Output contract
+## Handoff format
 
-```json
-{
-  "view_id": "...",
-  "view_type": "c4-context|c4-container|c4-component|c4-dynamic|c4-deployment",
-  "render_path": "...",
-  "evidence_summary": "..."
-}
-```
-
-## Skills
-
-- `c4-context`
-
-## Tools
-
-- archctl graph path ... (deferred — no current subcommand)
-- `archctl graph neighbours <id>`
-- archctl diagram put ... (deferred — no current subcommand)
-- `archctl diagram render <view-id>`
-- archctl diagram materialize ... (deferred — no current subcommand)
+Return: view spec (kind, scope, purpose), bundle path, DSL path,
+validation result, evidence summary.
