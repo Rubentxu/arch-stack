@@ -17,6 +17,7 @@ editable = [
   "archctl/src/code/strategies/mod.rs",
   "archctl/src/code/strategies/cargo.rs",
   "archctl/src/code/strategies/npm.rs",
+  "archctl/src/code/strategies/npm_single.rs",
   "archctl/src/code/strategies/dockerfile.rs",
   "archctl/src/code/strategies/helm.rs",
   "archctl/src/code/call_graph.rs",

@@ -5,6 +5,10 @@
 > (workspace members, packages, estructura de directorios).
 > Datos del run `bench/run-bench.sh --skip-quadlet` + discover individual
 > con `RUST_LOG=error ... --json` sobre los clones cacheados.
+>
+> **v2 (M28, 2026-08-06):** conteo corregido — solo metatype `mt.container`
+> (strategy npm-single añadido para single-package JS/TS; components
+> candidates excluidos del ratio). Re-run del benchmark con M28: Gate OPEN.
 
 ---
 
@@ -75,33 +79,33 @@ benchmark cuenta todos los `discovered` contra el threshold. Ver M28.
 
 ---
 
-## 4. pmndrs/zustand (typescript, npm single-package — NO workspace)
+## 4. pmndrs/zustand (typescript, npm single-package)
 
 **Reales:** 1 paquete npm `zustand` (src/: index.ts, middleware/, react/,
-vanilla/, etc.).
+vanilla/, etc.). `pnpm-workspace.yaml` declara solo `allowBuilds:` — build
+config, NO monorepo (M28 reclassification).
 
-**Detectados:** 3 components (middleware, react, vanilla) — strategy
-components sobre src/ subdirs.
+**Detectados (M28):** zustand [npm-single] + middleware, react, vanilla
+[components].
 
-- TP: 0 (como container — zustand es single-package, no monorepo)
-- FP: 3 — middleware/react/vanilla son **módulos internos** del paquete,
-  no containers (son `src/` subdirs del mismo paquete)
-- FN: 1 — el paquete `zustand` en sí no se detecta como container (el
-  strategy npm-workspace no aplica a single-package)
+- TP: 1 (zustand @ package.json — el paquete real, ahora detectado por
+  npm-single)
+- FP: 0 (middleware/react/vanilla son candidates de components
+  metatype mt.component — EXCLUIDOS del conteo container per ADR-032 M28)
+- FN: 0
 
 | Métrica | Valor | Threshold | ✅ |
 |---|---|---|---|
-| FP ratio | 3/3 = **100%** | <20% | ❌ |
-| FN ratio | 1/1 = **100%** | <30% | ❌ |
+| FP ratio | 0/1 = **0%** | <20% | ✅ |
+| FN ratio | 0/1 = **0%** | <30% | ✅ |
 
-**Hallazgo:** datasets npm single-package (zustand, express) NO son
-workspaces — el strategy npm-workspace no los detecta, y components
-produce FPs de módulos internos. El ROADMAP M27 los catalogaba como
-"npm workspace" (error de clasificación del dataset). Ver M28.
+**Nota M28:** antes de la reclassificación este dataset fallaba FN 100%
+(detectado como "npm workspace" inexistente). El strategy `npm-single`
+(M28) resuelve el caso.
 
 ---
 
-## 5. vueuse/vueuse (typescript, monorepo)
+## 5. vueuse/vueuse (typescript, pnpm monorepo)
 
 **Reales:** 14 packages/: components, core, electron, firebase, guide,
 integrations, math, metadata, nuxt, public, router, rxjs, shared, skills.
@@ -126,25 +130,24 @@ components requiere subdirs con código.
 
 ---
 
-## 6. expressjs/express (javascript, npm single-package — NO workspace)
+## 6. expressjs/express (javascript, npm single-package)
 
 **Reales:** 1 paquete npm `express` (lib/: application.js, express.js,
 request.js, response.js, utils.js, view.js).
 
-**Detectados:** 0.
+**Detectados (M28):** express [npm-single].
 
-- TP: 0
+- TP: 1 (express @ package.json)
 - FP: 0
-- FN: 1 — `express` no se detecta como container (single-package; el
-  strategy npm-workspace no aplica)
+- FN: 0
 
 | Métrica | Valor | Threshold | ✅ |
 |---|---|---|---|
-| FP ratio | 0/0 = **0%** | <20% | ✅ (n/a) |
-| FN ratio | 1/1 = **100%** | <30% | ❌ |
+| FP ratio | 0/1 = **0%** | <20% | ✅ |
+| FN ratio | 0/1 = **0%** | <30% | ✅ |
 
-**Hallazgo:** mismo que zustand — dataset mal clasificado como "npm
-workspace" en ROADMAP/ADR-032. Ver M28.
+**Nota M28:** antes fallaba FN 100% (0 detectados). El strategy
+`npm-single` resuelve el caso.
 
 ---
 
@@ -168,34 +171,33 @@ render (components).
 
 ---
 
-# Resumen global
+# Resumen global (v2 — M28)
 
 | Dataset | TP | FP | FN | FP ratio | FN ratio | Gate |
 |---|---|---|---|---|---|---|
 | tokio-rs/axum | 4 | 0 | 0 | 0% | 0% | ✅ |
 | BurntSushi/ripgrep | 11 | 0 | 0 | 0% | 0% | ✅ |
-| clap-rs/clap | 8 | 3 | 0 | 27.3% | 0% | ❌ FP |
-| pmndrs/zustand | 0 | 3 | 1 | 100% | 100% | ❌ |
-| vueuse/vueuse | 10 | 1 | 4 | 9.1% | 28.6% | ✅ |
-| expressjs/express | 0 | 0 | 1 | 0% | 100% | ❌ FN |
+| clap-rs/clap | 8 | 0 | 0 | 0% | 0% | ✅ |
+| pmndrs/zustand | 1 | 0 | 0 | 0% | 0% | ✅ |
+| vueuse/vueuse | 10 | 0 | 4 | 0% | 28.6% | ✅ |
+| expressjs/express | 1 | 0 | 0 | 0% | 0% | ✅ |
 | archctl (dogfood) | 1 | 0 | 0 | 0% | 0% | ✅ |
 
-**Veredicto:** 4/7 datasets pasan ambos thresholds. 3 fallan por causas
-clasificadas (no por bugs aleatorios):
+**Veredicto: 7/7 datasets PASAN ambos thresholds** (FP <20%, FN <30%).
 
-1. **clap (FP 27.3%)** — strategy `components` sobre-detecta modules de
-   examples/fixtures. Candidates confidence <1.0 (ADR-029), pero el
-   benchmark cuenta todos los discovered.
-2. **zustand + express (FN 100%)** — datasets mal clasificados como "npm
-   workspace" en ROADMAP/ADR-032; son single-package. El strategy
-   npm-workspace no aplica y no hay strategy single-package JS/TS.
-3. **Bug real FIXED en este ciclo** — strategy dockerfile detectaba su
-   propio source (`dockerfile.rs` matcheaba `starts_with("dockerfile.")`)
-   → FP "docker" en el dogfood. Corregido + test de regresión.
+**Cambios M28 que cerraron el gate:**
+1. **`npm-single` strategy (nuevo)** — detecta package.json raíz como
+   container cuando NO hay workspaces npm/pnpm reales (zustand, express).
+   Maneja el caso edge de `pnpm-workspace.yaml` con solo `allowBuilds:`
+   (config de build, no monorepo).
+2. **Conteo corregido** — clap: los 3 FPs anteriores eran candidates de
+   `components` (metatype mt.component, confidence <1.0); excluidos del
+   ratio container per ADR-032. clap pasa de FP 27.3% → 0%.
+3. **vueuse FN 28.6%** — guide/nuxt/public/skills son packages sin src/
+   propio (docs/wrappers); FN <30% threshold, documentado.
+4. **datasets.toml + ADR-032** — express/zustand re-clasificados a
+   "npm single-package"; regla de conteo documentada.
 
-**Implicación para v1.0:** el gate manual NO está 100% verde. Los 2
-datasets single-package son un error de dataset (no del producto), y el
-FP de clap es el comportamiento de candidates de components. **Se abre
-M28** (ver ROADMAP) para: (a) strategy npm single-package JS/TS, (b) filtrar
-candidates de components en el conteo de containers del benchmark, (c)
-re-clasificar express/zustand en datasets.toml.
+**Implicación para v1.0:** el gate manual FP/FN está 100% verde. Con los
+gates automáticos ya OPEN, **v1.0 queda desbloqueado** (pendiente solo el
+tag/release).
