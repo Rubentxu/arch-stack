@@ -269,14 +269,11 @@ diagram validate    → ✅ Bundle is valid
 **Estado:** Implementado en v0.22.0 (PR #47, #48, #49, #50 mergeados a main). Desbloquea v1.0.
 
 **FP/FN manual review (2026-08-06):** completada en
-`bench/reports/fpfn-rubric-2026-08-06.md`. **4/7 datasets pasan** ambos
-thresholds (axum, ripgrep, vueuse, dogfood). 3 fallan por causas clasificadas:
-clap (FP 27.3% — components sobre-detecta examples/fixtures), zustand y
-express (FN 100% — datasets mal clasificados como "npm workspace"; son
-single-package). **Bug real fixed en el ciclo:** strategy dockerfile
-detectaba su propio source (`dockerfile.rs`) → FP "docker" en dogfood.
-**Se abre [M28](#m28--single-package-js-ts--benchmark-gate-fixes--pendiente)**
-antes de declarar el gate manual 100% verde.
+`bench/reports/fpfn-rubric-2026-08-06.md`. **7/7 datasets pasan** ambos
+thresholds tras [M28](#m28--single-package-jsts--benchmark-gate-fixes--completo-2026-08-06)
+(strategy npm-single + conteo corregido). Bug real fixed en el ciclo:
+strategy dockerfile detectaba su propio source (`dockerfile.rs`) → FP
+"docker" en dogfood. **Gate manual 100% verde → v1.0 desbloqueado.**
 
 **Objetivo:** Demostrar empíricamente que `archctl` funciona en proyectos reales multi-lenguaje antes de declarar v1.0. Hoy, el vertical C4 está validado contra **un solo proyecto** (axum). Necesitamos datos sistemáticos.
 
@@ -362,32 +359,36 @@ antes de declarar el gate manual 100% verde.
 
 **Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md) (predecesor)
 
-## M28 — Single-package JS/TS + benchmark gate fixes — **PENDIENTE**
+## M28 — Single-package JS/TS + benchmark gate fixes — **COMPLETO** ✅ (2026-08-06)
 
-**Estado:** Pendiente. Abierto por la revisión FP/FN manual de M27
-(2026-08-06). Bloquea el gate manual 100% verde de v1.0.
+**Estado:** Implementado. Cierra el gate manual FP/FN de M27 — **7/7
+datasets pasan** (FP <20%, FN <30%). v1.0 desbloqueado.
 
-**Objetivo:** Cerrar los 3 fallos clasificados de la revisión FP/FN:
+**Cambios:**
+1. **Strategy `npm-single`** (nuevo, `strategies/npm_single.rs`, 7 tests):
+   detecta package.json raíz como container cuando NO hay workspaces
+   npm/pnpm reales. Maneja el edge case de `pnpm-workspace.yaml` con solo
+   `allowBuilds:` (config de build, no monorepo — zustand). Confianza 0.70.
+2. **Conteo FP/FN corregido (ADR-032)**: solo metatype `mt.container`
+   (cargo-workspace, npm-workspace, npm-single, dockerfile, helm).
+   Candidates de `components` (mt.component, confidence <1.0) excluidos
+   del ratio → clap pasa de FP 27.3% a 0%.
+3. **Re-clasificación datasets**: express/zustand → "npm single-package"
+   en `bench/datasets.toml` + ADR-032 documentado.
 
-1. **Strategy npm single-package JS/TS** — `c4-discover` no detecta
-   repos npm sin workspaces (zustand, express → FN 100%). Nuevo strategy
-   que trate el package.json raíz como un container (`mt.container` con
-   confidence < 1.0) cuando no hay workspaces.
-2. **Filtrar candidates de components del conteo de containers del
-   benchmark** — clap: FP 27.3% porque `discovered[]` incluye candidates
-   `components` (confidence <1.0, ADR-029) que el rubric cuenta como
-   containers. El benchmark debe contar solo metatype `mt.container`.
-3. **Re-clasificar express/zustand en `bench/datasets.toml`** — marcados
-   como "npm workspace" (incorrecto); corregir a "npm single-package" y
-   documentar la expectativa de detección en ADR-032.
+**Resultado:**
+| Dataset | FP ratio | FN ratio | Gate |
+|---|---|---|---|
+| axum | 0% | 0% | ✅ |
+| ripgrep | 0% | 0% | ✅ |
+| clap | 0% | 0% | ✅ |
+| zustand | 0% | 0% | ✅ |
+| vueuse | 0% | 28.6% | ✅ |
+| express | 0% | 0% | ✅ |
+| dogfood | 0% | 0% | ✅ |
 
-**Entregables:**
-1. `archctl/src/code/strategies/npm_single.rs` (o extensión de npm.rs)
-2. Fix del conteo en `bench/run-bench.sh` (metatype filter)
-3. `bench/datasets.toml` + `docs/adr/ADR-032` actualizados
-4. Re-run del benchmark → gate manual 100% verde → v1.0 declarado
-
-**Referencias:** `bench/reports/fpfn-rubric-2026-08-06.md`
+**Referencias:** `bench/reports/fpfn-rubric-2026-08-06.md` (v2),
+ADR-032 §Counting scope
 
 ## Mejoras futuras — `workflowctl`
 

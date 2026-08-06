@@ -12,6 +12,7 @@ pub mod components;
 pub mod dockerfile;
 pub mod helm;
 pub mod npm;
+pub mod npm_single;
 
 /// A C4 Container inference strategy. Each strategy detects Containers
 /// in the project tree using a single, focused signal (Cargo workspaces,
@@ -36,12 +37,13 @@ pub trait Strategy: Send + Sync {
 }
 
 /// Build the default set of MVP strategies: Cargo workspace, npm
-/// workspace, Dockerfile per service, Helm charts. The order is the
-/// display order in the human table output.
+/// workspace, npm single-package, Dockerfile per service, Helm charts.
+/// The order is the display order in the human table output.
 pub fn register_strategies() -> Vec<Box<dyn Strategy>> {
     vec![
         Box::new(crate::code::strategies::cargo::CargoWorkspace),
         Box::new(crate::code::strategies::npm::NpmWorkspace),
+        Box::new(crate::code::strategies::npm_single::NpmSinglePackage),
         Box::new(crate::code::strategies::dockerfile::DockerfilePerService),
         Box::new(crate::code::strategies::helm::HelmCharts),
         Box::new(crate::code::strategies::components::ComponentsStrategy),

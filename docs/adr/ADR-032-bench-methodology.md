@@ -63,6 +63,23 @@ false positives (phantom containers), and false negatives (real containers
 missed). The rubric is **not** automated because true positives require
 reading the repo's README/structure to know what counts as "real."
 
+**Counting scope (M28 fix, 2026-08-06):** FP/FN counts ONLY containers
+(metatype `mt.container`), measured against the exported bundle
+(`diagram export container:*`). `discovered[]` in the discover JSON also
+contains `components` strategy candidates (metatype `mt.component`,
+confidence <1.0 per ADR-029) — those are NOT containers and must NOT be
+counted as FP/FN. Filtering rule: a candidate counts iff its strategy is
+`cargo-workspace`, `npm-workspace`, `npm-single`, `dockerfile`, or `helm`
+(all `mt.container`). `components` candidates are excluded from the ratio
+(they are module candidates, reviewed separately).
+
+**Dataset classification (M28 fix, 2026-08-06):** `datasets.toml` must
+declare the correct package shape. `express` and `zustand` are
+**npm single-package** (no `workspaces` in package.json; zustand's
+`pnpm-workspace.yaml` declares only `allowBuilds:`, which is build config,
+not a monorepo). Single-package repos are detected by the `npm-single`
+strategy (root package.json → one container, confidence 0.70).
+
 ### Per-dataset timeout override
 
 `datasets.toml` declares a `timeout` field per dataset. The default is 60s.

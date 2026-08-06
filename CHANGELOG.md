@@ -23,9 +23,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `scripts/embed-stack.sh`, `manifests/view.toml`, `manifests/stack.toml`
   (scope gates), release.yml ahora embebe workbench + skills antes del build.
 
+### Fixed
+- **M28: strategy `npm-single`** — detecta package.json raíz como container
+  para repos npm single-package (zustand, express). Maneja el edge case de
+  `pnpm-workspace.yaml` con solo `allowBuilds:`. 7 tests.
+- **M28: conteo FP/FN corregido** — solo metatype `mt.container` cuenta;
+  candidates de `components` excluidos (ADR-032). clap FP 27.3% → 0%.
+- **dockerfile strategy self-detection** — `dockerfile.rs` matcheaba
+  `starts_with("dockerfile.")` → FP "docker". Whitelist de entornos.
+- **archview detectKind** — call-graph con `language` se clasificaba como
+  class-diagram; check de function ahora gana.
+- **embed-view.sh** — preserva el README tracked del assets-view.
+
+### Validation
+- FP/FN manual review: **7/7 datasets PASS** (FP <20%, FN <30%) →
+  **v1.0 desbloqueado**.
+- 523 tests archctl + 102 tests archview; clippy/fmt clean.
+- Benchmark M28 re-run: Gate OPEN, 11/11.
+
 ### Cycle
-- stack-distribution: ADR-033, view (PR #55) + stack (este PR)
-- 508 tests passing (416 lib + 92 integration)
+- stack-distribution: ADR-033 (view + stack), M28 (npm-single + gate fixes)
+- E2E real: sandbox Quadlet (discover→accept→export→validate in-container),
+  archctl view render verificado en Chromium headless (5 tipos de bundle)
 
 ## [v1.0.0] — 2026-08-06
 

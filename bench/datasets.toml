@@ -54,7 +54,7 @@ sha = "beca84e600e4e250f6b244d22878e72948f331c7"
 language = "typescript"
 extractor = "code c4-discover --apply"
 timeout = 60
-notes = "8MB npm workspace. Strategy: npm workspaces + AST walk."
+notes = "8MB npm single-package (M28 reclassification). Strategy: npm-single (root package.json as container). pnpm-workspace.yaml has no packages: list."
 
 [[datasets]]
 name = "vueuse/vueuse"
@@ -70,7 +70,7 @@ sha = "a3714473feb3d2908add734d340e7755fd85e0a3"
 language = "javascript"
 extractor = "code c4-discover --apply"
 timeout = 60
-notes = "10MB npm workspace. Predecessor: already in tests/smoke_real_projects.rs."
+notes = "10MB npm single-package (M28 reclassification). Strategy: npm-single (root package.json as container)."
 
 [[datasets]]
 name = "labstack/echo"
