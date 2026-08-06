@@ -576,6 +576,43 @@ en worktrees frescos sin intervención manual.
 **Referencias:** `.githooks/pre-push`, `scripts/verify-local.sh`,
 `scripts/embed-stack.sh`, ADR-025, ADR-033
 
+## M34 — Call-graph strategy consolidation + test hygiene — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — generado por debt-verify de M30 (PASS_WITH_WARNINGS).
+
+**Objetivo:** consolidar la deuda detectada en M30 en un ciclo de limpieza
+coherente. Ningún item es bloqueante; todos son WARN/SUGG del debt-report.
+
+**Alcance (items del debt-report M30):**
+1. **D2 (WARN, preexistente amplificado)** — 8 cuerpos `extract_*_function`
+   casi idénticos en `call_graph.rs:433-740` (M30 añadió 2 más:
+   `extract_go_function`, `extract_go_method`). Refactor a tabla/estrategia
+   común: ~240 LOC reducibles.
+2. **D3 (WARN, introducido por M30)** — doble fuente de verdad del fixture
+   Go: `const GO_SAMPLE` inline en `tests/code_call_graph.rs` vs
+   `tests/fixtures/go_callgraph/main.go`. Unificar (el test debe leer el
+   fixture o el fixture ser el único origen).
+3. **W3** — `CallGraphError::InvalidLanguage` dead code (clap value_enum):
+   `#[allow(dead_code)]` o eliminar + reword spec scenario 11.
+4. **W4** — `test_confidence_per_language` vacuo (aserta const contra sí
+   misma): reemplazar por `extract` real sobre TempDir y assert
+   `node.confidence == 0.85` (~20 LOC, fix recomendado in-cycle en M34).
+5. **D4/D5/D6 (SUGG)** — confidence magic numbers en 9 sitios; 3 help
+   strings repetidos en `cli.rs:249,289,308`; comentario duplicado en
+   `write_call_edge`. Centralizar Language metadata (confianza/label por
+   variante).
+
+**Criterios de éxito:**
+- Duplicación de extractores reducida sin cambio de comportamiento (tests
+  verdes: 525+).
+- Un único origen de verdad para el fixture Go.
+- Confidence test es un gate real de regresión.
+- Sin items WARN pendientes del debt-report M30.
+
+**Referencias:** `sddk/m30-call-graph-go-support/debt-report.md`,
+`archctl/src/code/call_graph.rs`, `archctl/tests/code_call_graph.rs`,
+`archctl/src/cli.rs`
+
 ## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **NUEVO (2026-08-06)**
 
 **Estado:** NUEVO — detectado durante el human-loop sandbox (M29.4).
