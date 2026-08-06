@@ -4,6 +4,59 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.1.0] — 2026-08-07
+
+### Added
+- **M30 Go call-graph extraction (ADR-035)**: `archctl code call-graph` ahora
+  soporta Go de verdad vía tree-sitter-go (bundled en `ast-grep-language`
+  0.45.0 builtin-parser). MVP languages pasa a `{rust, typescript, python,
+  go}`. Implementado:
+  - Go function extraction: `function_declaration` → `FunctionNode`,
+    `method_declaration` → `MethodNode`, `func_literal` no genera nodo
+    propio (calls se atribuyen a la named function envolvente — ADR-035 D3).
+  - Go call-edge extraction: direct calls (`identifier`) + method calls
+    (`selector_expression` → `field_identifier`).
+  - Help text `--lang` lista Go en los 3 clap doc-strings.
+  - `Language::Go` value_enum variant + 2 tests deterministas nuevos en
+    `archctl/tests/code_call_graph.rs` (5 nodes + 6 edges; `--lang rust`
+    en proyecto Go → 0 filesScanned).
+  - ADR-035 (`docs/adr/ADR-035-go-call-graph-extraction.md`) documenta las
+    5 decisiones (parsing engine, confidence 0.85, func_literal attribution,
+    MVP language list, smoke fixture strategy).
+  - Smoke `smoke_echo()` assert extracción Go real (rápido) +
+    `smoke_go_apply_fixture` (apply-path sobre fixture pequeño
+    `tests/fixtures/go_callgraph/`, 6 elements + 6 relations).
+  - Human loop Fase 6 + Fase 9.2 actualizadas (Go soportado, extracción
+    rápida; apply-path cubierto por el smoke fixture).
+  - Error message MVP lista actualizado: `{rust, typescript, python, go}`.
+
+### Amendment (2026-08-06, ver M32)
+El writer `--apply` es lento a escala (~0.43s/elemento; zustand 212 el →
+92s, echo 1307 el → 483s) — problema preexistente expuesto por el soporte
+Go. Por eso el smoke y el human loop usan extracción rápida + fixture
+pequeño para el apply-path. El fix del writer se trackea en M32 (apply
+writer performance: batching de transacciones).
+
+### ROADMAP follow-ups (M30 además)
+- **M31**: semántica unificada de `diagram export` sin proyecto/grafo.
+- **M32**: apply writer performance — batching de transacciones.
+- **M33**: pre-push hook — bootstrap `assets-stack/` en worktree fresco.
+- **M34**: call-graph strategy consolidation (W3 dead-code
+  `InvalidLanguage`, W4 vacuous `test_confidence_per_language`, D2
+  extract_fn duplication, D3 inline GO_SAMPLE vs fixture) — cierra la
+  deuda debt-report `sddk/m30-call-graph-go-support/debt-report.md`.
+
+### Validation
+- **Spec scenarios**: 20/20 cubiertos (4 con test runnable, 14 con
+  static inspection, 2 con smoke `#[ignore]`).
+- **Tests**: 525 pasan, 0 fallan (523 baseline + 2 nuevos Go).
+- **Gates**: `cargo clippy -- -D warnings` clean, `cargo fmt --check`
+  clean, smoke `smoke_echo()` + `smoke_go_apply_fixture` 2/2 PASS,
+  human loop sandbox 8/8 phases PASS.
+- **Verify verdict**: PASS_WITH_WARNINGS (debt-verify: 0 CRITICAL, 5 WARN
+  backloqueados a M34 + 1 preexistente OCP `match-lang`).
+- **Cycle**: `m30-call-graph-go-support`. PR URL en release notes.
+
 ## [v1.0.2] — 2026-08-06
 
 ### Added

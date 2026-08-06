@@ -467,6 +467,184 @@ Spec: [`docs/specs/e2e-sandbox.md`](specs/e2e-sandbox.md)
 **Referencias:** [ADR-034](adr/ADR-034-e2e-coverage-expansion.md), specs
 `e2e-installation.md`, `e2e-render.md`, `e2e-sandbox.md`
 
+## M30 — Call-graph: visibilidad de lenguajes no soportados — **EN CURSO (2026-08-06)**
+
+**Estado:** EN CURSO — decisión: soporte Go real (tree-sitter-go) vía ast-grep-language builtin-parser.
+
+**Objetivo:** `archctl code call-graph` (y por consistencia `class-diagram` /
+`state-machine`) comunican claramente cuándo no escanean archivos por el
+límite de lenguajes MVP, en vez de devolver silencio. Eliminar la cobertura
+falsa del smoke. Añadir Go como lenguaje soportado.
+
+**Decisión tomada (2026-08-06):** Soporte Go real vía tree-sitter-go 0.25.0 (bundled en ast-grep-language 0.45.0 builtin-parser). No se añade nuevo crate. Confidence 0.85 (mismo que TypeScript).
+
+**Alcance implementado:**
+1. Go function extraction: `function_declaration` → FunctionNode, `method_declaration` → MethodNode, `func_literal` → NO node (calls attributed to enclosing named function).
+2. Go call-edge extraction: direct calls (`identifier`), method calls (`selector_expression` → `field_identifier`).
+3. Smoke: `smoke_echo()` assert extracción Go real (filesScanned > 0, nodes > 0) + `smoke_go_apply_fixture` (apply-path sobre fixture pequeño `tests/fixtures/go_callgraph/`).
+4. Human loop: Fase 6 actualizada (Go soportado), Fase 9.2 actualizada (extracción rápida; apply-path cubierto por fixture smoke).
+5. Error message actualizado: MVP lista = rust, typescript, python, go.
+
+**Amendment (2026-08-06, ver M32):** el writer `--apply` es lento a escala
+(~0.43s/elemento; zustand 212 el → 92s, echo 1307 el → 483s) — problema
+preexistente expuesto por Go. Por eso el smoke y el human loop usan
+extracción rápida + fixture pequeño para el apply-path; el fix del writer
+se trackea en M32.
+
+**Criterios de éxito:**
+- `archctl code call-graph --cwd <go-repo> --json` devuelve `nodes.len() > 0` + `edges.len() > 0`.
+- Smoke `smoke_echo` pasa con extracción Go real (rápido) + `smoke_go_apply_fixture` con `elements_written > 0` y `relations_written > 0`.
+- Human loop Fase 9.2 pasa con Go produciendo extracción > 0 (rápido).
+- ADR-035 documenta las decisiones de extracción.
+
+**Referencias:** `archctl/src/code/call_graph.rs`, `archctl/tests/smoke_real_projects.rs`,
+`archctl/tests/fixtures/go_callgraph/`, `e2e/HUMAN_LOOP_TEST.md` (Fase 6, 9.2),
+`docs/adr/ADR-035-go-call-graph-extraction.md`
+
+## M32 — Apply writer performance: batching de transacciones — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — detectado durante M30 (el soporte Go expone el writer).
+
+**Objetivo:** `archctl code call-graph --apply` (y por consistencia los
+writers de class-diagram/state-machine/sequence) no tarden minutos en
+repos medianos.
+
+**Problema detectado (evidencia medida):**
+
+| Dataset | Lenguaje | Elementos | Tiempo --apply |
+|---|---|---|---|
+| pmndrs/zustand | typescript | 212 | 92s |
+| labstack/echo | go | 1307 | 483s |
+
+- ~0.43s por elemento, escalado lineal: `apply()` (`call_graph.rs` L1298)
+  abre el store UNA vez pero emite ~5-6 queries por nodo + 2 por edge
+  (write_function_version, write_function_element, 3× link_function_edges,
+  write_call_edge + evidence) — ~10.500 queries para echo.
+- lbug 0.18.3 (SQLite-backed) con autocommit por `query()` (`store.rs`
+  L384-391): cada statement = commit/fsync individual, sin batching.
+- Preexistente desde m11 (call-graph) — invisible hasta ahora porque Go
+  escaneaba 0 archivos. M30 lo expone; el human loop y smoke M29.3 se
+  degradarían a 10+ min sin el amendment de M30.
+
+**Alcance:**
+1. Investigar API de transacción en lbug 0.18.3 (BEGIN/COMMIT vía
+   `session.conn`, `execute_batch`, o envoltorio de transacción en
+   `GraphStore`).
+2. Envolver los loops de nodes + edges de `apply()` en UNA transacción
+   (commit único al final), manteniendo semántica (MERGE idempotente,
+   skip de existentes).
+3. Aplicar el mismo patrón a los writers hermanos si comparten estructura
+   (class_diagram.rs, state_machine.rs, sequence.rs).
+4. Benchmark antes/después: objetivo echo < 10s; suite smoke M29.3 total < 60s.
+
+**Criterios de éxito:**
+- `call-graph --apply` en labstack/echo < 10s (hoy 483s).
+- Sin cambio de comportamiento: mismos elementos/relaciones escritos
+  (idempotencia y skip de existentes intactos).
+- Unit tests del writer verdes + smoke fixture Go < 5s.
+
+**Referencias:** `archctl/src/code/call_graph.rs` (L1050-1290),
+`archctl/src/store.rs` (L384-391 `query`), lbug 0.18.3 docs,
+M30 amendment (este documento)
+
+## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — detectado durante M30 (primer push tras el repair).
+
+**Objetivo:** el pre-push hook (ADR-025, `.githooks/pre-push`) pueda pasar
+en worktrees frescos sin intervención manual.
+
+**Problema detectado (evidencia):**
+- `archctl/assets-stack/` es generado por `scripts/embed-stack.sh` desde
+  `profile/` (ADR-033, rust-embed) y está gitignored.
+- `verify-local.sh` (cheap tier) NO bootstrapa assets-stack; el hook hace
+  checkout de cada commit en worktree temporal y corre `cargo test` →
+  `#[derive(RustEmbed)] folder '<wt>/archctl/assets-stack/' does not exist`
+  → 8+ errores E0599 → el push se bloquea para CUALQUIER commit.
+- Workaround actual: `git push --no-verify` tras verificación manual local
+  (documentado en el hook, pero frágil).
+
+**Alcance:**
+1. `scripts/verify-local.sh` (cheap): si `archctl/assets-stack/` no existe,
+   ejecutar `scripts/embed-stack.sh` antes de las gates (idempotente).
+2. Verificar que pre-push pasa en un clone fresco sin `--no-verify`.
+
+**Criterios de éxito:**
+- `git push` de una branch con gates verdes pasa el pre-push sin bypass.
+- Sin cambio de comportamiento cuando assets-stack ya existe.
+
+**Referencias:** `.githooks/pre-push`, `scripts/verify-local.sh`,
+`scripts/embed-stack.sh`, ADR-025, ADR-033
+
+## M34 — Call-graph strategy consolidation + test hygiene — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — generado por debt-verify de M30 (PASS_WITH_WARNINGS).
+
+**Objetivo:** consolidar la deuda detectada en M30 en un ciclo de limpieza
+coherente. Ningún item es bloqueante; todos son WARN/SUGG del debt-report.
+
+**Alcance (items del debt-report M30):**
+1. **D2 (WARN, preexistente amplificado)** — 8 cuerpos `extract_*_function`
+   casi idénticos en `call_graph.rs:433-740` (M30 añadió 2 más:
+   `extract_go_function`, `extract_go_method`). Refactor a tabla/estrategia
+   común: ~240 LOC reducibles.
+2. **D3 (WARN, introducido por M30)** — doble fuente de verdad del fixture
+   Go: `const GO_SAMPLE` inline en `tests/code_call_graph.rs` vs
+   `tests/fixtures/go_callgraph/main.go`. Unificar (el test debe leer el
+   fixture o el fixture ser el único origen).
+3. **W3** — `CallGraphError::InvalidLanguage` dead code (clap value_enum):
+   `#[allow(dead_code)]` o eliminar + reword spec scenario 11.
+4. **W4** — `test_confidence_per_language` vacuo (aserta const contra sí
+   misma): reemplazar por `extract` real sobre TempDir y assert
+   `node.confidence == 0.85` (~20 LOC, fix recomendado in-cycle en M34).
+5. **D4/D5/D6 (SUGG)** — confidence magic numbers en 9 sitios; 3 help
+   strings repetidos en `cli.rs:249,289,308`; comentario duplicado en
+   `write_call_edge`. Centralizar Language metadata (confianza/label por
+   variante).
+
+**Criterios de éxito:**
+- Duplicación de extractores reducida sin cambio de comportamiento (tests
+  verdes: 525+).
+- Un único origen de verdad para el fixture Go.
+- Confidence test es un gate real de regresión.
+- Sin items WARN pendientes del debt-report M30.
+
+**Referencias:** `sddk/m30-call-graph-go-support/debt-report.md`,
+`archctl/src/code/call_graph.rs`, `archctl/tests/code_call_graph.rs`,
+`archctl/src/cli.rs`
+
+## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **NUEVO (2026-08-06)**
+
+**Estado:** NUEVO — detectado durante el human-loop sandbox (M29.4).
+
+**Objetivo:** Definir una única semántica para "export sin proyecto/grafo"
+y alinearla entre CLI, server del workbench, tests y documentación.
+
+**Problema detectado (evidencia — incoherencia CLI vs server):**
+- CLI: `archctl diagram export container:* --cwd /tmp` → `exit 0`, salida
+  "Exported 0 elements, 0 edges, 0 evidence" (éxito vacío).
+- Server: `GET /api/export` del workbench sin `project_dir` → **HTTP 500**
+  con error JSON (`archctl/src/view.rs` L311-317
+  `export_without_project_is_500_json`).
+- El guion humano original asumía error (`exit != 0`) — la ambigüedad es
+  del producto, no del test.
+
+**Alcance:**
+1. Decidir semántica única: (a) error claro `exit != 0` cuando no hay
+   proyecto/grafo, o (b) éxito vacío + warning explícito en stderr
+   ("no graph found — exported 0").
+2. Alinear CLI + server (`/api/export`) + `HUMAN_LOOP_TEST.md` (Fase 9.1) +
+   tests unitarios.
+3. Actualizar el human-loop sandbox a la semántica decidida.
+
+**Criterios de éxito:**
+- Misma semántica en CLI y server (test que cubra ambos).
+- Comportamiento documentado en `docs/` y reflejado en el guion humano.
+
+**Referencias:** `archctl/src/diagram/export.rs` (`export_rejects_malformed_selector`),
+`archctl/src/view.rs` (`export_without_project_is_500_json`),
+`e2e/human_loop_sandbox.sh` (Fase 9)
+
 ## Mejoras futuras — `workflowctl`
 
 > Documentadas en [ADR-030](adr/ADR-030-workflowctl-local-multi-repo.md). **No implementadas ahora**: se dejan como referencia para una eventual promoción a topología distribuida. Mantener este bloque sincronizado con ADR-030; cualquier cambio de estado requiere abrir un nuevo ADR.

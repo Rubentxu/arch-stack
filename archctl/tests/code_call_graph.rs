@@ -42,6 +42,8 @@ fn test_language_enum_value_variants() {
     assert!(variants.contains(&archctl::code::call_graph::Language::Rust));
     assert!(variants.contains(&archctl::code::call_graph::Language::TypeScript));
     assert!(variants.contains(&archctl::code::call_graph::Language::Python));
+    // M30: Go is a first-class call-graph language.
+    assert!(variants.contains(&archctl::code::call_graph::Language::Go));
 }
 
 #[test]
@@ -83,6 +85,140 @@ fn write(project: &Path, rel: &str, content: &str) {
         let _ = fs::create_dir_all(parent);
     }
     fs::write(&path, content).expect("write temp file");
+}
+
+// ─── M30: Go extraction semantics ────────────────────────────────────────────
+
+/// Inline Go source mirroring tests/fixtures/go_callgraph/main.go.
+/// Covers: function, pointer-receiver method, func_literal (no node),
+/// package-qualified call, selector method call, main/init.
+const GO_SAMPLE: &str = r#"package main
+
+import "fmt"
+
+func greet(name string) string {
+	fmt.Println("hi", name)
+	return "hi " + name
+}
+
+type Server struct{ name string }
+
+func (s *Server) Save() error { return nil }
+
+func handler() {
+	fn := func() { greet("anon") }
+	fn()
+}
+
+func main() {
+	s := &Server{name: "x"}
+	s.Save()
+	handler()
+}
+
+func init() { _ = greet("init") }
+"#;
+
+fn write_go_project(project: &Path) {
+    write(project, "go.mod", "module smoke\n\ngo 1.21\n");
+    write(project, "main.go", GO_SAMPLE);
+}
+
+#[test]
+fn test_go_extraction_nodes_and_edges() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+    write_go_project(project);
+
+    let fs = SystemFilesystem;
+    let report =
+        call_graph::extract(project, &[Language::Go], None, &fs).expect("extract must succeed");
+
+    // Nodes: greet, Server.Save (method), handler, main, init = 5.
+    // The anonymous func literal (fn := func() {...}) must NOT be a node.
+    assert_eq!(
+        report.nodes.len(),
+        5,
+        "expected 5 Go nodes, got: {:#?}",
+        report.nodes
+    );
+    let methods: Vec<_> = report
+        .nodes
+        .iter()
+        .filter(|n| n.kind == archctl::code::call_graph::FunctionKind::Method)
+        .collect();
+    assert_eq!(methods.len(), 1, "expected exactly 1 Method node");
+    assert_eq!(methods[0].name, "Save");
+    assert!(
+        !report.nodes.iter().any(|n| n.name == "fn"),
+        "func_literal must not produce a node"
+    );
+    for name in ["greet", "handler", "main", "init"] {
+        assert!(
+            report.nodes.iter().any(|n| n.name == name),
+            "expected node {name} in Go extraction"
+        );
+    }
+
+    // Edges: greet→Println (package-qualified), handler→greet (call from
+    // inside func_literal attributed to enclosing named function),
+    // main→Save (selector method call), main→handler, init→greet, PLUS
+    // handler→fn (the call to the func_literal variable itself — callee
+    // unresolved in MVP, no symbol table).
+    assert_eq!(
+        report.edges.len(),
+        6,
+        "expected 6 call edges, got: {:#?}",
+        report.edges
+    );
+    let has_edge = |caller_sub: &str, callee: &str| {
+        report
+            .edges
+            .iter()
+            .any(|e| e.caller.contains(caller_sub) && e.callee == callee)
+    };
+    assert!(
+        has_edge(":greet:", "Println"),
+        "greet must call Println (pkg-qualified)"
+    );
+    assert!(
+        has_edge(":handler:", "greet"),
+        "handler must own greet call from func_literal"
+    );
+    assert!(
+        has_edge(":handler:", "fn"),
+        "handler→fn call to func_literal variable (unresolved in MVP)"
+    );
+    assert!(
+        has_edge(":main:", "Save"),
+        "main must call Save (selector method)"
+    );
+    assert!(has_edge(":main:", "handler"), "main must call handler");
+    assert!(has_edge(":init:", "greet"), "init must call greet");
+}
+
+#[test]
+fn test_go_lang_filter_excludes_and_includes() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+    write_go_project(project);
+
+    let fs = SystemFilesystem;
+
+    // Filtering to Rust on a Go-only project must scan 0 files.
+    let rust_only =
+        call_graph::extract(project, &[Language::Rust], None, &fs).expect("extract must succeed");
+    assert_eq!(
+        rust_only.project.files_scanned, 0,
+        "Go files must be excluded by --lang rust"
+    );
+    assert!(rust_only.nodes.is_empty());
+
+    // Go filter picks the project up.
+    let go_only =
+        call_graph::extract(project, &[Language::Go], None, &fs).expect("extract must succeed");
+    assert!(go_only.project.files_scanned >= 1);
+    assert_eq!(go_only.project.languages.get("go").copied().unwrap_or(0), 1);
 }
 
 #[test]
