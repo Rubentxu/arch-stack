@@ -472,6 +472,15 @@ pub enum Command {
         #[command(subcommand)]
         action: McpAction,
     },
+    /// Serve the embedded archview workbench locally (ADR-033).
+    View {
+        /// Port to bind. 0 = ephemeral (default).
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Project directory for /api/export (graph-backed bundles).
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+    },
 }
 
 /// CLI entry point. Builds a [`CliContext`] with the production
@@ -831,6 +840,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
         },
+        Command::View { port, cwd } => {
+            let project_dir = cwd.map(|p| p.to_string_lossy().to_string());
+            let options = crate::view::ViewOptions { port, project_dir };
+            crate::view::run(options).context("view failed")?;
+            Ok(0)
+        }
     }
 }
 
