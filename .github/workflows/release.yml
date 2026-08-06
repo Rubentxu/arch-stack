@@ -31,7 +31,6 @@ jobs:
           fi
 
       # Read toolchain channel from rust-toolchain.toml to avoid hardcoding (dup-002 fix).
-      # rustup materialize the exact pin declared in the repo, no floating stable.
       - name: Read toolchain channel
         id: toolchain
         run: |
@@ -43,23 +42,9 @@ jobs:
         with:
           toolchain: "${{ steps.toolchain.outputs.channel }}"
 
-      # NOTE (2026-08-06): the static musl build is IMPOSSIBLE with lbug
-      # 0.18.3 — its prebuilt liblbug.a (112MB) is glibc and zig/musl-gcc
-      # cannot link it (all 10+ release runs failed with exit 101).
-      # Release uses glibc (gnu) instead: built on ubuntu-latest, runs on
-      # any modern Linux distro. The M27 sandbox container (ubuntu:24.04,
-      # glibc) compiles archctl natively in-container for its own runs.
-      - name: Embed workbench + stack assets
-        run: |
-          ./scripts/embed-view.sh
-          ./scripts/embed-stack.sh
-
-      - name: Build release (embedded workbench + stack)
-        working-directory: archctl
-        run: cargo build --release
-
       # ADR-033: the release binary embeds the archview workbench and the
-      # agent skills/agents/plugin. Build both, embed, then compile.
+      # agent skills/agents/plugin. Build the workbench first, then embed
+      # both asset sets, then compile archctl with everything inside.
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -83,6 +68,12 @@ jobs:
           ./scripts/embed-view.sh
           ./scripts/embed-stack.sh
 
+      # NOTE (2026-08-06): the static musl build is IMPOSSIBLE with lbug
+      # 0.18.3 — its prebuilt liblbug.a (112MB) is glibc and zig/musl-gcc
+      # cannot link it (all 10+ release runs failed with exit 101).
+      # Release uses glibc (gnu) instead: built on ubuntu-latest, runs on
+      # any modern Linux distro. The M27 sandbox container (ubuntu:24.04,
+      # glibc) compiles archctl natively in-container for its own runs.
       - name: Build release (embedded workbench + stack)
         working-directory: archctl
         run: cargo build --release
