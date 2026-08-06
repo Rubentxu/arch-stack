@@ -246,7 +246,7 @@ pub enum CodeAction {
         /// Emit machine-readable JSON to stdout.
         #[arg(long)]
         json: bool,
-        /// Comma-separated languages to process (rust, typescript, python).
+        /// Comma-separated languages to process (rust, typescript, python, go).
         /// If omitted, all MVP languages are processed.
         #[arg(long, value_enum, value_delimiter = ',')]
         lang: Vec<crate::code::call_graph::Language>,
@@ -286,7 +286,7 @@ pub enum CodeAction {
         /// Emit machine-readable JSON to stdout.
         #[arg(long)]
         json: bool,
-        /// Comma-separated languages to process (rust, typescript, python).
+        /// Comma-separated languages to process (rust, typescript, python, go).
         /// If omitted, all MVP languages are processed.
         #[arg(long, value_enum, value_delimiter = ',')]
         lang: Vec<crate::code::class_diagram::Language>,
@@ -305,7 +305,7 @@ pub enum CodeAction {
         /// Emit machine-readable JSON to stdout.
         #[arg(long)]
         json: bool,
-        /// Comma-separated languages to process (rust, typescript, python).
+        /// Comma-separated languages to process (rust, typescript, python, go).
         /// If omitted, all supported languages are processed.
         #[arg(long, value_enum, value_delimiter = ',')]
         lang: Vec<crate::code::state_machine::Language>,

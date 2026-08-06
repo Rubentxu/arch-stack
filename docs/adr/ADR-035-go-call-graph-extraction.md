@@ -53,9 +53,13 @@ demostrar que el MVP set puede crecer.
 
 **Rationale:**
 - `func_literal` es anonymous — no tiene nombre estable para identificarlo
-- Calls dentro de func_literal deben ser atribuidos al enclosing named function (thread `parent_key` through nesting)
-- El `parent_key` de la FunctionNode no se usa actualmente para nada en Go (se ignora en `extract_go_function`)
-- Equivale al comportamiento de closures en Rust/TypeScript
+- Calls dentro de func_literal deben ser atribuidos al enclosing named function
+- Mecanismo real (v1): el edge se atribuye al NAMED function más cercano por
+  línea que precede al call site (`make_call_edge`, heurística
+  nearest-preceding-function, misma que Rust/TypeScript). NO se usa
+  `parent_key` threading por ahora — el campo `parent` de FunctionNode
+  existe pero no se rellena para Go en esta fase (equivalente al
+  comportamiento de closures en Rust/TypeScript)
 
 **Implementation:**
 ```rust
