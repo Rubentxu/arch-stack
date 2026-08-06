@@ -2,7 +2,7 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-06, release `v1.0.1` (M27 + M28 + stack distribution).
+> Última actualización: 2026-08-06, release `v1.0.2` (M29 E2E suites).
 
 ## Estado del trunk
 
@@ -10,7 +10,7 @@
 |---|---|
 | Branch principal | `main` |
 | Tip | `4f22224` |
-| Versión | `v1.0.1` |
+| Versión | `v1.0.2` |
 | Tests | 402 pasan, 0 fallan, 5 ignorados |
 | Working tree | clean, en sync con `origin/main` |
 | MSRV | `1.91` (rust-version en `archctl/Cargo.toml`); CI pin `1.97.1` |
