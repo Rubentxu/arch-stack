@@ -4,7 +4,7 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased — stack-distribution]
+## [v1.0.1] — 2026-08-06
 
 ### Added
 - **`archctl view` (ADR-033)**: embedded archview workbench server. One-shot
