@@ -268,6 +268,16 @@ diagram validate    → ✅ Bundle is valid
 
 **Estado:** Implementado en v0.22.0 (PR #47, #48, #49, #50 mergeados a main). Desbloquea v1.0.
 
+**FP/FN manual review (2026-08-06):** completada en
+`bench/reports/fpfn-rubric-2026-08-06.md`. **4/7 datasets pasan** ambos
+thresholds (axum, ripgrep, vueuse, dogfood). 3 fallan por causas clasificadas:
+clap (FP 27.3% — components sobre-detecta examples/fixtures), zustand y
+express (FN 100% — datasets mal clasificados como "npm workspace"; son
+single-package). **Bug real fixed en el ciclo:** strategy dockerfile
+detectaba su propio source (`dockerfile.rs`) → FP "docker" en dogfood.
+**Se abre [M28](#m28--single-package-js-ts--benchmark-gate-fixes--pendiente)**
+antes de declarar el gate manual 100% verde.
+
 **Objetivo:** Demostrar empíricamente que `archctl` funciona en proyectos reales multi-lenguaje antes de declarar v1.0. Hoy, el vertical C4 está validado contra **un solo proyecto** (axum). Necesitamos datos sistemáticos.
 
 **Scope:**
@@ -351,6 +361,33 @@ diagram validate    → ✅ Bundle is valid
 6. `docs/adr/ADR-032-bench-methodology.md` (si surge un patrón nuevo)
 
 **Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md) (predecesor)
+
+## M28 — Single-package JS/TS + benchmark gate fixes — **PENDIENTE**
+
+**Estado:** Pendiente. Abierto por la revisión FP/FN manual de M27
+(2026-08-06). Bloquea el gate manual 100% verde de v1.0.
+
+**Objetivo:** Cerrar los 3 fallos clasificados de la revisión FP/FN:
+
+1. **Strategy npm single-package JS/TS** — `c4-discover` no detecta
+   repos npm sin workspaces (zustand, express → FN 100%). Nuevo strategy
+   que trate el package.json raíz como un container (`mt.container` con
+   confidence < 1.0) cuando no hay workspaces.
+2. **Filtrar candidates de components del conteo de containers del
+   benchmark** — clap: FP 27.3% porque `discovered[]` incluye candidates
+   `components` (confidence <1.0, ADR-029) que el rubric cuenta como
+   containers. El benchmark debe contar solo metatype `mt.container`.
+3. **Re-clasificar express/zustand en `bench/datasets.toml`** — marcados
+   como "npm workspace" (incorrecto); corregir a "npm single-package" y
+   documentar la expectativa de detección en ADR-032.
+
+**Entregables:**
+1. `archctl/src/code/strategies/npm_single.rs` (o extensión de npm.rs)
+2. Fix del conteo en `bench/run-bench.sh` (metatype filter)
+3. `bench/datasets.toml` + `docs/adr/ADR-032` actualizados
+4. Re-run del benchmark → gate manual 100% verde → v1.0 declarado
+
+**Referencias:** `bench/reports/fpfn-rubric-2026-08-06.md`
 
 ## Mejoras futuras — `workflowctl`
 
