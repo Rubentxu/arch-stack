@@ -37,7 +37,12 @@ const SMOKE_REPOS: &[(&str, &str, &[&str], bool)] = &[
     (
         "https://github.com/labstack/echo.git",
         "go",
-        &["code", "call-graph", "--apply"],
+        // M30 amendment: extraction-level (fast, ~0.5s). The --apply path
+        // on the FULL echo repo takes ~8min due to writer perf (M32);
+        // apply-path Go coverage lives in smoke_go_apply_fixture.
+        // apply=true here so smoke_one RUNS the extractor (the go assert
+        // lives inside the apply block); the args carry --json only.
+        &["code", "call-graph", "--json"],
         true,
     ),
     (
@@ -163,6 +168,32 @@ fn smoke_one(repo_url: &str, lang: &str, extractor: &[&str], apply: bool) {
                 "c4-discover applied 0 elements for {repo_url}: {stdout}"
             );
         }
+        // M30: for call-graph on Go repos, require extraction-level
+        // evidence (fast path — see smoke_go_apply_fixture for the
+        // --apply path on a small fixture; full-repo apply is slow due
+        // to writer perf, tracked in M32).
+        if extractor.contains(&"call-graph") && lang == "go" {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // Parse JSON output to find filesScanned + nodes
+            if let Some(start) = stdout.find('{') {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout[start..]) {
+                    let files_scanned = json
+                        .get("project")
+                        .and_then(|p| p.get("filesScanned"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let nodes = json
+                        .get("nodes")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    assert!(
+                        files_scanned > 0 && nodes > 0,
+                        "call-graph extracted nothing for {repo_url}: filesScanned={files_scanned}, nodes={nodes}"
+                    );
+                }
+            }
+        }
         assert!(
             out.status.success(),
             "extractor failed for {repo_url}: stderr={}",
@@ -268,6 +299,71 @@ fn smoke_echo() {
 fn smoke_express() {
     let (url, lang, ext, apply) = SMOKE_REPOS[2];
     smoke_one(url, lang, ext, apply);
+}
+
+/// M30: Go APPLY-path coverage on a small repo-local fixture (fast).
+/// Full-repo apply (labstack/echo) is covered at extraction level in
+/// smoke_echo; the --apply writer is slow at scale (M32), so we assert
+/// the apply round-trip here with a tiny fixture instead.
+#[test]
+#[ignore = "requires target/release/archctl; run with --ignored"]
+fn smoke_go_apply_fixture() {
+    use std::path::PathBuf;
+
+    let bin = archctl_bin();
+    assert!(
+        bin.exists(),
+        "archctl binary not found at {} — run `cargo build --release` first or set ARCHCTL_BIN",
+        bin.display()
+    );
+    let mut fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    fixture.push("tests/fixtures/go_callgraph");
+    assert!(fixture.is_dir(), "fixture missing: {}", fixture.display());
+
+    let xdg = TempDir::new().expect("xdg temp");
+    let xdg_data = xdg.path().join("data");
+    let xdg_config = xdg.path().join("config");
+    std::fs::create_dir_all(&xdg_data).expect("xdg data dir");
+    std::fs::create_dir_all(&xdg_config).expect("xdg config dir");
+
+    let out = Command::new(&bin)
+        .args(["code", "call-graph", "--apply", "--json"])
+        .current_dir(&fixture)
+        .env("XDG_DATA_HOME", &xdg_data)
+        .env("XDG_CONFIG_HOME", &xdg_config)
+        .env("RUST_LOG", "error")
+        .output()
+        .expect("call-graph fixture spawn");
+    assert!(
+        out.status.success(),
+        "call-graph --apply failed on fixture: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json_start = stdout.find('{').unwrap_or(stdout.len());
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout[json_start..]).expect("call-graph --json parse on fixture");
+    let elements_written = json
+        .get("elements_written")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let relations_written = json
+        .get("relations_written")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    eprintln!(
+        "  go fixture apply: elements_written={elements_written}, relations_written={relations_written}"
+    );
+    assert!(
+        elements_written > 0,
+        "call-graph --apply wrote 0 elements on Go fixture: {stdout}"
+    );
+    // The fixture has cross-function calls (handler→greet, main→handler,
+    // method call s.Save) — at least one relation must be written.
+    assert!(
+        relations_written > 0,
+        "call-graph --apply wrote 0 relations on Go fixture: {stdout}"
+    );
 }
 
 #[test]
