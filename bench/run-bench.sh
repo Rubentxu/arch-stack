@@ -306,6 +306,7 @@ fi
 # rows have format: | name | lang | exit | wall_ms | peak_rss_mb | valid | deterministic | notes |
 DETERMINISTIC_COUNT=0
 VALID_COUNT=0
+C4_VALID_COUNT=0
 PEAK_RSS_MAX=0
 WALL_TIME_MAX=0
 for row in "${ROWS[@]}"; do
@@ -322,6 +323,10 @@ for row in "${ROWS[@]}"; do
   if [[ "$_rvalid" == "yes" ]]; then
     VALID_COUNT=$((VALID_COUNT + 1))
   fi
+  # C4_VALID_COUNT: only datasets that can produce bundles (valid != n/a)
+  if [[ "$_rvalid" != "n/a" ]]; then
+    C4_VALID_COUNT=$((C4_VALID_COUNT + 1))
+  fi
   if [[ -n "$_rrss" && "$_rrss" -gt "$PEAK_RSS_MAX" ]]; then
     PEAK_RSS_MAX="$_rrss"
   fi
@@ -330,18 +335,18 @@ for row in "${ROWS[@]}"; do
   fi
 done
 
-# 2. determinism (100%)
-if [[ $DETERMINISTIC_COUNT -lt $TOTAL ]]; then
+# 2. determinism (100% of C4-capable datasets)
+if [[ $DETERMINISTIC_COUNT -lt $C4_VALID_COUNT ]]; then
   GATE_STATUS="BLOCKED"
   GATE_FAILS=$((GATE_FAILS + 1))
-  GATE_REASONS+=("determinism: ${DETERMINISTIC_COUNT}/${TOTAL} < 100%")
+  GATE_REASONS+=("determinism: ${DETERMINISTIC_COUNT}/${C4_VALID_COUNT} < 100%")
 fi
 
-# 3. bundle_validity (100%)
-if [[ $VALID_COUNT -lt $TOTAL ]]; then
+# 3. bundle_validity (100% of C4-capable datasets)
+if [[ $VALID_COUNT -lt $C4_VALID_COUNT ]]; then
   GATE_STATUS="BLOCKED"
   GATE_FAILS=$((GATE_FAILS + 1))
-  GATE_REASONS+=("bundle_validity: ${VALID_COUNT}/${TOTAL} < 100%")
+  GATE_REASONS+=("bundle_validity: ${VALID_COUNT}/${C4_VALID_COUNT} < 100%")
 fi
 
 # 4. peak_rss (< 500MB)
@@ -419,8 +424,8 @@ ${GATE_REASONS_BLOCK}
 | c4_discover_time | under-30s-median | ${WALL_TIME_MAX}ms max |
 | export_time | under-5s-median | per-dataset in table |
 | peak_rss | under-${THRESHOLD_PEAK_RSS}MB | ${PEAK_RSS_MAX}MB max |
-| bundle_validity | 100pct | ${VALID_COUNT}/${TOTAL} |
-| determinism | 100pct | ${DETERMINISTIC_COUNT}/${TOTAL} |
+| bundle_validity | 100pct | ${VALID_COUNT}/${C4_VALID_COUNT} |
+| determinism | 100pct | ${DETERMINISTIC_COUNT}/${C4_VALID_COUNT} |
 | fp_ratio | under-20pct-manual | not-measured |
 | fn_ratio | under-30pct-manual | not-measured |
 
