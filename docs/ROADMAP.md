@@ -501,13 +501,14 @@ se trackea en M32.
 `archctl/tests/fixtures/go_callgraph/`, `e2e/HUMAN_LOOP_TEST.md` (Fase 6, 9.2),
 `docs/adr/ADR-035-go-call-graph-extraction.md`
 
-## M32 — Apply writer performance: batching de transacciones — **NUEVO (2026-08-06)**
+## M32 — Apply writer performance: transaction + bulk import — **NUEVO (2026-08-06)**
 
 **Estado:** NUEVO — detectado durante M30 (el soporte Go expone el writer).
+Plan de ejecución aprobado y registrado en **ADR-036**.
 
 **Objetivo:** `archctl code call-graph --apply` (y por consistencia los
-writers de class-diagram/state-machine/sequence) no tarden minutos en
-repos medianos.
+writers de class-diagram/state-machine/sequence) guarden en segundos, no
+minutos.
 
 **Problema detectado (evidencia medida):**
 
@@ -517,35 +518,39 @@ repos medianos.
 | labstack/echo | go | 1307 | 483s |
 
 - ~0.43s por elemento, escalado lineal: `apply()` (`call_graph.rs` L1298)
-  abre el store UNA vez pero emite ~5-6 queries por nodo + 2 por edge
-  (write_function_version, write_function_element, 3× link_function_edges,
-  write_call_edge + evidence) — ~10.500 queries para echo.
-- lbug 0.18.3 (SQLite-backed) con autocommit por `query()` (`store.rs`
-  L384-391): cada statement = commit/fsync individual, sin batching.
-- Preexistente desde m11 (call-graph) — invisible hasta ahora porque Go
-  escaneaba 0 archivos. M30 lo expone; el human loop y smoke M29.3 se
-  degradarían a 10+ min sin el amendment de M30.
+  abre el store UNA vez pero emite ~5-6 queries por nodo + ~2 por edge
+  (~10.500 queries para echo), cada una con su commit/checkpoint.
+- **lbug 0.18.3 es Kùzu** (embedded graph DB, FFI C++, threads internos —
+  `user 37min` vs `real 8min`), NO SQLite (corregido: la entrada anterior
+  decía "SQLite-backed").
+- **Sí existe parameter binding** (`Connection::prepare` + `execute`, lbug
+  connection.rs L318-354) — el comentario en `store.rs:420` es erróneo.
+- Preexistente desde m11 (call-graph) — invisible hasta que M30 activó Go.
 
-**Alcance:**
-1. Investigar API de transacción en lbug 0.18.3 (BEGIN/COMMIT vía
-   `session.conn`, `execute_batch`, o envoltorio de transacción en
-   `GraphStore`).
-2. Envolver los loops de nodes + edges de `apply()` en UNA transacción
-   (commit único al final), manteniendo semántica (MERGE idempotente,
-   skip de existentes).
-3. Aplicar el mismo patrón a los writers hermanos si comparten estructura
-   (class_diagram.rs, state_machine.rs, sequence.rs).
-4. Benchmark antes/después: objetivo echo < 10s; suite smoke M29.3 total < 60s.
+**Medidas (orden de ejecución, ver ADR-036):**
+1. **D1 — Transacción única** `BEGIN TRANSACTION`…`COMMIT` alrededor del
+   apply: 10.500 commits → 1 checkpoint. Impacto 10-100x (echo → ~5-15s).
+2. **D4 — Gate de regresión**: bench criterion de call-graph apply (echo
+   <10s, zustand <5s, fixture <5s) + corregir comentarios erróneos
+   (`store.rs:420`, este mismo entry).
+3. **D2 — Bulk import UNWIND** con parámetros, lotes de ~500 (patrón nativo
+   Kùzu): 10.500 queries → ~6. Impacto adicional 2-10x (echo → <3s).
+4. **D3 — Prepared statements**: `prepare()` una vez por forma, `execute`
+   con params; extender `GraphStore` sin romper `query(&str)`.
+5. **D5 — Writers hermanos** (class-diagram/state-machine/sequence) si
+   comparten el patrón.
 
 **Criterios de éxito:**
-- `call-graph --apply` en labstack/echo < 10s (hoy 483s).
+- `call-graph --apply` en labstack/echo < 10s (hoy 483s); con D2 < 3s.
 - Sin cambio de comportamiento: mismos elementos/relaciones escritos
-  (idempotencia y skip de existentes intactos).
-- Unit tests del writer verdes + smoke fixture Go < 5s.
+  (idempotencia y skip de existentes intactos) — tests del writer verdes.
+- Bench de regresión añadido (hoy no existe ninguno del writer).
+- Correcciones documentales aplicadas (Kùzu, parameter binding).
 
-**Referencias:** `archctl/src/code/call_graph.rs` (L1050-1290),
-`archctl/src/store.rs` (L384-391 `query`), lbug 0.18.3 docs,
-M30 amendment (este documento)
+**Referencias:** [ADR-036](adr/ADR-036-apply-writer-performance.md),
+`archctl/src/code/call_graph.rs` (L1050-1290),
+`archctl/src/store.rs` (L384-391 `query`, L420 comentario erróneo),
+lbug 0.18.3 `src/connection.rs`, M30 amendment (este documento)
 
 ## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **NUEVO (2026-08-06)**
 
