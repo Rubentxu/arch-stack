@@ -119,6 +119,22 @@ if [ "$MODE" = "full" ]; then
     )
     run_gate "$REPO_ROOT/scripts/bench-compare.sh" "$BASELINE"
 
+    # ---- E2E suites (M29, ADR-034) -------------------------------------------
+    # Install E2E: always (no external deps beyond the release binary).
+    run_gate "$REPO_ROOT/e2e/install_e2e.sh" --bin "$REPO_ROOT/archctl/target/release/archctl"
+    # Render E2E: only when playwright is available.
+    if python3 -c "import playwright" 2>/dev/null; then
+        run_gate python3 "$REPO_ROOT/e2e/render_e2e.py" --samples-only
+    else
+        echo "verify-local: playwright not found; skipping render E2E (install: pip install playwright && playwright install chromium)"
+    fi
+    # Sandbox E2E: only when podman is available (needs network for image).
+    if command -v podman >/dev/null 2>&1; then
+        run_gate "$REPO_ROOT/bench/sandbox-e2e.sh" --no-build
+    else
+        echo "verify-local: podman not found; skipping sandbox E2E"
+    fi
+
     # ---- live branch protection (explicit opt-in, never cheap pre-push) ------
     if [ "$CHECK_BP" = "1" ]; then
         run_gate "$REPO_ROOT/scripts/check-branch-protection.sh"

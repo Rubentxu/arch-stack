@@ -111,6 +111,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Post-release verification (M29.5, ADR-034): the uploaded binary must
+      # run, expose `view`, and embed the stack (skills/agents/plugin).
+      # Runs the same install_e2e suite against the JUST-uploaded asset.
+      - name: Post-release binary verification
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          gh release download "v${{ steps.version.outputs.VERSION }}" \
+            --pattern archctl --dir /tmp/release-check --clobber
+          chmod +x /tmp/release-check/archctl
+          /tmp/release-check/archctl --version | grep -q "archctl"
+          /tmp/release-check/archctl view --help | grep -q "Usage: archctl view"
+          /tmp/release-check/archctl stack status 2>/dev/null | grep -q "drift"
+          echo "release binary verified: version + view + stack status"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Skip (release exists)
         if: steps.check_release.outputs.exists == 'true'
         run: echo "Release v${{ steps.version.outputs.VERSION }} already exists, skipping"

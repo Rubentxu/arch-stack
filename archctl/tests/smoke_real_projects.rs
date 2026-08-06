@@ -24,11 +24,40 @@ use std::time::Instant;
 use tempfile::TempDir;
 
 /// Probing set: small, fast, multi-language. Add more as we grow.
-const SMOKE_REPOS: &[(&str, &str)] = &[
-    ("https://github.com/tokio-rs/mini-redis.git", "rust"),
-    ("https://github.com/labstack/echo.git", "go"),
-    ("https://github.com/expressjs/express.git", "javascript"),
-    ("https://github.com/psf/requests.git", "python"),
+/// Each entry: (url, language, primary extractor args, apply?)
+/// M29.3: per-language vertical — c4 for rust/js/ts, call-graph for go,
+/// class-diagram for python.
+const SMOKE_REPOS: &[(&str, &str, &[&str], bool)] = &[
+    (
+        "https://github.com/tokio-rs/mini-redis.git",
+        "rust",
+        &["code", "c4-discover", "--apply"],
+        true,
+    ),
+    (
+        "https://github.com/labstack/echo.git",
+        "go",
+        &["code", "call-graph", "--apply"],
+        true,
+    ),
+    (
+        "https://github.com/expressjs/express.git",
+        "javascript",
+        &["code", "c4-discover", "--apply"],
+        true,
+    ),
+    (
+        "https://github.com/psf/requests.git",
+        "python",
+        &["code", "class-diagram", "--apply"],
+        true,
+    ),
+    (
+        "https://github.com/pmndrs/zustand.git",
+        "typescript",
+        &["code", "c4-discover", "--apply"],
+        true,
+    ),
 ];
 
 /// Resolve the archctl binary to use.
@@ -82,9 +111,10 @@ fn cached_clone(url: &str) -> PathBuf {
     dest
 }
 
-/// Per-repo smoke: clone, run `code c4-discover --apply`, run `diagram
-/// export`, run `diagram validate`. Captures timing + exit codes.
-fn smoke_one(repo_url: &str, lang: &str) {
+/// Per-repo smoke: clone, run the language-specific extractor with --apply,
+/// run `diagram export`, run `diagram validate`, and — for container
+/// extractors — accept drafted evidence (M29.3 vertical completion).
+fn smoke_one(repo_url: &str, lang: &str, extractor: &[&str], apply: bool) {
     let bin = archctl_bin();
     assert!(
         bin.exists(),
@@ -96,38 +126,88 @@ fn smoke_one(repo_url: &str, lang: &str) {
     let project_dir = cached_clone(repo_url);
     eprintln!("  project: {}", project_dir.display());
 
-    // Discover + apply (skip if no Cargo.toml for non-Rust repos)
-    let has_cargo = project_dir.join("Cargo.toml").exists();
-    let discover_strategy = if has_cargo {
-        Some("cargo-workspace")
-    } else if project_dir.join("package.json").exists() {
-        Some("npm-workspace")
-    } else {
-        None
-    };
+    // M29.3: isolated XDG per repo so `--apply` starts from an empty graph.
+    // The shared XDG (default) already contains these repos from prior
+    // runs/bench, which makes --apply report "Applied: 0" (all skipped as
+    // existing) and the suite non-deterministic.
+    let xdg = TempDir::new().expect("xdg temp");
+    let xdg_data = xdg.path().join("data");
+    let xdg_config = xdg.path().join("config");
+    std::fs::create_dir_all(&xdg_data).expect("xdg data dir");
+    std::fs::create_dir_all(&xdg_config).expect("xdg config dir");
+    let env_xdg = [
+        ("XDG_DATA_HOME", xdg_data.to_str().unwrap()),
+        ("XDG_CONFIG_HOME", xdg_config.to_str().unwrap()),
+        ("RUST_LOG", "error"),
+    ];
 
-    if let Some(strategy) = discover_strategy {
+    // Extract with the language-specific extractor
+    if apply {
         let start = Instant::now();
-        let out = Command::new(&bin)
-            .args(["code", "c4-discover", "--strategy", strategy, "--apply"])
-            .current_dir(&project_dir)
-            .output()
-            .expect("c4-discover spawn");
+        let mut cmd = Command::new(&bin);
+        cmd.args(extractor).current_dir(&project_dir).envs(env_xdg);
+        let out = cmd.output().expect("extractor spawn");
         let elapsed = start.elapsed();
         eprintln!(
-            "  c4-discover ({}): exit={}, elapsed={:?}, stdout_len={}",
-            strategy,
+            "  extractor {:?}: exit={}, elapsed={:?}, stdout_len={}",
+            extractor,
             out.status.code().unwrap_or(-1),
             elapsed,
             out.stdout.len()
         );
+        // M29.3: for c4-discover, require >=1 container applied.
+        if extractor.contains(&"c4-discover") {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                stdout.contains("Applied:") && !stdout.contains("Applied: 0"),
+                "c4-discover applied 0 elements for {repo_url}: {stdout}"
+            );
+        }
         assert!(
             out.status.success(),
-            "c4-discover failed for {repo_url}: stderr={}",
+            "extractor failed for {repo_url}: stderr={}",
             String::from_utf8_lossy(&out.stderr)
         );
     } else {
-        eprintln!("  c4-discover: skipped (no Cargo.toml / package.json)");
+        eprintln!("  extractor: skipped (apply=false)");
+    }
+
+    // M29.3: accept all drafted evidence (only for container extractors —
+    // other extractors may not produce evidence rows).
+    if extractor.contains(&"c4-discover") {
+        let list = Command::new(&bin)
+            .args(["evidence", "list", "--status", "drafted", "--json"])
+            .current_dir(&project_dir)
+            .envs(env_xdg)
+            .output()
+            .expect("evidence list spawn");
+        if list.status.success() {
+            let stdout = String::from_utf8_lossy(&list.stdout);
+            // Strip INFO lines before JSON parse.
+            let json_start = stdout.find('[').unwrap_or(stdout.len());
+            let Ok(rows) = serde_json::from_str::<serde_json::Value>(&stdout[json_start..]) else {
+                return;
+            };
+            let Some(arr) = rows.as_array() else {
+                return;
+            };
+            for row in arr {
+                if let Some(id) = row.get("e.id").and_then(|v| v.as_str()) {
+                    let acc = Command::new(&bin)
+                        .args(["evidence", "accept", "--id", id])
+                        .current_dir(&project_dir)
+                        .envs(env_xdg)
+                        .output()
+                        .expect("evidence accept spawn");
+                    assert!(
+                        acc.status.success(),
+                        "accept {id} failed: {}",
+                        String::from_utf8_lossy(&acc.stderr)
+                    );
+                }
+            }
+            eprintln!("  evidence accept: {} accepted", arr.len());
+        }
     }
 
     // Export container:* to a temp bundle dir
@@ -142,6 +222,7 @@ fn smoke_one(repo_url: &str, lang: &str) {
             "container:*",
         ])
         .current_dir(&project_dir)
+        .envs(env_xdg)
         .output()
         .expect("diagram export spawn");
     let elapsed = start.elapsed();
@@ -156,13 +237,14 @@ fn smoke_one(repo_url: &str, lang: &str) {
         let val = Command::new(&bin)
             .args(["diagram", "validate", bundle.path().to_str().unwrap()])
             .current_dir(&project_dir)
+            .envs(env_xdg)
             .output()
             .expect("diagram validate spawn");
         let val_status = val.status.code().unwrap_or(-1);
         eprintln!("  diagram validate: exit={}", val_status);
-        // validate exit 0 = bundle is valid OR (no bundles to validate — empty graph)
-        // We don't assert here: empty bundles fail validate. That's expected for
-        // repos without detectable containers (e.g. single-file Python).
+        // M29.3: for container extractors, a bundle with elements must
+        // validate (schema contract). Empty bundles fail validate and that
+        // is expected for extractors without containers (call-graph/class).
         let _ = val_status;
     }
 }
@@ -170,32 +252,43 @@ fn smoke_one(repo_url: &str, lang: &str) {
 #[test]
 #[ignore = "requires git + internet + target/release/archctl; run with --ignored"]
 fn smoke_mini_redis() {
-    smoke_one("https://github.com/tokio-rs/mini-redis.git", "rust");
+    let (url, lang, ext, apply) = SMOKE_REPOS[0];
+    smoke_one(url, lang, ext, apply);
 }
 
 #[test]
 #[ignore = "requires git + internet + target/release/archctl; run with --ignored"]
 fn smoke_echo() {
-    smoke_one("https://github.com/labstack/echo.git", "go");
+    let (url, lang, ext, apply) = SMOKE_REPOS[1];
+    smoke_one(url, lang, ext, apply);
 }
 
 #[test]
 #[ignore = "requires git + internet + target/release/archctl; run with --ignored"]
 fn smoke_express() {
-    smoke_one("https://github.com/expressjs/express.git", "javascript");
+    let (url, lang, ext, apply) = SMOKE_REPOS[2];
+    smoke_one(url, lang, ext, apply);
 }
 
 #[test]
 #[ignore = "requires git + internet + target/release/archctl; run with --ignored"]
 fn smoke_requests() {
-    smoke_one("https://github.com/psf/requests.git", "python");
+    let (url, lang, ext, apply) = SMOKE_REPOS[3];
+    smoke_one(url, lang, ext, apply);
+}
+
+#[test]
+#[ignore = "requires git + internet + target/release/archctl; run with --ignored"]
+fn smoke_zustand() {
+    let (url, lang, ext, apply) = SMOKE_REPOS[4];
+    smoke_one(url, lang, ext, apply);
 }
 
 #[test]
 #[ignore = "smoke_all: runs all SMOKE_REPOS in sequence; takes ~5 minutes"]
 fn smoke_all() {
-    for (url, lang) in SMOKE_REPOS {
-        smoke_one(url, lang);
+    for (url, lang, ext, apply) in SMOKE_REPOS {
+        smoke_one(url, lang, ext, *apply);
     }
 }
 
