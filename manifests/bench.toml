@@ -1,0 +1,68 @@
+# scope: bench
+#
+# archctl-bench sandbox harness (M27). Validates bash/TOML/Containerfile
+# artifacts for the pre-v1.0 release gate referenced in ADR-032.
+#
+# Scope content is bash + TOML + Containerfile (NOT Rust code), so the
+# manifest declares file paths and shell-text invariants rather than
+# Rust public symbols.
+
+id = "bench"
+version = "0.1.0"
+description = "archctl-bench sandbox (M27 pre-v1.0 release gate) — bash + TOML + Containerfile"
+
+# Files in scope (relative to repo root).
+editable = [
+  "bench/Containerfile",
+  "bench/entrypoint.sh",
+  "bench/build.sh",
+  "bench/datasets.sh",
+  "bench/datasets.toml",
+  "bench/run-bench.sh",
+  "bench/quadlets/archctl-bench.container",
+  "bench/templates/report.md",
+  "bench/templates/rubric.md",
+  "bench/README.md",
+]
+
+# Required text fragments (must appear in the files above).
+# These are content invariants, not Rust symbols.
+must_hold = [
+  "FROM ubuntu:24.04",                                    # Containerfile
+  "rustup default 1.97.1",                                # Containerfile
+  "Type=oneshot",                                         # Quadlet
+  "RemapUsers=true",                                      # Quadlet
+  "default_timeout",                                      # datasets.toml
+  "[[datasets]]",                                         # datasets.toml
+  "build.sh",                                             # docs/scripts
+  "run-bench.sh",                                         # docs/scripts
+  "datasets.toml",                                        # docs
+  "exit_zero_rate",                                       # run-bench.sh threshold
+  "QUADLET_SKIP",                                         # fallback path
+  "set -euo pipefail",                                    # shell strictness
+]
+
+# Minimum tests (we have no Rust tests in this scope; shellcheck smoke is the
+# verification path invoked by CI scripts/test-ci-gates.sh).
+minimum_tests = 0
+
+# Forbidden content (catch accidental drift).
+# Note: "negative" mentions in comments (e.g., "no --container-daemon-socket")
+# are allowed in the source files; the gate's substring search will catch
+# these as false positives. The convention is: comment strings describing
+# what is FORBIDDEN include the prefix "no-" or "without-" to avoid matching.
+must_not_contain = [
+  "FROM ubuntu:latest",          # no floating tag
+  "catthehacker/ubuntu",         # no community floating image (ADR-032 Q2)
+  "reqwest",                     # no network runtime (ADR-011)
+  "kroki.io",                    # no public renderer (ADR-011)
+  "plantuml.com",                # no public renderer (ADR-011)
+]
+
+# Public "interface" of the bench scope (the bash entry points).
+# Consumers (CI, developers) call these; renaming requires updating doc refs.
+# Note: public_symbols is empty because the bench scope is bash/TOML, not
+# Rust code. The doctor --scopes gate validates editable_files_exist +
+# must_hold_invariants below; the public_symbols check is intentionally
+# skipped for non-Rust scopes.
+public_symbols = []

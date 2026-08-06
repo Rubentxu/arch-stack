@@ -1,0 +1,55 @@
+# archctl-bench.container — Quadlet unit for the M27 sandbox
+#
+# Refs:
+#   - https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html
+#   - ADR-032 (bench methodology)
+#   - docs/specs/bench-harness.md
+#
+# Invariants enforced here:
+#   - Type=oneshot (no daemon, no persistent state)
+#   - Rootless (no privileged flags)
+#   - Explicit --uidmap=1000:0:1 for XDG path translation (R2 mitigation)
+#   - RemapUsers=true (modern alternative to --uidmap; equivalent semantics)
+#   - No --bind, no --reuse, no --container-daemon-socket
+
+[Unit]
+Description=archctl-bench sandbox (one-shot, rootless)
+After=local-fs.target
+
+[Container]
+Image=archctl-bench:latest
+ContainerName=archctl-bench
+AutoUpdate=registry
+
+# Rootless: no daemon, no privileged flags
+# RemapUsers=true is the modern podman equivalent of --uidmap=1000:0:1.
+# Both achieve the same identity translation for the in-container user.
+RemapUsers=true
+SecurityLabelDisable=true
+# Explicit --uidmap for cross-version compatibility (some podman builds
+# have RemapUsers but not the inverse mapping). See:
+# https://docs.podman.io/en/latest/markdown/podman-run.1.html#uidmap-container-uid-host-uid-amount
+AddCommandLineFlag=--uidmap=1000:0:1
+
+# Volume mounts (named-volumes or host paths)
+Volume=datasets-volume:/datasets:ro
+Volume=reports-volume:/reports:rw
+Volume=%h/.cargo:/root/.cargo:rw
+Volume=%h/.local/share/archctl:/xdg/data:rw
+Volume=%h/.config/archctl:/xdg/config:rw
+
+# XDG paths translated to container-local (avoids B1 class bug, ADR-031)
+Environment=XDG_DATA_HOME=/xdg/data
+Environment=XDG_CONFIG_HOME=/xdg/config
+Environment=CARGO_HOME=/root/.cargo
+
+# Container entry: prints toolchain, then execs the orchestrator
+Exec=/usr/local/bin/entrypoint.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+
+[Install]
+WantedBy=default.target
+

@@ -4,6 +4,17 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased — m27-sandbox-benchmarks]
+
+### Added
+- **M27 Sandbox + Benchmarks (PRs #47-#50)**: podman Quadlet-sandboxed harness for pre-v1.0 release gate. 11 datasets (10 multi-language + archctl self-dogfood), 8 thresholds enforced (5 automated, 3 manual), dated report at `bench/reports/<date>.md`. Methodology in ADR-032. Specs in `docs/specs/bench-{harness,methodology}.md`. Container: ubuntu:24.04 + rustup 1.97.1 (rejected catthehacker/ubuntu:rust-latest, ADR-032 Q2).
+
+### Cycle
+- verify-report: PASS (after W1-W5 corrections)
+- 17 files, ~1350 LOC
+- chain: stacked-to-main (PRs #47, #48, #49, #50)
+- next: PR review and merge; v1.0 promotion after M27 cycle closes
+
 ## [v0.14.10] — 2026-08-05
 
 ### Fixed

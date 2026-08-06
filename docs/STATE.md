@@ -2,18 +2,18 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-05, post-`v0.14.8` (M26).
+> Última actualización: 2026-08-05, post-`v0.14.10` (M26.5 + M27 plan).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `65ac6a2` |
-| Versión | `v0.14.8` |
-| Tests | 254 pasan, 0 fallan, 5 ignorados |
+| Tip | `4f22224` |
+| Versión | `v0.14.10` |
+| Tests | 402 pasan, 0 fallan, 5 ignorados |
 | Working tree | clean, en sync con `origin/main` |
-| MSRV | sin documentar explícitamente (código usa `?` en main, `let else`, `impl Trait`) |
+| MSRV | `1.91` (rust-version en `archctl/Cargo.toml`); CI pin `1.97.1` |
 
 ## Capacidades shipped (v0.x)
 
@@ -33,6 +33,7 @@
 | `v0.13.1` | 2026-08-02 | refactor/clippy-fmt-cleanup + composes edges (closes M12 W4) |
 | `v0.14.8` | 2026-08-05 | M26 C4 contract integrity (ADR-024: category semantics, fix export query pipeline) |
 | `v0.14.9` | 2026-08-05 | M26 C4 vertical validation (ADR-031: 6 bugs found by axum smoke test — apply path, Cypher quoting, silent .ok(), version_id collision, status casing, bundle schema) |
+| `v0.14.10` | 2026-08-05 | M26.5 C4 vertical end-to-end validation; 6 bugs fixed (B1 apply path, B2 Cypher quoting, B3 silent .ok(), B4 version_id collision, B5 status casing, B6 bundle schema) |
 
 ## Capacidades en backlog
 

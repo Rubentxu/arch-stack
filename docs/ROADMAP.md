@@ -264,7 +264,7 @@ diagram validate    → ✅ Bundle is valid
 
 **Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md), PR #46 (pendiente)
 
-## M27 — Sandbox + Benchmarks (pre-v1.0) — **PLANIFICADO**
+## M27 — Sandbox + Benchmarks (pre-v1.0) — **CERRADO** (cycle cerrada con verdict PASS — PR #47, #48, #49, #50 listos para review/merge)
 
 **Estado:** Sin implementar. Bloquea v1.0.
 
@@ -273,14 +273,14 @@ diagram validate    → ✅ Bundle is valid
 **Scope:**
 
 **Sandbox (Quadlet):**
-- Imagen base: `docker.io/catthehacker/ubuntu:rust-latest` (Rust 1.97.1, matches `rust-toolchain.toml`)
+- Imagen base: `ubuntu:24.04` (first-party LTS) + `rustup default 1.97.1` dentro del Containerfile (matches `rust-toolchain.toml`). **NOT** `catthehacker/ubuntu:rust-latest` (floating community tag, supply-chain risk; rejected per ADR-032 Q2).
 - Quadlet `archctl-bench.container` con:
-  - `--uidmap` + `--rootless` (rootless sin daemon)
+  - `--uidmap=1000:0:1` + `RemapUsers=true` (rootless sin daemon; uid mapping for XDG path translation)
   - Volúmenes: `/datasets` (proyectos GitHub), `/reports` (output), `~/.cargo` (cache deps)
   - `Type=oneshot` (no persistente)
-  - Sin `--bind`, sin `--reuse`, `--container-daemon-socket -`
+  - Sin `--bind`, sin `--reuse`, sin `--container-daemon-socket`
 - `bench/run-bench.sh` orquestador que:
-  1. Verifica prerequisites (podman, catthehacker/ubuntu tag)
+  1. Verifica prerequisites (podman, ubuntu:24.04 image)
   2. Para cada candidato:
      - `git clone --depth 1` en `~/.cache/archctl-smoke/`
      - Ejecuta el vertical C4 completo con timeout
@@ -346,7 +346,7 @@ diagram validate    → ✅ Bundle is valid
 1. `bench/run-bench.sh` (~200 LOC bash)
 2. `bench/datasets.toml` (~20 líneas TOML)
 3. `bench/quadlets/archctl-bench.container` (~30 líneas)
-4. `bench/Containerfile` (FROM catthehacker/ubuntu:rust-latest + archctl install)
+4. `bench/Containerfile` (FROM ubuntu:24.04 + rustup default 1.97.1 + archctl mount from host)
 5. `bench/reports/<date>.md` (output del run)
 6. `docs/adr/ADR-032-bench-methodology.md` (si surge un patrón nuevo)
 
