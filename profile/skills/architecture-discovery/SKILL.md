@@ -1,41 +1,61 @@
 ---
 name: architecture-discovery
-description: Drives the reverse-engineering loop. Use when the user opens the architecture profile in a fresh repo, asks to "discover" or "scan" the architecture, or after a refactor that needs re-ingestion. Wraps `c4-codebase-architecture`.
+description: Reverse-engineer a repository into the canonical architecture graph. Use when starting work on a repo, after a refactor, or when asked to "discover", "scan", or "map" the architecture. Drives `archctl code c4-discover` + evidence lifecycle.
 license: MIT
 compatibility: opencode
 metadata:
-  version: "0.1.0"
-  maturity: experimental
-  wraps: c4-codebase-architecture
-  output-schema: architecture-evidence-v1
+  version: "1.0.0"
+  maturity: stable
+  output-schema: c4-discover-report-v1
 ---
 
 # Objective
 
-Inventory the repo and feed `archctl` enough facts to populate the
-canonical graph. The skill does NOT classify, name, or decide — it
-extracts and records with provenance.
+Inventory the repo and populate the canonical LadybugDB graph with
+evidence-backed C4 containers. The skill does NOT classify, name, or
+decide — it extracts and records with provenance.
 
 # Required process
 
-1. `archctl doctor` — refuse to proceed if `renderer.plantuml` is not
-   OK.
-2. `archctl project resolve` — capture the `project_id` and
-   `sourceIdentity` once per session.
-3. Call the upstream `c4-codebase-architecture` procedure for the
-   inventory pass, but redirect every read to an `archctl` adapter:
-   - directory tree → `archctl inventory tree <path>`,
-   - language detection → `archctl inventory languages <path>`,
-   - dependency edges → `archctl inventory depends <path>`.
-4. Reject any fact that lacks evidence. Persist with
-   `archctl evidence put --kind semantic --file <json>`.
-5. Hand back the element counts and the coverage report.
+1. Resolve the project:
+   ```bash
+   archctl project resolve --cwd <dir>
+   ```
+2. Inventory the repo to understand the stack:
+   ```bash
+   archctl inventory languages --cwd <dir>
+   archctl inventory tree --cwd <dir> --max-depth 3
+   ```
+3. Run C4 discovery (dry-run first, then apply):
+   ```bash
+   # Dry-run: see candidates without persisting
+   archctl code c4-discover --cwd <dir> --json
+   # Persist: writes inferred Containers + drafted evidences
+   archctl code c4-discover --cwd <dir> --apply
+   ```
+   Target strategies explicitly when the repo is mono-language:
+   ```bash
+   archctl code c4-discover --cwd <dir> --strategy cargo --apply
+   ```
+4. Verify the graph was populated:
+   ```bash
+   archctl graph query --cwd <dir> "MATCH (e:Element) RETURN e.category, e.kind_id, count(e) ORDER BY e.kind_id"
+   ```
+5. List drafted evidences that need human/agent acceptance:
+   ```bash
+   archctl evidence list --cwd <dir> --status drafted
+   ```
+
+# Coverage gate
+
+- Each persisted Element must have at least one evidence record
+  (`archctl evidence list --path <id>`).
+- Evidences with status `drafted` are candidates for acceptance; the
+  agent decides acceptance via the evidence-lifecycle skill.
+- Never invent containers: only what strategies detect.
 
 # Forbidden
 
-- Adding an element or relationship without an evidence file.
-- Reusing a `project_id` across unrelated worktrees.
-- Calling out to `plantuml.com` / `kroki.io` — only local renderers
-  (ADR-011).
-- Editing the upstream `SKILL.md` in place; the wrapper stays
-  separate.
+- Creating Elements by hand (no `evidence put` with invented IDs).
+- Persisting without `--apply` and claiming the graph changed.
+- Running extractors against network services (ADR-011).

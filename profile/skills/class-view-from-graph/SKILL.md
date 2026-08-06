@@ -1,42 +1,52 @@
 ---
 name: class-view-from-graph
-description: Project a UML class diagram for a bounded context, module, aggregate, or collaboration selected from the graph. Use when the user wants class structure, interface contracts, or aggregate boundaries.
+description: Extract and project UML class diagrams from source. Use when the user wants class structure, interface contracts, aggregates, or module boundaries. Drives `archctl code class-diagram` (Rust/TypeScript/Python).
 license: MIT
 compatibility: opencode
 metadata:
-  version: "0.1.0"
-  maturity: experimental
+  version: "1.0.0"
+  maturity: stable
   output-schema: uml-class-spec-v1
 ---
 
 # Objective
 
-Select only the classes, interfaces, attributes and operations that
-are relevant to the chosen scope and produce a PlantUML class
-diagram.
+Extract class structure from source and project it as a UML class
+diagram. Extraction is AST-pure (tree-sitter); projection is
+deterministic from the graph.
 
 # Required process
 
-1. Receive a scope (module, aggregate, component, collaboration) from
-   the orchestrator.
-2. Query classes via Cypher:
+1. Determine scope: whole project, a module, or a single file.
+2. Extract (dry-run first):
+   ```bash
+   # Whole project (MVP languages auto-detected)
+   archctl code class-diagram --cwd <dir> --json
+   # Scoped: a module or file
+   archctl code class-diagram --cwd <dir> --selector module:<id> --json
+   archctl code class-diagram --cwd <dir> --selector file:src/domain/model.rs --json
+   # Persist to the graph
+   archctl code class-diagram --cwd <dir> --selector module:<id> --apply
    ```
-   archctl graph query "MATCH (e:Element) WHERE e.kind_id = 'uml.class' AND e.current_name STARTS WITH '<scope>' RETURN e.id, e.current_name"
+3. Project to DSL:
+   ```bash
+   archctl diagram project --view class:<scope> --format plantuml --output classes.puml --cwd <dir>
    ```
-3. Filter: drop classes with zero relationships inside the scope,
-   unless they are interfaces declared as public contracts.
-4. Resolve attributes and operations via graph query:
+   Supported formats: `plantuml`, `mermaid`, `structurizr`.
+4. Validate the bundle if one was exported:
+   ```bash
+   archctl diagram validate <bundle-dir> --cwd <dir>
    ```
-   archctl graph query "MATCH (e:Element {kind_id: 'uml.class'})-[r]-(a:Element {kind_id: 'uml.attribute'}) WHERE e.current_name = '<class>' RETURN a.id, a.current_name"
-   ```
-5. Project to PlantUML with `archctl diagram project --view class:<scope> --format plantuml`.
-6. Render via local PlantUML (Kroki).
+
+# Scope discipline
+
+- UML views are scoped: never dump the entire repository. Prefer
+  module/aggregate/component scope over `class:*`.
+- Cross-file inheritance is not supported by the MVP extractor —
+  surface this to the user instead of fabricating relationships.
 
 # Forbidden
 
-- Pulling classes from outside the scope to "explain" a relationship.
-- Showing implementation bodies; this is structure, not source.
-- Renaming a class to fit a naming style — the graph name is the
-  canonical name.
-- Editing the upstream `mermaid-skill` — this wrapper stands alone
-  (mermaid is optional).
+- Inventing attributes/operations the source does not contain.
+- Reporting unsupported languages as extracted (check `--json` output
+  for per-language results).

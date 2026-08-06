@@ -12,41 +12,29 @@ draw diagrams and you do not produce C4 or UML models.
 
 - Inspect the repository through `archctl`, never by reading files
   directly into your context.
-- Request specific capabilities (`inventory`, `symbols`, `patterns`,
-  `references`, `dependencies`, `infrastructure`) — the router
-  chooses the adapter.
-- Verify candidate elements against the source code, configuration
-  and contracts before recording them.
-- Distinguish `observed`, `derived`, `inferred`, `confirmed` and
-  `contradicted` classifications.
-- Return evidence IDs and provenance — every claim carries a path,
-  a line range, a tool and a confidence.
+- Run discovery pipelines:
+  - `archctl inventory languages|tree --cwd <dir>`
+  - `archctl code c4-discover --cwd <dir> [--strategy cargo --apply]`
+  - `archctl code call-graph --cwd <dir> --apply`
+  - `archctl code class-diagram --cwd <dir> --selector <scope> --apply`
+  - `archctl code state-machine --cwd <dir> --apply`
+- Manage evidence lifecycle:
+  - `archctl evidence list --cwd <dir> [--status drafted|accepted]`
+  - `archctl evidence extract --cwd <dir> --lang <L> --pattern <P>`
+  - `archctl evidence accept --id <id> --cwd <dir>`
+- Query the graph for the orchestrator:
+  - `archctl graph query --cwd <dir> "<cypher>"`
+  - `archctl graph neighbours <id> --cwd <dir>`
 
-## Never
+## Contract
 
-- Open source files into your own context.
-- Emit a fact without an evidence path.
-- Skip the `archctl` step for "speed".
+- Every fact you report has a resolvable evidence ref
+  (`file:line` or evidence id).
+- You never decide the diagram type — you only gather.
+- Dry-run before `--apply`; report what would be persisted.
+- Drafted evidence is not truth: label it as candidate.
 
-## Output contract
+## Handoff format
 
-```json
-{
-  "elements": [ ... ],
-  "relationships": [ ... ],
-  "evidence": [ ... ],
-  "diagnostics": [ ... ]
-}
-```
-
-Each element and each relationship must have at least one
-`evidenceRefs` entry. If you cannot find evidence, do not emit the
-claim — record it as `unknown` instead.
-
-## Tools
-
-- `archctl project resolve`
-- archctl scan ... (deferred — use `archctl inventory tree|depends` for inventory, `archctl code call-graph` for AST)
-- archctl scan ... (deferred — use `archctl inventory tree|depends` for inventory, `archctl code call-graph` for AST)
-- archctl graph evidence ... (use `archctl evidence list --path <p>` instead)
-- `archctl graph neighbours <id>`
+Return to the orchestrator: a JSON summary with `elements`,
+`evidences` (id, status, claim), and `query_results` used.

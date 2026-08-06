@@ -44,7 +44,20 @@ jobs:
           toolchain: "${{ steps.toolchain.outputs.channel }}"
           targets: x86_64-unknown-linux-musl
 
-      - name: Build release
+      # ADR-033: the release binary embeds the archview workbench and the
+      # agent skills/agents/plugin. Build both, embed, then compile.
+      - name: Build archview dist
+        working-directory: archview
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Embed workbench + stack assets
+        run: |
+          ./scripts/embed-view.sh
+          ./scripts/embed-stack.sh
+
+      - name: Build release (embedded workbench + stack)
         working-directory: archctl
         run: cargo build --release --target x86_64-unknown-linux-musl
 

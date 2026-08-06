@@ -1,12 +1,11 @@
 ---
 name: c4-from-graph
-description: Produce a C4 view (Context, Container, Component, Dynamic, Deployment) from the canonical graph. Use when the user asks for any C4 diagram at a known level and root. Wraps `c4-architecture`.
+description: Produce a C4 diagram (Context, Container, Component) from the canonical graph. Use when the user asks for any C4 diagram at a known level and root. Projects graph → bundle → DSL with `archctl diagram export` + `diagram project`.
 license: MIT
 compatibility: opencode
 metadata:
-  version: "0.1.0"
-  maturity: experimental
-  wraps: c4-architecture
+  version: "1.0.0"
+  maturity: stable
   output-schema: c4-view-spec-v1
 ---
 
@@ -17,34 +16,32 @@ projection; the graph is the source of truth.
 
 # Required process
 
-1. Receive `softwareSystem`, level, and purpose from the orchestrator.
-2. `archctl graph neighbours <system-id>` to gather members and
-   relationships.
-3. Coverage gate:
-   - Each member has at least one evidence record.
-   - Each relationship has at least one evidence record.
-   Fail closed and surface the missing evidence; never invent.
-4. Build the view specification as JSON:
-   ```json
-   {
-     "id": "view:system:checkout.context",
-     "view_type": "c4-context",
-     "root": "c4:system:checkout",
-     "selectors": [
-       { "predicate": "core.uses", "direction": "both" },
-       { "predicate": "core.depends_on", "direction": "both" }
-     ],
-     "exclude_kinds": ["c4.container", "c4.component", "uml.class", "uml.operation"]
-   }
+1. Receive `softwareSystem`, level (context/container/component), and
+   purpose from the orchestrator.
+2. Selector grammar: `<c4-kind>:<scope>` where scope is `*` (all),
+   an exact id, or a path. Examples:
+   - `context:*` — whole system context
+   - `container:orders` — containers named/related to `orders`
+   - `component:checkout` — components inside `checkout`
+3. Export the viewer bundle (for archview) and project to editable DSL:
+   ```bash
+   # Bundle for the workbench
+   archctl diagram export container:* --cwd <dir> --format viewer-bundle --output <out-dir>
+   # Editable source (PlantUML / Mermaid / Structurizr)
+   archctl diagram project --view c4-container:orders --format structurizr --output orders.dsl --cwd <dir>
    ```
-5. Project to DSL with `archctl diagram project --view c4-container:<id> --format structurizr`.
-6. Render with `archctl render <materialized.dsl>` (Structurizr, local
-   Structurizr CLI / Lite).
-7. Hand back the render path, the spec id, and the evidence summary.
+4. Validate any bundle before handing it over:
+   ```bash
+   archctl diagram validate <out-dir> --cwd <dir>
+   ```
+5. Hand back: the DSL path, the bundle path, and an evidence summary
+   (`archctl evidence list --path <id>` for each member).
 
 # Forbidden
 
-- Adding elements the graph does not contain.
-- Including Components or Classes in a Context view.
-- Inventing relationships to make the diagram "look complete".
-- Rendering against `kroki.io` / `plantuml.com` (ADR-011).
+- Including Components or Classes in a Context view (the exporter
+  filters by C4 kind — don't bypass it with raw Cypher).
+- Inventing relationships the graph does not contain.
+- Rendering against `kroki.io` / `plantuml.com` (ADR-011). If the user
+  needs an image, serve the workbench instead (`workbench-view` skill)
+  or use local renderers.

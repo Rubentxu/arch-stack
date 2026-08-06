@@ -1,56 +1,53 @@
 ---
 name: diagram-review
-description: Validate a generated diagram against its source spec and the canonical graph. Use as the final gate of any `/diagram` invocation, before the run is closed.
+description: Validate a generated diagram against its source spec and the canonical graph. Use as the final gate of any diagram invocation. Drives `archctl diagram validate` + `archctl diagram apply` for view-level corrections.
 license: MIT
 compatibility: opencode
 metadata:
-  version: "0.1.0"
-  maturity: experimental
+  version: "1.0.0"
+  maturity: stable
   output-schema: diagram-review-v1
 ---
 
 # Objective
 
-Confirm that a render corresponds exactly to its view specification,
-that the spec corresponds to the canonical graph, and that no
-relationship or element is fabricated. Persist the verdict with the
-run.
+Confirm that a bundle renders, matches its view specification, and
+that no element or relationship is fabricated. Persist the verdict.
 
 # Required process
 
-1. Receive the `view-id` and the rendered artefact path.
-2. Re-derive the view spec from the graph via Cypher queries:
+1. Validate the bundle (schema + required files):
+   ```bash
+   archctl diagram validate <bundle-dir> --cwd <dir> --json
    ```
-   archctl graph query "MATCH (e:Element {id: '<view-id>'}) RETURN e"
+   Exit 0 + `valid: true` = schema-compliant. Non-zero = reject.
+2. Cross-check members against the graph:
+   ```bash
+   archctl graph query --cwd <dir> "MATCH (e:Element) RETURN e.id, e.label"
    ```
-   Then query related elements and edges to reconstruct the spec.
-3. Compare the render with the spec:
-   - Every member in the spec is present in the render.
-   - Every relationship in the spec is present and oriented correctly.
-   - Nothing extra is in the render.
-4. Compare the spec with the graph:
-   - Every spec member resolves to a graph element.
-   - Every spec relationship resolves to a graph relation with the
-     same predicate and endpoints.
-5. Emit the verdict as JSON:
-   ```json
-   {
-     "view_id": "view:...",
-     "verdict": "pass | pass_with_warnings | fail",
-     "missing_members": [],
-     "missing_relationships": [],
-     "extra_members": [],
-     "extra_relationships": []
-   }
+   Every bundle node id must resolve to a graph Element.
+3. Check evidence backing for each member:
+   ```bash
+   archctl evidence list --cwd <dir> --path <id>
    ```
-6. Persist verdict with `archctl evidence put --kind semantic --file <json>`.
-7. If verdict is `fail`, the orchestrator must NOT proceed to
-   archive/release.
+   Fail closed: member without accepted evidence → flag.
+4. Apply view-level corrections via changeset (if the user requests
+   layout/visibility edits — NOT semantic changes):
+   ```bash
+   archctl diagram apply --changes changeset.json --cwd <dir> --json
+   ```
+   Changeset must conform to `changeset.schema.json` (move/set-label/
+   collapse commands). Stale base revisions are rejected.
+
+# Verdict contract
+
+- PASS: bundle valid + all members graph-resolved + evidence accepted.
+- PASS_WITH_WARNINGS: minor (labels, positions) — list them.
+- FAIL: any fabricated element/relationship, schema violation, or
+  evidence gap. Do NOT ship a FAIL diagram.
 
 # Forbidden
 
-- Approving a render that contains elements absent from the spec.
-- Approving a spec that contains elements absent from the graph.
-- Skipping the graph-vs-spec comparison.
-- Allowing drawio-only deliveries to bypass the structural check
-  (drawio is a projection, still reviewed).
+- Rejecting a valid bundle for cosmetic reasons.
+- Applying a changeset that renames/removes graph elements (apply is
+  cosmetic-only, ADR-013).

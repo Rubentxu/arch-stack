@@ -4,6 +4,29 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased — stack-distribution]
+
+### Added
+- **`archctl view` (ADR-033)**: embedded archview workbench server. One-shot
+  HTTP on 127.0.0.1 serving the archview dist embedded via rust-embed (gzip).
+  Endpoints: `/`, `/assets/*`, `/api/health`, `/api/export`. COOP/COEP/CORP
+  headers per ADR-020/011. `scripts/embed-view.sh` (sourcemaps excluded).
+- **`archctl stack install|update|status` (ADR-033)**: the arch-stack product
+  (binary + workbench + skills) installed/versioned/updated as ONE unit.
+  Embeeds 9 skills + 5 agents + env plugin; installs into OpenCode/ZCode
+  discovery paths idempotently; `status` reports drift.
+- **Skills refrescadas al CLI real**: architecture-discovery, c4-from-graph,
+  class-view-from-graph, sequence-from-scenario, use-cases-from-graph,
+  diagram-review + nuevas evidence-lifecycle, workbench-view, stack-management.
+  Comandos verificados contra `archctl --help` (removidas referencias a
+  `graph aggregate` inexistente, etc).
+- `scripts/embed-stack.sh`, `manifests/view.toml`, `manifests/stack.toml`
+  (scope gates), release.yml ahora embebe workbench + skills antes del build.
+
+### Cycle
+- stack-distribution: ADR-033, view (PR #55) + stack (este PR)
+- 508 tests passing (416 lib + 92 integration)
+
 ## [v1.0.0] — 2026-08-06
 
 ### Added

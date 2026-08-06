@@ -19,6 +19,7 @@ pub mod row;
 pub mod scope;
 pub mod skills;
 pub mod source;
+pub mod stack;
 pub mod store;
 pub mod telemetry;
 pub mod view;
