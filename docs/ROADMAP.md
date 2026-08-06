@@ -264,9 +264,9 @@ diagram validate    → ✅ Bundle is valid
 
 **Referencias:** [ADR-031](adr/ADR-031-c4-vertical-validation.md), PR #46 (pendiente)
 
-## M27 — Sandbox + Benchmarks (pre-v1.0) — **CERRADO** (cycle cerrada con verdict PASS — PR #47, #48, #49, #50 listos para review/merge)
+## M27 — Sandbox + Benchmarks (pre-v1.0) — **COMPLETO** ✅ (v0.22.0)
 
-**Estado:** Sin implementar. Bloquea v1.0.
+**Estado:** Implementado en v0.22.0 (PR #47, #48, #49, #50 mergeados a main). Desbloquea v1.0.
 
 **Objetivo:** Demostrar empíricamente que `archctl` funciona en proyectos reales multi-lenguaje antes de declarar v1.0. Hoy, el vertical C4 está validado contra **un solo proyecto** (axum). Necesitamos datos sistemáticos.
 
@@ -503,7 +503,8 @@ Incluye:
 | `m22-agent-catalog` | `feat/m22-agent-catalog` (merged to main via PR #30) | `8b76ef5` | **Cerrado** ✅ · tag `v0.15.0` |
 | `m23-action-proposal-policy` | direct commits on `main` (M23 phases 1–6) | `ae83e61` | **Cerrado** ✅ · tag `v0.18.0` |
 | `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (merged to main via PR #44) | `18cf12b` | **Cerrado** ✅ · tag `v0.14.9` |
-| `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (pendiente) | — | **Cerrado** ✅ · tag `v0.14.10` (pendiente) |
+| `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (merged to main) | `4f22224` | **Cerrado** ✅ · tag `v0.14.10` |
+| `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -951,3 +952,17 @@ Razones:
 - **Design decision**: Option D (synthetic node) — correct pattern when a domain entity (package) has no physical node in the bundle but must participate in UI selection.
 - **Deuda técnica**: C-001 (6 copy-paste `onSelect` handlers in `App.tsx:223-292`, pre-existing main debt) — follow-up: `refactor/extract-select-handler`.
 - **Próximo candidato**: `refactor/extract-select-handler` (C-001) o M17 archview scaffold.
+
+## Cycle cerrado — `m27-sandbox-benchmarks` (v0.22.0)
+
+- **Fecha**: 2026-08-06
+- **Branch**: `feat/m27-pr4-cleanup` (merged to main via merge commit `b87a902`)
+- **Tag**: `v0.22.0`
+- **Verdict**: verify PASS · debt-verify PASS · archive PASS
+- **Commits**: 7 (Phase 1-4 PRs merged + archive + verify corrections + merge commit)
+- **Tests**: 402 passing (no new tests added by M27 bench code; archctl unchanged)
+- **Output**: `bench/` directory con Containerfile, quadlets, datasets.toml, run-bench.sh orchestrator, report generator, + ADR-032 bench methodology
+- **Sandbox**: podman Quadlet `archctl-bench.container` con ubuntu:24.04 + rustup 1.97.1
+- **Bench**: 10+ datasets (Rust/TS/JS/Go/Python/Java/Kotlin), regression gate >10%, report template
+- **Desbloquea**: v1.0 — M27 empirical validation completada
+- **Próximo candidato**: Ejecutar `bench/run-bench.sh` contra los 10+ datasets y publicar resultados. Si thresholds de v1.0 se cumplen → preparar v1.0 release. Si no → abrir M28 hotfix.
