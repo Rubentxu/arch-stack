@@ -46,6 +46,18 @@ jobs:
 
       # ADR-033: the release binary embeds the archview workbench and the
       # agent skills/agents/plugin. Build both, embed, then compile.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: archview/pnpm-lock.yaml
+
       - name: Build archview dist
         working-directory: archview
         run: |
