@@ -2,127 +2,118 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-07, release `v1.1.0` (M30 Go call-graph).
+> Última actualización: 2026-08-07, release `v1.26.0` (M56 DRY helper).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | (post-merge de M30) |
-| Versión | `v1.1.0` |
-| Tests | 525 pasan, 0 fallan, 5 ignorados |
+| Tip | `834640a` (post-merge de M56) |
+| Versión | `v1.26.0` (latest tag) — `v1.20.0` (binary) |
+| Tests | 201+ pasan, 0 fallan (verify-local PASS) |
 | Working tree | clean, en sync con `origin/main` |
-| MSRV | `1.91` (rust-version en `archctl/Cargo.toml`); CI pin `1.97.1` |
+| MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
+| LOC src | ~31,254 |
+| LOC tests | ~6,560 |
+| LOC benches | ~790 |
+| Vault milestones | 28 (M30–M56) |
+| Tags | 27 (v1.1.0 → v1.26.0) |
 
-## Capacidades shipped (v0.x)
+## Capacidades shipped (v1.x — post-v1.0.0)
 
-| Tag | Fecha | Capacidad |
+| Tag | Cycle | Capacidad |
+|---|---|---|
+| `v1.1.0` | M30 | Go call-graph extraction |
+| `v1.2.0-m32` | M32 PR1 | Apply writer transaction wrap (D1) |
+| `v1.3.0-m32-pr2` | M32 PR2 | Bulk UNWIND import (D2) |
+| `v1.4.0-m32-d5` | M32-D5 | Sibling writers (class_diagram + state_machine) |
+| `v1.4.1` | BREAK-1 | Remove `seed_writes` lying API |
+| `v1.5.0` | M31 | Unified empty envelope for `diagram export` |
+| `v1.5.1` | M31-FU1 | Tracing → stderr redirect |
+| `v1.6.0` | M34 | Call-graph strategy consolidation (~240 LOC) |
+| `v1.7.0` | M35 | Java call-graph (5th language) |
+| `v1.8.0` | M36 | Kotlin call-graph (6th language) |
+| `v1.9.0` | M38 | Mermaid → SVG local render via merman |
+| `v1.10.0` | M37 | Pure `--json` stdout mode + reusable bundle builder |
+| `v1.11.0` | M39 | Use case diagrams end-to-end (fix mermaid node-id bug) |
+| `v1.12.0` | M40 | PlantUML via user-installed backend (Java CLI / docker / custom) |
+| `v1.13.0` | M41 | State + C4 Mermaid e2e (fix projector bug) |
+| `v1.14.0` | M43 | Use case PlantUML e2e verify |
+| `v1.15.0` | M45 | Sequence edge labels from `edge.props["label"]` |
+| `v1.16.0` | M46 | Manifest `public_symbols` cleanup (26 stale entries) |
+| `v1.17.0` | M47 | CHANGELOG backfill (v1.4.1 → v1.16.0) + docs/README index |
+| `v1.18.0` | M48 | Sequence PlantUML e2e verify |
+| `v1.19.0` | M49 | State PlantUML e2e verify |
+| `v1.20.0` | M50 | C4 PlantUML e2e + vanilla syntax fix |
+| `v1.21.0` | M51 | Prepared statements + parameter binding (M32 D3) |
+| `v1.22.0` | M52 | M32 D4 doc fixes (3 stale claims) |
+| `v1.23.0` | M53 | M32 D5 audit (sequence is read-only) |
+| `v1.24.0` | M54 | Session close (CHANGELOG backfill v1.18.0–v1.23.0) |
+| `v1.25.0` | M55 | Codebase state study + 11 prioritized proposals |
+| `v1.26.0` | M56 | DRY skip-on-missing-backend helper |
+
+## Capacidades shipped (v0.x — historical)
+
+| Tag range | Período | Highlights |
 |---|---|---|
 | `v0.1.0` – `v0.3.0` | 2026-07-30 | LadybugDB graph, evidence, renderers, source-evaluation types |
 | `v0.4.0` – `v0.6.0` | 2026-07-30 | Manifest gates (23 scopes), schema migration runner (ADR-017) |
-| `v0.7.0` | 2026-07-31 | Cambios en diagram export pipeline |
-| `v0.8.0` / `v0.8.1` | 2026-07-31 | `archctl code call-graph` (PR1, con TSG rules fix) |
+| `v0.7.0` | 2026-07-31 | Diagram export pipeline changes |
+| `v0.8.0` / `v0.8.1` | 2026-07-31 | `archctl code call-graph` (PR1) |
 | `v0.9.0` | 2026-07-31 | `archctl code sequence` (PR2) |
-| `v0.9.1` / `v0.9.2` | 2026-07-31 | Refactors: m9-debt-cleanup + store-port-seams |
-| `v0.10.0` | 2026-08-01 | M20 bench suite (criterion harness, 3 datasets) |
-| `v0.11.0` | 2026-08-01 | m9-renderers-local (F1 security: renderers locales estrictos) |
-| `v0.12.0` | 2026-08-01 | m9-relations-decision (audit F2-F7 + M1-M3 + M5) |
-| `v0.12.1` | 2026-08-02 | refactor/bench-seed-decomposition (audit M5 follow-up) |
-| `v0.13.0` | 2026-08-02 | M12 class-diagram extraction (tree-sitter CST walk) |
-| `v0.13.1` | 2026-08-02 | refactor/clippy-fmt-cleanup + composes edges (closes M12 W4) |
-| `v0.14.8` | 2026-08-05 | M26 C4 contract integrity (ADR-024: category semantics, fix export query pipeline) |
-| `v0.14.9` | 2026-08-05 | M26 C4 vertical validation (ADR-031: 6 bugs found by axum smoke test — apply path, Cypher quoting, silent .ok(), version_id collision, status casing, bundle schema) |
-| `v0.14.10` | 2026-08-05 | M26.5 C4 vertical end-to-end validation; 6 bugs fixed (B1 apply path, B2 Cypher quoting, B3 silent .ok(), B4 version_id collision, B5 status casing, B6 bundle schema) |
+| `v0.10.0` | 2026-08-01 | M20 bench suite (criterion harness) |
+| `v0.11.0` | 2026-08-01 | m9-renderers-local (F1 security) |
+| `v0.12.0` – `v0.13.1` | 2026-08-01 / 02 | M12 class-diagram extraction + refactors |
+| `v0.14.8` – `v0.14.10` | 2026-08-05 | M26 C4 contract integrity + vertical validation |
+| `v0.22.0` | 2026-08-06 | M27 sandbox + benchmarks |
 
-## Capacidades en backlog
+## Capacidades en backlog (priority order)
 
-| Pendiente | Estado | Prioridad |
+| Item | Status | Notes |
 |---|---|---|
-| M13 (workbench actions: drift detection, impact analysis) | Sin iniciar | Baja — enterprise feature, no target developer |
-| M14 (versionado, rollback, snapshots) | Sin iniciar | Baja — defer a 1.x |
-| M15 (herramientas semánticas opcionales) | Sin iniciar | Baja — defer a 1.x |
-| M16 (endurecimiento 1.0) | Sin iniciar | Media — depende de M17 |
-| M17 (archview workbench, separate repo) | Sin iniciar | **Alta — próximo ciclo grande** |
-| LSP-based extraction (ADR-012 follow-up) | Diferido a fase 2 M12 | Media |
-| Cross-file inheritance + composition/aggregation | Diferido a fase 2 M12 | Media |
+| **M56–M68** (11 proposals from M55 study) | See `docs/sessions/2026-08-07-codebase-state-study.md` | Recommended trio: M56 (done) + M59 (done) + M62 (this file) |
+| call_graph → prepare/execute migration (M51 deferred) | Deferred — needs typed bindings or CAST | 2-5x perf on top of M32 D1+D2 |
+| archview M18 (reactive runtime) | Separate repo (defer 1.x) | archview at v0.21.3 |
+| archview M19 (wgpu renderer) | Separate repo (2.0 horizon) | |
+| SparrowDB adapter (ADR-014) | Optional — no SparrowStore exists | port is ready |
+| M13/M14/M15 (workbench actions, versionado, semantic tools) | Defer to 1.x (per ROADMAP) | not enterprise target |
+| M23 (Action Proposal & Policy Engine) | Phase 1 PR #32 closed as stale (M59) | Phases 2-6 not started |
+| LSP-based extraction (ADR-012 follow-up) | Deferred to phase 2 M12 | |
 
 ## Deuda técnica activa
 
-| ID | Descripción | Bloquea gate | Estado |
-|---|---|---|---|
-| `code::apply` repetition | `code::call_graph::apply` + `code::c4_discover::apply` + `code::class_diagram::apply` comparten ~150 LOC de open-default + init + counters + ApplyReport construction. | No | **Cerrado v0.13.2** ✅ — extraídos en `code::apply_common.rs`; 4 callers unificados; cada `apply` mantiene su firma pública estable |
-| `diagram::apply` 3-tier | `run_apply` (CLI) → `apply_changeset` (high) → `apply_to_store` (core). Algunas validaciones duplicadas entre niveles. | No | OK por ahora; el core está extraído para testabilidad |
+**Doctor:** 26/26 scopes pass. No findings.
 
-**Sin deuda bloqueante activa** — `doctor --scopes code` corre en <1s con 0 findings.
+**Closed in this session** (M37–M56):
+- `seed_writes` lying API removed (BREAK-1, v1.4.1)
+- Mermaid projector bare-Label bug fixed across 4 views (M39 + M41)
+- C4 PlantUML Structurizr-style emit bug (M50)
+- 26 stale manifest `public_symbols` removed (M46)
+- 3 stale "no parameter binding" doc claims (M52)
+- `backend_available()` helper DRY'd (M56, -60 LOC across 5 files)
 
-**Cerrado en v0.13.3**:
-- `SourceArtifact` id formula divergence (C-HD-1 / `refactor/debt-source-artifact-id-1`) ✅ — identidad unificada en D2 (`id_for` + `from_content` + `put_source`); `content_hash` threaded en carriers de call_graph y computado en c4 apply
-- `Pipe` trait single-use (O-AE-1 / `refactor/extract-code-apply-helpers-pipe-1`) ✅ — eliminado
-
-**Cerrado en v0.13.1**:
-- W4 composes edges (F1.2) ✅
-- Pre-existing 56 clippy warnings (F1.1) ✅
-- Pre-existing 137 rustfmt violations across 48 files (F1.1) ✅
-- lbug infra gap (F3.3) ✅ — gate ahora cuenta `#[test]` annotations en lugar de ejecutar `cargo test`
+**Pending** (from M55 study):
+- **TODO markers** (2): `code/strategies/dockerfile.rs:139`, `code/class_diagram.rs:1067`. M60 proposes resolving.
+- **store.rs** (2,383 LOC): biggest file. M63 proposes splitting.
+- **Cognitive-layer test coverage**: 14 sub-modules, minimal tests. M61 proposes audit.
 
 ## Plan vigente
 
-**Post-v0.13.0 stabilization plan** (obs-5524): TODO CERRADO.
+**Marathon session closed at M54** (v1.24.0). Post-session work:
+- M55 (v1.25.0): state study + 11 proposals (M56–M68)
+- M56 (v1.26.0): DRY helper — DONE
+- M59: close stale PR #32 — DONE
 
-```
-Fase 1 ✅ v0.13.1 released (commit 7738b2d)
-├── F1.3 branches + STATE.md ✅
-├── F1.1 refactor/clippy-fmt-cleanup ✅
-└── F1.2 feat/code-class-diagram-composes ✅
-
-Fase 2 ✅
-├── F2.1 roadmap M13-M15 trim ✅
-├── F2.2 M17.0 archview designado como próximo ciclo grande ✅
-└── F2.3 audit manifests/code.toml coverage ✅
-
-Fase 3 ✅
-├── F3.1 jurisprudence discoverable (obs-5518) ✅
-├── F3.2 fmt-staged.sh + AGENTS.md nota + pre-commit hook ✅
-└── F3.3 lbug infra service ✅ (annotation counter, no cargo test subprocess)
-```
-
-## Repo satelital: `archview`
-
-- **Path**: `/var/home/rubentxu/Proyectos/agentesIA/archview` (separate repo, no remote yet)
-- **Tag**: **`v0.21.3`** (verified — pnpm test 67/67 + build OK)
-- **Status**: **M17 series complete** (8 cycles, v0.14.0 → v0.21.0)
-  - M17.0 scaffold (v0.14.0): bundle loader + G6 canvas + sidebar
-  - M17.1 C4 semantic zoom (v0.15.0): hierarchical + drill-down
-  - M17.2 call graph view (v0.16.0): focus + BFS + blast radius
-  - M17.3 sequence diagram view (v0.17.0): lifelines + arrows
-  - M17.4 class diagram view (v0.18.0): UML compartments
-  - M17.5 package diagram view (v0.19.0): modules + cycles (DFS)
-  - M17.6 drift detection (v0.20.0): declared vs actual C4 diff
-  - M17.7 impact analysis (v0.21.0): blast radius for changes
-- **Próximo**: M18 reactive runtime (defer 1.x) o M19 wgpu renderer (2.0).
-  Alternativa: refactor cycles (`refactor/extract-code-apply-helpers`,
-  archctl-side) o archview-side enhancements (resize observer,
-  G6 dagre layout, persist UI state).
-
-## Archivos clave para retomar
-
-- `archctl/src/lib.rs` — declaración de módulos y `pub use`.
-- `archctl/src/diagram/` — bounded context C4 (export, apply, validate).
-- `archctl/src/code/` — bounded context extracción (call_graph, sequence, class_diagram, c4_discover).
-- `archctl/src/store.rs` — `GraphStore` port + `LbugStore` adapter (fs2 flock).
-- `archctl/src/evidence.rs` — extracción y validación de evidencias (ADR-005).
-- `archctl/src/skills.rs` — 3-modo skill loader (ADR-003).
-- `archctl/src/migrations.rs` — schema migration runner (ADR-017).
-- `manifests/code.toml` — manifest gate para bounded context `code` (incluye M12 symbols + must_hold).
-- `docs/specs/code-class-diagram/spec.md` — spec synced de M12.
-- `sddk/m12-class-diagram/` — 10 artefactos del último ciclo.
+Next agenda (per M55 study):
+- **Trio tidy-up**: M56 ✅, M59 ✅, M62 (STATE.md refresh — this cycle) ✅
+- **Medium-effort** (M61, M63, M65): cognitive tests, store.rs split, M18/M19 spike
+- **Long-term** (M66): call_graph prepare/execute migration
 
 ## Comandos de verificación
 
 ```bash
 # Estado del repo
-cd /var/home/rubentxu/Proyectos/agentesIA/archctl
 git log --oneline -10
 git tag --sort=-creatordate | head -5
 git status
@@ -131,10 +122,23 @@ git status
 cd archctl
 cargo build --quiet
 cargo test --quiet
-cargo clippy --quiet --all-targets  # NOTA: hoy 56 pre-existing warnings; target post-F1.1 = 0
-cargo fmt --check                    # NOTA: hoy 3 pre-existing bench issues; target post-F1.1 = 0
+cargo clippy --quiet --all-targets
+cargo fmt --check
+
+# Verificación completa (cheap mode)
+cd /var/home/rubentxu/Proyectos/agentesIA/arch-stack
+bash scripts/verify-local.sh
+
+# 26/26 doctor scopes
+cargo run --bin archctl -- doctor --scopes $(ls manifests | sed 's/.toml//' | tr '\n' ',' | sed 's/,$//') --cwd archctl
 ```
 
 ## Próxima acción del usuario
 
-Ejecutar Fase 1 del plan post-v0.13.0 (`refactor/clippy-fmt-cleanup` + `feat/code-class-diagram-composes`) → release `v0.13.1`. Luego Fase 2 (decisión trim M13-M15 + arranque M17.0 archview).
+Tras el trio tidy-up (M56, M59, M62), el código está en estado estable con
+26/26 doctor scopes verdes. Las opciones para la próxima sesión son:
+
+1. **Otra ronda tidy-up** (M57 CONTRIBUTING, M58 specs index, M60 fix 2 TODOs).
+2. **M61** — cognitive-layer test audit.
+3. **M66** — call_graph prepare/execute migration (cierra el deferral de M51).
+4. **Cerrar sesión** y volver con fresh energy.
