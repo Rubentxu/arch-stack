@@ -3,7 +3,7 @@
 **Estado:** v1.0.0 ALCANZADO (2026-08-06) — M27 automated thresholds pass, tag v1.0.0 pushed.
 **Versión:** 2.6
 **Fecha:** 6 de agosto de 2026
-**Cambios vs 2.4/2.5:** M27 Sandbox + Benchmarks shipped (v0.22.0). v1.0.0 tag applied (2026-08-06). Benchmark: exit 100%, c4_time 311ms, RSS 144MB, bundle_valid 7/7, determinism 7/7. FP/FN manual pending. archctl is ready for v1.0 distribution.
+**Cambios vs 2.4/2.5:** M27 Sandbox + Benchmarks shipped (v0.22.0). v1.0.0 tag applied (2026-08-06). v1.1.0 shipped M30 (Go call-graph). v1.2.0-m32 shipped M32 PR1 (apply writer transaction wrap). Benchmark: exit 100%, c4_time 311ms, RSS 144MB, bundle_valid 7/7, determinism 7/7. FP/FN manual pending. archctl is ready for v1.0 distribution.
 
 ---
 
@@ -800,6 +800,9 @@ Incluye:
 | `m21-cognitive-layer` | direct commits on `main` (no SDDK cycle — cognitive foundation) | `e0224b8` | **Cerrado** ✅ · tag `v0.15.0` |
 | `m22-agent-catalog` | `feat/m22-agent-catalog` (merged to main via PR #30) | `8b76ef5` | **Cerrado** ✅ · tag `v0.15.0` |
 | `m23-action-proposal-policy` | direct commits on `main` (M23 phases 1–6) | `ae83e61` | **Cerrado** ✅ · tag `v0.18.0` |
+| `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
+| `m30-call-graph-go-support` | `feat/m30-call-graph-go-support` (merged to main via PR #72) | `f3a00a7` | **Cerrado** ✅ · tag `v1.1.0` |
+| `m32-apply-writer-performance` (PR1) | `feat/m32-apply-writer-performance` (merged to main via PR #76) | `7bdcc5f` | **Cerrado** ✅ · tag `v1.2.0-m32` · D4+D1 shipped |
 | `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (merged to main via PR #44) | `18cf12b` | **Cerrado** ✅ · tag `v0.14.9` |
 | `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (merged to main) | `4f22224` | **Cerrado** ✅ · tag `v0.14.10` |
 | `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
