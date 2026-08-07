@@ -105,11 +105,11 @@ impl Strategy for DockerfilePerService {
             .to_string();
 
             // Try to find LABEL org.opencontainers.image.title="..." in the file
-            let (display_name, line) = find_label_or_default(file_name);
-            let display_name = if let Some(override_name) = read_label_title(path) {
-                override_name
-            } else {
-                display_name
+            // (returns the line where the label appears so the evidence points
+            // at the real declaration; falls back to line 1 on the file name).
+            let (display_name, line) = match read_label_title_with_line(path) {
+                Some((n, l)) => (n, l),
+                None => find_label_or_default(file_name),
             };
 
             candidates.push(ContainerCandidate {
@@ -135,7 +135,133 @@ fn find_label_or_default(_file_name: &str) -> (String, u32) {
     ("docker".to_string(), 1)
 }
 
-fn read_label_title(_path: &Path) -> Option<String> {
-    // TODO: read the Dockerfile and parse LABEL org.opencontainers.image.title
-    None
+fn read_label_title_with_line(path: &Path) -> Option<(String, u32)> {
+    // Returns the OCI image title and the 1-based line where it appears.
+    // Returns None when the file cannot be read or the label is absent.
+    let raw = std::fs::read_to_string(path).ok()?;
+    let (value, line) = parse_opencontainers_title_with_line(&raw)?;
+    Some((value, line))
+}
+
+/// Parse the OCI image title from a Dockerfile body. Returns `(value, line)`
+/// where `line` is 1-based. Exposed (via `pub(crate)`) for unit tests.
+pub(crate) fn parse_opencontainers_title_with_line(raw: &str) -> Option<(String, u32)> {
+    // We do NOT fold continuations: we track line numbers as we scan, so a
+    // multi-line LABEL is anchored to the line where `LABEL` begins.
+    let needle = "label org.opencontainers.image.title=";
+    let mut line: u32 = 1;
+
+    // Lowercased copy for case-insensitive matching while preserving original
+    // byte indices for line counting.
+    let lower = raw.to_ascii_lowercase();
+    let bytes = raw.as_bytes();
+
+    // Find the first occurrence of LABEL org.opencontainers.image.title=
+    let idx = lower.find(needle)?;
+
+    // Anchor the reported line to where `LABEL` begins.
+    for ch in raw[..idx].chars() {
+        if ch == '\n' {
+            line += 1;
+        }
+    }
+
+    // Walk forward, skipping spaces/tabs after the `=`.
+    let mut cursor = idx + needle.len();
+    while cursor < bytes.len() && (bytes[cursor] == b' ' || bytes[cursor] == b'\t') {
+        cursor += 1;
+    }
+    let quote = bytes.get(cursor).copied()?;
+    if quote != b'"' && quote != b'\'' {
+        return None;
+    }
+    cursor += 1;
+    let after_open_start = cursor;
+    while cursor < bytes.len() && bytes[cursor] != quote {
+        cursor += 1;
+    }
+    if cursor >= bytes.len() {
+        return None;
+    }
+    let value_raw = &raw[after_open_start..cursor];
+    let trimmed = value_raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some((trimmed.to_string(), line))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_double_quoted_label() {
+        let raw = "FROM alpine:3\nLABEL org.opencontainers.image.title=\"my-svc\"\n";
+        assert_eq!(
+            parse_opencontainers_title_with_line(raw),
+            Some(("my-svc".to_string(), 2))
+        );
+    }
+
+    #[test]
+    fn parses_single_quoted_label() {
+        let raw = "FROM alpine\nLABEL org.opencontainers.image.title='hello world'\n";
+        assert_eq!(
+            parse_opencontainers_title_with_line(raw),
+            Some(("hello world".to_string(), 2))
+        );
+    }
+
+    #[test]
+    fn case_insensitive_label_keyword() {
+        let raw = "label org.opencontainers.image.title=\"ok\"\n";
+        assert_eq!(
+            parse_opencontainers_title_with_line(raw),
+            Some(("ok".to_string(), 1))
+        );
+    }
+
+    #[test]
+    fn label_on_third_line_anchors_correctly() {
+        let raw = "FROM alpine\nRUN echo hi\nLABEL org.opencontainers.image.title=\"third\"\n";
+        assert_eq!(
+            parse_opencontainers_title_with_line(raw),
+            Some(("third".to_string(), 3))
+        );
+    }
+
+    #[test]
+    fn missing_label_returns_none() {
+        let raw = "FROM alpine\nRUN echo no label here\n";
+        assert_eq!(parse_opencontainers_title_with_line(raw), None);
+    }
+
+    #[test]
+    fn empty_label_value_returns_none() {
+        let raw = "LABEL org.opencontainers.image.title=\"\"\n";
+        assert_eq!(parse_opencontainers_title_with_line(raw), None);
+    }
+
+    #[test]
+    fn unquoted_label_returns_none() {
+        let raw = "LABEL org.opencontainers.image.title=plain\n";
+        assert_eq!(parse_opencontainers_title_with_line(raw), None);
+    }
+
+    #[test]
+    fn different_label_returns_none() {
+        let raw = "LABEL maintainer=\"someone@example.com\"\n";
+        assert_eq!(parse_opencontainers_title_with_line(raw), None);
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace() {
+        let raw = "LABEL org.opencontainers.image.title=\"  spaced  \"\n";
+        assert_eq!(
+            parse_opencontainers_title_with_line(raw),
+            Some(("spaced".to_string(), 1))
+        );
+    }
 }
