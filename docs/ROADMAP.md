@@ -832,6 +832,8 @@ Incluye:
 | `m53-m32-d5-sequence-writer-audit` | `feat/m53-m32-d5-sequence-writer-audit` (merged to main via PR #125) | `64a8be3` | **Cerrado** ✅ · tag `v1.23.0` · M32 D5 audit verdict: N/A (sequence.rs is read-only per SCN-217, no apply/writer to migrate); M32 D5 doesn't apply |
 | `m54-session-close` | `feat/m54-session-close` (merged to main via PR #127) | `TBD` | **Cerrado** ✅ · tag `v1.24.0` · session close (M51-M53 backfilled in CHANGELOG; Engram session summary); 21 cycles total in this session |
 | `m55-codebase-state-study-and-roadmap-proposals` | `feat/m55-codebase-state-study-and-roadmap-proposals` (merged to main via PR #128) | `57e8e50` | **Cerrado** ✅ · tag `v1.25.0` · post-session state study at v1.24.0 + 11 prioritized improvement proposals (M56–M68) in `docs/sessions/2026-08-07-codebase-state-study.md` |
+| `m56-dry-skip-on-missing-backend` | `feat/m56-dry-skip-on-missing-backend` (merged to main via PR #130) | `e7e07e3` | **Cerrado** ✅ · tag `v1.26.0` · DRY skip-on-missing-backend helper extracted to `archctl::test_helpers::plantuml::backend_available`; -7 LOC net across 5 e2e files |
+| `m59-close-stale-pr-32` | (no PR; closed via gh) | `n/a` | **Cerrado** ✅ · tag none · closed stale PR #32 (M23 Phase 1/6, 4+ days open, merge conflicts with main); rationale + re-open path documented in PR comment |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
