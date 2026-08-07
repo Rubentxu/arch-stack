@@ -300,6 +300,78 @@ fn test_java_lang_filter_excludes_non_java() {
     assert!(report.nodes.len() >= 6);
 }
 
+// ─── M36: Kotlin extraction semantics ──────────────────────────────────────────
+
+fn write_kotlin_project(project: &Path) {
+    let kt_source = read_fixture("kotlin_callgraph/main.kt");
+    write(project, "Server.kt", &kt_source);
+}
+
+#[test]
+fn test_kotlin_extraction_nodes_and_edges() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+    write_kotlin_project(project);
+
+    let fs = SystemFilesystem;
+    let report = call_graph::extract(project, &[Language::Kotlin], None, &fs)
+        .expect("extract must succeed for Kotlin");
+
+    // Expected nodes from tests/fixtures/kotlin_callgraph/main.kt:
+    //   getName, handle, validate, process, log
+    let expected = ["getName", "handle", "validate", "process", "log"];
+    assert_eq!(
+        report.nodes.len(),
+        expected.len(),
+        "expected {} Kotlin nodes, got: {:#?}",
+        expected.len(),
+        report.nodes
+    );
+    for name in expected {
+        assert!(
+            report.nodes.iter().any(|n| n.name == name),
+            "expected node {name} in Kotlin extraction"
+        );
+    }
+    for n in &report.nodes {
+        assert_eq!(
+            n.kind,
+            archctl::code::call_graph::FunctionKind::Method,
+            "Kotlin node {} should be Method kind",
+            n.name
+        );
+        assert_eq!(
+            n.language,
+            archctl::code::call_graph::Language::Kotlin,
+            "Kotlin node {} should be tagged Kotlin",
+            n.name
+        );
+    }
+
+    // Edges (calls within main.kt):
+    //   handle → validate, handle → process
+    //   validate → requireNotNull
+    //   process → log
+    //   log → println
+    let has_edge = |caller_sub: &str, callee: &str| {
+        report
+            .edges
+            .iter()
+            .any(|e| e.caller.contains(caller_sub) && e.callee == callee)
+    };
+    assert!(
+        has_edge(":handle:", "validate"),
+        "handle must call validate"
+    );
+    assert!(has_edge(":handle:", "process"), "handle must call process");
+    assert!(
+        has_edge(":validate:", "requireNotNull"),
+        "validate must call requireNotNull"
+    );
+    assert!(has_edge(":process:", "log"), "process must call log");
+    assert!(has_edge(":log:", "println"), "log must call println");
+}
+
 #[test]
 fn test_go_lang_filter_excludes_and_includes() {
     let tmp = TempDir::new().unwrap();

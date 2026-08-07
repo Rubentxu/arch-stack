@@ -94,6 +94,7 @@ pub enum Language {
     Python,
     Go,
     Java,
+    Kotlin,
 }
 
 impl Language {
@@ -105,6 +106,7 @@ impl Language {
             Language::Python => 0.80,
             Language::Go => 0.85,
             Language::Java => 0.85,
+            Language::Kotlin => 0.85,
         }
     }
 }
@@ -218,6 +220,7 @@ pub fn extract(
             "py" => (Some(Language::Python), "python"),
             "go" => (Some(Language::Go), "go"),
             "java" => (Some(Language::Java), "java"),
+            "kt" | "kts" => (Some(Language::Kotlin), "kotlin"),
             _ => (None, ""),
         };
         let Some(lang) = lang else { continue };
@@ -254,6 +257,7 @@ pub fn extract(
             Language::Python => SupportLang::Python,
             Language::Go => SupportLang::Go,
             Language::Java => SupportLang::Java,
+            Language::Kotlin => SupportLang::Kotlin,
         };
 
         // Parse with tree-sitter
@@ -467,6 +471,28 @@ fn find_function_definitions<'tree>(
                                 nodes.push(fn_node);
                             }
                         }
+                    }
+                }
+                return;
+            }
+        }
+        Language::Kotlin => {
+            // function_declaration: covers `fun foo() {}` (top-level AND in classes)
+            if kind == "function_declaration" {
+                if let Some(fn_node) = extract_kotlin_function(node, source, lang, file, parent_key)
+                {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "class_body" {
+                // Recurse into class body to find member functions.
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i as u32)
+                        && child.kind() == "function_declaration"
+                        && let Some(fn_node) =
+                            extract_kotlin_function(child, source, lang, file, parent_key)
+                    {
+                        nodes.push(fn_node);
                     }
                 }
                 return;
@@ -774,6 +800,64 @@ fn extract_java_callee(node: tree_sitter::Node, source: &str) -> Option<String> 
     callee_text(node, source)
 }
 
+// ─── Kotlin extractors (M36) ───────────────────────────────────────────────────
+
+fn extract_kotlin_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    // Kotlin `function_declaration` exposes the name as a `simple_identifier`
+    // child. (Equivalent of Java's `identifier`.)
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("simple_identifier"),
+        FunctionKind::Method,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
+}
+
+fn extract_kotlin_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
+    // tree-sitter Kotlin shapes:
+    //   navigation_expression:
+    //     obj.method(args)   → simple_identifier "obj", navigation_suffix (simple_identifier "method") + value_arguments
+    //     method(args)       → simple_identifier "method" + value_arguments
+    //   call_expression: (top-level function call)
+    //     foo(args)          → simple_identifier "foo" + value_arguments
+    //
+    // Strategy: skip `value_arguments` (those are the args), then within
+    // the remaining subtree pick the deepest rightmost `simple_identifier`.
+    fn callee_text<'a>(n: tree_sitter::Node<'a>, source: &str) -> Option<String> {
+        let mut found: Option<String> = None;
+        walk_callee(n, source, &mut found);
+        found
+    }
+
+    fn walk_callee<'a>(node: tree_sitter::Node<'a>, source: &str, out: &mut Option<String>) {
+        if node.kind() == "value_arguments" {
+            return;
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            walk_callee(child, source, out);
+        }
+        if node.kind() == "simple_identifier"
+            && let Some(text) = source.get(node.start_byte()..node.end_byte())
+        {
+            // Last-wins: `obj.method` → `method`.
+            *out = Some(text.to_string());
+        }
+    }
+    callee_text(node, source)
+}
+
 fn extract_go_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
     // Go call_expression can be:
     // - identifier: helper() -> extract identifier
@@ -968,6 +1052,41 @@ fn find_call_expressions<'tree>(
                 ));
             }
         }
+        Language::Kotlin => {
+            // navigation_expression: obj.method(...) or method(...)
+            if kind == "navigation_expression"
+                && let Some(callee) = extract_kotlin_callee(node, source)
+            {
+                let line = (node.start_position().row + 1) as u32;
+                let call_kind = if callee.contains('.') {
+                    CallKind::MethodCall
+                } else {
+                    CallKind::DirectCall
+                };
+                edges.push(make_call_edge(
+                    nodes,
+                    lang,
+                    file,
+                    &callee,
+                    line,
+                    call_kind,
+                    MessageKind::SyncCall,
+                ));
+            } else if kind == "call_expression"
+                && let Some(callee) = extract_kotlin_callee(node, source)
+            {
+                let line = (node.start_position().row + 1) as u32;
+                edges.push(make_call_edge(
+                    nodes,
+                    lang,
+                    file,
+                    &callee,
+                    line,
+                    CallKind::DirectCall,
+                    MessageKind::SyncCall,
+                ));
+            }
+        }
     }
 
     // Recurse into children
@@ -1097,6 +1216,7 @@ fn lang_label(lang: &Language) -> &'static str {
         Language::Python => "python",
         Language::Go => "go",
         Language::Java => "java",
+        Language::Kotlin => "kotlin",
     }
 }
 
@@ -1987,7 +2107,6 @@ mod tests {
         assert_eq!(node.name, "C");
         assert_eq!(node.kind, super::FunctionKind::Method);
     }
-
     /// Java: method_invocation callee extraction (covers `obj.method()`).
     #[test]
     fn charac_java_callee_method_invocation() {
@@ -2012,6 +2131,56 @@ mod tests {
         assert_eq!(invocations.len(), 2);
         let bar_callee =
             super::extract_java_callee(invocations[1], source).expect("callee must be Some");
+        assert_eq!(bar_callee, "bar");
+    }
+
+    /// Kotlin: function_declaration → simple_identifier child → FunctionNode.
+    #[test]
+    fn charac_kotlin_function() {
+        let source = "fun helper() {}";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_kotlin_sg::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = find_first_of_kind(root, "function_declaration")
+            .expect("function_declaration must exist in parsed source");
+        let result = super::extract_kotlin_function(
+            fn_node,
+            source,
+            super::Language::Kotlin,
+            "main.kt",
+            None,
+        );
+        let node = result.expect("extract_kotlin_function must return Some");
+        assert_eq!(node.name, "helper");
+        assert_eq!(node.kind, super::FunctionKind::Method);
+        assert_eq!(node.language, super::Language::Kotlin);
+        assert!((node.confidence - 0.85).abs() < f64::EPSILON);
+    }
+
+    /// Kotlin: navigation_expression callee extraction (covers `obj.method()`).
+    #[test]
+    fn charac_kotlin_callee_navigation_expression() {
+        let source = "fun run() { helper.foo(); bar() }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_kotlin_sg::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        // Two call_expressions: `helper.foo()` and `bar()`.
+        let calls: Vec<_> = collect_by_kind(root, "call_expression");
+        assert_eq!(calls.len(), 2);
+
+        // First call: helper.foo() — resolve to "foo" (via navigation_suffix).
+        let callee = super::extract_kotlin_callee(calls[0], source).expect("callee must be Some");
+        assert_eq!(callee, "foo");
+
+        // Second call: bar() — resolve to "bar" (direct simple_identifier).
+        let bar_callee =
+            super::extract_kotlin_callee(calls[1], source).expect("callee must be Some");
         assert_eq!(bar_callee, "bar");
     }
 
