@@ -13,6 +13,31 @@ use archctl::code::call_graph::{self, Language};
 use archctl::filesystem::SystemFilesystem;
 use archctl::store::{GraphStore, LbugStore};
 
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+/// Reads a fixture file from `archctl/tests/fixtures/<name>`.
+fn read_fixture(name: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("could not read fixture {}: {}", path.display(), e))
+}
+
+/// Writes fixture content to a tempdir path and returns the absolute path.
+#[allow(dead_code)]
+fn write_fixture_to_tmp(name: &str, rel: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = TempDir::new().unwrap();
+    let content = read_fixture(name);
+    let dest = tmp.path().join(rel);
+    if let Some(parent) = dest.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&dest, content).expect("write fixture to tmp");
+    (tmp, dest)
+}
+
 // ─── Integration tests ─────────────────────────────────────────────────────────
 
 #[test]
@@ -87,39 +112,10 @@ fn write(project: &Path, rel: &str, content: &str) {
 
 // ─── M30: Go extraction semantics ────────────────────────────────────────────
 
-/// Inline Go source mirroring tests/fixtures/go_callgraph/main.go.
-/// Covers: function, pointer-receiver method, func_literal (no node),
-/// package-qualified call, selector method call, main/init.
-const GO_SAMPLE: &str = r#"package main
-
-import "fmt"
-
-func greet(name string) string {
-	fmt.Println("hi", name)
-	return "hi " + name
-}
-
-type Server struct{ name string }
-
-func (s *Server) Save() error { return nil }
-
-func handler() {
-	fn := func() { greet("anon") }
-	fn()
-}
-
-func main() {
-	s := &Server{name: "x"}
-	s.Save()
-	handler()
-}
-
-func init() { _ = greet("init") }
-"#;
-
 fn write_go_project(project: &Path) {
     write(project, "go.mod", "module smoke\n\ngo 1.21\n");
-    write(project, "main.go", GO_SAMPLE);
+    let go_source = read_fixture("go_callgraph/main.go");
+    write(project, "main.go", &go_source);
 }
 
 #[test]
@@ -132,12 +128,13 @@ fn test_go_extraction_nodes_and_edges() {
     let report =
         call_graph::extract(project, &[Language::Go], None, &fs).expect("extract must succeed");
 
-    // Nodes: greet, Server.Save (method), handler, main, init = 5.
+    // Nodes: greet, Server.Save (method), Server.Name (value-receiver method),
+    //        handler, main, init = 6.
     // The anonymous func literal (fn := func() {...}) must NOT be a node.
     assert_eq!(
         report.nodes.len(),
-        5,
-        "expected 5 Go nodes, got: {:#?}",
+        6,
+        "expected 6 Go nodes, got: {:#?}",
         report.nodes
     );
     let methods: Vec<_> = report
@@ -145,8 +142,14 @@ fn test_go_extraction_nodes_and_edges() {
         .iter()
         .filter(|n| n.kind == archctl::code::call_graph::FunctionKind::Method)
         .collect();
-    assert_eq!(methods.len(), 1, "expected exactly 1 Method node");
-    assert_eq!(methods[0].name, "Save");
+    assert_eq!(
+        methods.len(),
+        2,
+        "expected exactly 2 Method nodes (Save + Name)"
+    );
+    let method_names: Vec<&str> = methods.iter().map(|m| m.name.as_str()).collect();
+    assert!(method_names.contains(&"Save"));
+    assert!(method_names.contains(&"Name"));
     assert!(
         !report.nodes.iter().any(|n| n.name == "fn"),
         "func_literal must not produce a node"
