@@ -243,7 +243,7 @@ echo "# hacked" >> $HOME/.config/opencode/skills/stack-management/SKILL.md
 
 | # | Escenario | Resultado esperado | Verdicto |
 |---|---|---|---|
-| 9.1 | `archctl diagram export nope:*` (selector inválido) | error claro, exit ≠ 0, NO panic | [ ] |
+| 9.1 | `archctl diagram export nope:*` (selector inválido); `container:*` sobre /tmp (vacío) | error claro, exit ≠ 0, NO panic; empty-graph: exit 0, JSON con `empty: true` | [ ] |
 | 9.2 | `call-graph` sobre repo Go (soportado desde M30) | extracción real: `project.filesScanned > 0` (rápida; apply-path cubierto por `smoke_go_apply_fixture`) | [ ] |
 | 9.3 | `archctl view` sin assets (binario mal build) | "view assets not embedded — run: ..." | [ ] |
 | 9.4 | `stack install` con HOME sin permisos | error claro de filesystem | [ ] |

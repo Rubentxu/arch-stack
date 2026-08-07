@@ -239,6 +239,7 @@ export RUST_LOG=error XDG_DATA_HOME=/hlt/xdg9/data XDG_CONFIG_HOME=/hlt/xdg9/con
 mkdir -p /hlt/xdg9/data /hlt/xdg9/config
 # 9.1 selector inválido -> error claro, exit != 0
 # (container:* sin proyecto NO es error: el producto exporta 0 con éxito)
+# El nuevo campo `empty: true` es observable vía --json
 if archctl diagram export nope:* --cwd /tmp --output /tmp/x9 >/dev/null 2>&1; then
   echo "NO_ERR91"; exit 1
 fi
