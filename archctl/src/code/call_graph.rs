@@ -142,8 +142,6 @@ pub struct ApplyReport {
     pub relations_skipped: usize,
     pub evidences_written: usize,
     pub source_artifacts_written: usize,
-    /// MetaType/Predicate rows seeded
-    pub seed_writes: usize,
     pub duration_ms: u64,
 }
 
@@ -1317,12 +1315,11 @@ pub fn apply(
 
     let mut store = open_and_init(project_dir).map_err(CallGraphError::GraphWrite)?;
 
-    // Seed MetaType rows for code.function, code.method, code.closure
-    // and Predicate row for code.calls. M32 D1: run inside the
-    // transaction — running this BEFORE begin_transaction was found
-    // to leave Kùzu in an inconsistent state that made the subsequent
-    // COMMIT fail with "No active transaction".
-    let seed_writes = 1; // assume success; failure is non-fatal for apply
+    // M32 BREAK-1: removed the inline seed MERGEs. MetaType/Predicate
+    // rows now come from the migration runner (`docs/schema/`). The
+    // prior `let seed_writes = 1` was a lie — no seeding actually
+    // happened inside the apply. The ApplyReport no longer carries
+    // the field; CLI `--json` output drops it.
 
     let existing_keys = existing_canonical_keys(&*store)
         .context("fetch existing keys")
@@ -1623,7 +1620,6 @@ pub fn apply(
         relations_skipped,
         evidences_written,
         source_artifacts_written,
-        seed_writes,
         duration_ms: 0,
     })
 }
@@ -1713,11 +1709,13 @@ mod tests {
             relations_skipped: 1,
             evidences_written: 3,
             source_artifacts_written: 2,
-            seed_writes: 1,
             duration_ms: 42,
         };
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("\"elements_written\":5"));
-        assert!(json.contains("\"seed_writes\":1"));
+        assert!(
+            !json.contains("seed_writes"),
+            "seed_writes field must be removed (BREAK-1)"
+        );
     }
 }

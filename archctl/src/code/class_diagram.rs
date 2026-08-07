@@ -155,7 +155,6 @@ pub struct ApplyReport {
     pub relations_skipped: usize,
     pub evidences_written: usize,
     pub source_artifacts_written: usize,
-    pub seed_writes: usize,
     pub duration_ms: u64,
 }
 
@@ -1295,7 +1294,6 @@ pub fn apply(
     let mut relations_written = 0;
     let mut relations_skipped = 0;
     let evidences_written = 0;
-    let mut seed_writes = 0;
 
     // Seed uml MetaTypes and Predicates — split into individual MERGEs
     // (one per query() call) to avoid lbug's multi-statement binder
@@ -1334,15 +1332,11 @@ pub fn apply(
 
         for mt in &meta_types {
             let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
-            if s.query(&q).is_ok() {
-                seed_writes += 1;
-            }
+            let _ = s.query(&q).ok();
         }
         for pred in &predicates {
             let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
-            if s.query(&q).is_ok() {
-                seed_writes += 1;
-            }
+            let _ = s.query(&q).ok();
         }
 
         for node in &report.nodes {
@@ -1461,7 +1455,6 @@ pub fn apply(
         relations_skipped,
         evidences_written,
         source_artifacts_written: 0,
-        seed_writes,
         duration_ms,
     })
 }
