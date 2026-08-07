@@ -4,6 +4,139 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.17.0] — 2026-08-07
+
+### Added
+- **M47 — CHANGELOG backfill + docs/README index**: 14-cycle session summary
+  (v1.4.1 → v1.16.0) consolidated into this changelog. `docs/README.md`
+  now indexes all 12 view specs under `docs/specs/`. No code changes.
+
+## [v1.16.0] — 2026-08-07
+
+### Fixed
+- **M46 — stale `public_symbols` in 8 manifests**: removed 26 entries that
+  could not validate (enum variants like `Plantuml`, struct fields like
+  `project_id`, removed functions like `from_str`). `archctl doctor
+  --scopes <all 26>` now reports 0 findings (was 8). PR #111.
+
+## [v1.15.0] — 2026-08-07
+
+### Added
+- **M45 — sequence edge labels**: `archctl diagram project --view sequence:*`
+  now reads optional message labels from `edge.props["label"]`. Backward-
+  compatible: absent / empty / non-string values fall through to bare arrow.
+  Both Mermaid and PlantUML projectors. New `archctl/tests/sequence_view_e2e.rs`.
+  PR #109. Spec: `docs/specs/sequence-view-labels.md`.
+
+## [v1.14.0] — 2026-08-07
+
+### Added
+- **M43 — use case PlantUML e2e verify**: new
+  `archctl/tests/usecase_view_plantuml_e2e.rs` exercises the full chain
+  M39 (projector) → M40 (backend) → SVG. SKIP-on-missing-backend. Closes
+  the verification loop. PR #107. No code changes (test only).
+
+## [v1.13.0] — 2026-08-07
+
+### Fixed
+- **M41 — state + C4 Mermaid projector bug**: state and C4 views emitted
+  bare `[Label]` / `(Label)` syntax that merman silently rejected, same
+  bug class as M39 found in use case view. Now emit `id([Name]):::state`
+  for states and `id(name)` / `id([name])` for C4 persons / systems /
+  containers / components. Edges reference node IDs. New e2e tests:
+  `archctl/tests/state_view_e2e.rs`, `archctl/tests/c4_view_e2e.rs`.
+  Every Mermaid view now renders end-to-end. PR #105. Spec:
+  `docs/specs/state-and-c4-views.md`.
+
+## [v1.12.0] — 2026-08-07
+
+### Added
+- **M40 — PlantUML local render via user-installed backend**:
+  `archctl render --format plantuml` now delegates to a user-installed
+  PlantUML engine (Java CLI / docker plantuml/plantuml / custom
+  `archctl-puml-backend` binary) in PATH. archctl itself does NOT link
+  graphviz or open network connections (ADR-011, ADR-006). The
+  `plantuml-little` crate was explored and REJECTED because it hard-links
+  `graphviz-anywhere` at compile time. New `archctl/tests/plantuml_render_e2e.rs`
+  with skip-on-missing-backend. PR #103. Spec: `docs/specs/plantuml-render.md`.
+
+## [v1.11.0] — 2026-08-07
+
+### Fixed
+- **M39 — use case diagrams end-to-end + mermaid node-id bug**: use case
+  view (`usecase:*`) now renders end-to-end via merman to valid SVG. Fixed
+  pre-existing bug where bare `(Label)` mermaid syntax was rejected by
+  merman (masked by substring unit tests for 10+ cycles). Now emits
+  `id(Name)` for actors, `id((Name))` (circle) for use cases, edges
+  reference node IDs. New `archctl/tests/usecase_view_e2e.rs`. PR #101.
+  Spec: `docs/specs/use-case-view.md`.
+
+## [v1.10.0] — 2026-08-07
+
+### Added
+- **M37 — public JSON Schema + pure `--json` stdout mode**:
+  `archctl diagram export --json` now emits the full bundle envelope
+  (manifest + projection + evidence + styles) to stdout without writing
+  5 files when `--output` is omitted. `archctl diagram export
+  --json --output <dir>` writes both. The envelope validates against
+  `schemas/diagram-projection.schema.json` (round-trip test added).
+  Refactor: extracted `build_bundle` + `build_export_envelope` helpers.
+  PR #98. Spec: `docs/specs/diagram-projection-bundle.md`.
+
+## [v1.9.0] — 2026-08-07
+
+### Added
+- **M38 — Mermaid → SVG local render via merman**: pure-Rust renderer
+  using `merman-core = "0.8.0-alpha.3"` + `merman-render`. No graphviz,
+  no network. Supports sequence, flowchart, class, state diagrams.
+  PlantUML rendering deferred to M40 (graphviz vendor strategy).
+  Drive-by: enabled `serde_json/preserve_order` feature toggle in row.rs.
+  PR #96.
+
+## [v1.8.0] — 2026-08-07
+
+### Added
+- **M36 — Kotlin call-graph extraction**: `archctl code call-graph`
+  now supports Kotlin (6th language: rust, typescript, python, go, java,
+  kotlin). `tree-sitter-kotlin-sg = "0.4"` for parsing. Mirrors the Java
+  pipeline from M35.
+
+## [v1.7.0] — 2026-08-07
+
+### Added
+- **M35 — Java call-graph extraction**: `archctl code call-graph`
+  now supports Java (5th language). `tree-sitter-java = "0.23"` for
+  parsing. Class declarations, method declarations, method invocations.
+
+## [v1.6.0] — 2026-08-07
+
+### Changed
+- **M34 — call-graph strategy consolidation**: removed dead code
+  (`InvalidLanguage` enum variant), removed vacuous test
+  (`test_confidence_per_language`), deduplicated `extract_fn` across
+  strategies. ~240 LOC reduction.
+
+## [v1.5.1] — 2026-08-07
+
+### Fixed
+- **M31-FU1 — tracing → stderr redirect**: archctl tracing output
+  now goes to stderr (not stdout) so `--json` stdout mode is clean
+  for agent piping. One-line fix in `tracing-subscriber` init.
+
+## [v1.5.0] — 2026-08-07
+
+### Added
+- **M31 — unified empty envelope for `archctl diagram export`**:
+  consistent shape whether the project exists, has nodes, or has no
+  matching selector. Always emits `{manifest, projection, evidence,
+  styles, empty, warning}`.
+
+## [v1.4.1] — 2026-08-07
+
+### Fixed
+- **BREAK-1 — remove `seed_writes` lying API**: removed a function that
+  claimed to "seed" the graph but did nothing observable. PR #84 + #85.
+
 ## [v1.1.0] — 2026-08-07
 
 ### Added
