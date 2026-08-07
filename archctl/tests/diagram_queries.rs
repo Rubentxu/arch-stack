@@ -212,6 +212,17 @@ impl GraphStore for TinyGraphStore {
             Ok(Vec::new())
         }
     }
+    // M32 D1: TinyGraphStore is read-only and does not exercise writers,
+    // so transaction primitives are no-ops.
+    fn begin_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
+        Ok(())
+    }
+    fn commit_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
+        Ok(())
+    }
+    fn rollback_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
+        Ok(())
+    }
 }
 
 // Sub-trait impls — these exist purely so `GraphStore for TinyGraphStore`
