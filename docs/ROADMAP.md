@@ -810,6 +810,7 @@ Incluye:
 | `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (merged to main via PR #44) | `18cf12b` | **Cerrado** ✅ · tag `v0.14.9` |
 | `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (merged to main) | `4f22224` | **Cerrado** ✅ · tag `v0.14.10` |
 | `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
+| `m31-unified-diagram-export-empty-semantics` | `feat/m31-unified-diagram-export-empty-semantics` (merged to main via PR #86) | `09e69dc` | **Cerrado** ✅ · tag `v1.5.0` · envelope {empty, warning, manifest} |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
