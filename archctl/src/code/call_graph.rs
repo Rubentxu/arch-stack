@@ -93,6 +93,7 @@ pub enum Language {
     TypeScript,
     Python,
     Go,
+    Java,
 }
 
 impl Language {
@@ -103,6 +104,7 @@ impl Language {
             Language::TypeScript => 0.85,
             Language::Python => 0.80,
             Language::Go => 0.85,
+            Language::Java => 0.85,
         }
     }
 }
@@ -215,6 +217,7 @@ pub fn extract(
             "js" | "jsx" | "mjs" | "cjs" => (Some(Language::TypeScript), "typescript"),
             "py" => (Some(Language::Python), "python"),
             "go" => (Some(Language::Go), "go"),
+            "java" => (Some(Language::Java), "java"),
             _ => (None, ""),
         };
         let Some(lang) = lang else { continue };
@@ -250,6 +253,7 @@ pub fn extract(
             Language::TypeScript => SupportLang::TypeScript,
             Language::Python => SupportLang::Python,
             Language::Go => SupportLang::Go,
+            Language::Java => SupportLang::Java,
         };
 
         // Parse with tree-sitter
@@ -437,6 +441,34 @@ fn find_function_definitions<'tree>(
             } else if kind == "func_literal" {
                 // func_literal is NOT a FunctionNode — anonymous, calls attributed to enclosing named function
                 // Do NOT recurse into func_literal body (same guard as Rust closure_expression)
+                return;
+            }
+        }
+        Language::Java => {
+            // method_declaration: class methods
+            if kind == "method_declaration" {
+                if let Some(fn_node) = extract_java_method(node, source, lang, file, parent_key) {
+                    nodes.push(fn_node);
+                }
+                return;
+            } else if kind == "class_declaration" {
+                // Recurse into class body to find methods (incl. constructors)
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i as u32)
+                        && child.kind() == "class_body"
+                    {
+                        for j in 0..child.child_count() {
+                            if let Some(member) = child.child(j as u32)
+                                && (member.kind() == "method_declaration"
+                                    || member.kind() == "constructor_declaration")
+                                && let Some(fn_node) =
+                                    extract_java_method(member, source, lang, file, parent_key)
+                            {
+                                nodes.push(fn_node);
+                            }
+                        }
+                    }
+                }
                 return;
             }
         }
@@ -684,6 +716,64 @@ fn extract_go_method(
     )
 }
 
+// ─── Java extractors (M35) ───────────────────────────────────────────────────
+
+fn extract_java_method(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    // tree-sitter Java: both `method_declaration` and `constructor_declaration`
+    // expose the function name as an `identifier` child.
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("identifier"),
+        FunctionKind::Method,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
+}
+
+fn extract_java_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
+    // tree-sitter Java method_invocation shape:
+    //   method(args)              → identifier(method) + argument_list(args)
+    //   obj.method(args)          → field_access(obj, method) + argument_list
+    //   Class.method(args)        → scoped_identifier(Class, method) + argument_list
+    //   pkg.Class.method(args)    → chained
+    // Strategy: skip `argument_list` (those are the args, not the callee),
+    // then within the remaining subtree pick the deepest rightmost identifier.
+    fn callee_text<'a>(n: tree_sitter::Node<'a>, source: &str) -> Option<String> {
+        let mut found: Option<String> = None;
+        walk_callee(n, source, &mut found);
+        found
+    }
+
+    fn walk_callee<'a>(node: tree_sitter::Node<'a>, source: &str, out: &mut Option<String>) {
+        if node.kind() == "argument_list" {
+            // Skip the arguments subtree entirely.
+            return;
+        }
+        // Recurse first (pre-order on the *remaining* subtree).
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            walk_callee(child, source, out);
+        }
+        if node.kind() == "identifier"
+            && let Some(text) = source.get(node.start_byte()..node.end_byte())
+        {
+            // Last-wins: `obj.method` → `method`.
+            *out = Some(text.to_string());
+        }
+    }
+    callee_text(node, source)
+}
+
 fn extract_go_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
     // Go call_expression can be:
     // - identifier: helper() -> extract identifier
@@ -856,6 +946,28 @@ fn find_call_expressions<'tree>(
                 }
             }
         }
+        Language::Java => {
+            // method_invocation: obj.method(...) or method(...)
+            if kind == "method_invocation"
+                && let Some(callee) = extract_java_callee(node, source)
+            {
+                let line = (node.start_position().row + 1) as u32;
+                let call_kind = if callee.contains('.') {
+                    CallKind::MethodCall
+                } else {
+                    CallKind::DirectCall
+                };
+                edges.push(make_call_edge(
+                    nodes,
+                    lang,
+                    file,
+                    &callee,
+                    line,
+                    call_kind,
+                    MessageKind::SyncCall,
+                ));
+            }
+        }
     }
 
     // Recurse into children
@@ -984,6 +1096,7 @@ fn lang_label(lang: &Language) -> &'static str {
         Language::TypeScript => "typescript",
         Language::Python => "python",
         Language::Go => "go",
+        Language::Java => "java",
     }
 }
 
@@ -1617,6 +1730,28 @@ mod tests {
         None
     }
 
+    /// Collect every descendant node of `kind` (depth-first, pre-order).
+    /// Used to locate all method_invocations in a tree.
+    fn collect_by_kind<'a>(node: tree_sitter::Node<'a>, kind: &str) -> Vec<tree_sitter::Node<'a>> {
+        let mut out = Vec::new();
+        collect_by_kind_into(node, kind, &mut out);
+        out
+    }
+
+    fn collect_by_kind_into<'a>(
+        node: tree_sitter::Node<'a>,
+        kind: &str,
+        out: &mut Vec<tree_sitter::Node<'a>>,
+    ) {
+        if node.kind() == kind {
+            out.push(node);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_by_kind_into(child, kind, out);
+        }
+    }
+
     /// Rust: function_item → identifier child → FunctionNode.
     #[test]
     fn charac_rust_function() {
@@ -1809,6 +1944,75 @@ mod tests {
         assert_eq!(node.name, "Save");
         assert_eq!(node.kind, super::FunctionKind::Method);
         assert_eq!(node.language, super::Language::Go);
+    }
+
+    /// Java: method_declaration → identifier child → FunctionNode.
+    #[test]
+    fn charac_java_method() {
+        let source = "public class C { public void hello() {} }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_java::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let method_node = find_first_of_kind(root, "method_declaration")
+            .expect("method_declaration must exist in parsed source");
+        let result =
+            super::extract_java_method(method_node, source, super::Language::Java, "C.java", None);
+        let node = result.expect("extract_java_method must return Some");
+        assert_eq!(node.name, "hello");
+        assert_eq!(node.kind, super::FunctionKind::Method);
+        assert_eq!(node.language, super::Language::Java);
+        assert!((node.confidence - 0.85).abs() < f64::EPSILON);
+    }
+
+    /// Java: constructor_declaration → identifier child → FunctionNode.
+    /// tree-sitter Java names constructors as `constructor_declaration`
+    /// (not `method_declaration`), but both share the `identifier` child.
+    #[test]
+    fn charac_java_constructor() {
+        let source = "public class C { public C() {} }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_java::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let ctor_node = find_first_of_kind(root, "constructor_declaration")
+            .expect("constructor_declaration must exist in parsed source");
+        let result =
+            super::extract_java_method(ctor_node, source, super::Language::Java, "C.java", None);
+        let node = result.expect("extract_java_method must return Some for constructors");
+        assert_eq!(node.name, "C");
+        assert_eq!(node.kind, super::FunctionKind::Method);
+    }
+
+    /// Java: method_invocation callee extraction (covers `obj.method()`).
+    #[test]
+    fn charac_java_callee_method_invocation() {
+        let source = "public class C { void run() { helper.foo(); bar(); } }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_java::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        // Two method_invocations: `helper.foo()` and `bar()`. We want the
+        // first one — assert via deep search order (helper.foo() comes
+        // first in source).
+        let inv_node = find_first_of_kind(root, "method_invocation")
+            .expect("method_invocation must exist in parsed source");
+        let callee = super::extract_java_callee(inv_node, source).expect("callee must be Some");
+        assert_eq!(callee, "foo");
+
+        // Also assert the simple case: standalone `bar()` resolves to "bar".
+        // Find the SECOND method_invocation by walking past the first.
+        let invocations: Vec<_> = collect_by_kind(root, "method_invocation");
+        assert_eq!(invocations.len(), 2);
+        let bar_callee =
+            super::extract_java_callee(invocations[1], source).expect("callee must be Some");
+        assert_eq!(bar_callee, "bar");
     }
 
     #[test]
