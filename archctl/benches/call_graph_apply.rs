@@ -23,15 +23,11 @@
 //!   pmndrs-zustand-212.json  —   212 nodes + edges, TypeScript
 //! The Go fixture uses committed source under tests/fixtures/go_callgraph/.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
-use archctl::code::call_graph::{
-    self, ApplyReport, CallEdge, CallGraphReport, CallKind, FunctionKind, FunctionNode, Language,
-    MessageKind,
-};
+use archctl::code::call_graph::{self, ApplyReport, CallGraphReport, Language};
 use archctl::filesystem::SystemFilesystem;
 
 // ─── Dataset resolution ─────────────────────────────────────────────────────────
@@ -47,139 +43,6 @@ fn smoke_path(name: &str) -> PathBuf {
 }
 
 // ─── Go fixture (deterministic, committed) ─────────────────────────────────────
-
-/// Minimal Go fixture report mirroring tests/fixtures/go_callgraph/main.go.
-/// 6 functions + 2 call edges; committed, no cache needed.
-/// (Currently unused — the bench extracts fresh from the committed
-/// .go file via `prepare_go_fixture` + `call_graph::extract`. Kept
-/// here for future inline benchmarks that skip the extract step.)
-#[allow(dead_code)]
-fn go_fixture_report() -> CallGraphReport {
-    CallGraphReport {
-        schema_version: "1.0".to_string(),
-        project: call_graph::ProjectMeta {
-            root: "/tmp/go_fixture".to_string(),
-            files_scanned: 1,
-            languages: BTreeMap::from([("go".to_string(), 1)]),
-            duration_ms: 0,
-        },
-        nodes: vec![
-            FunctionNode {
-                canonical_key: "go:/tmp/go_fixture/main.go:greet:10".to_string(),
-                kind: FunctionKind::Function,
-                language: Language::Go,
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 10,
-                name: "greet".to_string(),
-                fq_name: "main.greet".to_string(),
-                confidence: 0.90,
-                parent: None,
-            },
-            FunctionNode {
-                canonical_key: "go:/tmp/go_fixture/main.go:Server.Save:17".to_string(),
-                kind: FunctionKind::Method,
-                language: Language::Go,
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 17,
-                name: "Save".to_string(),
-                fq_name: "Server.Save".to_string(),
-                confidence: 0.90,
-                parent: None,
-            },
-            FunctionNode {
-                canonical_key: "go:/tmp/go_fixture/main.go:Server.Name:21".to_string(),
-                kind: FunctionKind::Method,
-                language: Language::Go,
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 21,
-                name: "Name".to_string(),
-                fq_name: "Server.Name".to_string(),
-                confidence: 0.90,
-                parent: None,
-            },
-            FunctionNode {
-                canonical_key: "go:/tmp/go_fixture/main.go:handler:25".to_string(),
-                kind: FunctionKind::Function,
-                language: Language::Go,
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 25,
-                name: "handler".to_string(),
-                fq_name: "main.handler".to_string(),
-                confidence: 0.90,
-                parent: None,
-            },
-            FunctionNode {
-                canonical_key: "go:/tmp/go_fixture/main.go:main:32".to_string(),
-                kind: FunctionKind::Function,
-                language: Language::Go,
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 32,
-                name: "main".to_string(),
-                fq_name: "main.main".to_string(),
-                confidence: 0.90,
-                parent: None,
-            },
-            FunctionNode {
-                canonical_key: "go:/tmp/go_fixture/main.go:init:38".to_string(),
-                kind: FunctionKind::Function,
-                language: Language::Go,
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 38,
-                name: "init".to_string(),
-                fq_name: "main.init".to_string(),
-                confidence: 0.90,
-                parent: None,
-            },
-        ],
-        edges: vec![
-            CallEdge {
-                canonical_key: "go:/tmp/go_fixture/main.go:main→fmt.Println:34".to_string(),
-                caller: "go:/tmp/go_fixture/main.go:main:32".to_string(),
-                callee: "fmt.Println".to_string(),
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 34,
-                kind: CallKind::DirectCall,
-                message_kind: MessageKind::SyncCall,
-                confidence: 0.90,
-            },
-            CallEdge {
-                canonical_key: "go:/tmp/go_fixture/main.go:greet→fmt.Println:11".to_string(),
-                caller: "go:/tmp/go_fixture/main.go:greet:10".to_string(),
-                callee: "fmt.Println".to_string(),
-                file: "main.go".to_string(),
-                content_hash:
-                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .to_string(),
-                line: 11,
-                kind: CallKind::DirectCall,
-                message_kind: MessageKind::SyncCall,
-                confidence: 0.90,
-            },
-        ],
-        errors: vec![],
-    }
-}
 
 /// Write a Go source file to a temp dir so call_graph::extract() can process it.
 /// This simulates what `archctl code call-graph --lang go` does on the fixture.
