@@ -180,8 +180,10 @@ pub enum DiagramAction {
         selector: String,
         #[arg(long, default_value = "viewer-bundle")]
         format: String,
+        /// Output directory for the 5-file bundle. Optional when `--json`
+        /// is set (pure stdout mode).
         #[arg(long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -1663,40 +1665,53 @@ fn diagram_export_cmd(
     cwd: Option<PathBuf>,
     selector: &str,
     format: &str,
-    output: PathBuf,
+    output: Option<PathBuf>,
     json: bool,
     ctx: &CliContext,
 ) -> Result<i32> {
     if format != "viewer-bundle" {
         anyhow::bail!("only 'viewer-bundle' format is supported (got: {format})");
     }
+    if !json && output.is_none() {
+        anyhow::bail!(
+            "--output is required when --json is not set (or use --json for stdout-only mode)"
+        );
+    }
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
     let store = store::open_and_init(&info.project_dir)?;
 
-    let report = crate::diagram::run_export(
-        &*store,
-        selector,
-        &output,
-        &crate::clock::SystemClock,
-        &*ctx.fs,
-    )?;
+    // Single-source: build the bundle once, then dispatch to stdout and/or disk.
+    let bundle = crate::diagram::build_bundle(&*store, selector, &crate::clock::SystemClock)?;
 
     if json {
-        let envelope = serde_json::json!({
-            "empty": report.empty,
-            "warning": report.warning,
-            "manifest": report.manifest,
-        });
+        // Emit the FULL bundle envelope (manifest + projection + evidence
+        // + styles) to stdout as a single JSON document. Agents pipe this
+        // to jq or other tools without writing 5 files.
+        let envelope = crate::diagram::build_export_envelope(&bundle);
         println!("{}", serde_json::to_string_pretty(&envelope)?);
-    } else {
-        println!(
-            "Exported {} elements, {} edges, {} evidence to {}",
-            report.element_count,
-            report.edge_count,
-            report.evidence_count,
-            output.display()
-        );
+    }
+
+    if let Some(out_dir) = output.as_ref() {
+        // File-write mode: emit 5 files using `run_export`. The bundle
+        // is built again internally (queries are idempotent + cached via
+        // graph layer); this keeps `run_export` callable independently.
+        let report = crate::diagram::run_export(
+            &*store,
+            selector,
+            out_dir,
+            &crate::clock::SystemClock,
+            &*ctx.fs,
+        )?;
+        if !json {
+            println!(
+                "Exported {} elements, {} edges, {} evidence to {}",
+                report.element_count,
+                report.edge_count,
+                report.evidence_count,
+                out_dir.display()
+            );
+        }
     }
     Ok(0)
 }
