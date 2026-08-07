@@ -820,6 +820,7 @@ Incluye:
 | `m39-use-case-diagrams-end-to-end` | `feat/m39-use-case-shapes-and-e2e-render` (merged to main via PR #101) | `7fc3e96` | **Cerrado** ✅ · tag `v1.11.0` · use case view end-to-end (mermaid: actor=rect, usecase=circle) + usecase_view_e2e regression test; pre-M39 bare (Label) bug discovered and fixed |
 | `m40-plantuml-render-local` | `feat/m40-plantuml-render-local` (merged to main via PR #103) | `5137ce1` | **Cerrado** ✅ · tag `v1.12.0` · PlantUML render via user-installed backend (Java CLI / docker / custom); plantuml-little rejected (hard-links graphviz); 3 install options in error |
 | `m41-state-and-c4-e2e` | `feat/m41-state-and-c4-e2e` (merged to main via PR #105) | `c93cb53` | **Cerrado** ✅ · tag `v1.13.0` · state + C4 Mermaid projector bug fixed (id([Name]):::state + id(name)/id([Name])); every Mermaid view now renders end-to-end |
+| `m43-use-case-plantuml-e2e-verify` | `feat/m43-use-case-plantuml-e2e-verify` (merged to main via PR #107) | `e6a8f05` | **Cerrado** ✅ · tag `v1.14.0` · use case projector (M39) + PlantUML backend (M40) verified end-to-end; new regression test |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
