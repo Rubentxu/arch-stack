@@ -49,6 +49,12 @@ svg = { version = "0.14", default-features = false }
 # Mermaid renderer — pure Rust, no graphviz/network. Pinned to 0.8.0-alpha.3.
 merman-core = "=0.8.0-alpha.3"
 merman-render = "=0.8.0-alpha.3"
+# NOTE: M40 explored `plantuml-little = "1.2026.2-4"` as a pure-Rust PlantUML
+# renderer. The crate hard-links against `graphviz-anywhere` at compile time
+# (required for use case / state / class layout), which conflicts with ADR-011
+# (local-only, no graphviz binary vendored). PlantUML rendering is therefore
+# delegated to a user-provided backend (Java PlantUML CLI / docker) — see
+# `archctl/src/render/plantuml.rs` and docs/specs/plantuml-render.md.
 rust-embed = { version = "8", features = ["include-flate"] }
 tiny_http = "0.12"
 percent-encoding = "2"

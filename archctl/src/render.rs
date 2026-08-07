@@ -19,9 +19,10 @@ use crate::Filesystem;
 use crate::cli::RenderFormat;
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
-use tracing::{info, warn};
+use tracing::info;
 
 pub mod mermaid;
+pub mod plantuml;
 pub mod structurizr;
 
 /// Format identifier emitted by `detect_format` and consumed by `run`.
@@ -78,13 +79,8 @@ pub fn run(
     let svg = match kind {
         RenderKind::Structurizr => structurizr::render(&body)
             .with_context(|| format!("structurizr render of {}", source.display()))?,
-        RenderKind::Plantuml => {
-            warn!("plantuml format is deferred to M40 (graphviz vendor strategy unresolved)");
-            bail!(
-                "plantuml rendering deferred to M40 — see ROADMAP M38 status note \
-                 (graphviz-anywhere vendor OR pure-Rust subset renderer needed)"
-            );
-        }
+        RenderKind::Plantuml => plantuml::render(&body)
+            .with_context(|| format!("plantuml render of {}", source.display()))?,
         RenderKind::Mermaid => mermaid::render(&body)
             .with_context(|| format!("mermaid render of {}", source.display()))?,
     };

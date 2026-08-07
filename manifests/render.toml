@@ -18,6 +18,7 @@ editable = [
   "archctl/src/render.rs",
   "archctl/src/render/structurizr.rs",
   "archctl/src/render/mermaid.rs",
+  "archctl/src/render/plantuml.rs",
 ]
 
 public_symbols = [
@@ -38,6 +39,10 @@ must_hold = [
   ".archctl-rendered",
   "DiGraph",
   "layered_svg",
+  "plantuml::render",
+  "PlantumlCli",
+  "DockerImage",
+  "CustomUserBinary",
 ]
 
 minimum_tests = 3
