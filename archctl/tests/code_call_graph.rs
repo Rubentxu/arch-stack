@@ -55,13 +55,11 @@ fn test_apply_report_fields() {
         relations_skipped: 1,
         evidences_written: 3,
         source_artifacts_written: 2,
-        seed_writes: 1,
         duration_ms: 42,
     };
 
     assert_eq!(report.elements_written, 5);
     assert_eq!(report.elements_skipped, 2);
-    assert_eq!(report.seed_writes, 1);
 }
 
 #[test]

@@ -115,7 +115,6 @@ pub struct ApplyReport {
     pub elements_skipped: usize,
     pub relations_written: usize,
     pub relations_skipped: usize,
-    pub seed_writes: usize,
     pub duration_ms: u64,
 }
 
@@ -1105,7 +1104,6 @@ pub fn apply(
     let start = Instant::now();
     let mut store = open_and_init(project_dir)?;
 
-    let mut seed_writes = 0usize;
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
     let mut relations_written = 0usize;
@@ -1156,15 +1154,11 @@ pub fn apply(
 
         for mt in &meta_types {
             let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
-            if s.query(&q).is_ok() {
-                seed_writes += 1;
-            }
+            let _ = s.query(&q).ok();
         }
         for pred in &predicates {
             let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
-            if s.query(&q).is_ok() {
-                seed_writes += 1;
-            }
+            let _ = s.query(&q).ok();
         }
 
         for machine in &report.machines {
@@ -1353,7 +1347,6 @@ pub fn apply(
         elements_skipped,
         relations_written,
         relations_skipped,
-        seed_writes,
         duration_ms,
     })
 }

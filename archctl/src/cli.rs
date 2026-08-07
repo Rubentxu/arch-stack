@@ -1993,12 +1993,11 @@ fn code_class_diagram_cmd(
             println!("{}", serde_json::to_string_pretty(&apply_report)?);
         } else {
             println!(
-                "Applied {} elements ({} skipped), {} relations ({} skipped), {} seed writes ({} ms).",
+                "Applied {} elements ({} skipped), {} relations ({} skipped) ({} ms).",
                 apply_report.elements_written,
                 apply_report.elements_skipped,
                 apply_report.relations_written,
                 apply_report.relations_skipped,
-                apply_report.seed_writes,
                 apply_report.duration_ms
             );
         }
@@ -2030,12 +2029,11 @@ fn code_state_machine_cmd(
             println!("{}", serde_json::to_string_pretty(&apply_report)?);
         } else {
             println!(
-                "Applied {} elements ({} skipped), {} relations ({} skipped), {} seed writes ({} ms).",
+                "Applied {} elements ({} skipped), {} relations ({} skipped) ({} ms).",
                 apply_report.elements_written,
                 apply_report.elements_skipped,
                 apply_report.relations_written,
                 apply_report.relations_skipped,
-                apply_report.seed_writes,
                 apply_report.duration_ms
             );
         }
