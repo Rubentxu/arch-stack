@@ -76,6 +76,14 @@ pub enum FunctionKind {
     Closure,
 }
 
+impl FunctionKind {
+    // Synthetic labels for anonymous function-like nodes are now passed
+    // as a parameter to `extract_function(...)` rather than derived from
+    // `FunctionKind`. The language-specific label (`"closure"` for Rust,
+    // `"arrow"` for TypeScript) lives at the wrapper site, keeping the
+    // `FunctionKind` enum free of presentation concerns. See M34 cycle.
+}
+
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum,
 )]
@@ -85,6 +93,18 @@ pub enum Language {
     TypeScript,
     Python,
     Go,
+}
+
+impl Language {
+    /// Returns the extraction confidence for this language.
+    pub fn confidence(&self) -> f64 {
+        match self {
+            Language::Rust => 0.90,
+            Language::TypeScript => 0.85,
+            Language::Python => 0.80,
+            Language::Go => 0.85,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -149,6 +169,8 @@ pub struct ApplyReport {
 #[derive(Debug, thiserror::Error)]
 pub enum CallGraphError {
     #[error("invalid --lang: {0} (MVP: rust, typescript, python, go)")]
+    #[allow(dead_code)]
+    // Reserved for future: clap value_enum guard is strict in MVP; variant kept for spec SCN-11 and future post-parse validation.
     InvalidLanguage(String),
     #[error("TSG execution failed for {path}: {message}")]
     TsgExecution { path: String, message: String },
@@ -428,216 +450,59 @@ fn find_function_definitions<'tree>(
     }
 }
 
-fn extract_rust_function(
+// ─── Shared extraction helper (D2) ───────────────────────────────────────────
+
+/// D2: Single helper replacing 8 near-identical extractor bodies.
+/// Dispatches on `child_kind` for name extraction; uses `kind` for
+/// FunctionKind variant; `confidence` is passed explicitly (via
+/// `Language::confidence()`) to keep the helper language-agnostic.
+///
+/// `child_kind`: tree-sitter node kind to look up for the name
+///   (e.g. `"identifier"`, `"property_identifier"`, `"field_identifier"`).
+///   `None` means generate a synthetic name from line number (closures/arrows).
+/// `kind`: the `FunctionKind` variant for the produced node.
+/// `confidence`: extraction confidence (typically `lang.confidence()`).
+/// `parent_key`: canonical_key of the enclosing function (for nested fns/closures).
+/// `synthetic_label`: when `child_kind` is None, the prefix used to build the
+///   anonymous name (e.g. `"closure"` for Rust closures, `"arrow"` for TS
+///   arrow functions). Caller supplies the language-specific label.
+#[allow(clippy::too_many_arguments)]
+fn extract_function(
     node: tree_sitter::Node,
     source: &str,
     lang: Language,
     file: &str,
-    _parent_key: Option<&str>,
-) -> Option<FunctionNode> {
-    // Get function name from identifier child
-    let mut name = String::new();
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32)
-            && child.kind() == "identifier"
-        {
-            name = source
-                .get(child.start_byte()..child.end_byte())?
-                .to_string();
-            break;
-        }
-    }
-    if name.is_empty() {
-        return None;
-    }
-
-    let line = (node.start_position().row + 1) as u32;
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.90;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Function,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: None,
-    })
-}
-
-fn extract_rust_closure(
-    node: tree_sitter::Node,
-    _source: &str,
-    lang: Language,
-    file: &str,
+    child_kind: Option<&str>,
+    kind: FunctionKind,
+    confidence: f64,
     parent_key: Option<&str>,
+    synthetic_label: &str,
 ) -> Option<FunctionNode> {
-    let line = (node.start_position().row + 1) as u32;
-    let name = format!("closure@{}", line);
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.90;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Closure,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: parent_key.map(|s| s.to_string()),
-    })
-}
-
-fn extract_ts_function(
-    node: tree_sitter::Node,
-    source: &str,
-    lang: Language,
-    file: &str,
-    _parent_key: Option<&str>,
-) -> Option<FunctionNode> {
-    let mut name = String::new();
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32)
-            && child.kind() == "identifier"
-        {
-            name = source
-                .get(child.start_byte()..child.end_byte())?
-                .to_string();
-            break;
+    let name = if let Some(ck) = child_kind {
+        let mut n = String::new();
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i as u32)
+                && child.kind() == ck
+            {
+                n = source
+                    .get(child.start_byte()..child.end_byte())?
+                    .to_string();
+                break;
+            }
         }
-    }
-    if name.is_empty() {
-        return None;
-    }
-
-    let line = (node.start_position().row + 1) as u32;
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.85;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Function,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: None,
-    })
-}
-
-fn extract_ts_method(
-    node: tree_sitter::Node,
-    source: &str,
-    lang: Language,
-    file: &str,
-    _parent_key: Option<&str>,
-) -> Option<FunctionNode> {
-    let mut name = String::new();
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32)
-            && child.kind() == "property_identifier"
-        {
-            name = source
-                .get(child.start_byte()..child.end_byte())?
-                .to_string();
-            break;
+        if n.is_empty() {
+            return None;
         }
-    }
-    if name.is_empty() {
-        return None;
-    }
-
-    let line = (node.start_position().row + 1) as u32;
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.85;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Method,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: None,
-    })
-}
-
-fn extract_ts_arrow(
-    node: tree_sitter::Node,
-    _source: &str,
-    lang: Language,
-    file: &str,
-    parent_key: Option<&str>,
-) -> Option<FunctionNode> {
-    let line = (node.start_position().row + 1) as u32;
-    let name = format!("arrow@{}", line);
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.85;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Closure,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: parent_key.map(|s| s.to_string()),
-    })
-}
-
-fn extract_python_function(
-    node: tree_sitter::Node,
-    source: &str,
-    lang: Language,
-    file: &str,
-    _parent_key: Option<&str>,
-    is_method: bool,
-) -> Option<FunctionNode> {
-    let mut name = String::new();
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32)
-            && child.kind() == "identifier"
-        {
-            name = source
-                .get(child.start_byte()..child.end_byte())?
-                .to_string();
-            break;
-        }
-    }
-    if name.is_empty() {
-        return None;
-    }
-
-    let line = (node.start_position().row + 1) as u32;
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.80;
-    let kind = if is_method {
-        FunctionKind::Method
+        n
     } else {
-        FunctionKind::Function
+        // Synthetic name for closures / arrow functions.
+        let line = (node.start_position().row + 1) as u32;
+        format!("{}@{}", synthetic_label, line)
     };
+
+    let line = (node.start_position().row + 1) as u32;
+    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
+    let fq_name = name.clone();
 
     Some(FunctionNode {
         canonical_key,
@@ -649,8 +514,134 @@ fn extract_python_function(
         name,
         fq_name,
         confidence,
-        parent: None,
+        parent: parent_key.map(|s| s.to_string()),
     })
+}
+
+fn extract_rust_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("identifier"),
+        FunctionKind::Function,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
+}
+
+fn extract_rust_closure(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        None,
+        FunctionKind::Closure,
+        lang.confidence(),
+        parent_key,
+        "closure",
+    )
+}
+
+fn extract_ts_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("identifier"),
+        FunctionKind::Function,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
+}
+
+fn extract_ts_method(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("property_identifier"),
+        FunctionKind::Method,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
+}
+
+fn extract_ts_arrow(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+) -> Option<FunctionNode> {
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        None,
+        FunctionKind::Closure,
+        lang.confidence(),
+        parent_key,
+        "arrow",
+    )
+}
+
+fn extract_python_function(
+    node: tree_sitter::Node,
+    source: &str,
+    lang: Language,
+    file: &str,
+    parent_key: Option<&str>,
+    is_method: bool,
+) -> Option<FunctionNode> {
+    let kind = if is_method {
+        FunctionKind::Method
+    } else {
+        FunctionKind::Function
+    };
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("identifier"),
+        kind,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
 }
 
 fn extract_go_function(
@@ -658,41 +649,19 @@ fn extract_go_function(
     source: &str,
     lang: Language,
     file: &str,
-    _parent_key: Option<&str>,
+    parent_key: Option<&str>,
 ) -> Option<FunctionNode> {
-    // Go function name is in identifier child
-    let mut name = String::new();
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32)
-            && child.kind() == "identifier"
-        {
-            name = source
-                .get(child.start_byte()..child.end_byte())?
-                .to_string();
-            break;
-        }
-    }
-    if name.is_empty() {
-        return None;
-    }
-
-    let line = (node.start_position().row + 1) as u32;
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.85;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Function,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: None,
-    })
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("identifier"),
+        FunctionKind::Function,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
 }
 
 fn extract_go_method(
@@ -700,41 +669,19 @@ fn extract_go_method(
     source: &str,
     lang: Language,
     file: &str,
-    _parent_key: Option<&str>,
+    parent_key: Option<&str>,
 ) -> Option<FunctionNode> {
-    // Go method name is in field_identifier child
-    let mut name = String::new();
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32)
-            && child.kind() == "field_identifier"
-        {
-            name = source
-                .get(child.start_byte()..child.end_byte())?
-                .to_string();
-            break;
-        }
-    }
-    if name.is_empty() {
-        return None;
-    }
-
-    let line = (node.start_position().row + 1) as u32;
-    let canonical_key = format!("{}:{}:{}:{}", lang_label(&lang), file, name, line);
-    let fq_name = name.clone();
-    let confidence = 0.85;
-
-    Some(FunctionNode {
-        canonical_key,
-        kind: FunctionKind::Method,
-        language: lang,
-        file: file.to_string(),
-        content_hash: String::new(),
-        line,
-        name,
-        fq_name,
-        confidence,
-        parent: None,
-    })
+    extract_function(
+        node,
+        source,
+        lang,
+        file,
+        Some("field_identifier"),
+        FunctionKind::Method,
+        lang.confidence(),
+        parent_key,
+        "fn",
+    )
 }
 
 fn extract_go_callee(node: tree_sitter::Node, source: &str) -> Option<String> {
@@ -1007,12 +954,7 @@ fn make_call_edge(
         .map(|n| n.canonical_key.clone())
         .unwrap_or_else(|| format!("{}:{}:<unknown>:0", lang_label(&lang), file));
 
-    let confidence = match lang {
-        Language::Rust => 0.90,
-        Language::TypeScript => 0.85,
-        Language::Python => 0.80,
-        Language::Go => 0.85,
-    };
+    let confidence = lang.confidence();
 
     let canonical_key = format!(
         "{}:{}:{}→{}:{}",
@@ -1284,13 +1226,8 @@ fn write_call_edge(
     );
     let _ = store.query(&cypher_sa);
 
-    // Link Evidence to ElementVersion via SUPPORTED_BY. The schema
-    // declares SUPPORTED_BY as `FROM ElementVersion TO Evidence` —
-    // pre-M32 the writer used `(e:Element)-[r:SUPPORTED_BY]->(ev)`
-    // (Element, not ElementVersion), which silently failed at the
-    // binder under auto-commit but caused an implicit transaction
-    // rollback once we wrapped the writes in `BEGIN TRANSACTION`.
-    // See `c4_discover.rs:397` for the canonical pattern.
+    // Link Evidence to ElementVersion via SUPPORTED_BY. See
+    // `c4_discover.rs:397` for the canonical pattern.
     let cypher_el = format!(
         "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
          MATCH (v:ElementVersion {{id: '{version_id}'}}) \
@@ -1659,16 +1596,261 @@ mod tests {
         assert_eq!(key1, "rust:src/lib.rs:helper:5");
     }
 
+    // ─── Characterization tests — D2 safety net ─────────────────────────────────
+
+    /// Recursively find the first node of `kind` in `node`'s subtree.
+    /// Used to locate the target function/method node without depending on
+    /// the exact tree-sitter child indices (which vary between grammars).
+    fn find_first_of_kind<'a>(
+        node: tree_sitter::Node<'a>,
+        kind: &str,
+    ) -> Option<tree_sitter::Node<'a>> {
+        if node.kind() == kind {
+            return Some(node);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(found) = find_first_of_kind(child, kind) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// Rust: function_item → identifier child → FunctionNode.
+    #[test]
+    fn charac_rust_function() {
+        let source = "pub fn helper() {}";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        // tree-sitter Rust grammar names it `function_item`, not `function_declaration`.
+        let fn_node = find_first_of_kind(root, "function_item")
+            .expect("function_item must exist in parsed source");
+        let result = super::extract_rust_function(
+            fn_node,
+            source,
+            super::Language::Rust,
+            "src/lib.rs",
+            None,
+        );
+        let node = result.expect("extract_rust_function must return Some");
+        assert_eq!(node.name, "helper");
+        assert_eq!(node.kind, super::FunctionKind::Function);
+        assert_eq!(node.language, super::Language::Rust);
+        assert!(node.parent.is_none());
+    }
+
+    /// Rust: closure_expression → synthetic name.
+    #[test]
+    fn charac_rust_closure() {
+        let source = "fn outer() { let x = || {}; }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        // tree-sitter Rust grammar names it `closure_expression`.
+        let closure_node = find_first_of_kind(root, "closure_expression")
+            .expect("closure_expression must exist in parsed source");
+        let result = super::extract_rust_closure(
+            closure_node,
+            source,
+            super::Language::Rust,
+            "src/lib.rs",
+            Some("rust:src/lib.rs:outer:1"),
+        );
+        let node = result.expect("extract_rust_closure must return Some");
+        assert!(node.name.starts_with("closure@"));
+        assert_eq!(node.kind, super::FunctionKind::Closure);
+        assert!(node.parent.is_some());
+    }
+
+    /// TypeScript: function_declaration → identifier child.
+    #[test]
+    fn charac_ts_function() {
+        let source = "function greet(name: string) { return name; }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        assert_eq!(fn_node.kind(), "function_declaration");
+        let result = super::extract_ts_function(
+            fn_node,
+            source,
+            super::Language::TypeScript,
+            "main.ts",
+            None,
+        );
+        let node = result.expect("extract_ts_function must return Some");
+        assert_eq!(node.name, "greet");
+        assert_eq!(node.kind, super::FunctionKind::Function);
+        assert_eq!(node.language, super::Language::TypeScript);
+    }
+
+    /// TypeScript: method_definition → property_identifier child.
+    #[test]
+    fn charac_ts_method() {
+        let source = "class Server { Save() { return null; } }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let method_node = find_first_of_kind(root, "method_definition")
+            .expect("method_definition must exist in parsed source");
+        let result = super::extract_ts_method(
+            method_node,
+            source,
+            super::Language::TypeScript,
+            "main.ts",
+            None,
+        );
+        let node = result.expect("extract_ts_method must return Some");
+        assert_eq!(node.name, "Save");
+        assert_eq!(node.kind, super::FunctionKind::Method);
+    }
+
+    /// TypeScript: arrow_function → synthetic name.
+    #[test]
+    fn charac_ts_arrow() {
+        let source = "const f = (x: number) => x * 2;";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let arrow_node = find_first_of_kind(root, "arrow_function")
+            .expect("arrow_function must exist in parsed source");
+        let result = super::extract_ts_arrow(
+            arrow_node,
+            source,
+            super::Language::TypeScript,
+            "main.ts",
+            None,
+        );
+        let node = result.expect("extract_ts_arrow must return Some");
+        assert!(node.name.starts_with("arrow@"));
+        assert_eq!(node.kind, super::FunctionKind::Closure);
+    }
+
+    /// Python: function_definition → identifier child.
+    #[test]
+    fn charac_python_function() {
+        let source = "def greet(name):\n    return name\n";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        assert_eq!(fn_node.kind(), "function_definition");
+        let result = super::extract_python_function(
+            fn_node,
+            source,
+            super::Language::Python,
+            "main.py",
+            None,
+            false,
+        );
+        let node = result.expect("extract_python_function must return Some");
+        assert_eq!(node.name, "greet");
+        assert_eq!(node.kind, super::FunctionKind::Function);
+        assert_eq!(node.language, super::Language::Python);
+    }
+
+    /// Go: function_declaration → identifier child.
+    #[test]
+    fn charac_go_function() {
+        let source = "package main\nfunc greet(name string) string { return name }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_go::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        // package_clause child 0, then function_declaration
+        let fn_node = root.child(1).unwrap();
+        assert_eq!(fn_node.kind(), "function_declaration");
+        let result =
+            super::extract_go_function(fn_node, source, super::Language::Go, "main.go", None);
+        let node = result.expect("extract_go_function must return Some");
+        assert_eq!(node.name, "greet");
+        assert_eq!(node.kind, super::FunctionKind::Function);
+        assert_eq!(node.language, super::Language::Go);
+    }
+
+    /// Go: method_declaration → field_identifier child.
+    #[test]
+    fn charac_go_method() {
+        let source =
+            "package main\ntype Server struct{}\nfunc (s *Server) Save() error { return nil }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_go::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let method_node = find_first_of_kind(root, "method_declaration")
+            .expect("method_declaration must exist in parsed source");
+        let result =
+            super::extract_go_method(method_node, source, super::Language::Go, "main.go", None);
+        let node = result.expect("extract_go_method must return Some");
+        assert_eq!(node.name, "Save");
+        assert_eq!(node.kind, super::FunctionKind::Method);
+        assert_eq!(node.language, super::Language::Go);
+    }
+
     #[test]
     fn test_confidence_per_language() {
-        let rust_conf = 0.90;
-        let ts_conf = 0.85;
-        let py_conf = 0.80;
-        let go_conf = 0.85;
-        assert_eq!(rust_conf, 0.90);
-        assert_eq!(ts_conf, 0.85);
-        assert_eq!(py_conf, 0.80);
-        assert_eq!(go_conf, 0.85);
+        // W4: Real regression gate — extract on a Go source file and assert confidence.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let go_file = tmp.path().join("main.go");
+        std::fs::write(
+            &go_file,
+            "package main\nfunc (s Server) Name() string { return \"\" }\n",
+        )
+        .unwrap();
+        let source = std::fs::read_to_string(&go_file).unwrap();
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_go::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(&source, None).unwrap();
+        let root = tree.root_node();
+        // method_declaration is at child index 1 (after package_clause)
+        let method_node = root.child(1).unwrap();
+        assert_eq!(method_node.kind(), "method_declaration");
+        let result = super::extract_go_method(
+            method_node,
+            &source,
+            super::Language::Go,
+            go_file.to_str().unwrap(),
+            None,
+        );
+        let node = result.expect("extract_go_method must return Some");
+        assert_eq!(node.confidence, 0.85, "Go confidence must be 0.85");
+        assert_eq!(
+            node.confidence,
+            super::Language::Go.confidence(),
+            "lang.confidence() must match"
+        );
+
+        // Also verify other languages via Language::confidence() method
+        assert_eq!(super::Language::Rust.confidence(), 0.90);
+        assert_eq!(super::Language::TypeScript.confidence(), 0.85);
+        assert_eq!(super::Language::Python.confidence(), 0.80);
+        assert_eq!(super::Language::Go.confidence(), 0.85);
     }
 
     #[test]

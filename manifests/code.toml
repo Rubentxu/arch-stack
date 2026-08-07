@@ -45,6 +45,7 @@ public_symbols = [
   "CallEdge",
   "FunctionKind",
   "Language",
+  "confidence",
   "CallKind",
   "MessageKind",
   "CallGraphError",
