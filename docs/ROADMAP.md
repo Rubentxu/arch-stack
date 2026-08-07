@@ -816,6 +816,7 @@ Incluye:
 | `m35-java-call-graph` | `feat/m35-java-call-graph` (merged to main via PR #92) | `c120be0` | **Cerrado** ✅ · tag `v1.7.0` · adds Java as 5th language to archctl code call-graph |
 | `m36-kotlin-call-graph` | `feat/m36-kotlin-call-graph` (merged to main via PR #94) | `849b9d6` | **Cerrado** ✅ · tag `v1.8.0` · adds Kotlin as 6th language to archctl code call-graph |
 | `m38-plantuml-mermaid-render-local` | `feat/m38-plantuml-mermaid-render-local` (merged to main via PR #96) | `d43d24a` | **Cerrado** ✅ · tag `v1.9.0` · wires Mermaid → SVG via merman (pure Rust); PlantUML deferred to M40 |
+| `m37-json-schema-public-and-pure-flag` | `feat/m37-json-schema-public-and-pure-flag` (merged to main via PR #98) | `e238b75` | **Cerrado** ✅ · tag `v1.10.0` · pure --json stdout mode (no 5-file write) + round-trip schema validation |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
