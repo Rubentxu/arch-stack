@@ -11,6 +11,9 @@ use crate::skills;
 use crate::source::SourceArtifact;
 use crate::{doctor, environment, filesystem, graph, inventory, render, store};
 
+// D5: Shared constant for CLI help strings.
+pub const SUPPORTED_LANGUAGES: &str = "rust, typescript, python, go";
+
 /// Container for the ports a CLI handler needs.
 ///
 /// Constructed once at the top of `run()`, then passed by reference to
