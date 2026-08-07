@@ -806,6 +806,7 @@ Incluye:
 | `m32-apply-writer-performance` (PR2) | `feat/m32-apply-writer-performance-pr2` (merged to main via PR #78) | `7a20c55` | **Cerrado** ✅ · tag `v1.3.0-m32-pr2` · D2 shipped (D3+D5+BREAK-1 deferred) |
 | `m33-pre-push-hook-assets-stack` | `fix/m33-pre-push-hook-assets-stack` (merged to main via PR #80) | `5fb2be1` | **Cerrado** ✅ · tag `v1.3.1` · pre-push hook bootstrap + clippy fix |
 | `m32-d5-sibling-writers-apply` | `feat/m32-d5-sibling-writers-apply` (merged to main via PR #82) | `e309aec` | **Cerrado** ✅ · tag `v1.4.0-m32-d5` · class_diagram + state_machine transaction wrap |
+| `m32-break-1-remove-seed-writes` | `fix/m32-break-1-remove-seed-writes` (merged to main via PR #84) | `864aab7` | **Cerrado** ✅ · tag `v1.4.1` · BREAKING JSON shape — removed seed_writes |
 | `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (merged to main via PR #44) | `18cf12b` | **Cerrado** ✅ · tag `v0.14.9` |
 | `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (merged to main) | `4f22224` | **Cerrado** ✅ · tag `v0.14.10` |
 | `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
