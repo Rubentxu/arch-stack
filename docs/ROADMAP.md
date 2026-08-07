@@ -837,6 +837,7 @@ Incluye:
 | `m62-state-md-refresh` | `feat/m62-state-md-refresh` (merged to main via PR #132) | `b354e06` | **Cerrado** ✅ · tag none · STATE.md refresh to v1.26.0 (was dated v1.1.0); 22 cycles of new content; pure docs cycle (no tag bump) |
 | `m60-resolve-todos` | `feat/m60-resolve-todos` (squash-merged to main via PR #134) | `44943ea` | **Cerrado** ✅ · tag `v1.27.0` · resolves 2 TODO markers from M55 study (dockerfile.rs:139 OCI LABEL parser; class_diagram.rs:1067 Python class method extraction); 12 new unit tests; 1 golden fixture regenerated |
 | `m57-contributing-md` | `docs/m57-contributing-md` (merged to main via PR #136) | `cb0b83f` | **Cerrado** ✅ · tag `v1.28.0` · adds CONTRIBUTING.md (248 lines) with cycle workflow, manifest hygiene conventions, bounded contexts, testing rules, what-not-to-do list; cross-referenced from AGENTS.md |
+| `m58-specs-index` | `docs/m58-specs-index` (merged to main via PR #138) | `e16e249` | **Cerrado** ✅ · tag none · adds docs/specs/index.md (85 lines) with 13 specs grouped by audience (diagram views, code extraction, rendering, benchmarks, E2E); each row carries audience + one-line summary; pure docs cycle (M62 precedent, no tag bump) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
