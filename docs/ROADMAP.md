@@ -824,6 +824,7 @@ Incluye:
 | `m45-sequence-edge-labels` | `feat/m45-sequence-edge-labels` (merged to main via PR #109) | `6ef763c` | **Cerrado** ✅ · tag `v1.15.0` · sequence edge labels from edge.props["label"] (Mermaid + PlantUML); backward-compatible (absent/empty/non-string = bare arrow) |
 | `m46-stale-manifest-public-symbols` | `feat/m46-stale-manifest-public-symbols` (merged to main via PR #111) | `bc8cbbc` | **Cerrado** ✅ · tag `v1.16.0` · remove 26 stale public_symbols (enum variants + struct fields) from 8 manifests; all 26 scopes now pass doctor |
 | `m47-changelog-and-session-summary` | `feat/m47-changelog-and-session-summary` (merged to main via PR #113) | `50807b6` | **Cerrado** ✅ · tag `v1.17.0` · CHANGELOG backfill (14 cycles v1.4.1 → v1.16.0) + docs/README view specs + schemas index |
+| `m48-sequence-plantuml-e2e-verify` | `feat/m48-sequence-plantuml-e2e-verify` (merged to main via PR #115) | `33292ce` | **Cerrado** ✅ · tag `v1.18.0` · sequence PlantUML e2e verify (mirrors M43 for sequence; closes M45+M40 wiring loop) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
