@@ -72,3 +72,7 @@ harness = false
 [[bench]]
 name = "class_diagram_pipeline"
 harness = false
+
+[[bench]]
+name = "call_graph_apply"
+harness = false
