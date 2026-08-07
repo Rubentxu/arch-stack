@@ -836,6 +836,7 @@ Incluye:
 | `m59-close-stale-pr-32` | (no PR; closed via gh) | `n/a` | **Cerrado** ✅ · tag none · closed stale PR #32 (M23 Phase 1/6, 4+ days open, merge conflicts with main); rationale + re-open path documented in PR comment |
 | `m62-state-md-refresh` | `feat/m62-state-md-refresh` (merged to main via PR #132) | `b354e06` | **Cerrado** ✅ · tag none · STATE.md refresh to v1.26.0 (was dated v1.1.0); 22 cycles of new content; pure docs cycle (no tag bump) |
 | `m60-resolve-todos` | `feat/m60-resolve-todos` (squash-merged to main via PR #134) | `44943ea` | **Cerrado** ✅ · tag `v1.27.0` · resolves 2 TODO markers from M55 study (dockerfile.rs:139 OCI LABEL parser; class_diagram.rs:1067 Python class method extraction); 12 new unit tests; 1 golden fixture regenerated |
+| `m57-contributing-md` | `docs/m57-contributing-md` (merged to main via PR #136) | `cb0b83f` | **Cerrado** ✅ · tag `v1.28.0` · adds CONTRIBUTING.md (248 lines) with cycle workflow, manifest hygiene conventions, bounded contexts, testing rules, what-not-to-do list; cross-referenced from AGENTS.md |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
