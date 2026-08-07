@@ -40,7 +40,6 @@ public_symbols = [
   "default_for_origin",
   "from_props",
   "as_str",
-  "from_str",
   "TOOL_NAME",
   "TOOL_VERSION",
 ]
