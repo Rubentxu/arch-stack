@@ -208,6 +208,32 @@ pub trait GraphStore: EvidenceOps + SourceOps + DiagramOps {
     /// `serde_json::Value` (use [`Cell::to_json`] at the formatter
     /// edge if JSON output is needed).
     fn query(&self, cypher: &str) -> Result<Vec<Row>>;
+
+    // --- Transaction primitives (M32 D1) ---
+    //
+    // These are non-generic primitives on purpose: a closure-based
+    // `with_transaction<F, T>` would break dyn-compatibility of
+    // `GraphStore` (this trait is held as `Box<dyn GraphStore>` in 26+
+    // call sites — see store.rs L229, code/call_graph.rs, etc.). The
+    // writer is responsible for the begin/commit/rollback dance around
+    // its write loops. See `code::call_graph::apply` for the canonical
+    // pattern.
+
+    /// Begin a database transaction. Subsequent writes through the
+    /// same store are committed atomically on `commit_transaction` or
+    /// discarded on `rollback_transaction`. Must be paired with one of
+    /// those before the store is dropped (a missing COMMIT/ROLLBACK
+    /// leaves the transaction open in the engine).
+    fn begin_transaction(&mut self) -> Result<(), StoreError>;
+
+    /// Commit the open transaction, persisting all writes issued since
+    /// `begin_transaction`. No-op (or error) if no transaction is open.
+    fn commit_transaction(&mut self) -> Result<(), StoreError>;
+
+    /// Roll back the open transaction, discarding all writes issued
+    /// since `begin_transaction`. Best-effort: errors here are logged
+    /// but do not mask the originating error from the caller.
+    fn rollback_transaction(&mut self) -> Result<(), StoreError>;
 }
 /// Factory: pick the concrete adapter the CLI requested. Today only
 /// `lbug` exists; tomorrow this is where the `--store sparrowdb`
@@ -258,6 +284,29 @@ impl std::error::Error for LockError {
             LockError::AnotherArchctlRunning => None,
             LockError::Io(e) => Some(e),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Store-level errors
+// ---------------------------------------------------------------------------
+
+/// Error specific to store-level operations (transaction, prepare, execute).
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("transaction failed: {0}")]
+    Transaction(String),
+    #[error("commit failed: {0}")]
+    Commit(String),
+    #[error("rollback failed: {0}")]
+    Rollback(String),
+    #[error("store not initialized: {0}")]
+    NotInitialized(String),
+}
+
+impl From<anyhow::Error> for StoreError {
+    fn from(e: anyhow::Error) -> Self {
+        StoreError::NotInitialized(e.to_string())
     }
 }
 
@@ -389,6 +438,44 @@ impl GraphStore for LbugStore {
         tracing::debug!(%cypher, "graph query");
         run_query(&session.conn, cypher)
     }
+
+    fn begin_transaction(&mut self) -> Result<(), StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::begin_transaction called before init"))?;
+        // Kùzu syntax verified against lbug 0.18.3 test_database_in_memory
+        // (database.rs L335: `conn.query("BEGIN TRANSACTION")` ... `COMMIT`).
+        session
+            .conn
+            .query("BEGIN TRANSACTION")
+            .map_err(|e| StoreError::Transaction(format!("BEGIN failed: {e}")))?;
+        Ok(())
+    }
+
+    fn commit_transaction(&mut self) -> Result<(), StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::commit_transaction called before init"))?;
+        session
+            .conn
+            .query("COMMIT")
+            .map_err(|e| StoreError::Commit(format!("COMMIT failed: {e}")))?;
+        Ok(())
+    }
+
+    fn rollback_transaction(&mut self) -> Result<(), StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::rollback_transaction called before init"))?;
+        session
+            .conn
+            .query("ROLLBACK")
+            .map_err(|e| StoreError::Rollback(format!("ROLLBACK failed: {e}")))?;
+        Ok(())
+    }
 }
 
 impl EvidenceOps for LbugStore {
@@ -417,10 +504,11 @@ impl EvidenceOps for LbugStore {
             let hash_json = serde_json::to_string(ev.content_hash.as_deref().unwrap_or(""))
                 .context("serialize content_hash")?;
 
-            // lbug 0.18.3 has no parameter binding; we interpolate
-            // after escaping single quotes. The id/path/kind/tool/rule/
-            // lang are allowlist-validated; the user-supplied claim is
-            // escaped. The Evidence table columns in `docs/schema/` are
+            // lbug 0.18.3 exposes Connection::prepare() + execute() for
+            // parameter binding (connection.rs L318-354). This code path
+            // uses string interpolation with escaped single quotes — the
+            // same allowlist-validated identifiers and the escaped
+            // user-supplied claim. The Evidence table columns are:
             //   id, kind, classification, claim, confidence, path,
             //   start_line, end_line, commit_hash, content_hash,
             //   tool_name, tool_version, rule_id, props, observed_at

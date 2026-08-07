@@ -359,6 +359,18 @@ mod tests {
                 Ok(Vec::new())
             }
         }
+        // M32 D1: MockGraphStore does not persist, so transaction primitives
+        // are no-ops. Tests that exercise writers (call_graph, etc.) use the
+        // real `LbugStore` via `open_and_init` and do not touch the mock.
+        fn begin_transaction(&mut self) -> Result<(), crate::store::StoreError> {
+            Ok(())
+        }
+        fn commit_transaction(&mut self) -> Result<(), crate::store::StoreError> {
+            Ok(())
+        }
+        fn rollback_transaction(&mut self) -> Result<(), crate::store::StoreError> {
+            Ok(())
+        }
     }
 
     impl MockGraphStore {
