@@ -80,8 +80,9 @@ flowchart LR
 
 ### View specs (delta specs from SDD cycles)
 
-Indexed 2026-08-07 (M47). Each spec documents a view's element kinds, edge
-predicates, and projection shape mapping for Mermaid + PlantUML.
+Indexed 2026-08-07 (M47) and refreshed at M58 with the canonical index at
+[`specs/index.md`](specs/index.md). Each spec documents a view's element
+kinds, edge predicates, and projection shape mapping for Mermaid + PlantUML.
 
 - [`specs/diagram-projection-bundle.md`](specs/diagram-projection-bundle.md) — bundle contract (manifest + projection + evidence + styles)
 - [`specs/use-case-view.md`](specs/use-case-view.md) — `usecase:*` view (uml.actor, uml.use_case, participates_in)
