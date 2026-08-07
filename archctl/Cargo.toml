@@ -56,6 +56,14 @@ assert_cmd = "2"
 predicates = "3"
 insta = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
+# Tree-sitter language crates for characterization tests (M34 cycle).
+# These mirror the languages supported by `archctl code call-graph`.
+# Production code uses `ast_grep_language::SupportLang`, which transitively
+# re-exports these; the dev-deps here are for direct parsing in tests.
+tree-sitter-go = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"
 
 [[bench]]
 name = "export_pipeline"
