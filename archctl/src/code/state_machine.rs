@@ -1088,50 +1088,24 @@ fn extract_transition_decorator_args(
 // ─── Apply ─────────────────────────────────────────────────────────────────
 
 /// Apply a state machine report to the graph.
+///
+/// M32 D5: wraps all writes in a single Kùzu transaction
+/// (`begin_transaction` / `commit_transaction`) — same pattern as
+/// M32 PR1's `call_graph::apply`. Multi-statement seed MERGEs are
+/// split into individual `query()` calls (lbug 0.18.3 binder
+/// exception + implicit transaction rollback).
 pub fn apply(
     project_dir: &Path,
     report: &StateMachineReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::escape_cypher_string;
-    use crate::store::open_and_init;
+    use crate::store::{GraphStore, open_and_init};
 
     let start = Instant::now();
-    let store = open_and_init(project_dir)?;
+    let mut store = open_and_init(project_dir)?;
 
     let mut seed_writes = 0usize;
-
-    // Seed MetaTypes
-    let meta_types = [
-        "uml.state_machine",
-        "uml.state",
-        "uml.pseudostate",
-        "uml.transition",
-        "uml.guard",
-        "uml.event",
-    ];
-    for mt in &meta_types {
-        let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
-        if store.query(&q).is_ok() {
-            seed_writes += 1;
-        }
-    }
-
-    // Seed Predicates
-    let predicates = [
-        "behavior.source_state",
-        "behavior.target_state",
-        "behavior.has_transition",
-        "behavior.trigger",
-        "behavior.has_guard",
-    ];
-    for pred in &predicates {
-        let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
-        if store.query(&q).is_ok() {
-            seed_writes += 1;
-        }
-    }
-
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
     let mut relations_written = 0usize;
@@ -1152,173 +1126,225 @@ pub fn apply(
         blake3::hash(report.schema_version.as_bytes()).to_hex()
     );
 
-    for machine in &report.machines {
-        // Write state machine element
-        let machine_id = format!("sm:{}", machine.canonical_key);
-        if existing_keys.contains(&machine.canonical_key) {
-            elements_skipped += 1;
-        } else {
-            let canonical_key_escaped = escape_cypher_string(&machine.canonical_key);
-            let name_escaped = escape_cypher_string(&machine.name);
+    // Seed MetaType + Predicate — split into individual MERGEs (one
+    // per query() call) to avoid lbug's multi-statement binder
+    // exception inside an active transaction.
+    let meta_types = [
+        "uml.state_machine",
+        "uml.state",
+        "uml.pseudostate",
+        "uml.transition",
+        "uml.guard",
+        "uml.event",
+    ];
+    let predicates = [
+        "behavior.source_state",
+        "behavior.target_state",
+        "behavior.has_transition",
+        "behavior.trigger",
+        "behavior.has_guard",
+    ];
 
-            let cypher = format!(
-                "MERGE (e:Element {{id: '{id}'}}) SET \
-                 e.kind_id = 'uml.state_machine', \
-                 e.category = 'uml', \
-                 e.canonical_key = '{key}', \
-                 e.current_name = '{name}', \
-                 e.current_status = 'active', \
-                 e.current_confidence = {conf}, \
-                 e.current_version_id = '{vid}';",
-                id = machine_id,
-                key = canonical_key_escaped,
-                name = name_escaped,
-                conf = machine.confidence,
-                vid = version_id,
-            );
-            if store.query(&cypher).is_ok() {
-                elements_written += 1;
+    // D5: wrap writes in single transaction. Same begin/commit
+    // pattern as M32 PR1's call_graph::apply.
+    store.begin_transaction()?;
+
+    // Scope the mutable borrow of `store` so we can re-borrow for
+    // commit/rollback after.
+    let inner_result: Result<(), anyhow::Error> = {
+        let s: &mut dyn GraphStore = store.as_mut();
+
+        for mt in &meta_types {
+            let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
+            if s.query(&q).is_ok() {
+                seed_writes += 1;
+            }
+        }
+        for pred in &predicates {
+            let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
+            if s.query(&q).is_ok() {
+                seed_writes += 1;
             }
         }
 
-        // Build a prefix for state keys: <lang>:<file>
-        // machine.canonical_key is <lang>:<file>:state_machine:<name>:<line>
-        let lang_file_prefix = machine
-            .canonical_key
-            .split_once(":state_machine:")
-            .map(|(prefix, _)| prefix)
-            .unwrap_or(&machine.canonical_key);
-
-        // Write state elements
-        for state in &machine.states {
-            // State canonical key: <lang>:<file>:state:<name>:<line> (per SCN-424)
-            let state_key = format!("{}:state:{}:{}", lang_file_prefix, state.name, state.line);
-            let state_id = format!("sm:state:{}", state_key);
-
-            if !existing_keys.contains(&state_key) {
-                let key_escaped = escape_cypher_string(&state_key);
-                let name_escaped = escape_cypher_string(&state.name);
+        for machine in &report.machines {
+            // Write state machine element
+            let machine_id = format!("sm:{}", machine.canonical_key);
+            if existing_keys.contains(&machine.canonical_key) {
+                elements_skipped += 1;
+            } else {
+                let canonical_key_escaped = escape_cypher_string(&machine.canonical_key);
+                let name_escaped = escape_cypher_string(&machine.name);
 
                 let cypher = format!(
                     "MERGE (e:Element {{id: '{id}'}}) SET \
-                     e.kind_id = 'uml.state', \
+                     e.kind_id = 'uml.state_machine', \
                      e.category = 'uml', \
                      e.canonical_key = '{key}', \
                      e.current_name = '{name}', \
                      e.current_status = 'active', \
                      e.current_confidence = {conf}, \
                      e.current_version_id = '{vid}';",
-                    id = state_id,
-                    key = key_escaped,
+                    id = machine_id,
+                    key = canonical_key_escaped,
                     name = name_escaped,
                     conf = machine.confidence,
                     vid = version_id,
                 );
-                if store.query(&cypher).is_ok() {
+                if s.query(&cypher).is_ok() {
                     elements_written += 1;
                 }
-            } else {
-                elements_skipped += 1;
+            }
+
+            // Build a prefix for state keys: <lang>:<file>
+            // machine.canonical_key is <lang>:<file>:state_machine:<name>:<line>
+            let lang_file_prefix = machine
+                .canonical_key
+                .split_once(":state_machine:")
+                .map(|(prefix, _)| prefix)
+                .unwrap_or(&machine.canonical_key);
+
+            // Write state elements
+            for state in &machine.states {
+                // State canonical key: <lang>:<file>:state:<name>:<line> (per SCN-424)
+                let state_key = format!("{}:state:{}:{}", lang_file_prefix, state.name, state.line);
+                let state_id = format!("sm:state:{}", state_key);
+
+                if !existing_keys.contains(&state_key) {
+                    let key_escaped = escape_cypher_string(&state_key);
+                    let name_escaped = escape_cypher_string(&state.name);
+
+                    let cypher = format!(
+                        "MERGE (e:Element {{id: '{id}'}}) SET \
+                         e.kind_id = 'uml.state', \
+                         e.category = 'uml', \
+                         e.canonical_key = '{key}', \
+                         e.current_name = '{name}', \
+                         e.current_status = 'active', \
+                         e.current_confidence = {conf}, \
+                         e.current_version_id = '{vid}';",
+                        id = state_id,
+                        key = key_escaped,
+                        name = name_escaped,
+                        conf = machine.confidence,
+                        vid = version_id,
+                    );
+                    if s.query(&cypher).is_ok() {
+                        elements_written += 1;
+                    }
+                } else {
+                    elements_skipped += 1;
+                }
+            }
+
+            // Write transitions as Elements with proper keys, then link to states
+            for transition in &machine.transitions {
+                // Find source and target state line numbers by matching state names
+                let src_state = machine.states.iter().find(|s| s.name == transition.from);
+                let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
+
+                // Transition canonical key: <lang>:<file>:transition:<from>_<to>:<line>
+                let transition_key = format!(
+                    "{}:transition:{}_{}:{}",
+                    lang_file_prefix, transition.from, transition.to, transition.line
+                );
+                let trans_id = format!("sm:transition:{}", transition_key);
+
+                // Write transition element if not exists
+                if !existing_keys.contains(&transition_key) {
+                    let key_escaped = escape_cypher_string(&transition_key);
+                    let trigger_str = transition.trigger.as_deref().unwrap_or("");
+                    let guard_str = transition.guard.as_deref().unwrap_or("");
+                    let transition_name = format!("{}_to_{}", transition.from, transition.to);
+
+                    let cypher = format!(
+                        "MERGE (e:Element {{id: '{id}'}}) SET \
+                         e.kind_id = 'uml.transition', \
+                         e.category = 'uml', \
+                         e.canonical_key = '{key}', \
+                         e.current_name = '{name}', \
+                         e.current_status = 'active', \
+                         e.current_confidence = {conf}, \
+                         e.current_version_id = '{vid}', \
+                         e.source_state = '{src}', \
+                         e.target_state = '{tgt}', \
+                         e.trigger = '{trigger}', \
+                         e.guard = '{guard}';",
+                        id = trans_id,
+                        key = key_escaped,
+                        name = transition_name,
+                        conf = machine.confidence,
+                        vid = version_id,
+                        src = transition.from,
+                        tgt = transition.to,
+                        trigger = escape_cypher_string(trigger_str),
+                        guard = escape_cypher_string(guard_str),
+                    );
+                    if s.query(&cypher).is_ok() {
+                        elements_written += 1;
+                    }
+                } else {
+                    elements_skipped += 1;
+                }
+
+                // Create transition→source_state edge (if we found the source state)
+                if let Some(src) = src_state {
+                    let src_key = format!("{}:state:{}:{}", lang_file_prefix, src.name, src.line);
+                    let src_id = format!("sm:state:{}", src_key);
+
+                    let edge_rel_id =
+                        format!("sm:edge:transition:{}:source:{}", transition_key, src.name);
+                    let cypher = format!(
+                        "MATCH (tr:Element {{id: '{tr}'}}), (s:Element {{id: '{src}'}}) \
+                         MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(s) \
+                         SET r.predicate_id = 'behavior.source_state', \
+                         r.active = true;",
+                        tr = trans_id,
+                        src = src_id,
+                        rel = edge_rel_id,
+                    );
+                    if s.query(&cypher).is_ok() {
+                        relations_written += 1;
+                    } else {
+                        relations_skipped += 1;
+                    }
+                }
+
+                // Create transition→target_state edge (if we found the target state)
+                if let Some(tgt) = tgt_state {
+                    let tgt_key = format!("{}:state:{}:{}", lang_file_prefix, tgt.name, tgt.line);
+                    let tgt_id = format!("sm:state:{}", tgt_key);
+
+                    let edge_rel_id =
+                        format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name);
+                    let cypher = format!(
+                        "MATCH (tr:Element {{id: '{tr}'}}), (t:Element {{id: '{tgt}'}}) \
+                         MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(t) \
+                         SET r.predicate_id = 'behavior.target_state', \
+                         r.active = true;",
+                        tr = trans_id,
+                        tgt = tgt_id,
+                        rel = edge_rel_id,
+                    );
+                    if s.query(&cypher).is_ok() {
+                        relations_written += 1;
+                    } else {
+                        relations_skipped += 1;
+                    }
+                }
             }
         }
 
-        // Write transitions as Elements with proper keys, then link to states
-        for transition in &machine.transitions {
-            // Find source and target state line numbers by matching state names
-            let src_state = machine.states.iter().find(|s| s.name == transition.from);
-            let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
+        Ok(())
+    };
 
-            // Transition canonical key: <lang>:<file>:transition:<from>_<to>:<line>
-            let transition_key = format!(
-                "{}:transition:{}_{}:{}",
-                lang_file_prefix, transition.from, transition.to, transition.line
-            );
-            let trans_id = format!("sm:transition:{}", transition_key);
-
-            // Write transition element if not exists
-            if !existing_keys.contains(&transition_key) {
-                let key_escaped = escape_cypher_string(&transition_key);
-                let trigger_str = transition.trigger.as_deref().unwrap_or("");
-                let guard_str = transition.guard.as_deref().unwrap_or("");
-                let transition_name = format!("{}_to_{}", transition.from, transition.to);
-
-                let cypher = format!(
-                    "MERGE (e:Element {{id: '{id}'}}) SET \
-                     e.kind_id = 'uml.transition', \
-                     e.category = 'uml', \
-                     e.canonical_key = '{key}', \
-                     e.current_name = '{name}', \
-                     e.current_status = 'active', \
-                     e.current_confidence = {conf}, \
-                     e.current_version_id = '{vid}', \
-                     e.source_state = '{src}', \
-                     e.target_state = '{tgt}', \
-                     e.trigger = '{trigger}', \
-                     e.guard = '{guard}';",
-                    id = trans_id,
-                    key = key_escaped,
-                    name = transition_name,
-                    conf = machine.confidence,
-                    vid = version_id,
-                    src = transition.from,
-                    tgt = transition.to,
-                    trigger = escape_cypher_string(trigger_str),
-                    guard = escape_cypher_string(guard_str),
-                );
-                if store.query(&cypher).is_ok() {
-                    elements_written += 1;
-                }
-            } else {
-                elements_skipped += 1;
-            }
-
-            // Create transition→source_state edge (if we found the source state)
-            if let Some(src) = src_state {
-                let src_key = format!("{}:state:{}:{}", lang_file_prefix, src.name, src.line);
-                let src_id = format!("sm:state:{}", src_key);
-
-                let edge_rel_id =
-                    format!("sm:edge:transition:{}:source:{}", transition_key, src.name);
-                let cypher = format!(
-                    "MATCH (tr:Element {{id: '{tr}'}}), (s:Element {{id: '{src}'}}) \
-                     MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(s) \
-                     SET r.predicate_id = 'behavior.source_state', \
-                     r.active = true;",
-                    tr = trans_id,
-                    src = src_id,
-                    rel = edge_rel_id,
-                );
-                if store.query(&cypher).is_ok() {
-                    relations_written += 1;
-                } else {
-                    relations_skipped += 1;
-                }
-            }
-
-            // Create transition→target_state edge (if we found the target state)
-            if let Some(tgt) = tgt_state {
-                let tgt_key = format!("{}:state:{}:{}", lang_file_prefix, tgt.name, tgt.line);
-                let tgt_id = format!("sm:state:{}", tgt_key);
-
-                let edge_rel_id =
-                    format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name);
-                let cypher = format!(
-                    "MATCH (tr:Element {{id: '{tr}'}}), (t:Element {{id: '{tgt}'}}) \
-                     MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(t) \
-                     SET r.predicate_id = 'behavior.target_state', \
-                     r.active = true;",
-                    tr = trans_id,
-                    tgt = tgt_id,
-                    rel = edge_rel_id,
-                );
-                if store.query(&cypher).is_ok() {
-                    relations_written += 1;
-                } else {
-                    relations_skipped += 1;
-                }
-            }
-        }
+    if let Err(e) = inner_result {
+        // Best-effort rollback — do not mask the original error.
+        let _ = store.rollback_transaction();
+        return Err(e);
     }
+
+    store.commit_transaction()?;
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
