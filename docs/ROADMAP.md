@@ -813,6 +813,7 @@ Incluye:
 | `m31-unified-diagram-export-empty-semantics` | `feat/m31-unified-diagram-export-empty-semantics` (merged to main via PR #86) | `09e69dc` | **Cerrado** ✅ · tag `v1.5.0` · envelope {empty, warning, manifest} |
 | `m31-fu1-tracing-stderr-redirect` | `fix/m31-fu1-tracing-stderr-redirect` (merged to main via PR #88) | `a134dcc` | **Cerrado** ✅ · tag `v1.5.1` · closes M31 pre-existing MEDIUM (tracing → stderr) |
 | `m34-call-graph-strategy-consolidation` | `refactor/m34-call-graph-strategy-consolidation` (merged to main via PR #90) | `027527b` | **Cerrado** ✅ · tag `v1.6.0` · consolidates 5 M30 debt-report items (~240 LOC reduction) |
+| `m35-java-call-graph` | `feat/m35-java-call-graph` (merged to main via PR #92) | `c120be0` | **Cerrado** ✅ · tag `v1.7.0` · adds Java as 5th language to archctl code call-graph |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
