@@ -35,6 +35,25 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# Bootstrap archctl/assets-stack/ if absent (M33).
+#
+# The pre-push hook (`.githooks/pre-push`, ADR-025) checks out each pushed
+# commit into a fresh worktree and runs `cargo test` against it. The worktree
+# does NOT have archctl/assets-stack/ populated (it's gitignored; generated
+# by `scripts/embed-stack.sh` for rust-embed distribution, ADR-033). Without
+# this bootstrap, #[derive(RustEmbed)] fails to compile in the fresh worktree
+# and `git push` is blocked for EVERY commit. The fix is to call the embed
+# script early in verify-local.sh — it's idempotent (copies a fixed set of
+# files; safe to re-run on every invocation).
+ASSETS_STACK="${REPO_ROOT}/archctl/assets-stack"
+if [ ! -d "${ASSETS_STACK}" ]; then
+    if [ -x "${REPO_ROOT}/scripts/embed-stack.sh" ]; then
+        bash "${REPO_ROOT}/scripts/embed-stack.sh"
+    else
+        echo "verify-local: archctl/assets-stack missing and scripts/embed-stack.sh not executable; push will fail in fresh worktree" >&2
+    fi
+fi
+
 MODE="cheap"
 DRY_RUN=0
 CHECK_BP=0
