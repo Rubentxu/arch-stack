@@ -831,6 +831,7 @@ Incluye:
 | `m52-m32-d4-doc-fixes-and-bench-criterion` | `feat/m52-m32-d4-doc-fixes-and-bench-criterion` (merged to main via PR #123) | `700d425` | **Cerrado** ✅ · tag `v1.22.0` · fix 3 stale "no parameter binding" claims post-M51 (queries.rs, graph.rs); ROADMAP + bench criterion already correct from prior cycles |
 | `m53-m32-d5-sequence-writer-audit` | `feat/m53-m32-d5-sequence-writer-audit` (merged to main via PR #125) | `64a8be3` | **Cerrado** ✅ · tag `v1.23.0` · M32 D5 audit verdict: N/A (sequence.rs is read-only per SCN-217, no apply/writer to migrate); M32 D5 doesn't apply |
 | `m54-session-close` | `feat/m54-session-close` (merged to main via PR #127) | `TBD` | **Cerrado** ✅ · tag `v1.24.0` · session close (M51-M53 backfilled in CHANGELOG; Engram session summary); 21 cycles total in this session |
+| `m55-codebase-state-study-and-roadmap-proposals` | `feat/m55-codebase-state-study-and-roadmap-proposals` (merged to main via PR #128) | `57e8e50` | **Cerrado** ✅ · tag `v1.25.0` · post-session state study at v1.24.0 + 11 prioritized improvement proposals (M56–M68) in `docs/sessions/2026-08-07-codebase-state-study.md` |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
