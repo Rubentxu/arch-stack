@@ -69,28 +69,34 @@ fn project_class_view(output: &mut String, elements: &[ElementRow], edges: &[Sem
 }
 
 fn project_state_view(output: &mut String, elements: &[ElementRow], edges: &[SemanticEdgeRow]) {
-    let name_map: std::collections::HashMap<&str, &str> = elements
-        .iter()
-        .map(|e| (e.id.as_str(), e.current_name.as_str()))
-        .collect();
-
+    // Mermaid node IDs MUST be alphanumeric identifiers; bare `[Label]` syntax
+    // is rejected by merman's parser (same bug class as the pre-M39 use case
+    // view). We use the element's id as the node ID and the name as the label.
+    //
+    // Mermaid shape mapping for UML state view (M41):
+    // - `uml.state` → `id([Name]):::state` (rectangle with state class)
     for element in elements {
         if element.kind_id == "uml.state" {
-            output.push_str(&format!("    [{}]:::state\n", element.current_name));
+            output.push_str(&format!(
+                "    {}([{}]):::state\n",
+                element.id, element.current_name
+            ));
         }
     }
 
+    // Edges reference node IDs (not names).
+    let known_ids: std::collections::HashSet<&str> =
+        elements.iter().map(|e| e.id.as_str()).collect();
     for edge in edges {
-        let Some(&src) = name_map.get(edge.source_id.as_str()) else {
+        if edge.predicate_id != "behavior.source_state" {
             continue;
-        };
-        let Some(&tgt) = name_map.get(edge.target_id.as_str()) else {
-            continue;
-        };
-
-        if edge.predicate_id == "behavior.source_state" {
-            output.push_str(&format!("    {} --> {}\n", src, tgt));
         }
+        if !known_ids.contains(edge.source_id.as_str())
+            || !known_ids.contains(edge.target_id.as_str())
+        {
+            continue;
+        }
+        output.push_str(&format!("    {} --> {}\n", edge.source_id, edge.target_id));
     }
 
     // Add state style if any states exist
@@ -140,34 +146,40 @@ fn project_usecase_view(output: &mut String, elements: &[ElementRow], edges: &[S
 }
 
 fn project_c4_view(output: &mut String, elements: &[ElementRow], edges: &[SemanticEdgeRow]) {
-    let name_map: std::collections::HashMap<&str, &str> = elements
-        .iter()
-        .map(|e| (e.id.as_str(), e.current_name.as_str()))
-        .collect();
-
+    // Mermaid node IDs MUST be alphanumeric identifiers; bare `[Label]` / `(Label)`
+    // syntax is rejected by merman's parser (same bug class as the pre-M39 use case
+    // view). We use the element's id as the node ID and the name as the label.
+    //
+    // Mermaid shape mapping for C4 view (M41):
+    // - `c4.person` → `id(name)` (rounded rect — actor approximation)
+    // - `c4.software_system | c4.container | c4.component`
+    //                → `id([name])` (rectangle)
     for element in elements {
         match element.kind_id.as_str() {
             "c4.person" => {
-                output.push_str(&format!("    ({})\n", element.current_name));
+                output.push_str(&format!("    {}({})\n", element.id, element.current_name));
             }
             "c4.software_system" | "c4.container" | "c4.component" => {
-                output.push_str(&format!("    [{}]\n", element.current_name));
+                output.push_str(&format!("    {}([{}])\n", element.id, element.current_name));
             }
             _ => {}
         }
     }
 
+    // Edges reference node IDs (not names).
+    let known_ids: std::collections::HashSet<&str> =
+        elements.iter().map(|e| e.id.as_str()).collect();
     for edge in edges {
-        let Some(&src) = name_map.get(edge.source_id.as_str()) else {
+        let matches = edge.predicate_id == "core.uses" || edge.predicate_id == "core.depends_on";
+        if !matches {
             continue;
-        };
-        let Some(&tgt) = name_map.get(edge.target_id.as_str()) else {
-            continue;
-        };
-
-        if edge.predicate_id == "core.uses" || edge.predicate_id == "core.depends_on" {
-            output.push_str(&format!("    {} --> {}\n", src, tgt));
         }
+        if !known_ids.contains(edge.source_id.as_str())
+            || !known_ids.contains(edge.target_id.as_str())
+        {
+            continue;
+        }
+        output.push_str(&format!("    {} --> {}\n", edge.source_id, edge.target_id));
     }
 }
 
@@ -295,6 +307,78 @@ mod tests {
         let dsl = project(&elements, &edges, &selector);
 
         assert!(dsl.contains("flowchart TD"));
+    }
+
+    /// M41: state machine view emits `id([Name]):::state` (rectangle with
+    /// class assignment) and edges reference node IDs. Pre-M41 bare
+    /// `[Name]:::state` was rejected by merman.
+    #[test]
+    fn state_view_produces_valid_mermaid() {
+        let elements = vec![
+            make_element("e1", "uml.state", "Idle", "uml"),
+            make_element("e2", "uml.state", "Active", "uml"),
+        ];
+        let edges = vec![make_edge("r1", "behavior.source_state", "e1", "e2")];
+        let selector = ProjectSelector::parse("state:*").unwrap();
+
+        let dsl = project(&elements, &edges, &selector);
+
+        assert!(dsl.contains("flowchart TD"));
+        assert!(
+            dsl.contains("e1([Idle]):::state"),
+            "state should use id([Name]):::state rectangle; got: {dsl}"
+        );
+        assert!(
+            dsl.contains("e2([Active]):::state"),
+            "second state missing rectangle marker; got: {dsl}"
+        );
+        // Edges reference node IDs.
+        assert!(
+            dsl.contains("e1 --> e2"),
+            "edge should reference node ids; got: {dsl}"
+        );
+        // classDef style is appended.
+        assert!(
+            dsl.contains("classDef state"),
+            "classDef state should be present; got: {dsl}"
+        );
+    }
+
+    /// M41: C4 container view emits `id(name)` for persons and `id([name])` for
+    /// systems/containers/components, with edges referencing node IDs.
+    #[test]
+    fn c4_container_view_produces_valid_mermaid() {
+        let elements = vec![
+            make_element("e1", "c4.person", "Customer", "c4"),
+            make_element("e2", "c4.container", "WebApp", "c4"),
+            make_element("e3", "c4.container", "Database", "c4"),
+        ];
+        let edges = vec![
+            make_edge("r1", "core.uses", "e1", "e2"),
+            make_edge("r2", "core.uses", "e2", "e3"),
+        ];
+        let selector = ProjectSelector::parse("c4-container:orders").unwrap();
+
+        let dsl = project(&elements, &edges, &selector);
+
+        assert!(dsl.contains("flowchart TD"));
+        assert!(
+            dsl.contains("e1(Customer)"),
+            "person should use id(Name) rounded rect; got: {dsl}"
+        );
+        assert!(
+            dsl.contains("e2([WebApp])"),
+            "container should use id([Name]) rectangle; got: {dsl}"
+        );
+        assert!(
+            dsl.contains("e3([Database])"),
+            "second container missing rectangle marker; got: {dsl}"
+        );
+        assert!(
+            dsl.contains("e1 --> e2"),
+            "edge should reference node ids; got: {dsl}"
+        );
+        assert!(dsl.contains("e2 --> e3"), "second edge missing; got: {dsl}");
     }
 
     #[test]
