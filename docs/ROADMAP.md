@@ -838,6 +838,7 @@ Incluye:
 | `m60-resolve-todos` | `feat/m60-resolve-todos` (squash-merged to main via PR #134) | `44943ea` | **Cerrado** ✅ · tag `v1.27.0` · resolves 2 TODO markers from M55 study (dockerfile.rs:139 OCI LABEL parser; class_diagram.rs:1067 Python class method extraction); 12 new unit tests; 1 golden fixture regenerated |
 | `m57-contributing-md` | `docs/m57-contributing-md` (merged to main via PR #136) | `cb0b83f` | **Cerrado** ✅ · tag `v1.28.0` · adds CONTRIBUTING.md (248 lines) with cycle workflow, manifest hygiene conventions, bounded contexts, testing rules, what-not-to-do list; cross-referenced from AGENTS.md |
 | `m58-specs-index` | `docs/m58-specs-index` (merged to main via PR #138) | `e16e249` | **Cerrado** ✅ · tag none · adds docs/specs/index.md (85 lines) with 13 specs grouped by audience (diagram views, code extraction, rendering, benchmarks, E2E); each row carries audience + one-line summary; pure docs cycle (M62 precedent, no tag bump) |
+| `m61-cognitive-policy-tests` | `test/m61-cognitive-policy-tests` (merged to main via PR #140) | `78c1e0d` | **Cerrado** ✅ · tag `v1.29.0` · adds 22 unit tests for cognitive/policy/{context,decision} (the 0-test gap in M55 study M61 audit); side-fix: `PolicyResult` derives PartialEq; cognitive test count 111 → 133 |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
