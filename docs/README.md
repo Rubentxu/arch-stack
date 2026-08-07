@@ -78,6 +78,38 @@ flowchart LR
 - [`schema/001_initial_schema.cypher`](schema/001_initial_schema.cypher)
 - [`schema/metamodel-core.json`](schema/metamodel-core.json)
 
+### View specs (delta specs from SDD cycles)
+
+Indexed 2026-08-07 (M47). Each spec documents a view's element kinds, edge
+predicates, and projection shape mapping for Mermaid + PlantUML.
+
+- [`specs/diagram-projection-bundle.md`](specs/diagram-projection-bundle.md) — bundle contract (manifest + projection + evidence + styles)
+- [`specs/use-case-view.md`](specs/use-case-view.md) — `usecase:*` view (uml.actor, uml.use_case, participates_in)
+- [`specs/state-and-c4-views.md`](specs/state-and-c4-views.md) — `state:*` and `c4-*:*` views
+- [`specs/sequence-view-labels.md`](specs/sequence-view-labels.md) — `sequence:*` view with edge label support
+- [`specs/plantuml-render.md`](specs/plantuml-render.md) — PlantUML render via user-installed backend (M40)
+- [`specs/source-evaluation-types.md`](specs/source-evaluation-types.md) — source evaluation types
+- [`specs/filesystem-port.md`](specs/filesystem-port.md) — filesystem port trait
+- [`specs/code-class-diagram/`](specs/code-class-diagram/) — code → class diagram pipeline
+- [`specs/bench-harness.md`](specs/bench-harness.md) — benchmark harness
+- [`specs/bench-methodology.md`](specs/bench-methodology.md) — benchmark methodology
+- [`specs/e2e-installation.md`](specs/e2e-installation.md) — E2E installation suite
+- [`specs/e2e-render.md`](specs/e2e-render.md) — E2E render suite
+- [`specs/e2e-sandbox.md`](specs/e2e-sandbox.md) — E2E sandbox suite
+
+### Schemas (JSON Schema 2020-12)
+
+Public contracts for downstream tooling. Source of truth lives in
+`schemas/` at the workspace root.
+
+- [`schemas/diagram-projection.schema.json`](../schemas/diagram-projection.schema.json) — bundle envelope (4 required keys)
+- [`schemas/changeset.schema.json`](../schemas/changeset.schema.json) — apply changeset format
+- [`schemas/call-graph-report.schema.json`](../schemas/call-graph-report.schema.json)
+- [`schemas/class-diagram-report.schema.json`](../schemas/class-diagram-report.schema.json)
+- [`schemas/sequence-report.schema.json`](../schemas/sequence-report.schema.json)
+- [`schemas/state-machine-report.schema.json`](../schemas/state-machine-report.schema.json)
+- [`schemas/discover-report.schema.json`](../schemas/discover-report.schema.json)
+
 ## Decisiones explícitamente descartadas
 
 - Convertir `archctl` en un portal o plataforma de reporting.
