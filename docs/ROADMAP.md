@@ -817,6 +817,7 @@ Incluye:
 | `m36-kotlin-call-graph` | `feat/m36-kotlin-call-graph` (merged to main via PR #94) | `849b9d6` | **Cerrado** ✅ · tag `v1.8.0` · adds Kotlin as 6th language to archctl code call-graph |
 | `m38-plantuml-mermaid-render-local` | `feat/m38-plantuml-mermaid-render-local` (merged to main via PR #96) | `d43d24a` | **Cerrado** ✅ · tag `v1.9.0` · wires Mermaid → SVG via merman (pure Rust); PlantUML deferred to M40 |
 | `m37-json-schema-public-and-pure-flag` | `feat/m37-json-schema-public-and-pure-flag` (merged to main via PR #98) | `e238b75` | **Cerrado** ✅ · tag `v1.10.0` · pure --json stdout mode (no 5-file write) + round-trip schema validation |
+| `m39-use-case-diagrams-end-to-end` | `feat/m39-use-case-shapes-and-e2e-render` (merged to main via PR #101) | `7fc3e96` | **Cerrado** ✅ · tag `v1.11.0` · use case view end-to-end (mermaid: actor=rect, usecase=circle) + usecase_view_e2e regression test; pre-M39 bare (Label) bug discovered and fixed |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
