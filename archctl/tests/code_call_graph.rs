@@ -198,6 +198,108 @@ fn test_go_extraction_nodes_and_edges() {
     assert!(has_edge(":init:", "greet"), "init must call greet");
 }
 
+// ─── M35: Java extraction semantics ───────────────────────────────────────────
+
+fn write_java_project(project: &Path) {
+    let java_source = read_fixture("java_callgraph/main.java");
+    write(project, "Server.java", &java_source);
+}
+
+#[test]
+fn test_java_extraction_nodes_and_edges() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+    write_java_project(project);
+
+    let fs = SystemFilesystem;
+    let report = call_graph::extract(project, &[Language::Java], None, &fs)
+        .expect("extract must succeed for Java");
+
+    // Expected nodes from tests/fixtures/java_callgraph/main.java:
+    //   Server  (constructor — Java AST names it after the class)
+    //   Server.getName
+    //   Server.handle
+    //   Server.validate
+    //   Server.process
+    //   Server.log
+    let expected = ["Server", "getName", "handle", "validate", "process", "log"];
+    assert_eq!(
+        report.nodes.len(),
+        expected.len(),
+        "expected {} Java nodes, got: {:#?}",
+        expected.len(),
+        report.nodes
+    );
+    for name in expected {
+        assert!(
+            report.nodes.iter().any(|n| n.name == name),
+            "expected node {name} in Java extraction"
+        );
+    }
+    // Every node is a Method (Java has no free functions).
+    for n in &report.nodes {
+        assert_eq!(
+            n.kind,
+            archctl::code::call_graph::FunctionKind::Method,
+            "Java node {} should be Method kind",
+            n.name
+        );
+        assert_eq!(
+            n.language,
+            archctl::code::call_graph::Language::Java,
+            "Java node {} should be tagged Java",
+            n.name
+        );
+    }
+
+    // Edges (calls within main.java):
+    //   handle → validate, handle → process
+    //   validate → requireNonNull (Objects.requireNonNull, deepest ident)
+    //   process → log
+    //   log → println (System.out.println, deepest ident)
+    let has_edge = |caller_sub: &str, callee: &str| {
+        report
+            .edges
+            .iter()
+            .any(|e| e.caller.contains(caller_sub) && e.callee == callee)
+    };
+    assert!(
+        has_edge(":handle:", "validate"),
+        "handle must call validate"
+    );
+    assert!(has_edge(":handle:", "process"), "handle must call process");
+    assert!(
+        has_edge(":validate:", "requireNonNull"),
+        "validate must call Objects.requireNonNull (deepest ident)"
+    );
+    assert!(has_edge(":process:", "log"), "process must call log");
+    assert!(
+        has_edge(":log:", "println"),
+        "log must call System.out.println (deepest ident)"
+    );
+}
+
+#[test]
+fn test_java_lang_filter_excludes_non_java() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+    write_java_project(project);
+
+    let fs = SystemFilesystem;
+
+    // Filtering to Rust on a Java-only project must scan 0 files.
+    let report = call_graph::extract(project, &[Language::Rust], None, &fs)
+        .expect("extract must succeed for Rust");
+    assert_eq!(report.project.files_scanned, 0);
+    assert_eq!(report.nodes.len(), 0);
+
+    // Filtering to Java picks up the fixture.
+    let report = call_graph::extract(project, &[Language::Java], None, &fs)
+        .expect("extract must succeed for Java");
+    assert_eq!(report.project.files_scanned, 1);
+    assert!(report.nodes.len() >= 6);
+}
+
 #[test]
 fn test_go_lang_filter_excludes_and_includes() {
     let tmp = TempDir::new().unwrap();
