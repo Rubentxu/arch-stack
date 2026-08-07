@@ -16,7 +16,16 @@ pub fn init() -> Result<()> {
 
     tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_target(false).with_ansi(no_color))
+        .with(
+            fmt::layer()
+                .with_target(false)
+                .with_ansi(no_color)
+                // Unix convention: stdout = data, stderr = logs. Without
+                // this, `archctl ... --json` consumers see INFO lines
+                // before the JSON payload (the pre-existing MEDIUM from
+                // M31 debt-verify).
+                .with_writer(std::io::stderr),
+        )
         .try_init()
         .ok();
     Ok(())
