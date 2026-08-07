@@ -207,6 +207,23 @@ fn project_c4_view(
     edges: &[SemanticEdgeRow],
     _selector: &ProjectSelector,
 ) {
+    // M50: emit valid vanilla PlantUML syntax (NOT Structurizr-style).
+    //
+    // Pre-M50, the projector emitted lowercase Structurizr keywords
+    // (`person "X" { }`, `container "Y" { }`) inside `@startuml`/`@enduml`.
+    // That syntax is rejected by Java PlantUML unless the C4-PlantUML
+    // stdlib is loaded via `!include <C4/...>`. To stay self-contained
+    // (no external stdlib), we now emit native PlantUML shapes:
+    //
+    //   - `c4.person`           → `actor "Name" as Name`
+    //   - `c4.software_system`  → `rectangle "Name" as Name`
+    //   - `c4.container`        → `rectangle "Name" as Name`
+    //   - `c4.component`        → `rectangle "Name" as Name`
+    //
+    // The dedicated structurizr.rs projector handles the Structurizr
+    // format output (`--format structurizr`); this projector is ONLY
+    // invoked when `--format plantuml` is selected.
+    //
     // Build element name map
     let name_map: std::collections::HashMap<&str, &str> = elements
         .iter()
@@ -215,17 +232,16 @@ fn project_c4_view(
 
     for element in elements {
         match element.kind_id.as_str() {
-            "c4.container" | "c4.component" | "c4.person" | "c4.software_system" => {
-                let container_type = match element.kind_id.as_str() {
-                    "c4.person" => "person",
-                    "c4.software_system" => "software_system",
-                    "c4.container" => "container",
-                    "c4.component" => "component",
-                    _ => "container",
-                };
+            "c4.person" => {
                 output.push_str(&format!(
-                    " {} \"{}\" {} {}\n",
-                    container_type, element.current_name, "{", "}"
+                    "actor \"{}\" as {}\n",
+                    element.current_name, element.current_name
+                ));
+            }
+            "c4.software_system" | "c4.container" | "c4.component" => {
+                output.push_str(&format!(
+                    "rectangle \"{}\" as {}\n",
+                    element.current_name, element.current_name
                 ));
             }
             _ => {}
@@ -357,13 +373,52 @@ mod tests {
     #[test]
     fn empty_graph_produces_minimal_plantuml() {
         let elements = vec![];
-        let edges = vec![];
+        let edges: Vec<SemanticEdgeRow> = vec![];
         let selector = ProjectSelector::parse("class:*").unwrap();
 
         let dsl = project(&elements, &edges, &selector);
 
         assert!(dsl.contains("@startuml"));
         assert!(dsl.contains("@enduml"));
+    }
+
+    /// M50: C4 container view emits vanilla PlantUML syntax (not Structurizr
+    /// keywords inside @startuml). `c4.person` → `actor`, `c4.container` /
+    /// `c4.software_system` / `c4.component` → `rectangle`.
+    #[test]
+    fn c4_container_view_emits_valid_plantuml() {
+        let elements = vec![
+            make_element("e1", "c4.person", "Customer", "c4"),
+            make_element("e2", "c4.software_system", "Orders", "c4"),
+            make_element("e3", "c4.container", "WebApp", "c4"),
+            make_element("e4", "c4.container", "Database", "c4"),
+        ];
+        let edges = vec![
+            make_edge("r1", "core.uses", "e1", "e2"),
+            make_edge("r2", "core.uses", "e2", "e3"),
+            make_edge("r3", "core.depends_on", "e3", "e4"),
+        ];
+        let selector = ProjectSelector::parse("c4-container:orders").unwrap();
+
+        let dsl = project(&elements, &edges, &selector);
+
+        assert!(dsl.contains("actor \"Customer\" as Customer"));
+        assert!(dsl.contains("rectangle \"Orders\" as Orders"));
+        assert!(dsl.contains("rectangle \"WebApp\" as WebApp"));
+        assert!(dsl.contains("rectangle \"Database\" as Database"));
+        assert!(dsl.contains("Customer --> Orders"));
+        assert!(dsl.contains("Orders --> WebApp"));
+        assert!(dsl.contains("WebApp --> Database"));
+        // Pre-M50 STRUCTURIZR-style keywords must NOT appear (would be rejected
+        // by Java PlantUML without the C4-PlantUML stdlib).
+        assert!(
+            !dsl.contains("person \"Customer\""),
+            "pre-M50 lowercase 'person' keyword leaked into PlantUML output; got:\n{dsl}"
+        );
+        assert!(
+            !dsl.contains("container \"WebApp\""),
+            "pre-M50 lowercase 'container' keyword leaked into PlantUML output; got:\n{dsl}"
+        );
     }
 
     #[test]

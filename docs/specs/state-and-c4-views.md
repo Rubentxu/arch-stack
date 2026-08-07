@@ -82,10 +82,34 @@ flowchart TD
     e3 --> e4
 ```
 
-### PlantUML (unchanged — already valid)
+### PlantUML (M50 fix — vanilla PlantUML syntax)
 
-The PlantUML C4 projection uses Structurizr-style `model { ... }` blocks which
-are forwarded to the Structurizr renderer. No changes needed for M41.
+**Pre-M50**: the C4 view PlantUML projector emitted lowercase Structurizr
+keywords (`person "X" { }`, `container "Y" { }`) inside `@startuml`/`@enduml`.
+This syntax is rejected by vanilla Java PlantUML unless the C4-PlantUML stdlib
+is loaded via `!include <C4/Container>`. The projector output was effectively
+broken for any non-Structurizr renderer.
+
+**M50 fix**: the projector now emits native vanilla PlantUML shapes:
+
+| Element kind | PlantUML shape |
+|---|---|
+| `c4.person` | `actor "Name" as Name` |
+| `c4.software_system`, `c4.container`, `c4.component` | `rectangle "Name" as Name` |
+
+These work with any vanilla PlantUML installation without requiring the
+C4-PlantUML stdlib. The dedicated `archctl/src/diagram/project/structurizr.rs`
+projector continues to handle the `--format structurizr` path (which uses the
+proper Structurizr DSL with `model { ... }` blocks).
+
+### Verification
+
+- `archctl/src/diagram/project/plantuml.rs::tests::c4_container_view_emits_valid_plantuml`
+  (NEW, M50): asserts `actor`, `rectangle`, and absent lowercase Structurizr
+  keywords.
+- `archctl/tests/c4_view_plantuml_e2e.rs` (NEW, M50): end-to-end test that
+  verifies the projector output + PlantUML backend + SVG chain. SKIP-on-
+  missing-backend.
 
 ## Out of scope (deferred)
 
