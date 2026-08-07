@@ -51,22 +51,7 @@ fn make_edge_with_label(
     }
 }
 
-fn backend_available() -> bool {
-    std::process::Command::new("plantuml")
-        .arg("-version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-        || std::process::Command::new("docker")
-            .args(["image", "inspect", "plantuml/plantuml"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-}
+use archctl::test_helpers::plantuml::backend_available;
 
 /// M48: labeled sequence projector (M45) → PlantUML backend (M40) → SVG.
 #[test]

@@ -43,22 +43,7 @@ fn make_edge(rel_id: &str, pred: &str, src: &str, tgt: &str) -> SemanticEdgeRow 
     }
 }
 
-fn backend_available() -> bool {
-    std::process::Command::new("plantuml")
-        .arg("-version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-        || std::process::Command::new("docker")
-            .args(["image", "inspect", "plantuml/plantuml"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-}
+use archctl::test_helpers::plantuml::backend_available;
 
 /// M50: C4 container projector (fixed to emit vanilla PlantUML) +
 /// M40 PlantUML backend → SVG. Closes the verification triangle.

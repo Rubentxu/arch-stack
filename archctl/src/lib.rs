@@ -22,6 +22,14 @@ pub mod source;
 pub mod stack;
 pub mod store;
 pub mod telemetry;
+/// Test-only helpers shared across integration test files.
+///
+/// M56: extracted `backend_available()` (skip-on-missing-backend) from
+/// 5 e2e tests into `test_helpers::plantuml::backend_available`. Kept in
+/// the main lib (not gated behind `#[cfg(test)]`) because integration
+/// tests in `tests/` are separate crates and need to import via
+/// `archctl::test_helpers`.
+pub mod test_helpers;
 pub mod view;
 pub mod xdg;
 
