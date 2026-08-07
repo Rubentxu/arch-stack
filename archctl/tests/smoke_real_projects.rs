@@ -175,23 +175,24 @@ fn smoke_one(repo_url: &str, lang: &str, extractor: &[&str], apply: bool) {
         if extractor.contains(&"call-graph") && lang == "go" {
             let stdout = String::from_utf8_lossy(&out.stdout);
             // Parse JSON output to find filesScanned + nodes
-            if let Some(start) = stdout.find('{') {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout[start..]) {
-                    let files_scanned = json
-                        .get("project")
-                        .and_then(|p| p.get("filesScanned"))
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    let nodes = json
-                        .get("nodes")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.len())
-                        .unwrap_or(0);
-                    assert!(
-                        files_scanned > 0 && nodes > 0,
-                        "call-graph extracted nothing for {repo_url}: filesScanned={files_scanned}, nodes={nodes}"
-                    );
-                }
+            // (let-chain style — rustc 1.97+ enforces this).
+            if let Some(start) = stdout.find('{')
+                && let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout[start..])
+            {
+                let files_scanned = json
+                    .get("project")
+                    .and_then(|p| p.get("filesScanned"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let nodes = json
+                    .get("nodes")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                assert!(
+                    files_scanned > 0 && nodes > 0,
+                    "call-graph extracted nothing for {repo_url}: filesScanned={files_scanned}, nodes={nodes}"
+                );
             }
         }
         assert!(
