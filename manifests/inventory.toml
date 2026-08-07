@@ -15,8 +15,6 @@ editable = ["archctl/src/inventory.rs"]
 public_symbols = [
   "Entry",
   "EntryKind",
-  "File",
-  "Dir",
   "tree",
   "languages",
   "supported_files",

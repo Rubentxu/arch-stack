@@ -15,10 +15,6 @@ editable = ["archctl/src/xdg.rs"]
 
 public_symbols = [
   "XdgLayout",
-  "data",
-  "config",
-  "state",
-  "cache",
   "skills_root",
   "projects_root",
   "lib_root",

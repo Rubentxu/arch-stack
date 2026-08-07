@@ -14,9 +14,6 @@ editable = ["archctl/src/skills.rs"]
 
 public_symbols = [
   "SkillMode",
-  "Direct",
-  "Wrapped",
-  "Patched",
   "SkillLockEntry",
   "SkillsLock",
   "SyncReport",

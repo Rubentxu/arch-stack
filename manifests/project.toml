@@ -15,11 +15,6 @@ editable = ["archctl/src/project.rs"]
 
 public_symbols = [
   "ProjectInfo",
-  "project_id",
-  "project_dir",
-  "source_identity",
-  "source_identity_summary",
-  "kind",
   "resolve_project",
 ]
 

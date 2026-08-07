@@ -16,9 +16,6 @@ editable = ["archctl/src/doctor.rs"]
 public_symbols = [
   "Finding",
   "Severity",
-  "Ok",
-  "Warn",
-  "Fail",
   "run",
   "check_scope",
 ]
