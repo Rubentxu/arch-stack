@@ -1000,6 +1000,7 @@ fn extract_python_class(
 ) -> Option<ClassNode> {
     let mut name = String::new();
     let mut bases: Vec<String> = Vec::new();
+    let mut members: Vec<ClassMember> = Vec::new();
     let line = (node.start_position().row + 1) as u32;
 
     for i in 0..node.child_count() {
@@ -1027,7 +1028,34 @@ fn extract_python_class(
                     }
                 }
                 "block" => {
-                    // Extract methods inside the class
+                    // Walk the class body and pick up top-level
+                    // `function_definition` and `decorated_definition`
+                    // (decorator-wrapped method) children.
+                    for j in 0..child.child_count() {
+                        if let Some(stmt) = child.child(j as u32) {
+                            match stmt.kind() {
+                                "function_definition" => {
+                                    if let Some(member) = extract_python_method(stmt, source) {
+                                        members.push(member);
+                                    }
+                                }
+                                "decorated_definition" => {
+                                    // `decorated_definition` wraps the
+                                    // `function_definition`; unwrap one level.
+                                    for k in 0..stmt.child_count() {
+                                        if let Some(inner) = stmt.child(k as u32)
+                                            && inner.kind() == "function_definition"
+                                            && let Some(member) =
+                                                extract_python_method(inner, source)
+                                        {
+                                            members.push(member);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -1064,8 +1092,42 @@ fn extract_python_class(
         file: file.to_string(),
         line,
         name,
-        members: Vec::new(), // TODO: Python methods (block/function_definition inside class)
+        members,
         confidence: 0.90,
+    })
+}
+
+/// Extract a Python method (`def name(...)`) from a `function_definition` node
+/// that lives inside a class block. Mirrors the contract of
+/// `extract_rust_method` / `extract_ts_method`: returns the method name and a
+/// best-effort textual signature for the `ClassMember.signature` field.
+fn extract_python_method(node: tree_sitter::Node, source: &str) -> Option<ClassMember> {
+    let mut name = String::new();
+    let mut sig_parts: Vec<String> = Vec::new();
+    let line = (node.start_position().row + 1) as u32;
+
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32) {
+            let txt = source[child.start_byte()..child.end_byte()].to_string();
+            // First identifier child is the function name. Python AST also
+            // surfaces `def`, parameter lists, return annotations, and the
+            // body — we keep them in order so the signature reads naturally.
+            if child.kind() == "identifier" && name.is_empty() {
+                name = txt.clone();
+            }
+            sig_parts.push(txt);
+        }
+    }
+
+    if name.is_empty() {
+        return None;
+    }
+
+    Some(ClassMember {
+        name,
+        member_kind: "def".to_string(),
+        signature: sig_parts.join(" ").replace("  ", " ").trim().to_string(),
+        line,
     })
 }
 
@@ -1568,5 +1630,81 @@ mod tests {
             confidence: 0.85,
         };
         assert_eq!(extends_edge.predicate_tag(), "extends");
+    }
+
+    // ─── Python method extraction (M60) ──────────────────────────────────
+    //
+    // Regression for the `extract_python_class` TODO at line 1067 in the
+    // pre-M60 source: a class body that defines `def` methods was emitted
+    // with an empty `members` Vec. The post-M60 walker descends into the
+    // class `block` and captures each `function_definition` (and
+    // `decorated_definition`) as a `ClassMember` with `member_kind = "def"`.
+    //
+    // These tests drive `extract_python_class` end-to-end through
+    // `extract_python` so the AST path is realistic.
+
+    fn extract_python_class_from(source: &str, file: &str) -> Option<ClassNode> {
+        use tree_sitter::Parser;
+        let mut parser = Parser::new();
+        let lang = tree_sitter_python::LANGUAGE.into();
+        parser.set_language(&lang).expect("python lang");
+        let tree = parser.parse(source, None).expect("parse python");
+        let root = tree.root_node();
+        let mut nodes: Vec<ClassNode> = Vec::new();
+        let mut edges: Vec<ClassEdge> = Vec::new();
+        find_python_types(root, source, file, &mut nodes, &mut edges);
+        nodes.into_iter().next()
+    }
+
+    #[test]
+    fn python_class_extracts_plain_def_methods() {
+        let src = "\
+class Greeter:
+    def hello(self):
+        return 'hi'
+
+    def goodbye(self, name):
+        return f'bye {name}'
+";
+        let node = extract_python_class_from(src, "g.py").expect("Greeter node");
+        assert_eq!(node.name, "Greeter");
+        assert_eq!(node.members.len(), 2);
+        assert_eq!(node.members[0].name, "hello");
+        assert_eq!(node.members[0].member_kind, "def");
+        assert_eq!(node.members[1].name, "goodbye");
+        // Signature contains the function name (signature is best-effort text).
+        assert!(node.members[1].signature.contains("goodbye"));
+    }
+
+    #[test]
+    fn python_class_extracts_decorated_methods() {
+        let src = "\
+class Service:
+    @property
+    def value(self):
+        return 42
+
+    @staticmethod
+    def helper(x):
+        return x
+";
+        let node = extract_python_class_from(src, "s.py").expect("Service node");
+        assert_eq!(node.name, "Service");
+        assert_eq!(node.members.len(), 2);
+        let names: Vec<&str> = node.members.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"value"));
+        assert!(names.contains(&"helper"));
+    }
+
+    #[test]
+    fn python_class_with_no_methods_has_empty_members() {
+        let src = "\
+class Empty:
+    x = 1
+    y = 2
+";
+        let node = extract_python_class_from(src, "e.py").expect("Empty node");
+        assert_eq!(node.name, "Empty");
+        assert!(node.members.is_empty());
     }
 }
