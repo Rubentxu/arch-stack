@@ -56,15 +56,25 @@ fn schema_valid_status(current: &str) -> String {
     }
 }
 
-/// Uses `Clock::now_rfc3339()` for `generatedAt` and writes each file
-/// atomically (write-then-rename) for idempotency.
-pub fn run_export(
+/// The internal bundle carrier (manifest + projection + evidence + styles)
+/// built by `build_bundle` and consumed by both `run_export` (writes 5
+/// files) and `build_export_envelope` (single JSON to stdout).
+#[derive(Debug)]
+pub struct BundleEnvelope {
+    pub manifest: Manifest,
+    pub projection: Projection,
+    pub evidence: EvidenceBundle,
+    pub styles: Styles,
+}
+
+/// Parses `selector` → runs 4 graph queries → builds projection → computes
+/// `baseRevision`. Returns the in-memory bundle WITHOUT writing files.
+/// Used by `run_export` (file write) and `build_export_envelope` (stdout).
+pub fn build_bundle(
     store: &dyn GraphStore,
     selector: &str,
-    out_dir: &Path,
     clock: &dyn Clock,
-    fs: &dyn Filesystem,
-) -> anyhow::Result<ExportReport> {
+) -> anyhow::Result<BundleEnvelope> {
     // 1. Parse selector
     let view: ViewSelector =
         crate::diagram::selector::parse(selector).context("invalid view selector")?;
@@ -188,25 +198,69 @@ pub fn run_export(
         },
     };
 
-    // 7. Write bundle files (atomic: write to tmp, then rename)
-    // Create output directory
-    fs.create_dir_all(out_dir)
-        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
-
-    // Write manifest.json
-    write_atomic(fs, &out_dir.join("manifest.json"), &manifest)?;
-
-    // Write projection.json
-    write_atomic(fs, &out_dir.join("projection.json"), &projection)?;
-
-    // Write evidence.json
     let evidence_bundle = EvidenceBundle {
         evidence: evidence_entries,
     };
-    write_atomic(fs, &out_dir.join("evidence.json"), &evidence_bundle)?;
 
-    // Write styles.json
-    write_atomic(fs, &out_dir.join("styles.json"), &styles)?;
+    Ok(BundleEnvelope {
+        manifest,
+        projection,
+        evidence: evidence_bundle,
+        styles,
+    })
+}
+
+/// Builds the full bundle envelope as a `serde_json::Value` ready to print
+/// to stdout (single JSON document). Adds `empty` + `warning` fields that
+/// are not in the 5-file bundle but are useful for agents.
+///
+/// Shape:
+/// ```json
+/// {
+///   "manifest": {...},
+///   "projection": {...},
+///   "evidence": {...},
+///   "styles": {...},
+///   "empty": bool,
+///   "warning": Option<String>
+/// }
+/// ```
+pub fn build_export_envelope(bundle: &BundleEnvelope) -> serde_json::Value {
+    let empty = bundle.projection.nodes.is_empty();
+    let warning = if empty {
+        Some("no graph found (0 elements)".to_string())
+    } else {
+        None
+    };
+    serde_json::json!({
+        "manifest": bundle.manifest,
+        "projection": bundle.projection,
+        "evidence": bundle.evidence,
+        "styles": bundle.styles,
+        "empty": empty,
+        "warning": warning,
+    })
+}
+
+/// Uses `Clock::now_rfc3339()` for `generatedAt` and writes each file
+/// atomically (write-then-rename) for idempotency.
+pub fn run_export(
+    store: &dyn GraphStore,
+    selector: &str,
+    out_dir: &Path,
+    clock: &dyn Clock,
+    fs: &dyn Filesystem,
+) -> anyhow::Result<ExportReport> {
+    let bundle = build_bundle(store, selector, clock)?;
+
+    // Write 5 bundle files (atomic: write to tmp, then rename)
+    fs.create_dir_all(out_dir)
+        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
+
+    write_atomic(fs, &out_dir.join("manifest.json"), &bundle.manifest)?;
+    write_atomic(fs, &out_dir.join("projection.json"), &bundle.projection)?;
+    write_atomic(fs, &out_dir.join("evidence.json"), &bundle.evidence)?;
+    write_atomic(fs, &out_dir.join("styles.json"), &bundle.styles)?;
 
     // Write assets directory and icon files
     let assets_dir = out_dir.join("assets");
@@ -220,17 +274,17 @@ pub fn run_export(
         write_atomic_bytes(fs, &assets_dir.join(format!("{icon_name}.png")), icon_bytes)?;
     }
 
-    let empty = projection.nodes.is_empty();
+    let empty = bundle.projection.nodes.is_empty();
     let warning = if empty {
         Some("no graph found (0 elements)".into())
     } else {
         None
     };
     Ok(ExportReport {
-        manifest,
-        element_count: projection.nodes.len(),
-        edge_count: projection.edges.len(),
-        evidence_count: evidence_bundle.evidence.len(),
+        manifest: bundle.manifest,
+        element_count: bundle.projection.nodes.len(),
+        edge_count: bundle.projection.edges.len(),
+        evidence_count: bundle.evidence.evidence.len(),
         empty,
         warning,
     })
@@ -765,5 +819,39 @@ mod tests {
         assert_eq!(report.element_count, 0, "expected element_count==0");
         assert_eq!(report.edge_count, 0, "expected edge_count==0");
         assert_eq!(report.evidence_count, 0, "expected evidence_count==0");
+    }
+
+    /// The envelope emitted by `build_export_envelope` MUST be a valid
+    /// instance of `diagram-projection.schema.json` (without the `empty`
+    /// and `warning` fields, which are CLI conveniences, not part of the
+    /// schema). This is the canonical "agent can trust stdout JSON"
+    /// regression test (M37).
+    #[test]
+    fn envelope_is_schema_valid() {
+        use crate::diagram::schema_embed::SCHEMA;
+
+        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let clock = FixedClock::new("2026-07-30T12:00:00Z");
+        let bundle = build_bundle(&store, "container:*", &clock).unwrap();
+        let envelope = build_export_envelope(&bundle);
+
+        // The schema describes {manifest, projection, evidence, styles};
+        // `empty` + `warning` are CLI conveniences. Strip them before
+        // validating.
+        let mut envelope_for_validation = envelope.clone();
+        if let Some(obj) = envelope_for_validation.as_object_mut() {
+            obj.remove("empty");
+            obj.remove("warning");
+        }
+
+        let schema: serde_json::Value =
+            serde_json::from_str(SCHEMA).expect("embedded schema is valid JSON");
+        let validator = jsonschema::validator_for(&schema).expect("compile schema");
+        let validation_result = validator.validate(&envelope_for_validation);
+        assert!(
+            validation_result.is_ok(),
+            "envelope must validate against schemas/diagram-projection.schema.json; errors: {:?}",
+            validation_result.err()
+        );
     }
 }
