@@ -27,6 +27,10 @@ pub struct ExportReport {
     pub element_count: usize,
     pub edge_count: usize,
     pub evidence_count: usize,
+    /// True when the projection contains zero nodes (empty graph).
+    pub empty: bool,
+    /// Warning message when the graph is empty; `None` otherwise.
+    pub warning: Option<String>,
 }
 
 /// Run the full export pipeline.
@@ -216,11 +220,19 @@ pub fn run_export(
         write_atomic_bytes(fs, &assets_dir.join(format!("{icon_name}.png")), icon_bytes)?;
     }
 
+    let empty = projection.nodes.is_empty();
+    let warning = if empty {
+        Some("no graph found (0 elements)".into())
+    } else {
+        None
+    };
     Ok(ExportReport {
         manifest,
         element_count: projection.nodes.len(),
         edge_count: projection.edges.len(),
         evidence_count: evidence_bundle.evidence.len(),
+        empty,
+        warning,
     })
 }
 
@@ -728,5 +740,30 @@ mod tests {
         // Unknown kind
         let result = run_export(&store, "unknown_kind", &out_dir, &clock, &fs);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn export_empty_graph_sets_empty_true() {
+        // Mock store with zero elements — empty graph
+        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let clock = FixedClock::new("2026-07-30T12:00:00Z");
+        let fs = MemoryFilesystem::new();
+        let out_dir = std::path::PathBuf::from("/out");
+
+        let report = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+
+        assert!(report.empty, "expected empty=true for zero-element graph");
+        assert!(
+            report
+                .warning
+                .as_deref()
+                .unwrap()
+                .contains("no graph found"),
+            "expected warning to mention 'no graph found', got: {:?}",
+            report.warning
+        );
+        assert_eq!(report.element_count, 0, "expected element_count==0");
+        assert_eq!(report.edge_count, 0, "expected edge_count==0");
+        assert_eq!(report.evidence_count, 0, "expected evidence_count==0");
     }
 }
