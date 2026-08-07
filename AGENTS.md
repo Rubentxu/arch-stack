@@ -703,6 +703,10 @@ Cada item debe responderse con **sí** o **no**:
 
 ## Additional Documentation
 
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — practical handbook for new
+  contributors (cycle workflow, manifest hygiene, bounded context
+  rules, what NOT to do). **Read this first** if you are starting a
+  cycle. Added in M57.
 - [`CONTEXT.md`](CONTEXT.md) — resumen ejecutivo del proyecto.
 - [`docs/README.md`](docs/README.md) — índice de toda la
   documentación.
