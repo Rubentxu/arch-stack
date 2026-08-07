@@ -17,6 +17,7 @@ cargo_dir = "archctl"
 editable = [
   "archctl/src/render.rs",
   "archctl/src/render/structurizr.rs",
+  "archctl/src/render/mermaid.rs",
 ]
 
 public_symbols = [

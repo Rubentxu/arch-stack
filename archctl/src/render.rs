@@ -21,8 +21,8 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-mod mermaid;
-mod structurizr;
+pub mod mermaid;
+pub mod structurizr;
 
 /// Format identifier emitted by `detect_format` and consumed by `run`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
