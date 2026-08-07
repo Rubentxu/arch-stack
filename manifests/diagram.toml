@@ -42,6 +42,9 @@ editable = [
 public_symbols = [
   "DiagramAction",
   "run_export",
+  "build_bundle",
+  "build_export_envelope",
+  "BundleEnvelope",
   "ExportReport",
   "run_validate",
   "ValidationReport",
