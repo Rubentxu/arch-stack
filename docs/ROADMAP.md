@@ -821,6 +821,7 @@ Incluye:
 | `m40-plantuml-render-local` | `feat/m40-plantuml-render-local` (merged to main via PR #103) | `5137ce1` | **Cerrado** ✅ · tag `v1.12.0` · PlantUML render via user-installed backend (Java CLI / docker / custom); plantuml-little rejected (hard-links graphviz); 3 install options in error |
 | `m41-state-and-c4-e2e` | `feat/m41-state-and-c4-e2e` (merged to main via PR #105) | `c93cb53` | **Cerrado** ✅ · tag `v1.13.0` · state + C4 Mermaid projector bug fixed (id([Name]):::state + id(name)/id([Name])); every Mermaid view now renders end-to-end |
 | `m43-use-case-plantuml-e2e-verify` | `feat/m43-use-case-plantuml-e2e-verify` (merged to main via PR #107) | `e6a8f05` | **Cerrado** ✅ · tag `v1.14.0` · use case projector (M39) + PlantUML backend (M40) verified end-to-end; new regression test |
+| `m45-sequence-edge-labels` | `feat/m45-sequence-edge-labels` (merged to main via PR #109) | `6ef763c` | **Cerrado** ✅ · tag `v1.15.0` · sequence edge labels from edge.props["label"] (Mermaid + PlantUML); backward-compatible (absent/empty/non-string = bare arrow) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
