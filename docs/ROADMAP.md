@@ -834,6 +834,7 @@ Incluye:
 | `m55-codebase-state-study-and-roadmap-proposals` | `feat/m55-codebase-state-study-and-roadmap-proposals` (merged to main via PR #128) | `57e8e50` | **Cerrado** ✅ · tag `v1.25.0` · post-session state study at v1.24.0 + 11 prioritized improvement proposals (M56–M68) in `docs/sessions/2026-08-07-codebase-state-study.md` |
 | `m56-dry-skip-on-missing-backend` | `feat/m56-dry-skip-on-missing-backend` (merged to main via PR #130) | `e7e07e3` | **Cerrado** ✅ · tag `v1.26.0` · DRY skip-on-missing-backend helper extracted to `archctl::test_helpers::plantuml::backend_available`; -7 LOC net across 5 e2e files |
 | `m59-close-stale-pr-32` | (no PR; closed via gh) | `n/a` | **Cerrado** ✅ · tag none · closed stale PR #32 (M23 Phase 1/6, 4+ days open, merge conflicts with main); rationale + re-open path documented in PR comment |
+| `m62-state-md-refresh` | `feat/m62-state-md-refresh` (merged to main via PR #132) | `b354e06` | **Cerrado** ✅ · tag none · STATE.md refresh to v1.26.0 (was dated v1.1.0); 22 cycles of new content; pure docs cycle (no tag bump) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
