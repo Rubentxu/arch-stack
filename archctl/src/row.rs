@@ -155,6 +155,22 @@ impl Row {
         Self::default()
     }
 
+    /// Construct a Row from positional cells (no column names).
+    ///
+    /// Used by `LbugStore::execute` (M51 prepared-statement path) where
+    /// lbug does not expose column names through `QueryResult`. Callers
+    /// that need column names should use `LbugStore::query` instead.
+    ///
+    /// `column_names()` returns `[]` (empty); `column(idx)` still works
+    /// positionally.
+    pub fn from_positional(cells: Vec<Cell>) -> Self {
+        // Store cells under empty-string keys so `column(idx)` and
+        // `len()` work positionally; `column_names()` filters out the
+        // empty entries.
+        let columns = cells.into_iter().map(|c| (String::new(), c)).collect();
+        Self { columns }
+    }
+
     pub fn push(&mut self, key: impl Into<String>, value: impl Into<Cell>) {
         self.columns.push((key.into(), value.into()));
     }
@@ -191,7 +207,13 @@ impl Row {
     /// Names of the columns in order. Mirrors the RETURN clause of the
     /// query that produced this row.
     pub fn column_names(&self) -> Vec<&str> {
-        self.columns.iter().map(|(k, _)| k.as_str()).collect()
+        // Filter out empty-string keys (used by `Row::from_positional` for
+        // M51 prepared-statement results where lbug does not expose
+        // column names).
+        self.columns
+            .iter()
+            .filter_map(|(k, _)| if k.is_empty() { None } else { Some(k.as_str()) })
+            .collect()
     }
 }
 

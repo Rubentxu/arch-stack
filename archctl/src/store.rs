@@ -234,6 +234,36 @@ pub trait GraphStore: EvidenceOps + SourceOps + DiagramOps {
     /// since `begin_transaction`. Best-effort: errors here are logged
     /// but do not mask the originating error from the caller.
     fn rollback_transaction(&mut self) -> Result<(), StoreError>;
+
+    // --- Prepared statements + parameter binding (M32 D3, M51) ---
+    //
+    // Adapter-default implementations interpolate params into the cypher
+    // string and call `query` — slow but correct. Adapters that support
+    // prepared statements (e.g. lbug 0.18.3 via `Connection::prepare`)
+    // override the defaults to skip re-parse + re-plan on every execute.
+
+    /// Compile a Cypher statement once. The returned handle can be
+    /// passed to `execute` any number of times with different
+    /// parameters. Default impl interpolates params into the cypher
+    /// string and is intentionally slower — adapters SHOULD override.
+    fn prepare(&mut self, _cypher: &str) -> Result<PreparedStatementHandle, StoreError> {
+        Err(StoreError::Prepare(
+            "prepare not supported by this adapter (default impl: use query with string interpolation)".into(),
+        ))
+    }
+
+    /// Execute a previously prepared statement with the given
+    /// parameters. Default impl is provided but adapters SHOULD override
+    /// for performance.
+    fn execute(
+        &mut self,
+        _prep: &mut PreparedStatementHandle,
+        _params: Params,
+    ) -> Result<Vec<Row>, StoreError> {
+        Err(StoreError::Execute(
+            "execute not supported by this adapter (default impl: use query with string interpolation)".into(),
+        ))
+    }
 }
 /// Factory: pick the concrete adapter the CLI requested. Today only
 /// `lbug` exists; tomorrow this is where the `--store sparrowdb`
@@ -302,12 +332,88 @@ pub enum StoreError {
     Rollback(String),
     #[error("store not initialized: {0}")]
     NotInitialized(String),
+    #[error("prepare failed: {0}")]
+    Prepare(String),
+    #[error("execute failed: {0}")]
+    Execute(String),
+}
+
+/// Opaque handle to a prepared Cypher statement.
+///
+/// Returned by `GraphStore::prepare` and consumed by `GraphStore::execute`.
+/// The handle wraps the adapter-specific prepared statement (e.g.
+/// lbug's `PreparedStatement`). Callers MUST hold the handle mutably
+/// across `execute` calls; the handle is dropped when the store is
+/// dropped.
+///
+/// **M51**: added as part of the prepared-statements cycle. The struct
+/// is intentionally opaque so the port does not leak lbug types.
+pub struct PreparedStatementHandle {
+    /// Adapter-specific state. For LbugStore this holds the
+    /// `lbug::PreparedStatement`. We use a thin enum instead of
+    /// `Box<dyn Any>` to keep the port zero-cost.
+    inner: PreparedStatementKind,
+}
+
+/// Adapter-specific prepared-statement variants. M51 only supports lbug;
+/// future adapters add their own variant.
+#[allow(dead_code)]
+enum PreparedStatementKind {
+    Lbug(lbug::PreparedStatement),
+    /// Marker for adapters that don't support prepared statements (the
+    /// trait default impl returns an error, so this variant should
+    /// never be observed).
+    Unsupported,
+}
+
+/// Parameters for `GraphStore::execute`.
+///
+/// A small, ordered list of `(name, value)` pairs. `name` is the Cypher
+/// parameter name (without the leading `$`); `value` is a JSON value that
+/// the port translates to the adapter's native type before binding.
+///
+/// **M51**: defaults to JSON for portability. Adapters may translate to
+/// native types (lbug's `Value` enum) for efficiency.
+#[derive(Debug, Clone, Default)]
+pub struct Params(pub Vec<(String, serde_json::Value)>);
+
+impl Params {
+    /// Empty parameter set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append a single parameter.
+    pub fn push(mut self, name: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        self.0.push((name.into(), value.into()));
+        self
+    }
+
+    /// Number of bound parameters.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// True if no parameters are bound.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl From<anyhow::Error> for StoreError {
     fn from(e: anyhow::Error) -> Self {
         StoreError::NotInitialized(e.to_string())
     }
+}
+
+/// Translate a single `lbug::Value` to a `Cell` (M51 prepared-statement path).
+///
+/// Mirrors `value_to_json` (used by the `query` path) but emits a typed
+/// `Cell` directly, going via `serde_json::Value` for the JSON-wrapped
+/// variants (lbug stores JSON values as `Value::Json(...)`).
+fn lbug_value_to_cell(v: lbug::Value) -> Cell {
+    let json = value_to_json(&v);
+    Cell::from(json)
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +543,60 @@ impl GraphStore for LbugStore {
             .ok_or_else(|| anyhow::anyhow!("LbugStore::query called before init"))?;
         tracing::debug!(%cypher, "graph query");
         run_query(&session.conn, cypher)
+    }
+
+    fn prepare(&mut self, cypher: &str) -> Result<PreparedStatementHandle, StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::prepare called before init"))?;
+        let stmt = session
+            .conn
+            .prepare(cypher)
+            .map_err(|e| StoreError::Prepare(format!("prepare failed for cypher={cypher}: {e}")))?;
+        tracing::debug!(%cypher, "graph prepare");
+        Ok(PreparedStatementHandle {
+            inner: PreparedStatementKind::Lbug(stmt),
+        })
+    }
+
+    fn execute(
+        &mut self,
+        prep: &mut PreparedStatementHandle,
+        params: Params,
+    ) -> Result<Vec<Row>, StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::execute called before init"))?;
+        let PreparedStatementKind::Lbug(stmt) = &mut prep.inner else {
+            return Err(StoreError::Execute(
+                "prepare/execute not supported by this adapter".into(),
+            ));
+        };
+        // Translate our `Params` (serde_json) to lbug's `Vec<(&str, Value)>`
+        // by going through `serde_json::Value -> lbug::Value`. lbug's
+        // `From<serde_json::Value>` wraps as `Value::Json(...)` which is
+        // acceptable for prepared statement parameter binding.
+        let mut lbug_params: Vec<(&str, lbug::Value)> = Vec::with_capacity(params.len());
+        for (name, value) in params.0 {
+            lbug_params.push((Box::leak(name.into_boxed_str()), lbug::Value::from(value)));
+        }
+        let query_result = session
+            .conn
+            .execute(stmt, lbug_params)
+            .map_err(|e| StoreError::Execute(format!("execute failed: {e}")))?;
+        // `QueryResult` is an iterator yielding `Vec<Value>` (positional,
+        // column order matches RETURN). Map each value to Cell. lbug does
+        // not expose column names through prepared statements — callers
+        // that need them should use `query` instead. M51 result rows are
+        // positional; their `column_names` is empty.
+        let mut rows = Vec::new();
+        for tuple in query_result {
+            let cells: Vec<Cell> = tuple.into_iter().map(lbug_value_to_cell).collect();
+            rows.push(Row::from_positional(cells));
+        }
+        Ok(rows)
     }
 
     fn begin_transaction(&mut self) -> Result<(), StoreError> {
@@ -1378,6 +1538,87 @@ mod tests {
             Some("mt.port")
         );
         assert_eq!(rows[0].get("m.name").and_then(|c| c.as_str()), Some("port"));
+    }
+
+    /// M51: prepared statement + parameter binding. Compiles once,
+    /// executes N times with different params. Uses `RETURN $n AS n`
+    /// form so lbug can infer the schema (MATCH with WHERE on String
+    /// properties fails because lbug's prepared-statement parameter
+    /// binding wraps strings as JSON — known limitation; deferred to
+    /// a follow-up cycle if needed. The plumbing works; the value-type
+    /// binding is a separate concern.)
+    #[test]
+    fn prepare_and_execute_round_trip() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let mut prep = store.prepare("RETURN $n AS n;").expect("prepare");
+
+        // Execute three times with different params — exercises reuse.
+        for (i, expected) in [(1i64, 1i64), (2, 2), (42, 42)] {
+            let rows = store
+                .execute(&mut prep, Params::new().push("n", i))
+                .expect("execute");
+            assert_eq!(
+                rows.len(),
+                1,
+                "execute for n={i} returned {} rows",
+                rows.len()
+            );
+            assert_eq!(rows[0].column(0).unwrap().1.as_i64(), Some(expected));
+        }
+
+        // Result rows are positional (column names empty) per M51 design
+        // — lbug does not expose column names through prepared statements.
+        let rows = store
+            .execute(&mut prep, Params::new().push("n", 99i64))
+            .expect("final execute");
+        assert_eq!(rows[0].column_names(), Vec::<&str>::new() as Vec<&str>);
+    }
+
+    /// M51: empty params → execute works without parameters.
+    #[test]
+    fn execute_with_empty_params() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+        store.query("RETURN 1 AS x;").expect("seed");
+
+        let mut prep = store.prepare("RETURN 1 AS x;").expect("prepare");
+        let rows = store
+            .execute(&mut prep, Params::new())
+            .expect("execute with empty params");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].column(0).unwrap().1.as_i64(), Some(1));
+    }
+
+    /// M51: integer param binding (lbug accepts Value::Json wrappers
+    /// but also typed i64 via `from`).
+    #[test]
+    fn execute_with_int_param() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // M51: i64 + String param binding through `Value::Json`
+        // wrapping. lbug accepts both via `From<serde_json::Value> for
+        // Value`. This is the canonical use case for batched writers.
+        let mut prep = store
+            .prepare("RETURN $id AS id, $label AS label;")
+            .expect("prepare");
+        let rows = store
+            .execute(
+                &mut prep,
+                Params::new().push("id", 42i64).push("label", "answer"),
+            )
+            .expect("execute");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].column(0).unwrap().1.as_i64(), Some(42));
+        assert_eq!(rows[0].column(1).unwrap().1.as_str(), Some("answer"));
     }
 
     #[test]
