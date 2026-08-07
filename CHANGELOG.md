@@ -4,6 +4,69 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.24.0] — 2026-08-07
+
+### Added
+- **M54 — Session close**: CHANGELOG backfill (v1.18.0 → v1.23.0 entries
+  below) + Engram session summary. 21 cycles closed in this session
+  (v1.4.1 → v1.24.0, 42 PRs, 70+ commits, 25 tags).
+
+## [v1.23.0] — 2026-08-07
+
+### Added
+- **M53 — M32 D5 sequence writer audit**: audit verdict: N/A.
+  `archctl/src/code/sequence.rs` is a READ-ONLY projector per SCN-217.
+  No apply/writer function exists. M32 D5 migration pattern does not
+  apply. PR #125.
+
+## [v1.22.0] — 2026-08-07
+
+### Fixed
+- **M52 — M32 D4 doc fixes**: removed 3 stale "no parameter binding"
+  claims in `archctl/src/` (queries.rs, graph.rs, plus M51 already
+  fixed store.rs:420). ROADMAP + bench criterion were already correct
+  from prior cycles. PR #123.
+
+## [v1.21.0] — 2026-08-07
+
+### Added
+- **M51 — Prepared statements + parameter binding** (M32 D3 / ADR-036):
+  added `GraphStore::prepare` + `GraphStore::execute` port methods +
+  `PreparedStatementHandle` + `Params` types. LbugStore implements both
+  via `Connection::prepare/execute`. 3 unit tests for round-trip +
+  empty params + i64/String params. PR #121.
+
+  **Known limitation** (documented in test): lbug wraps String params
+  as `Value::Json` which doesn't match typed String properties in
+  WHERE. Migration of `call_graph::apply` to use prepare/execute is
+  deferred until typed bindings or `CAST()` are introduced.
+
+## [v1.20.0] — 2026-08-07
+
+### Fixed
+- **M50 — C4 PlantUML e2e + vanilla syntax fix**: pre-M50 the C4 view
+  PlantUML projector emitted lowercase Structurizr keywords (`person
+  "X" { }`, `container "Y" { }`) inside `@startuml`/`@enduml` —
+  syntax rejected by vanilla Java PlantUML. Fixed to emit
+  `actor "Name" as Name` and `rectangle "Name" as Name`. Added
+  `c4_view_plantuml_e2e.rs`. Closes the verification triangle.
+  PR #119.
+
+## [v1.19.0] — 2026-08-07
+
+### Added
+- **M49 — State PlantUML e2e verify**: `state_view_plantuml_e2e.rs`
+  exercises state projector + M40 backend + SVG (per ADR-026
+  transition join semantics). 2 e2e tests, skip-on-missing-backend.
+  PR #117.
+
+## [v1.18.0] — 2026-08-07
+
+### Added
+- **M48 — Sequence PlantUML e2e verify**: `sequence_view_plantuml_e2e.rs`
+  exercises sequence projector (with M45 labels) + M40 backend + SVG.
+  2 e2e tests, skip-on-missing-backend. PR #115.
+
 ## [v1.17.0] — 2026-08-07
 
 ### Added
