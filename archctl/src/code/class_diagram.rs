@@ -1271,16 +1271,24 @@ impl ClassEdge {
 // ─── Apply ─────────────────────────────────────────────────────────────────────
 
 /// Apply a class-diagram report to the graph store.
+///
+/// M32 D5: wraps all writes in a single Kùzu transaction
+/// (`begin_transaction` / `commit_transaction`) — same pattern as
+/// M32 PR1's `call_graph::apply`. Multi-statement seed MERGEs are
+/// split into individual `query()` calls because lbug 0.18.3 raises
+/// a binder exception for multi-statement queries and any exception
+/// inside an active transaction triggers an implicit rollback
+/// (`lbug client_context.cpp:658`).
 pub fn apply(
     project_dir: &Path,
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
     use crate::code::apply_common::escape_cypher_string;
-    use crate::store::open_and_init;
+    use crate::store::{GraphStore, open_and_init};
 
     let start = Instant::now();
-    let store = open_and_init(project_dir).map_err(ClassDiagramError::GraphWrite)?;
+    let mut store = open_and_init(project_dir).map_err(ClassDiagramError::GraphWrite)?;
 
     let mut elements_written = 0;
     let mut elements_skipped = 0;
@@ -1289,7 +1297,9 @@ pub fn apply(
     let evidences_written = 0;
     let mut seed_writes = 0;
 
-    // Seed uml MetaTypes and Predicates
+    // Seed uml MetaTypes and Predicates — split into individual MERGEs
+    // (one per query() call) to avoid lbug's multi-statement binder
+    // exception inside an active transaction.
     let meta_types = [
         "uml.class",
         "uml.interface",
@@ -1310,114 +1320,137 @@ pub fn apply(
         "uml.depends_on",
     ];
 
-    for mt in &meta_types {
-        let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
-        if store.query(&q).is_ok() {
-            seed_writes += 1;
-        }
-    }
-    for pred in &predicates {
-        let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
-        if store.query(&q).is_ok() {
-            seed_writes += 1;
-        }
-    }
-
     let version_id = uuid::Uuid::new_v4().to_string();
 
-    for node in &report.nodes {
-        let kind_id = match node.kind {
-            TypeKind::Class => "uml.class",
-            TypeKind::Interface => "uml.interface",
-            TypeKind::Trait => "uml.trait",
-            TypeKind::Enum => "uml.enum",
-            TypeKind::Record => "uml.record",
-        };
+    // D5: wrap writes in single transaction. Same begin/commit pattern
+    // as M32 PR1's call_graph::apply (IIFE scope bounds the &mut borrow
+    // of `Box<dyn GraphStore>` so commit/rollback can re-borrow after).
+    store.begin_transaction().map_err(|se| {
+        ClassDiagramError::GraphWrite(anyhow::anyhow!("begin_transaction failed: {se}"))
+    })?;
 
-        let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
-        let name_escaped = escape_cypher_string(&node.name);
-        let id = format!("cd:{}", node.canonical_key);
+    let inner_result: Result<(), ClassDiagramError> = {
+        let s: &mut dyn GraphStore = store.as_mut();
 
-        let version_props = serde_json::json!({
-            "kind": format!("{:?}", node.kind).to_lowercase(),
-            "language": node.language.lang_label(),
-            "confidence": node.confidence,
-            "members": node.members.len(),
-        });
-        let version_props_str = version_props.to_string();
-        let version_props_escaped = escape_cypher_string(&version_props_str);
-
-        let cypher = format!(
-            "MERGE (e:Element {{id: '{id}'}}) SET \
-             e.kind_id = '{kind_id}', \
-             e.category = 'uml', \
-             e.canonical_key = '{canonical_key_escaped}', \
-             e.current_name = '{name_escaped}', \
-             e.current_status = 'active', \
-             e.current_confidence = {confidence}, \
-             e.current_version_id = '{version_id}';",
-            id = id,
-            kind_id = kind_id,
-            canonical_key_escaped = canonical_key_escaped,
-            name_escaped = name_escaped,
-            confidence = node.confidence,
-            version_id = version_id,
-        );
-
-        match store.query(&cypher) {
-            Ok(_) => elements_written += 1,
-            Err(_) => elements_skipped += 1,
+        for mt in &meta_types {
+            let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
+            if s.query(&q).is_ok() {
+                seed_writes += 1;
+            }
+        }
+        for pred in &predicates {
+            let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
+            if s.query(&q).is_ok() {
+                seed_writes += 1;
+            }
         }
 
-        // ElementVersion
-        let ev_cypher = format!(
-            "MATCH (e:Element {{id: '{id}'}}) \
-             MERGE (v:ElementVersion {{id: '{version_id}', element_id: '{id}'}}) \
-             SET v.props = '{version_props_escaped}';",
-            id = id,
-            version_id = version_id,
-        );
-        let _ = store.query(&ev_cypher).ok();
-    }
+        for node in &report.nodes {
+            let kind_id = match node.kind {
+                TypeKind::Class => "uml.class",
+                TypeKind::Interface => "uml.interface",
+                TypeKind::Trait => "uml.trait",
+                TypeKind::Enum => "uml.enum",
+                TypeKind::Record => "uml.record",
+            };
 
-    // Write edges
-    for edge in &report.edges {
-        let pred_tag = match edge.predicate {
-            ClassEdgeKind::Extends => "uml.extends",
-            ClassEdgeKind::Implements => "uml.implements",
-            ClassEdgeKind::Composes => "uml.composition",
-        };
+            let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
+            let name_escaped = escape_cypher_string(&node.name);
+            let id = format!("cd:{}", node.canonical_key);
 
-        let _canonical_key_escaped = escape_cypher_string(&edge.canonical_key);
-        let source_id = format!("cd:{}", edge.source);
-        let target_id = format!("cd:{}", edge.target);
-        let rel_id = format!("cd:{}→{}", edge.source, edge.target);
+            let version_props = serde_json::json!({
+                "kind": format!("{:?}", node.kind).to_lowercase(),
+                "language": node.language.lang_label(),
+                "confidence": node.confidence,
+                "members": node.members.len(),
+            });
+            let version_props_str = version_props.to_string();
+            let version_props_escaped = escape_cypher_string(&version_props_str);
 
-        let rel_props = serde_json::json!({
-            "predicate_id": pred_tag,
-            "confidence": edge.confidence,
-        });
-        let rel_props_str = rel_props.to_string();
-        let rel_props_escaped = escape_cypher_string(&rel_props_str);
+            let cypher = format!(
+                "MERGE (e:Element {{id: '{id}'}}) SET \
+                 e.kind_id = '{kind_id}', \
+                 e.category = 'uml', \
+                 e.canonical_key = '{canonical_key_escaped}', \
+                 e.current_name = '{name_escaped}', \
+                 e.current_status = 'active', \
+                 e.current_confidence = {confidence}, \
+                 e.current_version_id = '{version_id}';",
+                id = id,
+                kind_id = kind_id,
+                canonical_key_escaped = canonical_key_escaped,
+                name_escaped = name_escaped,
+                confidence = node.confidence,
+                version_id = version_id,
+            );
 
-        let cypher = format!(
-            "MATCH (s:Element {{id: '{source_id}'}}), (t:Element {{id: '{target_id}'}}) \
-             MERGE (s)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}'}}]->(t) \
-             SET r.predicate_id = '{pred_tag}', \
-             r.props = '{rel_props_escaped}', \
-             r.active = true;",
-            source_id = source_id,
-            target_id = target_id,
-            rel_id = rel_id,
-            pred_tag = pred_tag,
-            rel_props_escaped = rel_props_escaped,
-        );
+            match s.query(&cypher) {
+                Ok(_) => elements_written += 1,
+                Err(_) => elements_skipped += 1,
+            }
 
-        match store.query(&cypher) {
-            Ok(_) => relations_written += 1,
-            Err(_) => relations_skipped += 1,
+            // ElementVersion
+            let ev_cypher = format!(
+                "MATCH (e:Element {{id: '{id}'}}) \
+                 MERGE (v:ElementVersion {{id: '{version_id}', element_id: '{id}'}}) \
+                 SET v.props = '{version_props_escaped}';",
+                id = id,
+                version_id = version_id,
+            );
+            let _ = s.query(&ev_cypher).ok();
         }
+
+        // Write edges
+        for edge in &report.edges {
+            let pred_tag = match edge.predicate {
+                ClassEdgeKind::Extends => "uml.extends",
+                ClassEdgeKind::Implements => "uml.implements",
+                ClassEdgeKind::Composes => "uml.composition",
+            };
+
+            let _canonical_key_escaped = escape_cypher_string(&edge.canonical_key);
+            let source_id = format!("cd:{}", edge.source);
+            let target_id = format!("cd:{}", edge.target);
+            let rel_id = format!("cd:{}→{}", edge.source, edge.target);
+
+            let rel_props = serde_json::json!({
+                "predicate_id": pred_tag,
+                "confidence": edge.confidence,
+            });
+            let rel_props_str = rel_props.to_string();
+            let rel_props_escaped = escape_cypher_string(&rel_props_str);
+
+            let cypher = format!(
+                "MATCH (s:Element {{id: '{source_id}'}}), (t:Element {{id: '{target_id}'}}) \
+                 MERGE (s)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}'}}]->(t) \
+                 SET r.predicate_id = '{pred_tag}', \
+                 r.props = '{rel_props_escaped}', \
+                 r.active = true;",
+                source_id = source_id,
+                target_id = target_id,
+                rel_id = rel_id,
+                pred_tag = pred_tag,
+                rel_props_escaped = rel_props_escaped,
+            );
+
+            match s.query(&cypher) {
+                Ok(_) => relations_written += 1,
+                Err(_) => relations_skipped += 1,
+            }
+        }
+
+        Ok(())
+    };
+
+    if let Err(e) = inner_result {
+        // Best-effort rollback — do not mask the original error.
+        let _ = store.rollback_transaction();
+        return Err(e);
     }
+
+    store.commit_transaction().map_err(|se| {
+        ClassDiagramError::GraphWrite(anyhow::anyhow!("commit_transaction failed: {se}"))
+    })?;
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
