@@ -815,6 +815,7 @@ Incluye:
 | `m34-call-graph-strategy-consolidation` | `refactor/m34-call-graph-strategy-consolidation` (merged to main via PR #90) | `027527b` | **Cerrado** ✅ · tag `v1.6.0` · consolidates 5 M30 debt-report items (~240 LOC reduction) |
 | `m35-java-call-graph` | `feat/m35-java-call-graph` (merged to main via PR #92) | `c120be0` | **Cerrado** ✅ · tag `v1.7.0` · adds Java as 5th language to archctl code call-graph |
 | `m36-kotlin-call-graph` | `feat/m36-kotlin-call-graph` (merged to main via PR #94) | `849b9d6` | **Cerrado** ✅ · tag `v1.8.0` · adds Kotlin as 6th language to archctl code call-graph |
+| `m38-plantuml-mermaid-render-local` | `feat/m38-plantuml-mermaid-render-local` (merged to main via PR #96) | `d43d24a` | **Cerrado** ✅ · tag `v1.9.0` · wires Mermaid → SVG via merman (pure Rust); PlantUML deferred to M40 |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
