@@ -6,20 +6,14 @@
 //! Per ADR-011, renderers run **locally only**:
 //! - **Structurizr** DSL → SVG via a minimal `petgraph + svg` renderer that
 //!   parses a C4-shaped subset (`workspace { … } model { … } views { … }`).
-//! - **PlantUML** → SVG via `plantuml-little` (Rust crate; deferred until
-//!   graphviz vendor strategy is resolved — `plantuml-little` requires
-//!   `libgraphviz` at build time via `graphviz-anywhere`).
-//! - **Mermaid** → SVG via `merman` (Rust crate; same graphviz vendor
-//!   blocker as PlantUML).
+//! - **Mermaid** → SVG via `merman` (Rust crate, pure Rust, no graphviz
+//!   needed; covers sequence/flowchart/class/state/ER/etc).
+//! - **PlantUML** → SVG (deferred: would require either vendor-graphviz
+//!   strategy or `graphviz-anywhere` prebuilt binaries; tracked in M40).
 //!
 //! **No HTTP egress.** The previous remote-renderer POST path is removed.
 //! The remote-URL CLI flag is removed (security fix per
 //! `docs/audits/2026-08-01-archctl-adr-vs-impl.md` §F1).
-//!
-//! Unsupported format errors are surfaced with a clear message pointing
-//! at the deferred vendor path; users with PlantUML/Mermaid needs
-//! should install `libgraphviz-dev` system-wide and re-vendor
-//! `plantuml-little` + `merman` in a follow-up cycle.
 
 use crate::Filesystem;
 use crate::cli::RenderFormat;
@@ -27,6 +21,7 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
+mod mermaid;
 mod structurizr;
 
 /// Format identifier emitted by `detect_format` and consumed by `run`.
@@ -84,19 +79,14 @@ pub fn run(
         RenderKind::Structurizr => structurizr::render(&body)
             .with_context(|| format!("structurizr render of {}", source.display()))?,
         RenderKind::Plantuml => {
-            warn!("plantuml format is not yet wired (see ADR-011 deferred vendor)");
+            warn!("plantuml format is deferred to M40 (graphviz vendor strategy unresolved)");
             bail!(
-                "plantuml rendering not implemented in v0.11.0 — re-vendor \
-                 plantuml-little in a follow-up cycle (see docs/audits/2026-08-01)"
+                "plantuml rendering deferred to M40 — see ROADMAP M38 status note \
+                 (graphviz-anywhere vendor OR pure-Rust subset renderer needed)"
             );
         }
-        RenderKind::Mermaid => {
-            warn!("mermaid format is not yet wired (see ADR-011 deferred vendor)");
-            bail!(
-                "mermaid rendering not implemented in v0.11.0 — re-vendor \
-                 merman in a follow-up cycle (see docs/audits/2026-08-01)"
-            );
-        }
+        RenderKind::Mermaid => mermaid::render(&body)
+            .with_context(|| format!("mermaid render of {}", source.display()))?,
     };
 
     fs.write(&out_path, svg.as_bytes())

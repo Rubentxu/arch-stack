@@ -385,10 +385,14 @@ mod tests {
         }
         assert_eq!(keys, vec!["z", "a"]);
 
-        // JSON conversion sorts keys (serde_json::Map default).
+        // JSON conversion preserves insertion order (serde_json::Map with
+        // `preserve_order` feature enabled transitively via merman-render →
+        // dugong). Pre-M38, this used BTreeMap-backed ordering (alphabetical).
+        // The contract now is "insertion order", which is also the more
+        // intuitive expectation.
         let json = obj_cell.to_json();
         let obj = json.as_object().unwrap();
         let json_keys: Vec<&String> = obj.keys().collect();
-        assert_eq!(json_keys, vec!["a", "z"]);
+        assert_eq!(json_keys, vec!["z", "a"]);
     }
 }

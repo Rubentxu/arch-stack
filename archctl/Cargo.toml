@@ -46,6 +46,9 @@ tree-sitter = "0.26"
 jsonschema = { version = "0.49.2", default-features = false }
 petgraph = { version = "0.6", default-features = false }
 svg = { version = "0.14", default-features = false }
+# Mermaid renderer — pure Rust, no graphviz/network. Pinned to 0.8.0-alpha.3.
+merman-core = "=0.8.0-alpha.3"
+merman-render = "=0.8.0-alpha.3"
 rust-embed = { version = "8", features = ["include-flate"] }
 tiny_http = "0.12"
 percent-encoding = "2"
