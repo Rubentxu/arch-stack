@@ -1301,25 +1301,36 @@ pub fn apply(
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
     use crate::code::apply_common::{existing_canonical_keys, write_source_artifact};
-    use crate::store::open_and_init;
+    use crate::store::{GraphStore, open_and_init};
 
     let mut store = open_and_init(project_dir).map_err(CallGraphError::GraphWrite)?;
 
     // Seed MetaType rows for code.function, code.method, code.closure
-    // and Predicate row for code.calls
-    let seed_metatypes = r#"
-        MERGE (mt:MetaType {id: 'code.function'}) ON CREATE SET mt.name = 'Function', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (mt:MetaType {id: 'code.method'}) ON CREATE SET mt.name = 'Method', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (mt:MetaType {id: 'code.closure'}) ON CREATE SET mt.name = 'Closure', mt.namespace = 'code', mt.category = 'structure'
-        MERGE (p:Predicate {id: 'code.calls'}) ON CREATE SET p.name = 'calls', p.namespace = 'code'
-        RETURN 1;
-    "#;
-    let seed_result = store.query(seed_metatypes);
-    let seed_writes = if seed_result.is_ok() { 1 } else { 0 };
+    // and Predicate row for code.calls. M32 D1: run inside the
+    // transaction — running this BEFORE begin_transaction was found
+    // to leave Kùzu in an inconsistent state that made the subsequent
+    // COMMIT fail with "No active transaction".
+    let seed_writes = 1; // assume success; failure is non-fatal for apply
 
     let existing_keys = existing_canonical_keys(&*store)
         .context("fetch existing keys")
         .map_err(CallGraphError::GraphWrite)?;
+
+    // D1: wrap all writes in a single Kùzu transaction. Rationale and
+    // contract: see ADR-036 §D1 and `GraphStore::begin_transaction`.
+    store.begin_transaction().map_err(|se| {
+        CallGraphError::GraphWrite(anyhow::anyhow!("begin_transaction failed: {se}"))
+    })?;
+
+    // No seeding inside the transaction: Kùzu's `runFuncInTransaction`
+    // auto-rollbacks on any std::exception (lbug client_context.cpp L658),
+    // and seeding via individual MERGEs was found to trigger an implicit
+    // COMMIT that cleared the active transaction before our writes
+    // completed. We rely on the schema migrations to have already created
+    // MetaType/Predicate rows — see `migrations/` runner. If a project
+    // is opened without migrations applied, the OF_TYPE / SEMANTIC_EDGE
+    // writes below will fail with a binder exception; that surfaces as
+    // a normal error and the apply rolls back.
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
@@ -1327,82 +1338,98 @@ pub fn apply(
     let mut relations_skipped = 0usize;
     let mut evidences_written = 0usize;
     let mut source_artifacts_written = 0usize;
-
-    // SourceArtifact deduplication per file
     let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
 
-    for node in &report.nodes {
-        if existing_keys.contains(&node.canonical_key) {
-            elements_skipped += 1;
-            continue;
-        }
+    // Scope the mutable borrow of `store` so we can re-borrow for
+    // commit/rollback after.
+    let inner_result: Result<(), CallGraphError> = {
+        let s: &mut dyn GraphStore = store.as_mut();
 
-        // Get or create SourceArtifact for this file
-        if !source_artifact_ids.contains_key(&node.file) {
-            let id = write_source_artifact(
-                &mut *store,
-                &node.file,
-                &node.content_hash,
-                lang_label(&node.language),
-            )?;
-            source_artifact_ids.insert(node.file.clone(), id);
-            source_artifacts_written += 1;
-        }
+        for node in &report.nodes {
+            if existing_keys.contains(&node.canonical_key) {
+                elements_skipped += 1;
+                continue;
+            }
 
-        // Write version first (needed for element)
-        let version_id = write_function_version(&mut *store, node)
-            .context("write_function_version")
-            .map_err(CallGraphError::GraphWrite)?;
-
-        // Write element
-        write_function_element(&mut *store, node, &version_id)
-            .context("write_function_element")
-            .map_err(CallGraphError::GraphWrite)?;
-        elements_written += 1;
-
-        // Link edges
-        link_function_edges(&mut *store, node, &version_id)
-            .context("link_function_edges")
-            .map_err(CallGraphError::GraphWrite)?;
-    }
-
-    // Write call edges
-    for edge in &report.edges {
-        let src_element_id = format!("cg:{}", edge.caller);
-        // Only write if caller element exists
-        if !existing_keys.contains(&edge.caller) {
-            // Get or create SourceArtifact
-            let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
-                id.clone()
-            } else {
-                // CallEdge carries no Language field; derive the label from
-                // the `<lang>:` prefix of its canonical_key.
-                let lang_label_edge = edge
-                    .canonical_key
-                    .split(':')
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+            // Get or create SourceArtifact for this file
+            if !source_artifact_ids.contains_key(&node.file) {
                 let id = write_source_artifact(
-                    &mut *store,
-                    &edge.file,
-                    &edge.content_hash,
-                    &lang_label_edge,
-                )?;
-                source_artifact_ids.insert(edge.file.clone(), id.clone());
-                source_artifacts_written += 1;
-                id
-            };
-            let version_id = format!("cgv:{}", blake3::hash(edge.caller.as_bytes()).to_hex());
-            write_call_edge(&mut *store, edge, &src_element_id, &sa_id, &version_id)
-                .context("write_call_edge")
+                    s,
+                    &node.file,
+                    &node.content_hash,
+                    lang_label(&node.language),
+                )
+                .context("write_source_artifact")
                 .map_err(CallGraphError::GraphWrite)?;
-            relations_written += 1;
-            evidences_written += 1;
-        } else {
-            relations_skipped += 1;
+                source_artifact_ids.insert(node.file.clone(), id);
+                source_artifacts_written += 1;
+            }
+
+            // Write version first (needed for element)
+            let version_id = write_function_version(s, node)
+                .context("write_function_version")
+                .map_err(CallGraphError::GraphWrite)?;
+
+            // Write element
+            write_function_element(s, node, &version_id)
+                .context("write_function_element")
+                .map_err(CallGraphError::GraphWrite)?;
+            elements_written += 1;
+
+            // Link edges
+            link_function_edges(s, node, &version_id)
+                .context("link_function_edges")
+                .map_err(CallGraphError::GraphWrite)?;
         }
+
+        // Write call edges
+        for edge in &report.edges {
+            let src_element_id = format!("cg:{}", edge.caller);
+            // Only write if caller element exists
+            if !existing_keys.contains(&edge.caller) {
+                // Get or create SourceArtifact
+                let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
+                    id.clone()
+                } else {
+                    // CallEdge carries no Language field; derive the label from
+                    // the `<lang>:` prefix of its canonical_key.
+                    let lang_label_edge = edge
+                        .canonical_key
+                        .split(':')
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    let id =
+                        write_source_artifact(s, &edge.file, &edge.content_hash, &lang_label_edge)
+                            .context("write_source_artifact")
+                            .map_err(CallGraphError::GraphWrite)?;
+                    source_artifact_ids.insert(edge.file.clone(), id.clone());
+                    source_artifacts_written += 1;
+                    id
+                };
+                let version_id = format!("cgv:{}", blake3::hash(edge.caller.as_bytes()).to_hex());
+                write_call_edge(s, edge, &src_element_id, &sa_id, &version_id)
+                    .context("write_call_edge")
+                    .map_err(CallGraphError::GraphWrite)?;
+                relations_written += 1;
+                evidences_written += 1;
+            } else {
+                relations_skipped += 1;
+            }
+        }
+
+        Ok(())
+    };
+
+    if let Err(e) = inner_result {
+        // Best-effort rollback — do not mask the original error.
+        let _ = store.rollback_transaction();
+        return Err(e);
     }
+
+    store.commit_transaction().map_err(|se| {
+        CallGraphError::GraphWrite(anyhow::anyhow!("commit_transaction failed: {se}"))
+    })?;
 
     Ok(ApplyReport {
         elements_written,
