@@ -827,6 +827,7 @@ Incluye:
 | `m48-sequence-plantuml-e2e-verify` | `feat/m48-sequence-plantuml-e2e-verify` (merged to main via PR #115) | `33292ce` | **Cerrado** ✅ · tag `v1.18.0` · sequence PlantUML e2e verify (mirrors M43 for sequence; closes M45+M40 wiring loop) |
 | `m49-state-plantuml-e2e-verify` | `feat/m49-state-plantuml-e2e-verify` (merged to main via PR #117) | `a9cfadb` | **Cerrado** ✅ · tag `v1.19.0` · state PlantUML e2e verify (mirrors M43/M48 for state; closes M41+M40 wiring loop) |
 | `m50-c4-plantuml-e2e-verify` | `feat/m50-c4-plantuml-e2e-verify` (merged to main via PR #119) | `f03fa37` | **Cerrado** ✅ · tag `v1.20.0` · C4 PlantUML e2e verify + fix projector (emit vanilla PlantUML actor/rectangle instead of Structurizr-style); verification triangle CLOSED |
+| `m51-prepared-statements-and-parameter-binding` | `feat/m51-prepared-statements-and-parameter-binding` (merged to main via PR #121) | `6c40283` | **Cerrado** ✅ · tag `v1.21.0` · prepared statements + parameter binding on GraphStore port (M32 D3); lbug impl works; call_graph migration deferred due to JSON-vs-typed-value quirk |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
