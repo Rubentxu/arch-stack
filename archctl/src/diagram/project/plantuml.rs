@@ -269,7 +269,18 @@ fn project_sequence_view(output: &mut String, elements: &[ElementRow], edges: &[
         };
 
         if edge.predicate_id == "behavior.invokes" {
-            output.push_str(&format!("{} -> {}\n", src_name, tgt_name));
+            // M45: optional message label from edge.props["label"].
+            // PlantUML syntax: `A -> B : label`. When label is absent we
+            // keep the bare arrow for backward compatibility.
+            let label = edge.props.get("label").and_then(|v| v.as_str());
+            match label {
+                Some(l) if !l.is_empty() => {
+                    output.push_str(&format!("{} -> {} : {}\n", src_name, tgt_name, l));
+                }
+                _ => {
+                    output.push_str(&format!("{} -> {}\n", src_name, tgt_name));
+                }
+            }
         }
     }
 }

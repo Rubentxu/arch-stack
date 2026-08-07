@@ -204,7 +204,18 @@ fn project_sequence_view(output: &mut String, elements: &[ElementRow], edges: &[
         };
 
         if edge.predicate_id == "behavior.invokes" {
-            output.push_str(&format!("    {}->>+{}\n", src, tgt));
+            // M45: optional message label from edge.props["label"].
+            // Mermaid syntax: `A->>B: label`. When label is absent we keep
+            // the bare arrow for backward compatibility.
+            let label = edge.props.get("label").and_then(|v| v.as_str());
+            match label {
+                Some(l) if !l.is_empty() => {
+                    output.push_str(&format!("    {}->>+{}: {}\n", src, tgt, l));
+                }
+                _ => {
+                    output.push_str(&format!("    {}->>+{}\n", src, tgt));
+                }
+            }
         }
     }
 }
@@ -341,6 +352,92 @@ mod tests {
         assert!(
             dsl.contains("classDef state"),
             "classDef state should be present; got: {dsl}"
+        );
+    }
+
+    /// M45: sequence view emits `A->>B: label` when edge.props["label"] is set.
+    #[test]
+    fn sequence_view_with_edge_label() {
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "label".to_string(),
+            serde_json::Value::String("placeOrder()".to_string()),
+        );
+        let edges = vec![SemanticEdgeRow {
+            relation_id: "r1".to_string(),
+            predicate_id: "behavior.invokes".to_string(),
+            source_id: "e1".to_string(),
+            target_id: "e2".to_string(),
+            order_key: "1".to_string(),
+            props,
+        }];
+        let elements = vec![
+            make_element("e1", "behavior.participant", "Client", "behavior"),
+            make_element("e2", "behavior.participant", "Server", "behavior"),
+        ];
+        let selector = ProjectSelector::parse("sequence:checkout").unwrap();
+
+        let dsl = project(&elements, &edges, &selector);
+        assert!(
+            dsl.contains("Client->>+Server: placeOrder()"),
+            "labeled sequence arrow should include ': label'; got:\n{dsl}"
+        );
+    }
+
+    /// M45: sequence view without label preserves bare arrow (backward-compat).
+    #[test]
+    fn sequence_view_without_edge_label() {
+        let edges = vec![SemanticEdgeRow {
+            relation_id: "r1".to_string(),
+            predicate_id: "behavior.invokes".to_string(),
+            source_id: "e1".to_string(),
+            target_id: "e2".to_string(),
+            order_key: "1".to_string(),
+            props: serde_json::Map::new(),
+        }];
+        let elements = vec![
+            make_element("e1", "behavior.participant", "Client", "behavior"),
+            make_element("e2", "behavior.participant", "Server", "behavior"),
+        ];
+        let selector = ProjectSelector::parse("sequence:checkout").unwrap();
+
+        let dsl = project(&elements, &edges, &selector);
+        assert!(
+            dsl.contains("Client->>+Server\n"),
+            "unlabeled sequence arrow should be bare; got:\n{dsl}"
+        );
+        assert!(
+            !dsl.contains("Client->>+Server:"),
+            "unlabeled arrow must NOT contain a label separator; got:\n{dsl}"
+        );
+    }
+
+    /// M45: empty label string is treated as no label.
+    #[test]
+    fn sequence_view_with_empty_label_treated_as_unlabeled() {
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "label".to_string(),
+            serde_json::Value::String(String::new()),
+        );
+        let edges = vec![SemanticEdgeRow {
+            relation_id: "r1".to_string(),
+            predicate_id: "behavior.invokes".to_string(),
+            source_id: "e1".to_string(),
+            target_id: "e2".to_string(),
+            order_key: "1".to_string(),
+            props,
+        }];
+        let elements = vec![
+            make_element("e1", "behavior.participant", "A", "behavior"),
+            make_element("e2", "behavior.participant", "B", "behavior"),
+        ];
+        let selector = ProjectSelector::parse("sequence:test").unwrap();
+
+        let dsl = project(&elements, &edges, &selector);
+        assert!(
+            !dsl.contains("A->>+B:"),
+            "empty label must NOT emit a label separator; got:\n{dsl}"
         );
     }
 
