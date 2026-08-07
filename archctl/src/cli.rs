@@ -1680,7 +1680,12 @@ fn diagram_export_cmd(
     )?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&report.manifest)?);
+        let envelope = serde_json::json!({
+            "empty": report.empty,
+            "warning": report.warning,
+            "manifest": report.manifest,
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         println!(
             "Exported {} elements, {} edges, {} evidence to {}",
