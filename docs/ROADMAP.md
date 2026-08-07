@@ -803,6 +803,7 @@ Incluye:
 | `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
 | `m30-call-graph-go-support` | `feat/m30-call-graph-go-support` (merged to main via PR #72) | `f3a00a7` | **Cerrado** ✅ · tag `v1.1.0` |
 | `m32-apply-writer-performance` (PR1) | `feat/m32-apply-writer-performance` (merged to main via PR #76) | `7bdcc5f` | **Cerrado** ✅ · tag `v1.2.0-m32` · D4+D1 shipped |
+| `m32-apply-writer-performance` (PR2) | `feat/m32-apply-writer-performance-pr2` (merged to main via PR #78) | `7a20c55` | **Cerrado** ✅ · tag `v1.3.0-m32-pr2` · D2 shipped (D3+D5+BREAK-1 deferred) |
 | `m26-c4-contract-integrity` | `fix/m26-c4-contract-integrity` (merged to main via PR #44) | `18cf12b` | **Cerrado** ✅ · tag `v0.14.9` |
 | `m26-c4-vertical-validation` | `fix/m26-vertical-validation` (merged to main) | `4f22224` | **Cerrado** ✅ · tag `v0.14.10` |
 | `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
