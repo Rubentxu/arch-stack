@@ -195,11 +195,17 @@ fn value_to_json(v: &Value) -> Json {
 
 /// Allowlist for ids that are interpolated into Cypher queries.
 ///
-/// lbug 0.18.3 has no parameter binding (`PreparedStatement::execute()`
-/// does not exist; the prepared statement is read-only-check only), so
-/// `neighbours` interpolates the id as a string literal. Any character
-/// outside the allowlist must be rejected — otherwise we open the door
-/// to Cypher injection (closing the quote, adding `}) RETURN ...`, etc).
+/// `GraphStore::prepare` + `execute` (M51) are now available with
+/// parameter binding — but `prepare/execute` returns positional rows
+/// without column names (lbug does not expose them through
+/// `QueryResult`). `neighbours` needs column names (e.g. `m.id`,
+/// `r.predicate`) for the export queries, so it continues to
+/// interpolate the id as a string literal via `query`. Any character
+/// outside the allowlist must be rejected — otherwise we open the
+/// door to Cypher injection (closing the quote, adding `}) RETURN ...`,
+/// etc). M51's prepare/execute is reserved for batched writers
+/// (call_graph / class_diagram apply paths) that don't need column
+/// names in result rows.
 ///
 /// Allowed: ASCII alphanumeric + `.` `-` `_` `:` `/`. This covers the
 /// graph ids we generate (`c4:system:checkout`, `uml.class:<fqcn>`,

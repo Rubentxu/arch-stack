@@ -1,8 +1,11 @@
 //! Graph read queries for diagram bundle export.
 //!
 //! Four read-only Cypher queries through `GraphStore::query`. User input
-//! is validated via `graph::validate_identifier` before interpolation (lbug
-//! 0.18.3 has no parameter binding).
+//! is validated via `graph::validate_identifier` before interpolation.
+//! Note: `GraphStore::prepare` + `execute` (M51) ARE available, but
+//! these queries return rows with column names (via `query`, not
+//! `execute` which is positional). The interpolation path remains the
+//! canonical read API for column-typed result rows.
 
 use crate::diagram::export_types::EvidenceEntry;
 use crate::graph::validate_identifier;
