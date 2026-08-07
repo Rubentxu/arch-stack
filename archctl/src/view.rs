@@ -76,9 +76,17 @@ fn serve_static(request_path: &str) -> Option<(String, Vec<u8>)> {
 }
 
 fn handle_api_export(project_dir: Option<&str>) -> Result<(String, Vec<u8>)> {
-    let dir = project_dir.ok_or_else(|| {
-        anyhow::anyhow!("no project_dir configured — run `archctl view --cwd <dir>`")
-    })?;
+    if project_dir.is_none() {
+        let payload = serde_json::json!({
+            "empty": true,
+            "warning": "no project_dir configured — run `archctl view --cwd <dir>`",
+        });
+        return Ok((
+            "application/json".to_string(),
+            serde_json::to_vec_pretty(&payload)?,
+        ));
+    }
+    let dir = project_dir.unwrap();
     let fs = crate::filesystem::system_filesystem();
     let info = crate::project::resolve_project(dir);
     let store = crate::store::open_and_init(&info.project_dir)?;
@@ -110,6 +118,8 @@ fn handle_api_export(project_dir: Option<&str>) -> Result<(String, Vec<u8>)> {
             "edgeCount": report.edge_count,
             "evidenceCount": report.evidence_count,
         },
+        "empty": report.empty,
+        "warning": report.warning,
     });
     let body = serde_json::to_vec_pretty(&payload)?;
     Ok(("application/json".to_string(), body))
@@ -308,12 +318,17 @@ mod tests {
     }
 
     #[test]
-    fn export_without_project_is_500_json() {
+    fn export_without_project_is_200_empty_json() {
         let (status, mime, body) = handle_request("GET", "/api/export", None);
-        assert_eq!(status.0, 500);
+        assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(json["error"].as_str().unwrap().contains("project_dir"));
+        assert_eq!(json["empty"], true);
+        assert!(
+            json["warning"].as_str().unwrap().contains("no project_dir"),
+            "expected warning to mention 'no project_dir', got: {:?}",
+            json["warning"]
+        );
     }
 
     #[test]
