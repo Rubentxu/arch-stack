@@ -1280,13 +1280,19 @@ fn write_call_edge(
     );
     let _ = store.query(&cypher_sa);
 
-    // Link Evidence to Element
+    // Link Evidence to ElementVersion via SUPPORTED_BY. The schema
+    // declares SUPPORTED_BY as `FROM ElementVersion TO Evidence` —
+    // pre-M32 the writer used `(e:Element)-[r:SUPPORTED_BY]->(ev)`
+    // (Element, not ElementVersion), which silently failed at the
+    // binder under auto-commit but caused an implicit transaction
+    // rollback once we wrapped the writes in `BEGIN TRANSACTION`.
+    // See `c4_discover.rs:397` for the canonical pattern.
     let cypher_el = format!(
         "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
-         MATCH (e:Element {{id: '{e_id}'}}) \
-         MERGE (e)-[r:SUPPORTED_BY]->(ev);",
+         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
+         MERGE (v)-[r:SUPPORTED_BY]->(ev);",
         ev_id = evidence_id,
-        e_id = src_element_id,
+        version_id = _version_id,
     );
     let _ = store.query(&cypher_el);
 
