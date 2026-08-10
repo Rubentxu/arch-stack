@@ -23,7 +23,7 @@
 | [ADR-010](ADR-010-concurrencia-ladybugdb.md) | Concurrencia de LadybugDB y procesos `archctl` (DB lock via `fs2::try_lock_exclusive`) | Aceptado (reforzado por ADR-013) |
 | [ADR-011](ADR-011-renderers-locales-y-bloqueo-de-publicos.md) | Renderers locales y bloqueo de servicios públicos (alcance = `archctl` solamente) | Aceptado (alcance reducido por ADR-013; revisado 2026-07-31 con nota de performance para `archview`) |
 | [ADR-012](ADR-012-adopcion-incremental-crates-analisis.md) | Política "descartar CLIs" + ciclo M5–M8 + renderers como librerías | Aceptado (complementado por ADR-013) |
-| [ADR-013](ADR-013-viewer-ortogonal.md) | Viewer ortogonal basado en DiagramProjection (Code Knowledge Graph Workbench; performance-first) | Aceptado (revisado 2026-07-31 con stack performance-first) |
+| [ADR-013](ADR-013-viewer-ortogonal.md) | Viewer ortogonal basado en DiagramProjection (Code Knowledge Graph Workbench; performance-first) | **SUPERSEDED por ADR-038** (sección "repositorio separado" contradicha por ADR-033 + código) |
 | [ADR-014](ADR-014-puerto-persistencia-sparrowdb.md) | Puerto de persistencia hexagonal + SparrowDB como adapter alternativo (Ola 1 implementada, Ola 2 pendiente) | Aceptado |
 | [ADR-017](ADR-017-schema-migration-runner.md) | Migration runner + SourceArtifact identity (B1: schema migration runner, hash scheme split, source_origin en props) | Aceptado |
 | [ADR-019](ADR-019-performance-budget.md) | Performance budget (hard contract) — TTFP, FPS, latency, memory targets + anti-patterns explícitos | Aceptado (nuevo 2026-07-31) |
@@ -43,6 +43,12 @@
 | [ADR-032](ADR-032-bench-methodology.md) | Bench methodology — métricas, thresholds del release gate v1.0, FP/FN manual rubric, conteo solo mt.container (M28) | Aceptado (nuevo 2026-08-05) |
 | [ADR-033](ADR-033-archctl-view-embedded-workbench.md) | `archctl view`: workbench embebido como servicio local one-shot — rust-embed + tiny_http, 127.0.0.1, COOP/COEP, stack distribuido como UN producto | Aceptado (nuevo 2026-08-06) |
 | [ADR-034](ADR-034-e2e-coverage-expansion.md) | E2E coverage expansion: install + deploy + render + multi-language — 4 suites versionadas (install_e2e, render_e2e, smoke ampliado, sandbox-e2e) | **Propuesto** (2026-08-06) |
+| [ADR-035](ADR-035-go-call-graph-extraction.md) | Go call-graph extraction — tree-sitter-go para functions y methods | Aceptado (2026-08-06) |
+| [ADR-036](ADR-036-apply-writer-performance.md) | Apply writer performance: transaction + bulk import — D1/D2/D3 | Aceptado (2026-08-06) |
+| [ADR-037](ADR-037-call-graph-language-strategy-consolidation.md) | Call-graph language strategy consolidation — 8 extractors refactorizados | Aceptado (2026-08-07) |
+| [ADR-038](ADR-038-one-product-five-invariants.md) | Un producto, cinco invariantes (arch-stack identity) — supersedes ADR-013 "repositorio separado" | Aceptado (2026-08-09) |
+| [ADR-039](ADR-039-renderer-reality-anti-roadmap.md) | Renderer reality + anti-roadmap — G6 canvas, no WASM/WebGPU/Arrow; deferred decisions con reopen triggers | Aceptado (2026-08-09) |
+| [ADR-040](ADR-040-cognitive-conditional-activation.md) | Cognitive layer conditional activation — ADR-021/022/023 marcados conditional/parcial/diferido | Aceptado (2026-08-09) |
 
 ## Cómo se relacionan
 
@@ -54,15 +60,17 @@ ADR-010 (no daemon)─┘
 ADR-006 (CLI adapters) ──► DEPRECADO ─► ADR-012 (librerías + renderers)
 
 ADR-005 (LadybugDB) ──► ADR-007 (proyecciones) ──► ADR-013 (bundle contract)
-                                                  │
-                                                  ├─► ADR-019 (performance budget)
-                                                  ├─► ADR-020 (renderer stack: G6+WebGPU+SolidJS+Rust/WASM)
-                                                  └─► ADR-021 (cognitive layer)
-                                                        ├─► ADR-022 (agent catalog: 9 agentes)
-                                                        └─► ADR-023 (action proposal + policy)
+                                                   │
+                                                   ├─► ADR-019 (performance budget)
+                                                   ├─► ADR-020 (renderer stack) ──► ADR-039 (renderer reality / anti-roadmap)
+                                                   └─► ADR-021 (cognitive layer) ──► ADR-040 (conditional activation)
+                                                         ├─► ADR-022 (agent catalog: 9 agentes) ──► ADR-040
+                                                         └─► ADR-023 (action proposal + policy) ──► ADR-040
 
 ADR-011 (renderers locales) ──► ADR-013 (mismo principio en archview por construcción)
                               └─► ADR-019/020 (nota de performance para archview)
+
+ADR-013 (viewer) ──► ADR-038 (arch-stack identity: un producto, cinco invariantes)
 
 ADR-010 (sin daemon) ──► ADR-030 (workflowctl: local-first, sin runner remoto en MVP)
 ADR-011 (todo local) ┘

@@ -1,5 +1,6 @@
 # ADR-023 — Action Proposal & Policy Engine
 
+**Aceptado (diferido)** — fase 1 PR #32 cerrada; ver [ADR-040](ADR-040-cognitive-conditional-activation.md)
 **Estado:** Aceptado
 **Fecha:** 31 de julio de 2026
 **Aplica a:** `archctl` (Rust) + `archview` (TypeScript) — capa transversal

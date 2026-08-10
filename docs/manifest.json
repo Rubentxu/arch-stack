@@ -16,7 +16,7 @@
     "archview": {
       "type": "orthogonal-webapp",
       "language": "typescript",
-      "repository": "archview (separado, no parte de archctl)",
+      "repository": "archview (embebido via rust-embed en archctl view — un solo producto arch-stack; ver ADR-038)",
       "documents_root": "docs/",
       "consumer_of": "DiagramProjection bundles (archctl diagram export)"
     }

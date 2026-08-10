@@ -1,5 +1,6 @@
 # ADR-020 — Renderer stack: G6 5.x WebGPU + SolidJS + Rust/WASM
 
+**SUPERSEDED por ADR-039** (ver [ADR-039-renderer-reality-anti-roadmap.md](ADR-039-renderer-reality-anti-roadmap.md))
 **Estado:** Aceptado
 **Fecha:** 31 de julio de 2026
 **Aplica a:** `archview` (Code Knowledge Graph Workbench)

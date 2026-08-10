@@ -1,16 +1,16 @@
-# Estado de `archctl`
+# Estado de `arch-stack`
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-07, release `v1.26.0` (M56 DRY helper).
+> Última actualización: 2026-08-09, convergence cycle m69 (ADR-038/039/040).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `834640a` (post-merge de M56) |
-| Versión | `v1.26.0` (latest tag) — `v1.20.0` (binary) |
+| Tip | `460cc6b` (HEAD, convergence cycle m69) |
+| Versión | `v1.29.0` (latest tag) |
 | Tests | 201+ pasan, 0 fallan (verify-local PASS) |
 | Working tree | clean, en sync con `origin/main` |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
@@ -74,12 +74,29 @@
 |---|---|---|
 | **M56–M68** (11 proposals from M55 study) | See `docs/sessions/2026-08-07-codebase-state-study.md` | Recommended trio: M56 (done) + M59 (done) + M62 (this file) |
 | call_graph → prepare/execute migration (M51 deferred) | Deferred — needs typed bindings or CAST | 2-5x perf on top of M32 D1+D2 |
-| archview M18 (reactive runtime) | Separate repo (defer 1.x) | archview at v0.21.3 |
-| archview M19 (wgpu renderer) | Separate repo (2.0 horizon) | |
+| archview M18 (reactive runtime) | Deferred — ver anti-roadmap (ADR-039) | Reopen trigger: ≥2 third-party consumers |
+| archview M19 (wgpu renderer) | Deferred — ver anti-roadmap (ADR-039) | Reopen trigger: benchmark p99 fails ADR-019 budget |
 | SparrowDB adapter (ADR-014) | Optional — no SparrowStore exists | port is ready |
 | M13/M14/M15 (workbench actions, versionado, semantic tools) | Defer to 1.x (per ROADMAP) | not enterprise target |
-| M23 (Action Proposal & Policy Engine) | Phase 1 PR #32 closed as stale (M59) | Phases 2-6 not started |
+| M23 (Action Proposal & Policy Engine) | Deferred — ver ADR-040 | Reactivation: real HITL workflow required |
 | LSP-based extraction (ADR-012 follow-up) | Deferred to phase 2 M12 | |
+
+## Anti-roadmap (deferred decisions con reopen triggers)
+
+> Ver [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap para el detalle completo.
+
+| Decisión | Status | Reopen trigger |
+|---|---|---|
+| WGPU renderer | Deferred | Benchmark p99 > ADR-019 budget AND JS/Worker insufficient |
+| Rust/WASM compute layer | Deferred | ≥2 third-party consumers needing shared compute |
+| Apache Arrow | Deferred | Bundle size >10MB AND JSON parsing bottleneck measured |
+| cosmos.gl (>100k nodos) | Deferred | Node count >100k AND G6 canvas FPS <30 |
+| SceneGraph abstraction | Deferred | ≥3 view types need shared scene model |
+| WIT Plugin SDK | Deferred | ≥1 third-party consumer registered |
+| Event sourcing/replay | Deferred | Temporal diff is shipped requirement |
+| Architecture Lab (forks) | Deferred | ≥3 user requests |
+| Full 9-agent catalog | Deferred | 2/2 deployed agents >50% adoption |
+| Desktop shell (Tauri) | Deferred | Browser-only is blocker for ≥1 user segment |
 
 ## Deuda técnica activa
 

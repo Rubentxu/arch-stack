@@ -1,8 +1,8 @@
 # OpenCode Architecture Diagrammer
 
-**Estado:** propuesta revisada  
-**Versión documental:** 2.1  
-**Fecha:** 29 de julio de 2026  
+**Estado:** propuesta revisada
+**Versión documental:** 3.0
+**Fecha:** 9 de agosto de 2026
 **Documento rector:** `Skills-para-agentes-IA-v2.md`
 
 ## Propósito
@@ -71,6 +71,34 @@ flowchart LR
 - [`ADR-008`](adr/ADR-008-recuperacion-versionado-y-evolucion.md): snapshots, recuperación y evolución.
 - [`ADR-009`](adr/ADR-009-relaciones-semanticas-reificadas.md): relaciones reificadas e índice de aristas.
 - [`ADR-010`](adr/ADR-010-concurrencia-ladybugdb.md): concurrencia y escritor único.
+- [`ADR-011`](adr/ADR-011-renderers-locales-y-bloqueo-de-publicos.md): renderers locales y bloqueo de públicos.
+- [`ADR-012`](adr/ADR-012-adopcion-incremental-crates-analisis.md): política discard-CLIs + renderers como librerías.
+- [`ADR-013`](adr/ADR-013-viewer-ortogonal.md): viewer ortogonal — **SUPERSEDED por ADR-038**.
+- [`ADR-014`](adr/ADR-014-puerto-persistencia-sparrowdb.md): puerto de persistencia hexagonal + SparrowDB.
+- [`ADR-016`](adr/ADR-016-activegraph-packs-investigacion.md): investigación activegraph-packs.
+- [`ADR-017`](adr/ADR-017-schema-migration-runner.md): migration runner + SourceArtifact identity.
+- [`ADR-019`](adr/ADR-019-performance-budget.md): performance budget (hard contract).
+- [`ADR-020`](adr/ADR-020-renderer-stack.md): renderer stack — **SUPERSEDED por ADR-039**.
+- [`ADR-021`](adr/ADR-021-cognitive-layer.md): cognitive layer — **Aceptado (conditional)**.
+- [`ADR-022`](adr/ADR-022-agent-catalog.md): agent catalog (9 agentes) — **Aceptado (parcial)**.
+- [`ADR-023`](adr/ADR-023-action-proposal-and-policy.md): action proposal + policy engine — **Aceptado (diferido)**.
+- [`ADR-024`](adr/ADR-024-element-category-semantics.md): element.category = diagram family.
+- [`ADR-025`](adr/ADR-025-ci-postmerge-toolchain-fijada.md): CI post-merge + toolchain fijada.
+- [`ADR-026`](adr/ADR-026-state-machine-metamodel.md): state machine metamodelo.
+- [`ADR-027`](adr/ADR-027-evidence-put.md): evidence put identity scheme.
+- [`ADR-028`](adr/ADR-028-diagram-project.md): diagram project + ViewKind.
+- [`ADR-029`](adr/ADR-029-c4-component-light.md): C4 component light.
+- [`ADR-030`](adr/ADR-030-workflowctl-local-multi-repo.md): workflowctl local multi-repo.
+- [`ADR-031`](adr/ADR-031-c4-vertical-validation.md): C4 vertical end-to-end validation.
+- [`ADR-032`](adr/ADR-032-bench-methodology.md): bench methodology.
+- [`ADR-033`](adr/ADR-033-archctl-view-embedded-workbench.md): archctl view embedded workbench.
+- [`ADR-034`](adr/ADR-034-e2e-coverage-expansion.md): E2E coverage expansion.
+- [`ADR-035`](adr/ADR-035-go-call-graph-extraction.md): Go call-graph extraction.
+- [`ADR-036`](adr/ADR-036-apply-writer-performance.md): apply writer performance.
+- [`ADR-037`](adr/ADR-037-call-graph-language-strategy-consolidation.md): call-graph language strategy consolidation.
+- [`ADR-038`](adr/ADR-038-one-product-five-invariants.md): un producto, cinco invariantes (arch-stack identity).
+- [`ADR-039`](adr/ADR-039-renderer-reality-anti-roadmap.md): renderer reality + anti-roadmap.
+- [`ADR-040`](adr/ADR-040-cognitive-conditional-activation.md): cognitive layer conditional activation.
 
 ### Esquema
 

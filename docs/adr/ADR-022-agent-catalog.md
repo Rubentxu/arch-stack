@@ -1,5 +1,6 @@
 # ADR-022 — Agent Catalog (9 agentes especializados)
 
+**Aceptado (parcial)** — 2/9 agentes enviados; ver [ADR-040](ADR-040-cognitive-conditional-activation.md)
 **Estado:** Aceptado
 **Fecha:** 31 de julio de 2026
 **Aplica a:** `archview` (TypeScript) + `archctl` (Rust) — implementación conforme a [ADR-021](ADR-021-cognitive-layer.md)
