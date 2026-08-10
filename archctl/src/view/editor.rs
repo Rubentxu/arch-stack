@@ -3,6 +3,7 @@
 //! Resolves the user's preferred editor from environment variables and
 //! spawns it safely (no shell expansion) with `+{line}` syntax.
 
+use crate::environment::Environment;
 use std::process::Command;
 
 /// Resolved editor command.
@@ -15,19 +16,15 @@ pub struct EditorCommand {
 ///
 /// Order: $EDITOR → $VISUAL → platform fallback (xdg-open on linux, open on macOS).
 /// Returns `None` if no editor can be resolved.
-pub fn resolve_editor() -> Option<EditorCommand> {
+pub fn resolve_editor(env: &dyn Environment) -> Option<EditorCommand> {
     // $EDITOR takes precedence.
-    if let Ok(e) = std::env::var("EDITOR")
-        && !e.is_empty()
-    {
+    if let Some(e) = env.var("EDITOR").filter(|s| !s.is_empty()) {
         // Take only the first token (handles "code --wait" → "code").
         let binary = e.split_whitespace().next().unwrap_or(&e).to_string();
         return Some(EditorCommand { binary });
     }
     // $VISUAL as fallback.
-    if let Ok(e) = std::env::var("VISUAL")
-        && !e.is_empty()
-    {
+    if let Some(e) = env.var("VISUAL").filter(|s| !s.is_empty()) {
         let binary = e.split_whitespace().next().unwrap_or(&e).to_string();
         return Some(EditorCommand { binary });
     }
@@ -77,49 +74,71 @@ pub enum EditorError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::environment::FixedEnvironment;
 
     #[test]
     fn resolve_editor_with_editor_var() {
-        let _guard = EnvGuard::new("EDITOR", "vim");
-        let result = resolve_editor();
+        let env = FixedEnvironment::new().with_var("EDITOR", "vim");
+        let result = resolve_editor(&env);
         assert!(result.is_some());
         assert_eq!(result.unwrap().binary, "vim");
     }
 
     #[test]
     fn resolve_editor_empty_editor_falls_back_to_visual() {
-        let _guard = EnvGuard::new("EDITOR", "");
-        let _guard2 = EnvGuard::new("VISUAL", "nano");
-        let result = resolve_editor();
+        let env = FixedEnvironment::new()
+            .with_var("EDITOR", "")
+            .with_var("VISUAL", "nano");
+        let result = resolve_editor(&env);
         assert!(result.is_some());
         assert_eq!(result.unwrap().binary, "nano");
     }
 
     #[test]
     fn resolve_editor_empty_editor_and_visual_falls_back() {
-        let _guard = EnvGuard::new("EDITOR", "");
-        let _guard2 = EnvGuard::new("VISUAL", "");
+        let env = FixedEnvironment::new()
+            .with_var("EDITOR", "")
+            .with_var("VISUAL", "");
         // Should fall back to platform default.
         #[cfg(target_os = "linux")]
         {
-            let result = resolve_editor();
+            let result = resolve_editor(&env);
             assert!(result.is_some());
             assert_eq!(result.unwrap().binary, "xdg-open");
         }
         #[cfg(not(target_os = "linux"))]
         {
             // On other platforms, we just check it doesn't panic.
-            let _ = resolve_editor();
+            let _ = resolve_editor(&env);
         }
     }
 
     #[test]
     fn resolve_editor_editor_with_args_uses_first_token() {
-        let _guard = EnvGuard::new("EDITOR", "code --wait");
-        let result = resolve_editor();
+        let env = FixedEnvironment::new().with_var("EDITOR", "code --wait");
+        let result = resolve_editor(&env);
         assert!(result.is_some());
         // Only first token is used.
         assert_eq!(result.unwrap().binary, "code");
+    }
+
+    #[test]
+    fn resolve_editor_visual_as_fallback() {
+        let env = FixedEnvironment::new().with_var("VISUAL", "nano");
+        let result = resolve_editor(&env);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().binary, "nano");
+    }
+
+    #[test]
+    fn resolve_editor_no_editor_no_visual_unknown_platform_returns_none() {
+        // On an unknown platform (not linux, not macos), returns None.
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            let env = FixedEnvironment::new();
+            let result = resolve_editor(&env);
+            assert!(result.is_none());
+        }
     }
 
     #[test]
@@ -140,28 +159,5 @@ mod tests {
         cmd.arg(&file).arg("+42");
         // Verify the args are correct by inspecting the command.
         assert_eq!(cmd.get_args().count(), 2);
-    }
-
-    /// RAII guard for environment variables. The stored value is only used
-    /// during construction (to set the var) and is intentionally dropped
-    /// after — Drop only needs the key to remove the var on scope exit.
-    struct EnvGuard(&'static str);
-    impl EnvGuard {
-        fn new(key: &'static str, val: &'static str) -> Self {
-            // SAFETY: tests in this module mutate $EDITOR/$VISUAL only via
-            // their own EnvGuard; set_var/remove_var are unsafe in Rust 2024.
-            unsafe {
-                std::env::set_var(key, val);
-            }
-            EnvGuard(key)
-        }
-    }
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            // SAFETY: see EnvGuard::new.
-            unsafe {
-                std::env::remove_var(self.0);
-            }
-        }
     }
 }
