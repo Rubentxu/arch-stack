@@ -15,6 +15,10 @@ use rust_embed::RustEmbed;
 use std::net::TcpListener;
 use std::path::Path;
 
+pub mod editor;
+pub mod source;
+pub mod workspace;
+
 #[derive(RustEmbed)]
 #[folder = "assets-view/"]
 struct ViewAssets;
@@ -140,6 +144,18 @@ pub fn handle_request(
     url: &str,
     project_dir: Option<&str>,
 ) -> (tiny_http::StatusCode, String, Vec<u8>) {
+    handle_request_with_body(method, url, project_dir, &[])
+}
+
+/// Same as [`handle_request`] but with a request body for PUT/POST.
+///
+/// GETs ignore the body; PUT/POST handlers consume it.
+pub fn handle_request_with_body(
+    method: &str,
+    url: &str,
+    project_dir: Option<&str>,
+    body: &[u8],
+) -> (tiny_http::StatusCode, String, Vec<u8>) {
     match (method, url) {
         ("GET", path) if path == "/api/health" || path.starts_with("/api/health?") => {
             let payload = serde_json::json!({
@@ -166,6 +182,19 @@ pub fn handle_request(
                         .into_bytes(),
                 ),
             }
+        }
+        // ---- Workspace state API (ADR-041) ----
+        ("GET", path) if path == "/api/workspace" || path.starts_with("/api/workspace?") => {
+            handle_api_workspace_get(project_dir)
+        }
+        ("PUT", path) if path == "/api/workspace" || path.starts_with("/api/workspace?") => {
+            handle_api_workspace_put(body, project_dir)
+        }
+        ("GET", path) if path.starts_with("/api/source?") => {
+            handle_api_source_get(path, project_dir)
+        }
+        ("POST", path) if path == "/api/open-editor" || path.starts_with("/api/open-editor?") => {
+            handle_api_open_editor_post(body, project_dir)
         }
         ("GET", path) => match serve_static(path) {
             Some((mime, body)) => (tiny_http::StatusCode(200), mime, body),
@@ -205,13 +234,27 @@ pub fn run(options: ViewOptions) -> Result<ServerInfo> {
     let server = tiny_http::Server::from_listener(listener, None)
         .map_err(|e| anyhow::anyhow!("tiny_http init failed: {e}"))?;
 
-    for request in server.incoming_requests() {
+    for mut request in server.incoming_requests() {
         let url = request.url().to_string();
         let method = request.method().clone();
         let project = project_dir.clone();
 
+        // Read the request body for PUT/POST before dispatching; GET/HEAD
+        // ignore the body. ADR-041: workspace state endpoints accept JSON
+        // bodies up to 16 KiB (workspace.json is ~200 bytes; 16 KiB leaves
+        // headroom for future filters/selection growth).
+        let needs_body = matches!(method.as_str(), "PUT" | "POST" | "PATCH");
+        let mut body_buf: Vec<u8> = Vec::new();
+        if needs_body {
+            use std::io::Read;
+            let _ = request
+                .as_reader()
+                .take(16 * 1024)
+                .read_to_end(&mut body_buf);
+        }
+
         let (status, mime, body) =
-            handle_request(method.as_str(), url.as_str(), project.as_deref());
+            handle_request_with_body(method.as_str(), url.as_str(), project.as_deref(), &body_buf);
 
         let _ = request.respond(
             tiny_http::Response::from_data(body)
@@ -277,6 +320,196 @@ pub fn looks_like_project_dir(path: &Path) -> bool {
         }
     }
     false
+}
+
+// ---------------------------------------------------------------------------
+// Workspace state API helpers (ADR-041)
+// ---------------------------------------------------------------------------
+
+/// GET /api/workspace — load workspace state from XDG project dir.
+fn handle_api_workspace_get(project_dir: Option<&str>) -> (tiny_http::StatusCode, String, Vec<u8>) {
+    let project_dir = match project_dir {
+        Some(d) => d,
+        None => return json_error(500, "xdg_inaccessible"),
+    };
+    let cwd = Path::new(project_dir);
+    match workspace::WorkspaceStore::load(cwd) {
+        Ok(Some(state)) => {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "workspace": state,
+                "version": "1.0"
+            }))
+            .unwrap_or_default();
+            (
+                tiny_http::StatusCode(200),
+                "application/json".to_string(),
+                body,
+            )
+        }
+        Ok(None) => {
+            // No workspace.json yet → return null.
+            let body = serde_json::to_vec(&serde_json::json!({
+                "workspace": serde_json::Value::Null,
+                "version": "1.0"
+            }))
+            .unwrap_or_default();
+            (
+                tiny_http::StatusCode(200),
+                "application/json".to_string(),
+                body,
+            )
+        }
+        Err(e) => json_error(500, &format!("xdg_inaccessible: {}", e)),
+    }
+}
+
+/// GET /api/source?file=<path>&line=<n> — read source file with path validation.
+fn handle_api_source_get(
+    url_with_query: &str,
+    project_dir: Option<&str>,
+) -> (tiny_http::StatusCode, String, Vec<u8>) {
+    let project_dir = match project_dir {
+        Some(d) => d,
+        None => return json_error(500, "project_dir required"),
+    };
+    // Parse query params.
+    let file = url_with_query.strip_prefix("/api/source?").and_then(|q| {
+        q.split('&')
+            .find_map(|kv| kv.strip_prefix("file="))
+            .map(|s| percent_decode(s).unwrap_or_else(|| s.to_string()))
+    });
+    let file = match file {
+        Some(f) => f,
+        None => return json_error(400, "missing required param: file"),
+    };
+    let line = url_with_query.strip_prefix("/api/source?").and_then(|q| {
+        q.split('&')
+            .find_map(|kv| kv.strip_prefix("line="))
+            .and_then(|s| s.parse::<u32>().ok())
+    });
+
+    let cwd = Path::new(project_dir);
+    let file_path = Path::new(&file);
+    match source::source_preview(file_path, line, cwd) {
+        Ok(preview) => {
+            let body = serde_json::to_vec(&preview).unwrap_or_default();
+            // Note: X-Truncated header (ADR-041 §4) is emitted by the
+            // server loop based on preview.truncated, not here.
+            (
+                tiny_http::StatusCode(200),
+                "application/json".to_string(),
+                body,
+            )
+        }
+        Err(source::SourceError::OutsideScope) => json_error(403, "path_outside_scope"),
+        Err(source::SourceError::NotFound(_)) => json_error(404, "file_not_found"),
+        Err(source::SourceError::IsDirectory) => json_error(400, "is_directory"),
+        Err(source::SourceError::InvalidPath(_)) => json_error(400, "invalid_path"),
+        Err(source::SourceError::Io(e)) => json_error(500, &format!("io_error: {e}")),
+    }
+}
+
+/// POST /api/open-editor — spawn the user's editor (no body in handle_request; handled in run loop).
+#[allow(dead_code)]
+fn handle_api_open_editor_post(
+    body: &[u8],
+    project_dir: Option<&str>,
+) -> (tiny_http::StatusCode, String, Vec<u8>) {
+    let project_dir = match project_dir {
+        Some(d) => d,
+        None => return json_error(500, "project_dir required"),
+    };
+    #[derive(serde::Deserialize)]
+    struct OpenEditorBody {
+        file: String,
+        line: u32,
+    }
+    let parsed: OpenEditorBody = match serde_json::from_slice(body) {
+        Ok(p) => p,
+        Err(_) => return json_error(400, "invalid JSON body"),
+    };
+    let cwd = Path::new(project_dir);
+    let file_path = Path::new(&parsed.file);
+    // Validate path containment.
+    if let Err(workspace::WorkspaceError::PathOutsideScope { .. }) =
+        workspace::validate_path_under_cwd(file_path, cwd)
+    {
+        return json_error(403, "path_outside_scope");
+    }
+    // Resolve editor.
+    let editor = match editor::resolve_editor() {
+        Some(e) => e,
+        None => return json_error(503, "no_editor_configured: set $EDITOR or $VISUAL"),
+    };
+    // Spawn (don't wait).
+    match editor::spawn_editor(file_path, parsed.line, &editor) {
+        Ok(_) => (
+            tiny_http::StatusCode(204),
+            "application/json".to_string(),
+            vec![],
+        ),
+        Err(e) => json_error(500, &format!("editor_spawn_failed: {}", e)),
+    }
+}
+
+/// PUT /api/workspace — save workspace state atomically.
+#[allow(dead_code)]
+fn handle_api_workspace_put(
+    body: &[u8],
+    project_dir: Option<&str>,
+) -> (tiny_http::StatusCode, String, Vec<u8>) {
+    let project_dir = match project_dir {
+        Some(d) => d,
+        None => return json_error(500, "project_dir required"),
+    };
+    let cwd = Path::new(project_dir);
+    // Deserialize and validate.
+    let state: workspace::WorkspaceState = match serde_json::from_slice(body) {
+        Ok(s) => s,
+        Err(e) => {
+            return json_error(400, &format!("invalid_schema: {}", e));
+        }
+    };
+    // Atomic save.
+    match workspace::WorkspaceStore::save(&state, cwd) {
+        Ok(()) => (
+            tiny_http::StatusCode(204),
+            "application/json".to_string(),
+            vec![],
+        ),
+        Err(e) => json_error(500, &format!("save_failed: {}", e)),
+    }
+}
+
+/// Helper: build a JSON error response.
+fn json_error(status: u16, message: &str) -> (tiny_http::StatusCode, String, Vec<u8>) {
+    let body = serde_json::to_vec(&serde_json::json!({ "error": message })).unwrap_or_default();
+    (
+        tiny_http::StatusCode(status),
+        "application/json".to_string(),
+        body,
+    )
+}
+
+/// Percent-decode a string (basic implementation for query params).
+fn percent_decode(s: &str) -> Option<String> {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                let byte = u8::from_str_radix(&hex, 16).ok();
+                if let Some(b) = byte {
+                    result.push(b as char);
+                    continue;
+                }
+            }
+            return None; // Invalid percent encoding.
+        }
+        result.push(c);
+    }
+    Some(result)
 }
 
 #[cfg(test)]
@@ -508,5 +741,106 @@ mod tests {
             "expected 404 for /api/export-extra, got: {}",
             status.0
         );
+    }
+
+    // ---- Workspace API tests (ADR-041) ----
+
+    #[test]
+    fn get_workspace_no_project_returns_500() {
+        let (status, _, body) = handle_request("GET", "/api/workspace", None);
+        assert_eq!(status.0, 500);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["error"].as_str().unwrap().contains("xdg_inaccessible"));
+    }
+
+    #[test]
+    fn get_workspace_no_file_returns_200_null() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let (status, _, body) =
+            handle_request("GET", "/api/workspace", Some(tmp.path().to_str().unwrap()));
+        assert_eq!(status.0, 200);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["workspace"].is_null());
+        assert_eq!(json["version"], "1.0");
+    }
+
+    #[test]
+    fn get_source_valid_file_returns_200() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let src_dir = tmp.path().join("src");
+        std::fs::create_dir(&src_dir).unwrap();
+        std::fs::write(src_dir.join("main.rs"), "fn main() {}\n").unwrap();
+        let (status, _, body) = handle_request(
+            "GET",
+            "/api/source?file=src/main.rs&line=1",
+            Some(tmp.path().to_str().unwrap()),
+        );
+        assert_eq!(status.0, 200);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["file"], "src/main.rs");
+        assert!(json["content"].is_array());
+    }
+
+    #[test]
+    fn get_source_path_traversal_returns_403() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let (status, _, body) = handle_request(
+            "GET",
+            "/api/source?file=../../../etc/passwd&line=1",
+            Some(tmp.path().to_str().unwrap()),
+        );
+        assert_eq!(status.0, 403);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("path_outside_scope")
+        );
+    }
+
+    #[test]
+    fn get_source_missing_file_returns_404() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let (status, _, body) = handle_request(
+            "GET",
+            "/api/source?file=nonexistent.rs&line=1",
+            Some(tmp.path().to_str().unwrap()),
+        );
+        assert_eq!(status.0, 404);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["error"].as_str().unwrap().contains("not_found"));
+    }
+
+    #[test]
+    fn get_source_directory_returns_400() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        std::fs::create_dir(tmp.path().join("src")).unwrap();
+        let (status, _, _) = handle_request(
+            "GET",
+            "/api/source?file=src&line=1",
+            Some(tmp.path().to_str().unwrap()),
+        );
+        assert_eq!(status.0, 400);
+    }
+
+    #[test]
+    fn percent_decode_handles_simple_strings() {
+        // Test basic percent decoding.
+        let result = percent_decode("hello").unwrap();
+        assert_eq!(result, "hello");
+        let result = percent_decode("src/main.rs").unwrap();
+        assert_eq!(result, "src/main.rs");
+    }
+
+    #[test]
+    fn percent_decode_handles_encoded_chars() {
+        let result = percent_decode("file%20with%20spaces").unwrap();
+        assert_eq!(result, "file with spaces");
     }
 }
