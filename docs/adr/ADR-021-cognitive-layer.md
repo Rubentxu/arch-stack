@@ -1,5 +1,6 @@
 # ADR-021 — Cognitive Layer (Agentic Intelligence)
 
+**Aceptado (conditional)** — ver [ADR-040](ADR-040-cognitive-conditional-activation.md)
 **Estado:** Aceptado
 **Fecha:** 31 de julio de 2026
 **Aplica a:** `archctl` (Rust) + `archview` (TypeScript) — capa transversal sobre el grafo de conocimiento

@@ -1,5 +1,6 @@
 # ADR-013 — Viewer ortogonal basado en DiagramProjection (Code Knowledge Graph Workbench)
 
+**SUPERSEDED por ADR-038** (ver [ADR-038-one-product-five-invariants.md](ADR-038-one-product-five-invariants.md))
 **Estado:** Aceptado (revisado: 31 de julio de 2026 — pivot a workbench performance-first; ver [ADR-019](ADR-019-performance-budget.md) y [ADR-020](ADR-020-renderer-stack.md))
 **Fecha:** 29 de julio de 2026
 **Última revisión:** 31 de julio de 2026 (pivot: workbench + performance-first)
