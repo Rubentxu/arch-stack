@@ -4,96 +4,76 @@
 //! `~/.local/share/archctl/installs/<version>/`, per-project pin via
 //! `.arch-version`, shim binary, self-update via GitHub Releases.
 
-use anyhow::Result;
 use std::path::Path;
 
 pub mod install_root;
 pub mod shim;
 
-// Sub-modules added in T2/T3:
+// T2 sub-modules.
 pub mod install;
 pub mod list;
 pub mod uninstall;
 pub mod use_version;
 pub mod version_file;
 
-#[allow(dead_code)] // Used in T3.
+// T3 sub-modules (stubs until T3).
+#[allow(dead_code)]
 pub mod channels;
-#[allow(dead_code)] // Used in T3.
+#[allow(dead_code)]
 pub mod migration;
-#[allow(dead_code)] // Used in T3.
+#[allow(dead_code)]
 pub mod release;
-#[allow(dead_code)] // Used in T3.
+#[allow(dead_code)]
 pub mod update;
 
 /// Version type alias — semver::Version is used throughout the module.
 pub type Version = semver::Version;
 
 // ---------------------------------------------------------------------------
-// T2/T3 stub implementations — replaced in their respective tasks.
+// Re-exports from T2 sub-modules (these replace the stubs below).
 // ---------------------------------------------------------------------------
 
-/// Stub: installs a versioned archctl binary. Replaced in T2.
-pub fn install(_version: Option<&Version>, _install_root: &Path) -> Result<()> {
-    unimplemented!("T2: archctl self install")
-}
+pub use install::install;
+pub use list::{list, InstalledVersion};
+pub use uninstall::uninstall;
+pub use use_version::use_version;
+pub use version_file::{find_arch_version, resolve_active_version};
 
-/// Stub: lists installed versions. Replaced in T2.
-pub fn list(_install_root: &Path) -> Result<Vec<InstalledVersion>> {
-    unimplemented!("T2: archctl self list")
-}
-
-/// Stub: changes the active symlink. Replaced in T2.
-pub fn use_version(_version: &Version, _install_root: &Path) -> Result<()> {
-    unimplemented!("T2: archctl self use")
-}
-
-/// Stub: removes a version or purges all. Replaced in T2.
-pub fn uninstall(_version: Option<&Version>, _install_root: &Path, _purge: bool) -> Result<()> {
-    unimplemented!("T2: archctl self uninstall")
-}
-
-/// Stub: walks up directories looking for .arch-version. Replaced in T2.
-pub fn find_arch_version(_cwd: &Path) -> Option<Version> {
-    unimplemented!("T2: .arch-version walking")
-}
-
-/// Stub: resolves active version with precedence. Replaced in T2.
-pub fn resolve_active_version(
-    _override_flag: Option<&Version>,
-    _env_var: Option<&str>,
-    _cwd: &Path,
-    _install_root: &Path,
-) -> Result<std::path::PathBuf> {
-    unimplemented!("T2: resolve_active_version")
-}
+// ---------------------------------------------------------------------------
+// T3 stub implementations — replaced in their respective tasks.
+// ---------------------------------------------------------------------------
 
 /// Stub: channel resolution (stable/rc/nightly). Replaced in T3.
-pub fn resolve_channel(_chan: Channel) -> Result<String> {
+#[allow(dead_code)]
+pub fn resolve_channel(_chan: Channel) -> anyhow::Result<String> {
     unimplemented!("T3: resolve_channel")
 }
 
 /// Stub: fetches release info from GitHub. Replaced in T3.
-pub fn fetch_release_info(_tag: &str) -> Result<ReleaseInfo> {
+#[allow(dead_code)]
+pub fn fetch_release_info(_tag: &str) -> anyhow::Result<ReleaseInfo> {
     unimplemented!("T3: fetch_release_info")
 }
 
 /// Stub: downloads and verifies a release asset. Replaced in T3.
-pub fn download_and_verify(_asset_url: &str, _sha256_expected: &[u8]) -> Result<Vec<u8>> {
+#[allow(dead_code)]
+pub fn download_and_verify(_asset_url: &str, _sha256_expected: &[u8]) -> anyhow::Result<Vec<u8>> {
     unimplemented!("T3: download_and_verify")
 }
 
 /// Stub: runs migration manifest between versions. Replaced in T3.
+#[allow(dead_code)]
 pub fn execute_manifest(
     _manifest: &MigrationManifest,
     _from_dir: &Path,
     _to_dir: &Path,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     unimplemented!("T3: migration")
 }
 
 /// Stub: self-update orchestration. Replaced in T3.
-pub fn update(_target: Option<&Version>, _channel: Channel, _install_root: &Path) -> Result<()> {
+#[allow(dead_code)]
+pub fn update(_target: Option<&Version>, _channel: Channel, _install_root: &Path) -> anyhow::Result<()> {
     unimplemented!("T3: archctl self update")
 }
 
@@ -107,15 +87,6 @@ pub enum Channel {
     Stable,
     Rc,
     Nightly,
-}
-
-/// Information about an installed version.
-#[derive(Debug, Clone)]
-pub struct InstalledVersion {
-    /// The semver version string.
-    pub version: Version,
-    /// Full path to the install directory.
-    pub path: std::path::PathBuf,
 }
 
 /// Metadata for a single migration step.

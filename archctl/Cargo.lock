@@ -161,6 +161,7 @@ dependencies = [
  "petgraph 0.6.5",
  "predicates",
  "rust-embed",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -506,14 +506,25 @@ pub enum SelfAction {
         /// Version to install. Defaults to the latest stable release.
         #[arg(long)]
         version: Option<String>,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
     },
     /// List installed versions.
     List {
         #[arg(long)]
         json: bool,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
     },
     /// Switch the active version.
-    Use { version: String },
+    Use {
+        version: String,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
+    },
     /// Uninstall a version (or purge all with --purge).
     Uninstall {
         /// Version to remove. Defaults to the current active version.
@@ -522,6 +533,9 @@ pub enum SelfAction {
         /// Remove all installed versions.
         #[arg(long)]
         purge: bool,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
     },
     /// Self-update to a newer version.
     Update {
@@ -919,12 +933,74 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
         },
-        Command::Lifecycle { action: _ } => {
-            // M73 T1: all self subcommands are stubs — routing to
-            // unimplemented so the CLI parses correctly.
-            // Real implementations land in T2 (install/list/use/uninstall).
-            anyhow::bail!("archctl self: not yet implemented (see M73 T2)")
-        }
+        Command::Lifecycle { action } => match action {
+            SelfAction::Install { version, install_root } => {
+                let root = install_root.clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let source = std::env::current_exe().context("locate current binary")?;
+                let v = version.unwrap_or_else(|| "0.0.0".to_string());
+                // T2 stub: version is always provided; T2.1 will resolve latest.
+                let ver = semver::Version::parse(&v).context("parse version")?;
+                crate::lifecycle::install::install(&ver, &root, &source)?;
+                println!("installed archctl {} at {}", v, root.display());
+                Ok(0)
+            }
+            SelfAction::List { json, install_root } => {
+                let root = install_root.clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let versions = crate::lifecycle::list::list(&root)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&versions)
+                            .context("serialize versions")?
+                    );
+                } else if versions.is_empty() {
+                    println!("no archctl versions installed");
+                } else {
+                    for v in versions {
+                        let marker = if v.is_active { "*" } else { " " };
+                        println!("{} v{} (installed)", marker, v.version);
+                    }
+                }
+                Ok(0)
+            }
+            SelfAction::Use { version, install_root } => {
+                let root = install_root.clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let ver = semver::Version::parse(&version).context("parse version")?;
+                crate::lifecycle::use_version::use_version(&ver, &root)?;
+                println!("switched archctl to v{}", ver);
+                Ok(0)
+            }
+            SelfAction::Uninstall { version, install_root, purge } => {
+                let root = install_root.clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let target = version
+                    .map(|v| semver::Version::parse(&v))
+                    .transpose()
+                    .context("parse version")?;
+                crate::lifecycle::uninstall::uninstall(target.as_ref(), &root, purge)?;
+                if purge {
+                    println!("purged all archctl installations");
+                } else if let Some(v) = target {
+                    println!("uninstalled archctl v{}", v);
+                } else {
+                    println!("uninstalled");
+                }
+                Ok(0)
+            }
+            SelfAction::Update { version: _, channel: _, check } => {
+                // T3: real update via GitHub Releases.
+                // T2: just acknowledge the command and return.
+                if check {
+                    println!("update check: not yet implemented (see M73 T3)");
+                } else {
+                    println!("self update: not yet implemented (see M73 T3)");
+                }
+                Ok(0)
+            }
+        },
         Command::View { port, cwd } => {
             let project_dir = cwd.map(|p| p.to_string_lossy().to_string());
             let options = crate::view::ViewOptions {
