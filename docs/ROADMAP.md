@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
 **Estado:** v1.0.0 ALCANZADO (2026-08-06) — M27 automated thresholds pass, tag v1.0.0 pushed.
-**Versión:** 2.6
-**Fecha:** 6 de agosto de 2026
-**Cambios vs 2.4/2.5:** M27 Sandbox + Benchmarks shipped (v0.22.0). v1.0.0 tag applied (2026-08-06). v1.1.0 shipped M30 (Go call-graph). v1.2.0-m32 shipped M32 PR1 (apply writer transaction wrap). Benchmark: exit 100%, c4_time 311ms, RSS 144MB, bundle_valid 7/7, determinism 7/7. FP/FN manual pending. archctl is ready for v1.0 distribution.
+**Versión:** 2.7
+**Fecha:** 9 de agosto de 2026
+**Cambios vs 2.6:** Convergence cycle m69 — ADR-038/039/040 (product identity, renderer reality, cognitive conditional). H0–H3 horizons added. M17–M23 marked as superseded/conditional with redirects. Ver [ADR-038](adr/ADR-038-one-product-five-invariants.md), [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md), [ADR-040](adr/ADR-040-cognitive-conditional-activation.md).
 
 ---
 
@@ -11,7 +11,7 @@
 
 1. OpenCode, agentes y skills son el producto.
 2. `archctl` es una CLI sidecar.
-3. `archview` (proyecto separado) es la aplicación interactiva que consume bundles de `archctl`.
+3. `archview` (embebido via rust-embed en `archctl view`) es el workbench interactivo que consume bundles de `archctl` — un solo producto (ver ADR-038).
 4. LadybugDB entra pronto porque C4 y UML deben compartir identidades.
 5. Se entregan verticales completas.
 6. Cero escritura dentro del repositorio.
@@ -19,6 +19,46 @@
 8. No se añade un daemon hasta que la concurrencia lo justifique (ADR-010).
 9. Cada diagrama tiene propósito, alcance y evidencia.
 10. Adoptamos crates de análisis como librerías, no como CLIs (ADR-012).
+
+---
+
+## Horizons H0–H3 (outcome-driven)
+
+> Los milestones M0–M32 son anclas históricas. El roadmap futuro se expresa en horizontes de resultado.
+
+### H0 — Ejecutable / verdad verificable
+
+Entregable: bundle ejecutable que cumple el contrato de schema.
+
+- **Contrato ejecutable**: `schemas/diagram-projection.schema.json` es la única fuente de verdad para el `viewer-bundle`. Rust DTOs (`archctl/src/diagram/export_types.rs`) y TypeScript types (`archview/src/loader/types.ts`) alineados campo a campo.
+- **Selector configurable**: `archctl view` acepta `GET /api/export?selector=c4-context:<id>` (no hardcoded `container:*`).
+- **Verificación**: `archctl diagram validate` contra schema + bundle válido en CI.
+
+### H1 — Utilidad humana
+
+Entregable: estado de workspace durable que sobrevive a los reinicios del servidor efímero.
+
+- **XDG persistence**: workspace state (camera, zoom, filters, selection) persiste en `~/.local/share/archctl/projects/<hash>/workspace.json`, no en `localStorage`.
+- **Drawer de solo lectura**: source drawer muestra `file:line` de la evidencia como texto read-only; path traversal rechazado; handoff al IDE via `$EDITOR`.
+- **Verificación**: workspace restaura correctamente tras `archctl view` en puerto diferente.
+
+### H2 — Editor visual
+
+Entregable: ChangeSet cosmético con integridad de `baseRevision`.
+
+- **Round-trip**: cosmetic ChangeSet (move-member / collapse-group / set-label) aplica via `archctl diagram apply --changes` contra `baseRevision` stored.
+- **Integridad**: apply rechaza stale revisions con mensaje claro.
+- **Undo/redo**: inverse ChangeSets en secuencia.
+- **`.arrows` adapter**: import/export Arrows.app sin mutar el grafo canónico.
+- **Verificación**: apply succeeds on matching baseRevision; rejected on stale; undo restores position.
+
+### H3 — Moldabilidad demostrada
+
+Entregable: LensSpec introducido solo cuando hay evidencia real de necesidad.
+
+- **Entry criteria**: LensSpec NO se añade a menos que (a) 2+ consumidores repitan la misma lógica de traducción, o (b) una necesidad medida (UAT evidence, perf budget breach) demande abstracción.
+- **Reversibilidad**: cláusula de rollback documentada en el ADR si consumers < 2.
+- **Verificación**: ADR gate bloquea PRs que añaden LensSpec sin evidencia.
 
 ---
 
@@ -124,7 +164,9 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 - audit `manifests/code.toml` (F2.3)
 - `refactor/extract-code-apply-helpers` (~150 LOC deuda) — **Cerrado v0.13.2 ✅**
 
-## M17 — `archview` workbench (sustituye a Av0–Av6) — **PRIORIDAD 1 — EN CURSO**
+## M17 — `archview` workbench (sustituye a Av0–Av6) — **→ superseded by H0–H3**
+
+> La sustancia de M17 (bundle contract, 5 vistas, G6 canvas) se reenmarca en H0–H3. El milestone anchor se preserva como ancla histórica.
 
 **Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
 
@@ -143,17 +185,23 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 **Repositorio**: `archview` (separado de `archctl`). Primer release tag `v0.14.0` cuando M17.0 cierre. Co-evoluciona con `archctl` v0.14.x (consume bundles vía CLI).
 
-## M18 — Reactive runtime (event log + behaviors + planners) — **NUEVO, 1.x**
+## M18 — Reactive runtime (event log + behaviors + planners) — **→ superseded by anti-roadmap (ADR-039)**
+
+> M18 reactive runtime deferred indefinitely. Ver [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap para reopen triggers (≥2 third-party consumers needing shared compute).
 
 **Pivot v2.4 + v2.5:** Reactive runtime inspirado en ActiveGraph pero implementado en Rust puro. Defer a 1.x (después del workbench estable). Features: event log, subscriptions, behaviors como WASM plugins, planners, capabilities. Ver sección del doc sobre Reactive Runtime.
 
 > **Pivot v2.5 (2026-07-31, post-capa-cognitiva):** M18 se reposiciona como el substrate sobre el cual corre la Cognitive Layer (ver M21-M23). El reactive runtime añade la capacidad de que comportamientos (algoritmos deterministas) Y agentes (LLM) reaccionen al estado del grafo. Ver [ADR-021](adr/ADR-021-cognitive-layer.md).
 
-## M19 — Custom wgpu renderer (solo si cosmos.gl no alcanza) — **NUEVO, 2.0**
+## M19 — Custom wgpu renderer (solo si cosmos.gl no alcanza) — **→ superseded by anti-roadmap (ADR-039)**
+
+> M19 WGPU renderer deferred indefinitely. Ver [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap para reopen triggers (benchmark p99 fails ADR-019 budget AND JS/Worker insufficient).
 
 **Pivot v2.4:** Si cosmos.gl + G6 WebGPU no cubren el caso de grafos de millones de elementos con latencia sub-16ms, construir un renderer custom en Rust + wgpu + WGSL. 2.0. Defer a menos que el benchmark suite (M17) muestre insuficiencia.
 
-## M20 — Performance validation cycle — **COMPLETO ✅ (2026-08-03)**
+## M20 — Performance validation cycle — **→ H0 (ejecutable)**
+
+> M20 benchmark validation cycle shipped. El performance budget es parte de H0.
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
@@ -161,7 +209,9 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 **Pendiente opcional (no bloqueante):** profiling-on-regression flamegraph, PR-comment bot.
 
-## M21 — Cognitive Layer foundation — **COMPLETE** ✅
+## M21 — Cognitive Layer foundation — **→ superseded by H1 (conditional)**
+
+> M21 shipped but marked conditional. Ver [ADR-040](adr/ADR-040-cognitive-conditional-activation.md) para reactivation trigger.
 
 **Estado:** Implementado en v0.15.0 (PR #27 mergeado). Foundation sienta las bases para M22.
 
@@ -174,7 +224,9 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 Output verificable: queries del workbench responden con output estructurado (no solo texto). Foundation sienta las bases para M22.
 
-## M22 — Agent catalog v1 — **COMPLETO** ✅
+## M22 — Agent catalog v1 — **→ superseded by H1 (conditional)**
+
+> M22 shipped (2/9 agents) but marked partial. Ver [ADR-040](adr/ADR-040-cognitive-conditional-activation.md).
 
 **Estado:** Implementado en v0.15.0 (PR #30 mergeado). ArchitectureAgent + ProjectionAgent como ReactiveObserver heurísticos y deterministas.
 
@@ -183,7 +235,9 @@ Output verificable: queries del workbench responden con output estructurado (no 
 
 Para v1.0 (M16) solo Architecture + Projection (heurística pura). Para 1.x, los otros 7 agentes con LLM local (Phi-3 / Llama-3-8B) + LLM potente (Claude/GPT) para los más sensibles (Investigation, Planning, Review).
 
-## M23 — Action Proposal & Policy Engine — **NUEVO, 1.x**
+## M23 — Action Proposal & Policy Engine — **→ superseded by H1 (conditional)**
+
+> M23 deferred (phase 1 PR #32 closed stale). Ver [ADR-040](adr/ADR-040-cognitive-conditional-activation.md) para reactivation trigger.
 
 **Pivot v2.5:** Implementación completa del ActionProposal + Policy Engine + MCP gateway (ver [ADR-023](adr/ADR-023-action-proposal-and-policy.md)):
 - ActionProposal estructurado (goal + command + capabilities + approval + evidence esperada + rollback)
