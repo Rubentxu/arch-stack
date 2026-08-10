@@ -34,6 +34,7 @@ import { DriftView } from "./views/DriftView";
 import { ImpactView } from "./views/ImpactView";
 import { PackageView } from "./views/PackageView";
 import { buildPackageNode } from "./views/PackageGraph";
+import { useWorkspaceState } from "./lib/workspace";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -81,6 +82,11 @@ export const App: Component = () => {
   /** Selector state for call-graph bundles: Impact (default) | Call graph | Package. */
   const [callGraphMode, setCallGraphMode] =
     createSignal<CallGraphMode>("impact");
+
+  // H1 (ADR-041): durable workspace state — restore viewport on mount,
+  // debounce PUT on every change, fetch source preview + open editor on
+  // demand. Wired into the Sidebar (SourceDrawer) below.
+  const ws = useWorkspaceState();
 
   const handleLoad = async (url: string) => {
     setError(null);
@@ -341,6 +347,8 @@ export const App: Component = () => {
                 : null
           }
           stats={stats()}
+          onFetchSource={ws.fetchSource}
+          onOpenInEditor={ws.openInEditor}
         />
       </main>
 
