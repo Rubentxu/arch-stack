@@ -138,12 +138,19 @@ fn handle_api_export(
 
 /// Pure request handler — testable without a socket.
 ///
-/// Returns `(status, content_type, body)`.
+/// Returns `(status, content_type, body, extra_headers)`. The 4th tuple
+/// element carries extra HTTP headers (e.g. `X-Truncated` for source
+/// preview per ADR-041 §4); empty for handlers that don't need them.
 pub fn handle_request(
     method: &str,
     url: &str,
     project_dir: Option<&str>,
-) -> (tiny_http::StatusCode, String, Vec<u8>) {
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     handle_request_with_body(method, url, project_dir, &[])
 }
 
@@ -155,7 +162,12 @@ pub fn handle_request_with_body(
     url: &str,
     project_dir: Option<&str>,
     body: &[u8],
-) -> (tiny_http::StatusCode, String, Vec<u8>) {
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     match (method, url) {
         ("GET", path) if path == "/api/health" || path.starts_with("/api/health?") => {
             let payload = serde_json::json!({
@@ -166,6 +178,7 @@ pub fn handle_request_with_body(
                 tiny_http::StatusCode(200),
                 "application/json".to_string(),
                 serde_json::to_vec(&payload).unwrap_or_default(),
+                vec![],
             )
         }
         ("GET", path) if path == "/api/export" || path.starts_with("/api/export?") => {
@@ -173,13 +186,14 @@ pub fn handle_request_with_body(
                 .strip_prefix("/api/export?")
                 .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("selector=")));
             match handle_api_export(project_dir, selector) {
-                Ok((mime, body)) => (tiny_http::StatusCode(200), mime, body),
+                Ok((mime, body)) => (tiny_http::StatusCode(200), mime, body, vec![]),
                 Err(e) => (
                     tiny_http::StatusCode(400),
                     "application/json".to_string(),
                     serde_json::json!({ "error": e.to_string() })
                         .to_string()
                         .into_bytes(),
+                    vec![],
                 ),
             }
         }
@@ -197,17 +211,19 @@ pub fn handle_request_with_body(
             handle_api_open_editor_post(body, project_dir)
         }
         ("GET", path) => match serve_static(path) {
-            Some((mime, body)) => (tiny_http::StatusCode(200), mime, body),
+            Some((mime, body)) => (tiny_http::StatusCode(200), mime, body, vec![]),
             None => (
                 tiny_http::StatusCode(404),
                 "text/plain; charset=utf-8".to_string(),
                 b"not found".to_vec(),
+                vec![],
             ),
         },
         _ => (
             tiny_http::StatusCode(405),
             "text/plain; charset=utf-8".to_string(),
             b"method not allowed".to_vec(),
+            vec![],
         ),
     }
 }
@@ -253,40 +269,41 @@ pub fn run(options: ViewOptions) -> Result<ServerInfo> {
                 .read_to_end(&mut body_buf);
         }
 
-        let (status, mime, body) =
+        let (status, mime, body, extra_headers) =
             handle_request_with_body(method.as_str(), url.as_str(), project.as_deref(), &body_buf);
 
-        let _ = request.respond(
-            tiny_http::Response::from_data(body)
-                .with_status_code(status)
-                .with_header(
-                    tiny_http::Header::from_bytes(&b"Content-Type"[..], mime.as_bytes())
-                        .expect("valid header"),
-                )
-                // ADR-020: SharedArrayBuffer requires COOP/COEP.
-                .with_header(
-                    tiny_http::Header::from_bytes(
-                        &b"Cross-Origin-Opener-Policy"[..],
-                        b"same-origin",
-                    )
+        let mut response = tiny_http::Response::from_data(body)
+            .with_status_code(status)
+            .with_header(
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], mime.as_bytes())
                     .expect("valid header"),
-                )
-                .with_header(
-                    tiny_http::Header::from_bytes(
-                        &b"Cross-Origin-Embedder-Policy"[..],
-                        b"require-corp",
-                    )
+            )
+            // ADR-020: SharedArrayBuffer requires COOP/COEP.
+            .with_header(
+                tiny_http::Header::from_bytes(&b"Cross-Origin-Opener-Policy"[..], b"same-origin")
                     .expect("valid header"),
+            )
+            .with_header(
+                tiny_http::Header::from_bytes(
+                    &b"Cross-Origin-Embedder-Policy"[..],
+                    b"require-corp",
                 )
-                // ADR-011: blocked network by default.
-                .with_header(
-                    tiny_http::Header::from_bytes(
-                        &b"Cross-Origin-Resource-Policy"[..],
-                        b"same-origin",
-                    )
+                .expect("valid header"),
+            )
+            // ADR-011: blocked network by default.
+            .with_header(
+                tiny_http::Header::from_bytes(&b"Cross-Origin-Resource-Policy"[..], b"same-origin")
                     .expect("valid header"),
-                ),
-        );
+            );
+
+        // Apply extra response headers (e.g. `X-Truncated` per ADR-041 §4).
+        for (name, value) in extra_headers {
+            if let Ok(h) = tiny_http::Header::from_bytes(name.as_bytes(), value.as_bytes()) {
+                response = response.with_header(h);
+            }
+        }
+
+        let _ = request.respond(response);
     }
 
     Ok(ServerInfo { addr })
@@ -327,7 +344,14 @@ pub fn looks_like_project_dir(path: &Path) -> bool {
 // ---------------------------------------------------------------------------
 
 /// GET /api/workspace — load workspace state from XDG project dir.
-fn handle_api_workspace_get(project_dir: Option<&str>) -> (tiny_http::StatusCode, String, Vec<u8>) {
+fn handle_api_workspace_get(
+    project_dir: Option<&str>,
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     let project_dir = match project_dir {
         Some(d) => d,
         None => return json_error(500, "xdg_inaccessible"),
@@ -344,6 +368,7 @@ fn handle_api_workspace_get(project_dir: Option<&str>) -> (tiny_http::StatusCode
                 tiny_http::StatusCode(200),
                 "application/json".to_string(),
                 body,
+                vec![],
             )
         }
         Ok(None) => {
@@ -357,6 +382,7 @@ fn handle_api_workspace_get(project_dir: Option<&str>) -> (tiny_http::StatusCode
                 tiny_http::StatusCode(200),
                 "application/json".to_string(),
                 body,
+                vec![],
             )
         }
         Err(e) => json_error(500, &format!("xdg_inaccessible: {}", e)),
@@ -367,7 +393,12 @@ fn handle_api_workspace_get(project_dir: Option<&str>) -> (tiny_http::StatusCode
 fn handle_api_source_get(
     url_with_query: &str,
     project_dir: Option<&str>,
-) -> (tiny_http::StatusCode, String, Vec<u8>) {
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     let project_dir = match project_dir {
         Some(d) => d,
         None => return json_error(500, "project_dir required"),
@@ -393,12 +424,18 @@ fn handle_api_source_get(
     match source::source_preview(file_path, line, cwd) {
         Ok(preview) => {
             let body = serde_json::to_vec(&preview).unwrap_or_default();
-            // Note: X-Truncated header (ADR-041 §4) is emitted by the
-            // server loop based on preview.truncated, not here.
+            // ADR-041 §4: emit X-Truncated header when source preview was capped
+            // at MAX_LINES so clients can detect truncation without parsing body.
+            let extra = if preview.truncated {
+                vec![("X-Truncated".to_string(), "true".to_string())]
+            } else {
+                vec![]
+            };
             (
                 tiny_http::StatusCode(200),
                 "application/json".to_string(),
                 body,
+                extra,
             )
         }
         Err(source::SourceError::OutsideScope) => json_error(403, "path_outside_scope"),
@@ -414,7 +451,12 @@ fn handle_api_source_get(
 fn handle_api_open_editor_post(
     body: &[u8],
     project_dir: Option<&str>,
-) -> (tiny_http::StatusCode, String, Vec<u8>) {
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     let project_dir = match project_dir {
         Some(d) => d,
         None => return json_error(500, "project_dir required"),
@@ -447,6 +489,7 @@ fn handle_api_open_editor_post(
             tiny_http::StatusCode(204),
             "application/json".to_string(),
             vec![],
+            vec![],
         ),
         Err(e) => json_error(500, &format!("editor_spawn_failed: {}", e)),
     }
@@ -457,7 +500,12 @@ fn handle_api_open_editor_post(
 fn handle_api_workspace_put(
     body: &[u8],
     project_dir: Option<&str>,
-) -> (tiny_http::StatusCode, String, Vec<u8>) {
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     let project_dir = match project_dir {
         Some(d) => d,
         None => return json_error(500, "project_dir required"),
@@ -467,7 +515,8 @@ fn handle_api_workspace_put(
     let state: workspace::WorkspaceState = match serde_json::from_slice(body) {
         Ok(s) => s,
         Err(e) => {
-            return json_error(400, &format!("invalid_schema: {}", e));
+            // ADR-041 §2.2: structured error response {error, details}.
+            return json_error_structured(400, "invalid_schema", &e.to_string());
         }
     };
     // Atomic save.
@@ -476,18 +525,53 @@ fn handle_api_workspace_put(
             tiny_http::StatusCode(204),
             "application/json".to_string(),
             vec![],
+            vec![],
         ),
         Err(e) => json_error(500, &format!("save_failed: {}", e)),
     }
 }
 
 /// Helper: build a JSON error response.
-fn json_error(status: u16, message: &str) -> (tiny_http::StatusCode, String, Vec<u8>) {
+fn json_error(
+    status: u16,
+    message: &str,
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
     let body = serde_json::to_vec(&serde_json::json!({ "error": message })).unwrap_or_default();
     (
         tiny_http::StatusCode(status),
         "application/json".to_string(),
         body,
+        vec![],
+    )
+}
+
+/// Helper: build a structured JSON error response with `error` + `details`
+/// fields (ADR-041 §2.2 contract for validation errors).
+fn json_error_structured(
+    status: u16,
+    error: &str,
+    details: &str,
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
+    let body = serde_json::to_vec(&serde_json::json!({
+        "error": error,
+        "details": details,
+    }))
+    .unwrap_or_default();
+    (
+        tiny_http::StatusCode(status),
+        "application/json".to_string(),
+        body,
+        vec![],
     )
 }
 
@@ -518,13 +602,13 @@ mod tests {
     use std::io::Write;
 
     fn status_of(method: &str, url: &str) -> u16 {
-        let (status, _, _) = handle_request(method, url, None);
+        let (status, _, _, _) = handle_request(method, url, None);
         status.0
     }
 
     #[test]
     fn health_returns_ok_and_version() {
-        let (status, mime, body) = handle_request("GET", "/api/health", None);
+        let (status, mime, body, _) = handle_request("GET", "/api/health", None);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -538,7 +622,7 @@ mod tests {
         if ViewAssets::get("index.html").is_none() {
             return;
         }
-        let (status, mime, body) = handle_request("GET", "/", None);
+        let (status, mime, body, _) = handle_request("GET", "/", None);
         assert_eq!(status.0, 200);
         assert!(mime.starts_with("text/html"));
         assert!(!body.is_empty());
@@ -546,7 +630,7 @@ mod tests {
 
     #[test]
     fn missing_asset_is_404() {
-        let (status, _, body) = handle_request("GET", "/nope.js", None);
+        let (status, _, body, _) = handle_request("GET", "/nope.js", None);
         assert_eq!(status.0, 404);
         assert_eq!(body, b"not found");
     }
@@ -564,7 +648,7 @@ mod tests {
 
     #[test]
     fn export_without_project_is_200_empty_json() {
-        let (status, mime, body) = handle_request("GET", "/api/export", None);
+        let (status, mime, body, _) = handle_request("GET", "/api/export", None);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -658,7 +742,7 @@ mod tests {
     fn export_with_selector_splits_path() {
         // Query string ?selector=... is stripped before routing; when no project_dir
         // is set, the early-return fires with 200 + "no project_dir" warning.
-        let (status, mime, body) =
+        let (status, mime, body, _) =
             handle_request("GET", "/api/export?selector=context:myapp", None);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
@@ -675,7 +759,7 @@ mod tests {
     fn export_without_selector_uses_default() {
         // Without ?selector=, handle_api_export uses "container:*" as default.
         // Same behavior as export_without_project_is_200_empty_json.
-        let (status, mime, body) = handle_request("GET", "/api/export", None);
+        let (status, mime, body, _) = handle_request("GET", "/api/export", None);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -692,7 +776,7 @@ mod tests {
         // Invalid selector "bogus" → selector::parse fails → HTTP 400 + JSON error.
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-        let (status, mime, body) = handle_request(
+        let (status, mime, body, _) = handle_request(
             "GET",
             "/api/export?selector=bogus",
             Some(tmp.path().to_str().unwrap()),
@@ -717,7 +801,7 @@ mod tests {
     #[test]
     fn health_unaffected_by_query_string() {
         // /api/health with query string should still return 200 + status ok.
-        let (status, mime, body) = handle_request("GET", "/api/health?x=1", None);
+        let (status, mime, body, _) = handle_request("GET", "/api/health?x=1", None);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -728,14 +812,14 @@ mod tests {
     fn export_like_paths_do_not_match_export_guard() {
         // /api/exportx (no query) must NOT match the export guard — it should
         // fall through to the static branch → 404, not export a bundle.
-        let (status, _, _) = handle_request("GET", "/api/exportx", None);
+        let (status, _, _, _) = handle_request("GET", "/api/exportx", None);
         assert_eq!(
             status.0, 404,
             "expected 404 for /api/exportx, got: {}",
             status.0
         );
         // /api/export-extra similarly must not match.
-        let (status, _, _) = handle_request("GET", "/api/export-extra", None);
+        let (status, _, _, _) = handle_request("GET", "/api/export-extra", None);
         assert_eq!(
             status.0, 404,
             "expected 404 for /api/export-extra, got: {}",
@@ -747,7 +831,7 @@ mod tests {
 
     #[test]
     fn get_workspace_no_project_returns_500() {
-        let (status, _, body) = handle_request("GET", "/api/workspace", None);
+        let (status, _, body, _) = handle_request("GET", "/api/workspace", None);
         assert_eq!(status.0, 500);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["error"].as_str().unwrap().contains("xdg_inaccessible"));
@@ -757,7 +841,7 @@ mod tests {
     fn get_workspace_no_file_returns_200_null() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-        let (status, _, body) =
+        let (status, _, body, _) =
             handle_request("GET", "/api/workspace", Some(tmp.path().to_str().unwrap()));
         assert_eq!(status.0, 200);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -772,7 +856,7 @@ mod tests {
         let src_dir = tmp.path().join("src");
         std::fs::create_dir(&src_dir).unwrap();
         std::fs::write(src_dir.join("main.rs"), "fn main() {}\n").unwrap();
-        let (status, _, body) = handle_request(
+        let (status, _, body, _) = handle_request(
             "GET",
             "/api/source?file=src/main.rs&line=1",
             Some(tmp.path().to_str().unwrap()),
@@ -787,7 +871,7 @@ mod tests {
     fn get_source_path_traversal_returns_403() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-        let (status, _, body) = handle_request(
+        let (status, _, body, _) = handle_request(
             "GET",
             "/api/source?file=../../../etc/passwd&line=1",
             Some(tmp.path().to_str().unwrap()),
@@ -806,7 +890,7 @@ mod tests {
     fn get_source_missing_file_returns_404() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-        let (status, _, body) = handle_request(
+        let (status, _, body, _) = handle_request(
             "GET",
             "/api/source?file=nonexistent.rs&line=1",
             Some(tmp.path().to_str().unwrap()),
@@ -821,7 +905,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
         std::fs::create_dir(tmp.path().join("src")).unwrap();
-        let (status, _, _) = handle_request(
+        let (status, _, _, _) = handle_request(
             "GET",
             "/api/source?file=src&line=1",
             Some(tmp.path().to_str().unwrap()),
