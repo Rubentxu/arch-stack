@@ -73,10 +73,15 @@ describe("useWorkspaceState", () => {
             filters: ws.workspace().filters.length,
           };
         });
+        // Two macrotasks: one to let createResource resolve, one to let the
+        // createEffect propagate the restored state into the local signal.
+        // setTimeout(0) is the simplest reliable way to flush both.
         setTimeout(() => {
-          dispose();
-          resolve();
-        }, 100);
+          setTimeout(() => {
+            dispose();
+            resolve();
+          }, 0);
+        }, 0);
       });
     });
     expect(fetchMock).toHaveBeenCalled();
@@ -95,9 +100,11 @@ describe("useWorkspaceState", () => {
           captured = ws.workspace().zoom;
         });
         setTimeout(() => {
-          dispose();
-          resolve();
-        }, 100);
+          setTimeout(() => {
+            dispose();
+            resolve();
+          }, 0);
+        }, 0);
       });
     });
     expect(captured).toBe(50);
@@ -289,9 +296,11 @@ describe("useWorkspaceState", () => {
           captured = ws.workspace().zoom;
         });
         setTimeout(() => {
-          dispose();
-          resolve();
-        }, 100);
+          setTimeout(() => {
+            dispose();
+            resolve();
+          }, 0);
+        }, 0);
       });
     });
     expect(captured).toBe(50); // defaults

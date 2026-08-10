@@ -20,20 +20,28 @@ código en `archview` — siempre consume el output de `archctl`.
 
 ```
 src/
-├── bundle/loader.ts    # Único punto de decode/normalize
-├── renderer/g6.ts      # Único punto de render
-├── components/Sidebar.tsx
-├── App.tsx
+├── bundle/loader.ts                  # Único punto de decode/normalize
+├── renderer/g6.ts                    # Único punto de render
+├── lib/                              # Hooks reutilizables (e.g. useWorkspaceState)
+│   └── workspace.ts                  # H1 durable state (ADR-041)
+├── components/
+│   ├── Sidebar.tsx                   # Inspect selected node + bundle metadata
+│   └── SourceDrawer/                 # Read-only source preview + editor handoff (H1)
+├── App.tsx                           # orquesta bundle→renderer→sidebar
 ├── index.tsx
 └── styles.css
 ```
 
 ### Reglas de dependencia
 
-- `bundle/loader.ts` → no imports de `renderer/` ni `components/`
-- `renderer/g6.ts` → no imports de `bundle/` ni `components/`
-- `components/Sidebar.tsx` → depende solo de `bundle/`
-- `App.tsx` → orquesta bundle→renderer→sidebar
+- `bundle/loader.ts` → no imports de `renderer/`, `components/` ni `lib/`
+- `renderer/g6.ts` → no imports de `bundle/`, `components/` ni `lib/`
+- `lib/workspace.ts` → no imports de `bundle/`, `renderer/` ni `components/`
+  (pure hook + types; talks to backend over HTTP)
+- `components/Sidebar.tsx` → depende de `bundle/`, `components/SourceDrawer/`,
+  y `lib/` (recibe `fetchSource`/`openInEditor` handlers via props; no llama
+  `fetch` directamente)
+- `App.tsx` → orquesta todo: bundle → renderer → sidebar → drawer
 
 ## Commands
 

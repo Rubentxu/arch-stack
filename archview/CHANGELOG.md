@@ -25,7 +25,7 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   button. `role="region"`, `aria-label`, focus management.
 - **`src/components/Sidebar.tsx`** — renders `SourceDrawer` below the
   evidence list when the selected node has a `file:line` pointer.
-- **`src/__tests__/workspace.test.ts`** — 9 tests for the hook
+- **`src/__tests__/workspace.test.ts`** — 8 tests for the hook
   (restore / defaults / debounce / coalesce / fetchSource /
   openInEditor 204 / openInEditor 503 / 404 silent).
 - **`src/__tests__/SourceDrawer.test.tsx`** — 5 tests for the component
