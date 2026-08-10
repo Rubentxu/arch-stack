@@ -1,11 +1,13 @@
 /**
  * Sidebar — shows evidence for the selected node + bundle metadata.
  * Evidence pointers come from the `meta` of the GraphNode (extracted
- * from archctl bundles).
+ * from archctl bundles). When a node has a `file:line` evidence, the
+ * sidebar also renders a SourceDrawer (H1, ADR-041 §5–§6).
  */
 
 import { For, Show, type Component } from "solid-js";
 import type { GraphNode } from "../bundle/loader";
+import { SourceDrawer, type SourceDrawerProps } from "./SourceDrawer";
 
 export interface SidebarStats {
   /** Computed by the call-graph view: unique reachable functions. */
@@ -25,6 +27,9 @@ export interface SidebarProps {
     rawKind: string;
   } | null;
   stats?: SidebarStats;
+  /** Wired by App via `useWorkspaceState()` — fetch + open-editor handlers. */
+  onFetchSource?: SourceDrawerProps["fetchSource"];
+  onOpenInEditor?: SourceDrawerProps["openInEditor"];
 }
 
 export const Sidebar: Component<SidebarProps> = (props) => {
@@ -133,6 +138,21 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   )}
                 </For>
               </ul>
+
+              <Show
+                when={
+                  props.onFetchSource &&
+                  props.onOpenInEditor &&
+                  typeof evLine(node(), evFile(node())) === "number"
+                }
+              >
+                <SourceDrawer
+                  file={evFile(node()) as string}
+                  line={evLine(node(), evFile(node())) as number}
+                  fetchSource={props.onFetchSource!}
+                  openInEditor={props.onOpenInEditor!}
+                />
+              </Show>
             </div>
           )}
         </Show>
@@ -176,4 +196,38 @@ function extractEvidence(node: GraphNode): EvidenceRef[] {
     });
   }
   return refs;
+}
+
+/** Pick the first evidence file (or node.file fallback) for the drawer. */
+function evFile(node: GraphNode): string | null {
+  const meta = node.meta ?? {};
+  if (Array.isArray(meta.evidence_refs)) {
+    for (const ref of meta.evidence_refs) {
+      if (typeof ref === "object" && ref !== null) {
+        const r = ref as Record<string, unknown>;
+        if (typeof r.file === "string" && r.file.length > 0) return r.file;
+      }
+    }
+  }
+  return node.file ?? null;
+}
+
+/** Resolve the line for `file`. Returns a number only if it's parseable. */
+function evLine(node: GraphNode, file: string | null): number | null {
+  if (file === null) return null;
+  const meta = node.meta ?? {};
+  if (Array.isArray(meta.evidence_refs)) {
+    for (const ref of meta.evidence_refs) {
+      if (typeof ref === "object" && ref !== null) {
+        const r = ref as Record<string, unknown>;
+        if (r.file === file && typeof r.line === "number") return r.line;
+        if (r.file === file && typeof r.line === "string") {
+          const n = Number(r.line);
+          return Number.isFinite(n) ? n : null;
+        }
+      }
+    }
+  }
+  if (node.file === file && typeof node.line === "number") return node.line;
+  return null;
 }
