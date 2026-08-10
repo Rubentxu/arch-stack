@@ -106,7 +106,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!tmp.path().join("installs/v1.32.0").exists(), "v1.32.0 removed");
+        assert!(
+            !tmp.path().join("installs/v1.32.0").exists(),
+            "v1.32.0 removed"
+        );
         assert!(tmp.path().join("installs/v1.34.0").exists(), "v1.34.0 kept");
     }
 

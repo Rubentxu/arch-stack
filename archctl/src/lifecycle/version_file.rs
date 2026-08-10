@@ -6,7 +6,7 @@
 //! 3. `.arch-version` file walking up from cwd to $HOME (or /)
 //! 4. `current` symlink in install_root (lowest)
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 
 /// Walk from `cwd` upward looking for `.arch-version`. Returns the first

@@ -934,8 +934,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             }
         },
         Command::Lifecycle { action } => match action {
-            SelfAction::Install { version, install_root } => {
-                let root = install_root.clone()
+            SelfAction::Install {
+                version,
+                install_root,
+            } => {
+                let root = install_root
+                    .clone()
                     .unwrap_or_else(crate::lifecycle::install_root::install_root);
                 let source = std::env::current_exe().context("locate current binary")?;
                 let v = version.unwrap_or_else(|| "0.0.0".to_string());
@@ -946,14 +950,14 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
             SelfAction::List { json, install_root } => {
-                let root = install_root.clone()
+                let root = install_root
+                    .clone()
                     .unwrap_or_else(crate::lifecycle::install_root::install_root);
                 let versions = crate::lifecycle::list::list(&root)?;
                 if json {
                     println!(
                         "{}",
-                        serde_json::to_string_pretty(&versions)
-                            .context("serialize versions")?
+                        serde_json::to_string_pretty(&versions).context("serialize versions")?
                     );
                 } else if versions.is_empty() {
                     println!("no archctl versions installed");
@@ -965,16 +969,25 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 }
                 Ok(0)
             }
-            SelfAction::Use { version, install_root } => {
-                let root = install_root.clone()
+            SelfAction::Use {
+                version,
+                install_root,
+            } => {
+                let root = install_root
+                    .clone()
                     .unwrap_or_else(crate::lifecycle::install_root::install_root);
                 let ver = semver::Version::parse(&version).context("parse version")?;
                 crate::lifecycle::use_version::use_version(&ver, &root)?;
                 println!("switched archctl to v{}", ver);
                 Ok(0)
             }
-            SelfAction::Uninstall { version, install_root, purge } => {
-                let root = install_root.clone()
+            SelfAction::Uninstall {
+                version,
+                install_root,
+                purge,
+            } => {
+                let root = install_root
+                    .clone()
                     .unwrap_or_else(crate::lifecycle::install_root::install_root);
                 let target = version
                     .map(|v| semver::Version::parse(&v))
@@ -990,14 +1003,49 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 }
                 Ok(0)
             }
-            SelfAction::Update { version: _, channel: _, check } => {
-                // T3: real update via GitHub Releases.
-                // T2: just acknowledge the command and return.
+            SelfAction::Update {
+                version,
+                channel,
+                check,
+            } => {
+                use crate::lifecycle::{self as lc, Channel};
+                let root = std::env::var("ARCHCTL_HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| lc::install_root::install_root());
+                let current_str = std::env::var("ARCHCTL_VERSION")
+                    .ok()
+                    .or_else(|| {
+                        std::fs::read_to_string(root.join("current").join("archctl-version")).ok()
+                    })
+                    .unwrap_or_else(|| "0.0.0".into());
+                let current = semver::Version::parse(current_str.trim())
+                    .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                let chan: Channel = channel
+                    .as_deref()
+                    .unwrap_or("stable")
+                    .parse()
+                    .map_err(anyhow::Error::msg)?;
+                let target = version
+                    .as_ref()
+                    .map(|v| semver::Version::parse(v))
+                    .transpose()
+                    .context("parse target version")?;
                 if check {
-                    println!("update check: not yet implemented (see M73 T3)");
-                } else {
-                    println!("self update: not yet implemented (see M73 T3)");
+                    let release =
+                        lc::fetch_release_info(target.as_ref().map(|v| format!("v{v}")).as_deref())
+                            .context("fetch release info")?;
+                    let new_ver = semver::Version::parse(release.tag_name.trim_start_matches('v'))
+                        .context("parse tag as semver")?;
+                    if new_ver > current {
+                        println!("update available: {} -> {}", current, new_ver);
+                    } else {
+                        println!("already at latest ({})", current);
+                    }
+                    return Ok(0);
                 }
+                let new_ver = lc::update::update(target.as_ref(), chan, &root, &current)
+                    .context("self-update failed")?;
+                println!("updated: {} -> {}", current, new_ver);
                 Ok(0)
             }
         },

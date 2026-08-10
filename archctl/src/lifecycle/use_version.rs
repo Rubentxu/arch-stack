@@ -29,8 +29,9 @@ pub fn use_version(target: &semver::Version, install_root: &Path) -> Result<()> 
     // Create new symlink.
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(&target_dir, &current)
-            .with_context(|| format!("symlink {} -> {}", current.display(), target_dir.display()))?;
+        std::os::unix::fs::symlink(&target_dir, &current).with_context(|| {
+            format!("symlink {} -> {}", current.display(), target_dir.display())
+        })?;
     }
     #[cfg(not(unix))]
     {

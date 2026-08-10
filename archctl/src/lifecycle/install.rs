@@ -30,8 +30,9 @@ pub fn install(version: &semver::Version, install_root: &Path, source_bin: &Path
     if !current.exists() {
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(&dest_dir, &current)
-                .with_context(|| format!("symlink {} -> {}", current.display(), dest_dir.display()))?;
+            std::os::unix::fs::symlink(&dest_dir, &current).with_context(|| {
+                format!("symlink {} -> {}", current.display(), dest_dir.display())
+            })?;
         }
         #[cfg(not(unix))]
         {
