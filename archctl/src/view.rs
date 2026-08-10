@@ -446,8 +446,8 @@ fn handle_api_source_get(
     }
 }
 
-/// POST /api/open-editor — spawn the user's editor (no body in handle_request; handled in run loop).
-#[allow(dead_code)]
+/// POST /api/open-editor — spawn the user's editor. Body parsed and
+/// validated against cwd by the router before reaching this handler.
 fn handle_api_open_editor_post(
     body: &[u8],
     project_dir: Option<&str>,
@@ -472,11 +472,31 @@ fn handle_api_open_editor_post(
     };
     let cwd = Path::new(project_dir);
     let file_path = Path::new(&parsed.file);
-    // Validate path containment.
-    if let Err(workspace::WorkspaceError::PathOutsideScope { .. }) =
-        workspace::validate_path_under_cwd(file_path, cwd)
-    {
-        return json_error(403, "path_outside_scope");
+    // Validate path containment — exhaustive match across all WorkspaceError
+    // variants (debt-verify H5: brittle `if let PathOutsideScope` was a contract
+    // break — NotFound/PathInvalid/CwdInvalid fell through to 500).
+    if let Err(e) = workspace::validate_path_under_cwd(file_path, cwd) {
+        match e {
+            workspace::WorkspaceError::PathOutsideScope { .. } => {
+                return json_error(403, "path_outside_scope");
+            }
+            workspace::WorkspaceError::NotFound => {
+                return json_error(404, "file_not_found");
+            }
+            workspace::WorkspaceError::PathInvalid(_)
+            | workspace::WorkspaceError::CwdInvalid(_) => {
+                return json_error(400, "invalid_path");
+            }
+            workspace::WorkspaceError::Io(_) => {
+                return json_error(500, "io_error");
+            }
+            // Schema/Json variants cannot originate here — keep the catch-all
+            // explicit so future variants surface as 500 rather than silently
+            // bypassing the guard.
+            workspace::WorkspaceError::SchemaValidation(_) | workspace::WorkspaceError::Json(_) => {
+                return json_error(500, "internal_validation_error");
+            }
+        }
     }
     // Resolve editor.
     let editor = match editor::resolve_editor() {
@@ -495,8 +515,8 @@ fn handle_api_open_editor_post(
     }
 }
 
-/// PUT /api/workspace — save workspace state atomically.
-#[allow(dead_code)]
+/// PUT /api/workspace — save workspace state atomically. Body parsed and
+/// schema-validated by the router before reaching this handler.
 fn handle_api_workspace_put(
     body: &[u8],
     project_dir: Option<&str>,
@@ -580,25 +600,15 @@ fn json_error_structured(
     )
 }
 
-/// Percent-decode a string (basic implementation for query params).
+/// Percent-decode a query parameter using the `percent-encoding` crate
+/// (UTF-8 aware). The previous hand-rolled implementation mapped each
+/// decoded byte to `char`, silently corrupting multi-byte UTF-8 sequences
+/// (e.g. `%C3%A9` for `é`); see debt-verify dup-002 / SMELL-15.
 fn percent_decode(s: &str) -> Option<String> {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let hex: String = chars.by_ref().take(2).collect();
-            if hex.len() == 2 {
-                let byte = u8::from_str_radix(&hex, 16).ok();
-                if let Some(b) = byte {
-                    result.push(b as char);
-                    continue;
-                }
-            }
-            return None; // Invalid percent encoding.
-        }
-        result.push(c);
-    }
-    Some(result)
+    percent_encoding::percent_decode_str(s)
+        .decode_utf8()
+        .ok()
+        .map(|c| c.into_owned())
 }
 
 #[cfg(test)]

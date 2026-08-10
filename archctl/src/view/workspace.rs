@@ -8,9 +8,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
-/// Maximum lines returned by source preview (safety limit).
-pub const MAX_LINES: usize = 2000;
-
 /// Workspace state persisted to `workspace.json` in the XDG project dir.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceState {
