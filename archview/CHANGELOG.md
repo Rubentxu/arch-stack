@@ -3,6 +3,50 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v1.32.0] — 2026-08-10 — H1 durable workspace state (PR #2 of cycle M71)
+
+### Added
+- **`src/lib/workspace.ts`** — `useWorkspaceState()` SolidJS hook:
+  - `GET /api/workspace` on mount → restores viewport (camera, zoom,
+    filters, selection). 404 / network error → defaults.
+  - `PUT /api/workspace` debounced 500 ms after the last local change.
+    One in-flight PUT at a time; latest state always wins. Flushed on
+    component unmount.
+  - `fetchSource(file, line)` → `GET /api/source` (returns windowed
+    preview + `start_line`, `total_lines`, `truncated`).
+  - `openInEditor(file, line)` → `POST /api/open-editor` (204 → true;
+    503 → false).
+  - `__setFetchForTests` seam for unit tests.
+- **`src/lib/workspace.types.ts`** — TypeScript types derived from
+  `schemas/workspace-state.schema.json` via
+  `json-schema-to-typescript`. Regenerate via `pnpm generate-types`.
+- **`src/components/SourceDrawer/SourceDrawer.tsx`** — read-only source
+  preview (~5 lines around the requested line) + "Open in editor"
+  button. `role="region"`, `aria-label`, focus management.
+- **`src/components/Sidebar.tsx`** — renders `SourceDrawer` below the
+  evidence list when the selected node has a `file:line` pointer.
+- **`src/__tests__/workspace.test.ts`** — 9 tests for the hook
+  (restore / defaults / debounce / coalesce / fetchSource /
+  openInEditor 204 / openInEditor 503 / 404 silent).
+- **`src/__tests__/SourceDrawer.test.tsx`** — 5 tests for the component
+  (header / lines / truncation notice / button click / fetch error).
+- **`src/__tests__/setup.ts`** — global vitest setup that stubs `fetch`
+  so pre-existing component tests aren't broken by the hook's mount-time
+  GET.
+- **`scripts/generate-types.ts`** + `pnpm generate-types` script.
+- **Dependencies**: `json-schema-to-typescript`, `tsx` (dev-only).
+
+### Changed
+- **`archview/package.json`** version `1.1.0` → `1.32.0` (synchronized
+  with `archctl` per the unified arch-stack product — ADR-038).
+- **`src/App.tsx`** — wires `useWorkspaceState()` and passes
+  `fetchSource` / `openInEditor` handlers to `Sidebar`.
+
+### Cross-repo
+- Companion PR #145 (`archctl` M71 PR #1) added the 4 HTTP endpoints
+  and ADR-041. The types in `workspace.types.ts` are generated from
+  the JSON Schema committed there (`schemas/workspace-state.schema.json`).
+
 ## [v0.21.1] — 2026-08-02 — view test coverage (M17.5 PackageGraph extract)
 
 ### Added
