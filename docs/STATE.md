@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-09, convergence cycle m69 (ADR-038/039/040).
+> Última actualización: 2026-08-10, housekeeping post-release v1.30.0.
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `460cc6b` (HEAD, convergence cycle m69) |
-| Versión | `v1.29.0` (latest tag) |
+| Tip | `b00e063` (HEAD, convergence cycle m69 — docs only) |
+| Versión | `v1.30.0` (latest tag) |
 | Tests | 201+ pasan, 0 fallan (verify-local PASS) |
-| Working tree | clean, en sync con `origin/main` |
+| Working tree | clean, en sync con `origin/main` (only `docs/CCMoldable/` untracked, per M69 spec) |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | ~31,254 |
 | LOC tests | ~6,560 |
 | LOC benches | ~790 |
-| Vault milestones | 28 (M30–M56) |
-| Tags | 27 (v1.1.0 → v1.26.0) |
+| Vault milestones | 29 (M30–M61 + M69) |
+| Tags | 31 (v1.1.0 → v1.30.0) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -52,6 +52,12 @@
 | `v1.24.0` | M54 | Session close (CHANGELOG backfill v1.18.0–v1.23.0) |
 | `v1.25.0` | M55 | Codebase state study + 11 prioritized proposals |
 | `v1.26.0` | M56 | DRY skip-on-missing-backend helper |
+| (no tag) | M59 | Close stale PR #32 (M23 Phase 1/6) |
+| `v1.27.0` | M60 | Resolve 2 TODO markers (Dockerfile OCI label + Python class methods) |
+| `v1.28.0` | M57 | CONTRIBUTING.md (248 lines, manifest hygiene) |
+| (no tag) | M58 | docs/specs/index.md (13 specs, audience-grouped) |
+| `v1.29.0` | M61 | Cognitive policy tests (22 unit tests; 111 → 133) |
+| `v1.30.0` | M69 | Arch-stack product roadmap convergence (ADR-038/039/040 + ROADMAP H0–H3) |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -118,14 +124,21 @@
 ## Plan vigente
 
 **Marathon session closed at M54** (v1.24.0). Post-session work:
-- M55 (v1.25.0): state study + 11 proposals (M56–M68)
+- M55 (v1.25.0): state study + 11 proposals (M56–M68) — DONE
 - M56 (v1.26.0): DRY helper — DONE
 - M59: close stale PR #32 — DONE
+- M60 (v1.27.0): resolve 2 TODO markers — DONE
+- M57 (v1.28.0): CONTRIBUTING.md — DONE
+- M58 (no tag): docs/specs/index.md — DONE
+- M61 (v1.29.0): cognitive policy tests — DONE
+- M62 (no tag): STATE.md refresh (was this cycle) — DONE
+- M69 (v1.30.0): arch-stack product roadmap convergence — DONE
 
-Next agenda (per M55 study):
-- **Trio tidy-up**: M56 ✅, M59 ✅, M62 (STATE.md refresh — this cycle) ✅
-- **Medium-effort** (M61, M63, M65): cognitive tests, store.rs split, M18/M19 spike
-- **Long-term** (M66): call_graph prepare/execute migration
+Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
+
+**Next horizon (per ROADMAP H0–H3):**
+- **H0 — Ejecutable / verdad verificable**: contrato bundle schema ↔ Rust DTO ↔ TS types + selector configurable en `archctl view`. First code cycle of the H0 era.
+- H1, H2, H3 — pendiente, ver ROADMAP H0–H3 section.
 
 ## Comandos de verificación
 
@@ -152,10 +165,9 @@ cargo run --bin archctl -- doctor --scopes $(ls manifests | sed 's/.toml//' | tr
 
 ## Próxima acción del usuario
 
-Tras el trio tidy-up (M56, M59, M62), el código está en estado estable con
-26/26 doctor scopes verdes. Las opciones para la próxima sesión son:
+Tras el cierre de M55–M69, el código y la documentación están en estado estable:
 
-1. **Otra ronda tidy-up** (M57 CONTRIBUTING, M58 specs index, M60 fix 2 TODOs).
-2. **M61** — cognitive-layer test audit.
-3. **M66** — call_graph prepare/execute migration (cierra el deferral de M51).
+1. **H0 code cycle** — Contrato bundle schema ↔ Rust DTO ↔ TS types + selector configurable.
+2. **Otra ronda de housekeeping** (revisar sddk framework, vault, etc.).
+3. **Otra tarea o feature** no listada.
 4. **Cerrar sesión** y volver con fresh energy.
