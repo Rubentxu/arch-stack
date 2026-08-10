@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.local/schemas/workspace-state.schema.json",
+  "$comment": "Contrato versionado Rust↔TS para workspace state. schemaVersion bump → migration. Campos con rango 0+ sin constraints absurdos por tratarse de viewport coordinates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "project_hash", "workspace", "updated_at"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Literal fijo. Bump para migraciones de schema."
+    },
+    "project_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "blake3 hex del project identity (64 chars)."
+    },
+    "workspace": { "$ref": "#/$defs/Workspace" },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 con timezone de la última escritura."
+    }
+  },
+  "$defs": {
+    "Workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["camera", "zoom", "filters", "selection"],
+      "properties": {
+        "camera": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number", "minimum": 0 },
+            "y": { "type": "number", "minimum": 0 }
+          }
+        },
+        "zoom": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Nivel de zoom. Rango 0–100 por seguridad."
+        },
+        "filters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Filter" }
+        },
+        "selection": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/Selection" }
+          ]
+        }
+      }
+    },
+    "Filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "predicate"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["c4", "call-graph", "sequence", "class", "package"]
+        },
+        "predicate": {
+          "type": "string",
+          "description": "Predicado de filtro validado client-side."
+        }
+      }
+    },
+    "Selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["c4", "call-graph", "sequence", "class", "package", "node"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Identificador del elemento seleccionado en el grafo."
+        }
+      }
+    }
+  }
+}
