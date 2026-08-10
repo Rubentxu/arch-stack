@@ -12,11 +12,17 @@ pub mod filesystem;
 pub mod graph;
 pub mod identity;
 pub mod inventory;
+pub mod lifecycle;
 pub mod migrations;
 pub mod project;
 pub mod render;
 pub mod row;
-pub mod scope;
+pub mod scope; // M73: CLI lifecycle (asdf-inspired versioned installs).
+pub mod self_lifecycle {
+    // Re-export under the user-facing `archctl self` command name while
+    // keeping the Rust module `lifecycle` (since `self` is a reserved keyword).
+    pub use crate::lifecycle::*;
+}
 pub mod skills;
 pub mod source;
 pub mod stack;

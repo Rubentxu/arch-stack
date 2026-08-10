@@ -491,6 +491,50 @@ pub enum Command {
         #[arg(long)]
         cwd: Option<PathBuf>,
     },
+    /// Manage archctl itself — install, list, use, update, uninstall versioned binaries.
+    #[command(name = "self", alias = "lifecycle")]
+    Lifecycle {
+        #[command(subcommand)]
+        action: SelfAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SelfAction {
+    /// Install a versioned archctl binary.
+    Install {
+        /// Version to install. Defaults to the latest stable release.
+        #[arg(long)]
+        version: Option<String>,
+    },
+    /// List installed versions.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Switch the active version.
+    Use { version: String },
+    /// Uninstall a version (or purge all with --purge).
+    Uninstall {
+        /// Version to remove. Defaults to the current active version.
+        #[arg(long)]
+        version: Option<String>,
+        /// Remove all installed versions.
+        #[arg(long)]
+        purge: bool,
+    },
+    /// Self-update to a newer version.
+    Update {
+        /// Target version. Defaults to latest available.
+        #[arg(long)]
+        version: Option<String>,
+        /// Channel: stable, rc, nightly.
+        #[arg(long)]
+        channel: Option<String>,
+        /// Check for updates without installing.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -875,6 +919,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
         },
+        Command::Lifecycle { action: _ } => {
+            // M73 T1: all self subcommands are stubs — routing to
+            // unimplemented so the CLI parses correctly.
+            // Real implementations land in T2 (install/list/use/uninstall).
+            anyhow::bail!("archctl self: not yet implemented (see M73 T2)")
+        }
         Command::View { port, cwd } => {
             let project_dir = cwd.map(|p| p.to_string_lossy().to_string());
             let options = crate::view::ViewOptions {

@@ -60,6 +60,8 @@ tiny_http = "0.12"
 percent-encoding = "2"
 # M71: atomic writes for workspace state persistence (ADR-041)
 tempfile = "3"
+# M73: versioned distribution — semver parsing for install_dir paths.
+semver = "1"
 
 [dev-dependencies]
 tempfile = "3"
