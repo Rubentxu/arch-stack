@@ -75,7 +75,14 @@ fn serve_static(request_path: &str) -> Option<(String, Vec<u8>)> {
     Some((mime.to_string(), file.data.into_owned()))
 }
 
-fn handle_api_export(project_dir: Option<&str>) -> Result<(String, Vec<u8>)> {
+fn handle_api_export(
+    project_dir: Option<&str>,
+    selector: Option<&str>,
+) -> Result<(String, Vec<u8>)> {
+    // Documented default (D3): no selector → container:* (backward compatible)
+    let selector = selector.unwrap_or("container:*");
+    crate::diagram::selector::parse(selector).context("invalid view selector")?;
+
     if project_dir.is_none() {
         let payload = serde_json::json!({
             "empty": true,
@@ -96,7 +103,7 @@ fn handle_api_export(project_dir: Option<&str>) -> Result<(String, Vec<u8>)> {
         std::env::temp_dir().join(format!("archctl-view-export-{}", uuid::Uuid::new_v4()));
     let report = crate::diagram::run_export(
         &*store,
-        "container:*",
+        selector,
         &bundle_dir,
         &crate::clock::SystemClock,
         &*fs,
@@ -134,7 +141,7 @@ pub fn handle_request(
     project_dir: Option<&str>,
 ) -> (tiny_http::StatusCode, String, Vec<u8>) {
     match (method, url) {
-        ("GET", "/api/health") => {
+        ("GET", path) if path == "/api/health" || path.starts_with("/api/health?") => {
             let payload = serde_json::json!({
                 "status": "ok",
                 "version": env!("CARGO_PKG_VERSION"),
@@ -145,16 +152,21 @@ pub fn handle_request(
                 serde_json::to_vec(&payload).unwrap_or_default(),
             )
         }
-        ("GET", "/api/export") => match handle_api_export(project_dir) {
-            Ok((mime, body)) => (tiny_http::StatusCode(200), mime, body),
-            Err(e) => (
-                tiny_http::StatusCode(500),
-                "application/json".to_string(),
-                serde_json::json!({ "error": e.to_string() })
-                    .to_string()
-                    .into_bytes(),
-            ),
-        },
+        ("GET", path) if path == "/api/export" || path.starts_with("/api/export?") => {
+            let selector = path
+                .strip_prefix("/api/export?")
+                .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("selector=")));
+            match handle_api_export(project_dir, selector) {
+                Ok((mime, body)) => (tiny_http::StatusCode(200), mime, body),
+                Err(e) => (
+                    tiny_http::StatusCode(400),
+                    "application/json".to_string(),
+                    serde_json::json!({ "error": e.to_string() })
+                        .to_string()
+                        .into_bytes(),
+                ),
+            }
+        }
         ("GET", path) => match serve_static(path) {
             Some((mime, body)) => (tiny_http::StatusCode(200), mime, body),
             None => (
@@ -407,5 +419,94 @@ mod tests {
         assert!(buf.contains("Cross-Origin-Resource-Policy: same-origin"));
         drop(handle);
         drop(handle2);
+    }
+
+    #[test]
+    fn export_with_selector_splits_path() {
+        // Query string ?selector=... is stripped before routing; when no project_dir
+        // is set, the early-return fires with 200 + "no project_dir" warning.
+        let (status, mime, body) =
+            handle_request("GET", "/api/export?selector=context:myapp", None);
+        assert_eq!(status.0, 200);
+        assert_eq!(mime, "application/json");
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["empty"], true);
+        assert!(
+            json["warning"].as_str().unwrap().contains("no project_dir"),
+            "expected 'no project_dir' warning, got: {:?}",
+            json["warning"]
+        );
+    }
+
+    #[test]
+    fn export_without_selector_uses_default() {
+        // Without ?selector=, handle_api_export uses "container:*" as default.
+        // Same behavior as export_without_project_is_200_empty_json.
+        let (status, mime, body) = handle_request("GET", "/api/export", None);
+        assert_eq!(status.0, 200);
+        assert_eq!(mime, "application/json");
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["empty"], true);
+        assert!(
+            json["warning"].as_str().unwrap().contains("no project_dir"),
+            "expected 'no project_dir' warning, got: {:?}",
+            json["warning"]
+        );
+    }
+
+    #[test]
+    fn export_invalid_selector_returns_400() {
+        // Invalid selector "bogus" → selector::parse fails → HTTP 400 + JSON error.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let (status, mime, body) = handle_request(
+            "GET",
+            "/api/export?selector=bogus",
+            Some(tmp.path().to_str().unwrap()),
+        );
+        assert_eq!(
+            status.0, 400,
+            "expected 400 for invalid selector, got: {}",
+            status.0
+        );
+        assert_eq!(mime, "application/json");
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("invalid view selector"),
+            "expected 'invalid view selector' error, got: {:?}",
+            json["error"]
+        );
+    }
+
+    #[test]
+    fn health_unaffected_by_query_string() {
+        // /api/health with query string should still return 200 + status ok.
+        let (status, mime, body) = handle_request("GET", "/api/health?x=1", None);
+        assert_eq!(status.0, 200);
+        assert_eq!(mime, "application/json");
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ok");
+    }
+
+    #[test]
+    fn export_like_paths_do_not_match_export_guard() {
+        // /api/exportx (no query) must NOT match the export guard — it should
+        // fall through to the static branch → 404, not export a bundle.
+        let (status, _, _) = handle_request("GET", "/api/exportx", None);
+        assert_eq!(
+            status.0, 404,
+            "expected 404 for /api/exportx, got: {}",
+            status.0
+        );
+        // /api/export-extra similarly must not match.
+        let (status, _, _) = handle_request("GET", "/api/export-extra", None);
+        assert_eq!(
+            status.0, 404,
+            "expected 404 for /api/export-extra, got: {}",
+            status.0
+        );
     }
 }
