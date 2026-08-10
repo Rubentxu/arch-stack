@@ -5,16 +5,22 @@
 # plus a read-only API (/api/health, /api/export) connecting the
 # workbench to the LadybugDB graph.
 #
+# Extended in M71 (ADR-041) with workspace state persistence API:
+# GET/PUT /api/workspace, GET /api/source, POST /api/open-editor.
+#
 # Invariants: bind ONLY 127.0.0.1 (ADR-011), COOP/COEP headers for
 # SharedArrayBuffer (ADR-020), no daemon (ADR-010), no public network.
 
 id = "view"
-version = "0.1.0"
+version = "0.2.0"
 description = "Embedded archview workbench server (one-shot, 127.0.0.1 only)"
 cargo_dir = "archctl"
 
 editable = [
   "archctl/src/view.rs",
+  "archctl/src/view/workspace.rs",
+  "archctl/src/view/source.rs",
+  "archctl/src/view/editor.rs",
 ]
 
 public_symbols = [
@@ -24,6 +30,15 @@ public_symbols = [
   "ServerInfo",
   "parse_port",
   "looks_like_project_dir",
+  # M71 workspace state API
+  "WorkspaceState",
+  "Workspace",
+  "validate_path_under_cwd",
+  "SourcePreview",
+  "MAX_LINES",
+  "EditorCommand",
+  "resolve_editor",
+  "spawn_editor",
 ]
 
 must_hold = [
@@ -35,9 +50,15 @@ must_hold = [
   "rust_embed",
   "api/health",
   "api/export",
+  # M71 endpoints
+  "api/workspace",
+  "api/source",
+  "api/open-editor",
+  # M71 atomic write
+  "tempfile",
 ]
 
-minimum_tests = 10
+minimum_tests = 18
 
 must_not_contain = [
   "0.0.0.0",
