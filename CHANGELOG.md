@@ -4,6 +4,70 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.30.0] — 2026-08-10
+
+### Changed
+- **M69 — Arch-stack product roadmap convergence**: documentation-only
+  cycle consolidating validated product decisions into canonical ADRs.
+  PR #142 (squash `b00e063`).
+
+  - **3 new ADRs**: ADR-038 (one product, five invariants), ADR-039
+    (renderer reality + anti-roadmap with measurable reopen triggers),
+    ADR-040 (cognitive layer conditional activation).
+  - **5 ADRs annotated** (header-only, bodies preserved verbatim):
+    ADR-013 and ADR-020 SUPERSEDED; ADR-021/022/023 conditional.
+  - **6 new spec stubs** for H0–H3 horizons: `executable-bundle-contract`,
+    `durable-workspace-state`, `source-drawer-read-only`,
+    `cosmetic-changeset-roundtrip`, `arrows-compatibility-adapter`,
+    `lens-spec-entry-criteria`.
+  - **ROADMAP restructure**: H0–H3 outcome-driven horizons replace the
+    milestone-aspiration mix. M17–M23 anchors preserved with
+    `→ superseded by H{n}` redirects.
+  - **Identity correction**: STATE/README/specs-index/manifest reflect
+    arch-stack as one product (`archctl` + `archview` coupled via
+    rust-embed), not archctl alone.
+  - **20 files changed**, +768/-30, docs-only (zero source modifications).
+
+## [v1.29.0] — 2026-08-07
+
+### Added
+- **M61 — Cognitive policy tests**: 22 unit tests for `cognitive/policy/{context,decision}`
+  (the 0-test gap from M55 study). Side-fix: `PolicyResult` derives `PartialEq`
+  (test convenience). Cognitive test count 111 → 133. PR #140.
+
+## [v1.28.0] — 2026-08-07
+
+### Added
+- **M57 — CONTRIBUTING.md**: 248 lines with cycle workflow, manifest hygiene
+  conventions, bounded contexts, testing rules, and a "what-not-to-do" list.
+  Cross-referenced from AGENTS.md. PR #136.
+
+## [v1.27.0] — 2026-08-07
+
+### Fixed
+- **M60 — Resolve 2 TODO markers from M55 study**:
+  - `code/strategies/dockerfile.rs:139` — OCI LABEL parser
+    (handle multi-label and quoted values).
+  - `code/class_diagram.rs:1067` — Python class method extraction
+    (handle decorated methods correctly).
+  - 12 new unit tests; 1 golden fixture regenerated. PR #134.
+
+## [v1.26.0] — 2026-08-07
+
+### Changed
+- **M56 — DRY skip-on-missing-backend helper**: extracted
+  `archctl::test_helpers::plantuml::backend_available` to deduplicate
+  the "skip if no PlantUML backend" pattern across 5 e2e files.
+  Net **-7 LOC** across the test files. PR #130.
+
+## [v1.25.0] — 2026-08-07
+
+### Added
+- **M55 — Codebase state study + 11 prioritized improvement proposals
+  (M56–M68)**: post-session study at v1.24.0 documenting current state,
+  active debt, and a prioritized backlog. Reference:
+  `docs/sessions/2026-08-07-codebase-state-study.md`. PR #128.
+
 ## [v1.24.0] — 2026-08-07
 
 ### Added
