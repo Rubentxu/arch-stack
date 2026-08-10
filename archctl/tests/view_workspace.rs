@@ -1,7 +1,7 @@
-//! `view_workspace.rs` — integration tests for workspace state API endpoints.
-//!
-//! Tests the 4 new endpoints: GET/PUT /api/workspace, GET /api/source,
-//! POST /api/open-editor. Uses TempDir to avoid polluting the real XDG dir.
+// Integration tests for workspace state API endpoints.
+// Tests the 4 new endpoints: GET/PUT /api/workspace, GET /api/source,
+// POST /api/open-editor. Uses TempDir to avoid polluting the real XDG dir.
+use std::sync::Arc;
 
 // `view_workspace` integration tests cover the 4 M71 endpoints at the
 // `handle_request_with_body` level — no socket, no thread pool, no real
@@ -230,6 +230,40 @@ fn get_source_line_clamped_to_total() {
 // ---------------------------------------------------------------------------
 // POST /api/open-editor
 // ---------------------------------------------------------------------------
+
+#[test]
+fn post_open_editor_with_editor_var_returns_204() {
+    // M72 spec §3 S6 (deterministic handoff): with $EDITOR="echo" set in the
+    // injected Environment, POST /api/open-editor MUST return 204 (subprocess
+    // spawned), not 503. We override the per-call Environment with a
+    // FixedEnvironment to make the test deterministic.
+    use archctl::environment::FixedEnvironment;
+    let env = Arc::new(FixedEnvironment::new().with_var("EDITOR", "echo"));
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+    std::fs::create_dir(tmp.path().join("src")).unwrap();
+    let main_rs = tmp.path().join("src/main.rs");
+    std::fs::write(&main_rs, "fn main() {}\n").unwrap();
+    let project_dir = tmp.path().to_string_lossy().into_owned();
+
+    let body = serde_json::json!({
+        "file": "src/main.rs",
+        "line": 1
+    });
+
+    let (status, _, _, _) = archctl::view::handle_request_with_body(
+        "POST",
+        "/api/open-editor",
+        Some(&project_dir),
+        &*env,
+        &serde_json::to_vec(&body).unwrap(),
+    );
+    assert_eq!(
+        status.0, 204,
+        "with $EDITOR=echo, POST /api/open-editor must spawn and return 204"
+    );
+}
 
 #[test]
 fn post_open_editor_valid_returns_204_or_503() {
