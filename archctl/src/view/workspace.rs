@@ -21,12 +21,15 @@ pub struct WorkspaceState {
 }
 
 /// The workspace viewport and UI state.
+///
+/// `selection` is `Option<Selection>` to match the JSON Schema `oneOf: [null, Selection]`.
+/// When `None`, the field MUST serialise to JSON `null` (not be omitted), which is
+/// the default serde behaviour for `Option<T>` without `skip_serializing_if`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Workspace {
     pub camera: Camera,
     pub zoom: f64,
     pub filters: Vec<Filter>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Selection>,
 }
 
@@ -63,6 +66,81 @@ pub enum WorkspaceError {
     Io(#[from] io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("schema validation failed: {0}")]
+    SchemaValidation(String),
+}
+
+/// Allowed values for the `kind` enum in `Filter` and `Selection`
+/// (mirrors the JSON Schema `enum` declarations in spec.md §3).
+const ALLOWED_VIEW_KINDS: &[&str] = &["c4", "call-graph", "sequence", "class", "package"];
+const ALLOWED_SELECTION_KINDS: &[&str] =
+    &["c4", "call-graph", "sequence", "class", "package", "node"];
+
+impl WorkspaceState {
+    /// Validate that this state satisfies the JSON Schema constraints that
+    /// `serde` cannot enforce (const, enum, pattern, range). ADR-041 §3.
+    pub fn validate(&self) -> Result<(), WorkspaceError> {
+        if self.version != "1.0" {
+            return Err(WorkspaceError::SchemaValidation(format!(
+                "unsupported workspace schema version: {} (expected \"1.0\")",
+                self.version
+            )));
+        }
+        // project_hash: 64 lowercase hex chars (blake3).
+        if self.project_hash.len() != 64
+            || !self
+                .project_hash
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        {
+            return Err(WorkspaceError::SchemaValidation(format!(
+                "project_hash must be 64 lowercase hex chars, got: {}",
+                self.project_hash
+            )));
+        }
+        self.workspace.validate()?;
+        Ok(())
+    }
+}
+
+impl Workspace {
+    fn validate(&self) -> Result<(), WorkspaceError> {
+        if !(0.0..=100.0).contains(&self.zoom) {
+            return Err(WorkspaceError::SchemaValidation(format!(
+                "zoom must be in [0, 100], got: {}",
+                self.zoom
+            )));
+        }
+        for (i, f) in self.filters.iter().enumerate() {
+            if !ALLOWED_VIEW_KINDS.contains(&f.kind.as_str()) {
+                return Err(WorkspaceError::SchemaValidation(format!(
+                    "filters[{i}].kind must be one of {ALLOWED_VIEW_KINDS:?}, got: {}",
+                    f.kind
+                )));
+            }
+            if f.predicate.is_empty() {
+                return Err(WorkspaceError::SchemaValidation(format!(
+                    "filters[{i}].predicate must be non-empty"
+                )));
+            }
+        }
+        if let Some(sel) = &self.selection
+            && !ALLOWED_SELECTION_KINDS.contains(&sel.kind.as_str())
+        {
+            return Err(WorkspaceError::SchemaValidation(format!(
+                "selection.kind must be one of {ALLOWED_SELECTION_KINDS:?}, got: {}",
+                sel.kind
+            )));
+        }
+        if let Some(sel) = &self.selection
+            && sel.id.is_empty()
+        {
+            return Err(WorkspaceError::SchemaValidation(
+                "selection.id must be non-empty".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Validates that `file` resolves to a path under `cwd`.
@@ -119,6 +197,9 @@ impl WorkspaceStore {
         }
         let content = fs::read_to_string(&path)?;
         let state: WorkspaceState = serde_json::from_str(&content)?;
+        // Validate JSON Schema constraints that serde can't enforce
+        // (const, enum, pattern, range) per ADR-041 §3.
+        state.validate()?;
         Ok(Some(state))
     }
 
@@ -126,7 +207,9 @@ impl WorkspaceStore {
     ///
     /// This ensures readers never see a partial file. The XDG project dir
     /// is created lazily on first PUT (bootstrap case for new projects).
+    /// Re-validates the state to refuse writes that violate the schema.
     pub fn save(state: &WorkspaceState, cwd: &Path) -> Result<(), WorkspaceError> {
+        state.validate()?;
         let path = workspace_path(cwd);
         let parent = path
             .parent()
@@ -269,17 +352,51 @@ mod tests {
     }
 
     #[test]
-    fn workspace_state_wrong_schema_version() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("workspace.json");
-        // version "2.0" doesn't match const "1.0".
+    fn workspace_state_wrong_schema_version_rejected() {
+        // C1 fix: validate() rejects unsupported schema version (const violation).
         let json = r#"{"version":"2.0","project_hash":"abc","workspace":{"camera":{"x":0,"y":0},"zoom":50,"filters":[],"selection":null},"updated_at":"2026-01-01T00:00:00Z"}"#;
-        fs::write(&path, json).unwrap();
-        let content = fs::read_to_string(&path).unwrap();
-        let result: Result<WorkspaceState, _> = serde_json::from_str(&content);
-        // serde_json doesn't validate the const by default; the schema validator would catch it.
-        // For unit tests, we accept the deserialization and note schema validation is at API level.
-        assert!(result.is_ok());
+        let state: WorkspaceState = serde_json::from_str(json).unwrap();
+        let err = state.validate().unwrap_err();
+        assert!(matches!(err, WorkspaceError::SchemaValidation(_)));
+    }
+
+    #[test]
+    fn workspace_state_uppercase_hash_rejected() {
+        // C1 fix: project_hash must be 64 lowercase hex (pattern violation).
+        let json = r#"{"version":"1.0","project_hash":"ABCDEF","workspace":{"camera":{"x":0,"y":0},"zoom":50,"filters":[],"selection":null},"updated_at":"2026-01-01T00:00:00Z"}"#;
+        let state: WorkspaceState = serde_json::from_str(json).unwrap();
+        assert!(state.validate().is_err());
+    }
+
+    #[test]
+    fn workspace_state_zoom_out_of_range_rejected() {
+        // C1 fix: zoom must be in [0, 100].
+        let mut s = valid_workspace_state();
+        s.workspace.zoom = 150.0;
+        assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn workspace_state_invalid_filter_kind_rejected() {
+        // C1 fix: filters[*].kind must be one of allowed enum values.
+        let mut s = valid_workspace_state();
+        s.workspace.filters.push(Filter {
+            kind: "unknown".into(),
+            predicate: "x".into(),
+        });
+        assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn workspace_selection_serialises_as_null_when_none() {
+        // C2 fix: Option<Selection> without skip_serializing_if emits `null`.
+        let mut s = valid_workspace_state();
+        s.workspace.selection = None;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains("\"selection\":null"),
+            "expected 'selection':null, got: {json}"
+        );
     }
 
     fn valid_workspace_state() -> WorkspaceState {

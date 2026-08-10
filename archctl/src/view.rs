@@ -519,6 +519,11 @@ fn handle_api_workspace_put(
             return json_error_structured(400, "invalid_schema", &e.to_string());
         }
     };
+    // Validate JSON Schema constraints that serde can't enforce
+    // (const, enum, pattern, range) per ADR-041 §3.
+    if let Err(e) = state.validate() {
+        return json_error_structured(400, "invalid_schema", &e.to_string());
+    }
     // Atomic save.
     match workspace::WorkspaceStore::save(&state, cwd) {
         Ok(()) => (

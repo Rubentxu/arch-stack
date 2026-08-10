@@ -288,11 +288,71 @@ fn put_workspace_invalid_schema_returns_structured_error() {
         "updated_at": "2026-01-01T00:00:00Z"
     });
 
-    let (status, _, body, _) = call_with_body("PUT", "/api/workspace", Some(&project_dir), &bad_state);
+    let (status, _, body, _) =
+        call_with_body("PUT", "/api/workspace", Some(&project_dir), &bad_state);
     assert_eq!(status, 400);
     let json = parse_json(&body);
     assert_eq!(json["error"], "invalid_schema");
-    assert!(json["details"].is_string(), "expected 'details' string, got: {json}");
+    assert!(
+        json["details"].is_string(),
+        "expected 'details' string, got: {json}"
+    );
+}
+
+#[test]
+fn put_workspace_zoom_out_of_range_returns_400() {
+    // C1 fix: zoom constraint ([0, 100]) enforced server-side.
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+    let project_dir = tmp.path().to_string_lossy().into_owned();
+
+    let bad = serde_json::json!({
+        "version": "1.0",
+        "project_hash": "a".repeat(64),
+        "workspace": {
+            "camera": { "x": 0.0, "y": 0.0 },
+            "zoom": 250.0,
+            "filters": [],
+            "selection": null
+        },
+        "updated_at": "2026-01-01T00:00:00Z"
+    });
+
+    let (status, _, body, _) = call_with_body("PUT", "/api/workspace", Some(&project_dir), &bad);
+    assert_eq!(status, 400);
+    let json = parse_json(&body);
+    assert_eq!(json["error"], "invalid_schema");
+    assert!(json["details"].as_str().unwrap().contains("zoom"));
+}
+
+#[test]
+fn put_workspace_unknown_version_returns_400() {
+    // C1 fix: schema version const enforced.
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+    let project_dir = tmp.path().to_string_lossy().into_owned();
+
+    let bad = serde_json::json!({
+        "version": "2.0",
+        "project_hash": "a".repeat(64),
+        "workspace": {
+            "camera": { "x": 0.0, "y": 0.0 },
+            "zoom": 50.0,
+            "filters": [],
+            "selection": null
+        },
+        "updated_at": "2026-01-01T00:00:00Z"
+    });
+
+    let (status, _, body, _) = call_with_body("PUT", "/api/workspace", Some(&project_dir), &bad);
+    assert_eq!(status, 400);
+    let json = parse_json(&body);
+    assert!(
+        json["details"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported workspace schema version")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +380,9 @@ fn get_source_truncated_emits_x_truncated_header() {
     let json = parse_json(&body);
     assert_eq!(json["truncated"], true);
     assert!(
-        extras.iter().any(|(k, v)| k == "X-Truncated" && v == "true"),
+        extras
+            .iter()
+            .any(|(k, v)| k == "X-Truncated" && v == "true"),
         "expected X-Truncated: true header, got extras: {extras:?}"
     );
 }
