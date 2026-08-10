@@ -7,6 +7,11 @@
 // `handle_request_with_body` level — no socket, no thread pool, no real
 // HTTP framing. The handler is a pure function, so each test just calls
 // it directly with the desired method/url/body/project_dir.
+//
+// M72 note: `handle_request(_with_body)` gained an `env: &dyn Environment`
+// parameter. Tests use `SystemEnvironment` (real $EDITOR/$VISUAL of the
+// test process — fine because no test asserts on a specific editor binary,
+// and POST /api/open-editor without `$EDITOR` returns 503).
 
 /// Helper: call handle_request and return status, mime, body.
 fn call(
@@ -14,7 +19,12 @@ fn call(
     url: &str,
     project_dir: Option<&str>,
 ) -> (u16, String, Vec<u8>, Vec<(String, String)>) {
-    let (status, mime, body, extras) = archctl::view::handle_request(method, url, project_dir);
+    let (status, mime, body, extras) = archctl::view::handle_request(
+        method,
+        url,
+        project_dir,
+        &archctl::environment::SystemEnvironment,
+    );
     (status.0, mime, body, extras)
 }
 
@@ -421,7 +431,12 @@ fn call_with_body(
 ) -> (u16, String, Vec<u8>, Vec<(String, String)>) {
     // Serialise the JSON body and dispatch through the body-aware handler.
     let bytes = serde_json::to_vec(body).expect("valid body JSON");
-    let (status, mime, body_bytes, extra) =
-        archctl::view::handle_request_with_body(method, url, project_dir, &bytes);
+    let (status, mime, body_bytes, extra) = archctl::view::handle_request_with_body(
+        method,
+        url,
+        project_dir,
+        &archctl::environment::SystemEnvironment,
+        &bytes,
+    );
     (status.0, mime, body_bytes, extra)
 }
