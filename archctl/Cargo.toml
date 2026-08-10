@@ -58,6 +58,8 @@ merman-render = "=0.8.0-alpha.3"
 rust-embed = { version = "8", features = ["include-flate"] }
 tiny_http = "0.12"
 percent-encoding = "2"
+# M71: atomic writes for workspace state persistence (ADR-041)
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"
