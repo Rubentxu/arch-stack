@@ -39,6 +39,10 @@ public_symbols = [
   "EditorCommand",
   "resolve_editor",
   "spawn_editor",
+  # M72 WorkspacePersistence port
+  "WorkspacePersistence",
+  "WorkspacePersistenceFs",
+  "system_workspace_persistence",
 ]
 
 must_hold = [

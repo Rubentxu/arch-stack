@@ -23,13 +23,43 @@ pub mod workspace;
 #[folder = "assets-view/"]
 struct ViewAssets;
 
-#[derive(Debug, Clone, Default)]
+use std::sync::Arc;
+
+/// View options for the archview server.
+#[derive(Clone)]
 pub struct ViewOptions {
     /// Port to bind. `0` = ephemeral (default).
     pub port: u16,
     /// Project directory to export bundles from (for `/api/export`).
     /// If `None`, the endpoint returns a clear error.
     pub project_dir: Option<String>,
+    /// Environment port for editor resolution.
+    /// `Debug` is intentionally hand-derived because `dyn Environment`
+    /// is not `Debug`; we just print the type id.
+    pub env: Arc<dyn crate::environment::Environment>,
+}
+
+impl std::fmt::Debug for ViewOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ViewOptions")
+            .field("port", &self.port)
+            .field("project_dir", &self.project_dir)
+            .field(
+                "env",
+                &std::any::type_name::<dyn crate::environment::Environment>(),
+            )
+            .finish()
+    }
+}
+
+impl Default for ViewOptions {
+    fn default() -> Self {
+        Self {
+            port: 0,
+            project_dir: None,
+            env: crate::environment::system_environment(),
+        }
+    }
 }
 
 /// Server result: the bound address, for tests and user output.
@@ -145,13 +175,14 @@ pub fn handle_request(
     method: &str,
     url: &str,
     project_dir: Option<&str>,
+    env: &dyn crate::environment::Environment,
 ) -> (
     tiny_http::StatusCode,
     String,
     Vec<u8>,
     Vec<(String, String)>,
 ) {
-    handle_request_with_body(method, url, project_dir, &[])
+    handle_request_with_body(method, url, project_dir, env, &[])
 }
 
 /// Same as [`handle_request`] but with a request body for PUT/POST.
@@ -161,6 +192,7 @@ pub fn handle_request_with_body(
     method: &str,
     url: &str,
     project_dir: Option<&str>,
+    env: &dyn crate::environment::Environment,
     body: &[u8],
 ) -> (
     tiny_http::StatusCode,
@@ -208,7 +240,7 @@ pub fn handle_request_with_body(
             handle_api_source_get(path, project_dir)
         }
         ("POST", path) if path == "/api/open-editor" || path.starts_with("/api/open-editor?") => {
-            handle_api_open_editor_post(body, project_dir)
+            handle_api_open_editor_post(body, project_dir, env)
         }
         ("GET", path) => match serve_static(path) {
             Some((mime, body)) => (tiny_http::StatusCode(200), mime, body, vec![]),
@@ -241,6 +273,7 @@ pub fn run(options: ViewOptions) -> Result<ServerInfo> {
         TcpListener::bind(("127.0.0.1", options.port)).context("bind 127.0.0.1 failed")?;
     let addr = listener.local_addr().context("local_addr failed")?;
     let project_dir = options.project_dir.clone();
+    let env = options.env.clone();
 
     println!("archctl view — http://{addr}");
     println!("workbench: archview (embedded, ADR-033)");
@@ -254,6 +287,7 @@ pub fn run(options: ViewOptions) -> Result<ServerInfo> {
         let url = request.url().to_string();
         let method = request.method().clone();
         let project = project_dir.clone();
+        let env_ref: &dyn crate::environment::Environment = &*env;
 
         // Read the request body for PUT/POST before dispatching; GET/HEAD
         // ignore the body. ADR-041: workspace state endpoints accept JSON
@@ -269,8 +303,13 @@ pub fn run(options: ViewOptions) -> Result<ServerInfo> {
                 .read_to_end(&mut body_buf);
         }
 
-        let (status, mime, body, extra_headers) =
-            handle_request_with_body(method.as_str(), url.as_str(), project.as_deref(), &body_buf);
+        let (status, mime, body, extra_headers) = handle_request_with_body(
+            method.as_str(),
+            url.as_str(),
+            project.as_deref(),
+            env_ref,
+            &body_buf,
+        );
 
         let mut response = tiny_http::Response::from_data(body)
             .with_status_code(status)
@@ -438,11 +477,18 @@ fn handle_api_source_get(
                 extra,
             )
         }
-        Err(source::SourceError::OutsideScope) => json_error(403, "path_outside_scope"),
-        Err(source::SourceError::NotFound(_)) => json_error(404, "file_not_found"),
-        Err(source::SourceError::IsDirectory) => json_error(400, "is_directory"),
-        Err(source::SourceError::InvalidPath(_)) => json_error(400, "invalid_path"),
-        Err(source::SourceError::Io(e)) => json_error(500, &format!("io_error: {e}")),
+        Err(workspace::WorkspaceError::PathOutsideScope { .. }) => {
+            json_error(403, "path_outside_scope")
+        }
+        Err(workspace::WorkspaceError::NotFound) => json_error(404, "file_not_found"),
+        Err(workspace::WorkspaceError::IsDirectory(_)) => json_error(400, "is_directory"),
+        Err(
+            workspace::WorkspaceError::PathInvalid(_) | workspace::WorkspaceError::CwdInvalid(_),
+        ) => json_error(400, "invalid_path"),
+        Err(workspace::WorkspaceError::Io(_)) => json_error(500, "io_error"),
+        Err(
+            workspace::WorkspaceError::Json(_) | workspace::WorkspaceError::SchemaValidation(_),
+        ) => json_error(500, "internal_validation_error"),
     }
 }
 
@@ -451,6 +497,7 @@ fn handle_api_source_get(
 fn handle_api_open_editor_post(
     body: &[u8],
     project_dir: Option<&str>,
+    env: &dyn crate::environment::Environment,
 ) -> (
     tiny_http::StatusCode,
     String,
@@ -490,6 +537,9 @@ fn handle_api_open_editor_post(
             workspace::WorkspaceError::Io(_) => {
                 return json_error(500, "io_error");
             }
+            workspace::WorkspaceError::IsDirectory(_) => {
+                return json_error(400, "is_directory");
+            }
             // Schema/Json variants cannot originate here — keep the catch-all
             // explicit so future variants surface as 500 rather than silently
             // bypassing the guard.
@@ -498,8 +548,8 @@ fn handle_api_open_editor_post(
             }
         }
     }
-    // Resolve editor.
-    let editor = match editor::resolve_editor() {
+    // Resolve editor using injected environment.
+    let editor = match editor::resolve_editor(env) {
         Some(e) => e,
         None => return json_error(503, "no_editor_configured: set $EDITOR or $VISUAL"),
     };
@@ -617,13 +667,15 @@ mod tests {
     use std::io::Write;
 
     fn status_of(method: &str, url: &str) -> u16 {
-        let (status, _, _, _) = handle_request(method, url, None);
+        let env = crate::environment::fixed_environment();
+        let (status, _, _, _) = handle_request(method, url, None, &*env);
         status.0
     }
 
     #[test]
     fn health_returns_ok_and_version() {
-        let (status, mime, body, _) = handle_request("GET", "/api/health", None);
+        let env = crate::environment::fixed_environment();
+        let (status, mime, body, _) = handle_request("GET", "/api/health", None, &*env);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -637,7 +689,8 @@ mod tests {
         if ViewAssets::get("index.html").is_none() {
             return;
         }
-        let (status, mime, body, _) = handle_request("GET", "/", None);
+        let env = crate::environment::fixed_environment();
+        let (status, mime, body, _) = handle_request("GET", "/", None, &*env);
         assert_eq!(status.0, 200);
         assert!(mime.starts_with("text/html"));
         assert!(!body.is_empty());
@@ -645,7 +698,8 @@ mod tests {
 
     #[test]
     fn missing_asset_is_404() {
-        let (status, _, body, _) = handle_request("GET", "/nope.js", None);
+        let env = crate::environment::fixed_environment();
+        let (status, _, body, _) = handle_request("GET", "/nope.js", None, &*env);
         assert_eq!(status.0, 404);
         assert_eq!(body, b"not found");
     }
@@ -663,7 +717,8 @@ mod tests {
 
     #[test]
     fn export_without_project_is_200_empty_json() {
-        let (status, mime, body, _) = handle_request("GET", "/api/export", None);
+        let env = crate::environment::fixed_environment();
+        let (status, mime, body, _) = handle_request("GET", "/api/export", None, &*env);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -713,6 +768,7 @@ mod tests {
         let opts = ViewOptions {
             port: 0,
             project_dir: None,
+            env: crate::environment::fixed_environment(),
         };
         let handle = std::thread::spawn(move || {
             let _ = run(opts);
@@ -727,6 +783,7 @@ mod tests {
         let opts = ViewOptions {
             port,
             project_dir: None,
+            env: crate::environment::fixed_environment(),
         };
         let handle2 = std::thread::spawn(move || {
             let _ = run(opts);
@@ -757,8 +814,9 @@ mod tests {
     fn export_with_selector_splits_path() {
         // Query string ?selector=... is stripped before routing; when no project_dir
         // is set, the early-return fires with 200 + "no project_dir" warning.
+        let env = crate::environment::fixed_environment();
         let (status, mime, body, _) =
-            handle_request("GET", "/api/export?selector=context:myapp", None);
+            handle_request("GET", "/api/export?selector=context:myapp", None, &*env);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -774,7 +832,8 @@ mod tests {
     fn export_without_selector_uses_default() {
         // Without ?selector=, handle_api_export uses "container:*" as default.
         // Same behavior as export_without_project_is_200_empty_json.
-        let (status, mime, body, _) = handle_request("GET", "/api/export", None);
+        let env = crate::environment::fixed_environment();
+        let (status, mime, body, _) = handle_request("GET", "/api/export", None, &*env);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -791,10 +850,12 @@ mod tests {
         // Invalid selector "bogus" → selector::parse fails → HTTP 400 + JSON error.
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let env = crate::environment::fixed_environment();
         let (status, mime, body, _) = handle_request(
             "GET",
             "/api/export?selector=bogus",
             Some(tmp.path().to_str().unwrap()),
+            &*env,
         );
         assert_eq!(
             status.0, 400,
@@ -816,7 +877,8 @@ mod tests {
     #[test]
     fn health_unaffected_by_query_string() {
         // /api/health with query string should still return 200 + status ok.
-        let (status, mime, body, _) = handle_request("GET", "/api/health?x=1", None);
+        let env = crate::environment::fixed_environment();
+        let (status, mime, body, _) = handle_request("GET", "/api/health?x=1", None, &*env);
         assert_eq!(status.0, 200);
         assert_eq!(mime, "application/json");
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -827,14 +889,15 @@ mod tests {
     fn export_like_paths_do_not_match_export_guard() {
         // /api/exportx (no query) must NOT match the export guard — it should
         // fall through to the static branch → 404, not export a bundle.
-        let (status, _, _, _) = handle_request("GET", "/api/exportx", None);
+        let env = crate::environment::fixed_environment();
+        let (status, _, _, _) = handle_request("GET", "/api/exportx", None, &*env);
         assert_eq!(
             status.0, 404,
             "expected 404 for /api/exportx, got: {}",
             status.0
         );
         // /api/export-extra similarly must not match.
-        let (status, _, _, _) = handle_request("GET", "/api/export-extra", None);
+        let (status, _, _, _) = handle_request("GET", "/api/export-extra", None, &*env);
         assert_eq!(
             status.0, 404,
             "expected 404 for /api/export-extra, got: {}",
@@ -846,7 +909,8 @@ mod tests {
 
     #[test]
     fn get_workspace_no_project_returns_500() {
-        let (status, _, body, _) = handle_request("GET", "/api/workspace", None);
+        let env = crate::environment::fixed_environment();
+        let (status, _, body, _) = handle_request("GET", "/api/workspace", None, &*env);
         assert_eq!(status.0, 500);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["error"].as_str().unwrap().contains("xdg_inaccessible"));
@@ -856,8 +920,13 @@ mod tests {
     fn get_workspace_no_file_returns_200_null() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-        let (status, _, body, _) =
-            handle_request("GET", "/api/workspace", Some(tmp.path().to_str().unwrap()));
+        let env = crate::environment::fixed_environment();
+        let (status, _, body, _) = handle_request(
+            "GET",
+            "/api/workspace",
+            Some(tmp.path().to_str().unwrap()),
+            &*env,
+        );
         assert_eq!(status.0, 200);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["workspace"].is_null());
@@ -871,10 +940,12 @@ mod tests {
         let src_dir = tmp.path().join("src");
         std::fs::create_dir(&src_dir).unwrap();
         std::fs::write(src_dir.join("main.rs"), "fn main() {}\n").unwrap();
+        let env = crate::environment::fixed_environment();
         let (status, _, body, _) = handle_request(
             "GET",
             "/api/source?file=src/main.rs&line=1",
             Some(tmp.path().to_str().unwrap()),
+            &*env,
         );
         assert_eq!(status.0, 200);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -886,10 +957,12 @@ mod tests {
     fn get_source_path_traversal_returns_403() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let env = crate::environment::fixed_environment();
         let (status, _, body, _) = handle_request(
             "GET",
             "/api/source?file=../../../etc/passwd&line=1",
             Some(tmp.path().to_str().unwrap()),
+            &*env,
         );
         assert_eq!(status.0, 403);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -905,10 +978,12 @@ mod tests {
     fn get_source_missing_file_returns_404() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let env = crate::environment::fixed_environment();
         let (status, _, body, _) = handle_request(
             "GET",
             "/api/source?file=nonexistent.rs&line=1",
             Some(tmp.path().to_str().unwrap()),
+            &*env,
         );
         assert_eq!(status.0, 404);
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -920,10 +995,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
         std::fs::create_dir(tmp.path().join("src")).unwrap();
+        let env = crate::environment::fixed_environment();
         let (status, _, _, _) = handle_request(
             "GET",
             "/api/source?file=src&line=1",
             Some(tmp.path().to_str().unwrap()),
+            &*env,
         );
         assert_eq!(status.0, 400);
     }

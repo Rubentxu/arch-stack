@@ -6,6 +6,7 @@
 use anyhow::Result;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::{fs, io};
 
 /// Workspace state persisted to `workspace.json` in the XDG project dir.
@@ -59,6 +60,8 @@ pub enum WorkspaceError {
     PathOutsideScope { file: PathBuf },
     #[error("workspace file not found")]
     NotFound,
+    #[error("path is a directory: {0}")]
+    IsDirectory(PathBuf),
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
     #[error("JSON error: {0}")]
@@ -174,44 +177,53 @@ pub fn validate_path_under_cwd(file: &Path, cwd: &Path) -> Result<PathBuf, Works
     Ok(file_canonical)
 }
 
-/// Workspace loader/saver with atomic writes (ADR-041 §atomicity).
-///
-/// `Workspace` (the data) and `WorkspaceStore` (the I/O) live in different
-/// namespaces to avoid name collision: data = `Workspace { camera, zoom,
-/// filters, selection }`, I/O = `WorkspaceStore::load(cwd)` /
-/// `WorkspaceStore::save(state, cwd)`.
-pub struct WorkspaceStore;
+// ---------------------------------------------------------------------------
+// WorkspacePersistence port (ADR-041)
+// ---------------------------------------------------------------------------
 
-impl WorkspaceStore {
-    /// Load workspace state from `workspace.json` in the XDG project dir.
-    ///
-    /// Returns `Ok(None)` if the file does not exist yet.
-    /// Returns `Ok(Some(state))` if the file exists and is valid.
-    pub fn load(cwd: &Path) -> Result<Option<WorkspaceState>, WorkspaceError> {
-        let path = workspace_path(cwd);
+/// Port de persistencia del estado del workspace.
+///
+/// Implementaciones:
+/// - [`WorkspacePersistenceFs`] — producción, archivos en XDG.
+/// - [`WorkspacePersistenceMemory`] — tests, BTreeMap en memoria.
+pub trait WorkspacePersistence: Send + Sync {
+    /// Cargar estado del workspace. Retorna `Ok(None)` si no existe archivo.
+    fn load(&self) -> Result<Option<WorkspaceState>, WorkspaceError>;
+
+    /// Guardar estado del workspace atómicamente (temp + rename).
+    fn save(&self, state: &WorkspaceState) -> Result<(), WorkspaceError>;
+}
+
+/// Producción: filesystem real en XDG.
+pub struct WorkspacePersistenceFs {
+    root: PathBuf,
+}
+
+impl WorkspacePersistenceFs {
+    /// Create a new FS persistence backend rooted at `root`.
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+}
+
+impl WorkspacePersistence for WorkspacePersistenceFs {
+    fn load(&self) -> Result<Option<WorkspaceState>, WorkspaceError> {
+        let path = self.root.join("workspace.json");
         if !path.exists() {
             return Ok(None);
         }
         let content = fs::read_to_string(&path)?;
         let state: WorkspaceState = serde_json::from_str(&content)?;
-        // Validate JSON Schema constraints that serde can't enforce
-        // (const, enum, pattern, range) per ADR-041 §3.
         state.validate()?;
         Ok(Some(state))
     }
 
-    /// Save workspace state atomically: write to temp file, then rename.
-    ///
-    /// This ensures readers never see a partial file. The XDG project dir
-    /// is created lazily on first PUT (bootstrap case for new projects).
-    /// Re-validates the state to refuse writes that violate the schema.
-    pub fn save(state: &WorkspaceState, cwd: &Path) -> Result<(), WorkspaceError> {
+    fn save(&self, state: &WorkspaceState) -> Result<(), WorkspaceError> {
         state.validate()?;
-        let path = workspace_path(cwd);
+        let path = self.root.join("workspace.json");
         let parent = path
             .parent()
             .ok_or_else(|| WorkspaceError::PathInvalid("no parent dir".into()))?;
-        // Bootstrap XDG layout if first PUT for this project.
         fs::create_dir_all(parent)?;
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
         let json = serde_json::to_vec_pretty(state)?;
@@ -220,6 +232,84 @@ impl WorkspaceStore {
         tmp.persist(&path)
             .map_err(|e| WorkspaceError::Io(e.error))?;
         Ok(())
+    }
+}
+
+/// Test seam: swap the global persistence impl for tests.
+///
+/// M72 design proposed this seam so unit tests could exercise `WorkspaceStore`
+/// behaviour without touching XDG. The current M72 tests construct their own
+/// `WorkspacePersistence` impls (see `WorkspacePersistenceMemory` below) and
+/// inject them directly via the call sites — no global state needed.
+/// The seam is kept available for future tests that need to override the
+/// process-wide singleton without threading it through every call site.
+#[cfg(test)]
+mod test_seam {
+    use super::WorkspacePersistence;
+    use std::sync::{Arc, OnceLock};
+    static TEST_PERSISTENCE: OnceLock<Arc<dyn WorkspacePersistence>> = OnceLock::new();
+
+    /// Set the persistence implementation for tests.
+    #[allow(dead_code)]
+    pub fn __set_workspace_persistence_for_tests(p: Arc<dyn WorkspacePersistence>) {
+        let _ = TEST_PERSISTENCE.set(p);
+    }
+
+    /// Get the test-injected persistence impl, if any.
+    #[allow(dead_code)]
+    pub fn __workspace_persistence_for_tests() -> Option<Arc<dyn WorkspacePersistence>> {
+        TEST_PERSISTENCE.get().cloned()
+    }
+}
+
+/// Singleton factory: returns the process-wide persistence impl.
+static SYSTEM_PERSISTENCE: OnceLock<Arc<dyn WorkspacePersistence>> = OnceLock::new();
+
+/// Returns the system-wide [`WorkspacePersistence`] implementation.
+pub fn system_workspace_persistence() -> &'static Arc<dyn WorkspacePersistence> {
+    SYSTEM_PERSISTENCE.get_or_init(|| {
+        let project = crate::project::resolve_project(
+            std::env::current_dir().unwrap().to_string_lossy().as_ref(),
+        );
+        Arc::new(WorkspacePersistenceFs::new(project.project_dir))
+    })
+}
+
+/// Legacy struct — now a type alias for the trait object.
+///
+/// `Workspace` (the data) and `WorkspaceStore` (the I/O) live in different
+/// namespaces to avoid name collision: data = `Workspace { camera, zoom,
+/// filters, selection }`, I/O = `WorkspaceStore::load(cwd)` /
+/// `WorkspaceStore::save(state, cwd)`.
+///
+/// Convenience namespace that delegates to the `WorkspacePersistence` trait.
+///
+/// `WorkspaceStore::load/save(cwd)` builds a per-call `WorkspacePersistenceFs`
+/// from the cwd-resolved XDG project dir and forwards to the trait. This
+/// keeps the existing call sites in `archctl/src/view.rs` working while
+/// making the trait the single source of truth for I/O (no duplicated
+/// filesystem code).
+///
+/// The trait itself stays a singleton (`system_workspace_persistence()`)
+/// for callers that don't have a per-request cwd — currently only unit
+/// tests. The two paths coexist; both go through the same impl.
+pub struct WorkspaceStore;
+
+impl WorkspaceStore {
+    /// Load workspace state for the project rooted at `cwd`. Delegates to
+    /// `WorkspacePersistence` via a per-call `WorkspacePersistenceFs`.
+    pub fn load(cwd: &Path) -> Result<Option<WorkspaceState>, WorkspaceError> {
+        let fs =
+            WorkspacePersistenceFs::new(workspace_path(cwd).parent().unwrap_or(cwd).to_path_buf());
+        fs.load()
+    }
+
+    /// Save workspace state for the project rooted at `cwd`. Delegates to
+    /// `WorkspacePersistence` via a per-call `WorkspacePersistenceFs`.
+    pub fn save(state: &WorkspaceState, cwd: &Path) -> Result<(), WorkspaceError> {
+        let root = workspace_path(cwd).parent().unwrap_or(cwd).to_path_buf();
+        let fs = WorkspacePersistenceFs::new(root);
+        fs.save(state)
     }
 }
 
@@ -235,6 +325,110 @@ fn workspace_path(cwd: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// In-memory persistence impl for tests — no filesystem I/O.
+    struct WorkspacePersistenceMemory {
+        state: Mutex<Option<WorkspaceState>>,
+    }
+
+    impl WorkspacePersistenceMemory {
+        fn new() -> Self {
+            Self {
+                state: Mutex::new(None),
+            }
+        }
+    }
+
+    impl WorkspacePersistence for WorkspacePersistenceMemory {
+        fn load(&self) -> Result<Option<WorkspaceState>, WorkspaceError> {
+            Ok(self.state.lock().unwrap().clone())
+        }
+
+        fn save(&self, new_state: &WorkspaceState) -> Result<(), WorkspaceError> {
+            new_state.validate()?;
+            *self.state.lock().unwrap() = Some(new_state.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn workspace_persistence_memory_load_empty_returns_none() {
+        let mem = WorkspacePersistenceMemory::new();
+        let result = mem.load();
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn workspace_persistence_memory_save_and_load_round_trip() {
+        let mem = WorkspacePersistenceMemory::new();
+        let state = valid_workspace_state();
+        mem.save(&state).unwrap();
+        let loaded = mem.load().unwrap().unwrap();
+        assert_eq!(loaded.version, "1.0");
+        assert_eq!(loaded.workspace.zoom, 50.0);
+    }
+
+    #[test]
+    fn workspace_persistence_memory_save_invalid_rejected() {
+        let mem = WorkspacePersistenceMemory::new();
+        let mut state = valid_workspace_state();
+        state.workspace.zoom = 150.0; // out of range
+        let result = mem.save(&state);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn workspace_persistence_memory_overwrites_previous_state() {
+        let mem = WorkspacePersistenceMemory::new();
+        let state1 = valid_workspace_state();
+        mem.save(&state1).unwrap();
+        let mut state2 = valid_workspace_state();
+        state2.workspace.zoom = 25.0;
+        mem.save(&state2).unwrap();
+        let loaded = mem.load().unwrap().unwrap();
+        assert_eq!(loaded.workspace.zoom, 25.0);
+    }
+
+    #[test]
+    fn workspace_persistence_trait_object_works() {
+        let mem: Arc<dyn WorkspacePersistence> = Arc::new(WorkspacePersistenceMemory::new());
+        let state = valid_workspace_state();
+        mem.save(&state).unwrap();
+        let loaded = mem.load().unwrap().unwrap();
+        assert_eq!(loaded.version, "1.0");
+    }
+
+    #[test]
+    fn workspace_persistence_fs_load_missing_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs = WorkspacePersistenceFs::new(tmp.path().to_path_buf());
+        let result = fs.load();
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn workspace_persistence_fs_save_and_load_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs = WorkspacePersistenceFs::new(tmp.path().to_path_buf());
+        let state = valid_workspace_state();
+        fs.save(&state).unwrap();
+        let loaded = fs.load().unwrap().unwrap();
+        assert_eq!(loaded.version, "1.0");
+        assert_eq!(loaded.workspace.zoom, 50.0);
+    }
+
+    #[test]
+    fn workspace_persistence_fs_save_invalid_rejected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs = WorkspacePersistenceFs::new(tmp.path().to_path_buf());
+        let mut state = valid_workspace_state();
+        state.workspace.zoom = 150.0;
+        let result = fs.save(&state);
+        assert!(result.is_err());
+    }
 
     #[test]
     fn load_missing_returns_none() {

@@ -877,7 +877,11 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
         },
         Command::View { port, cwd } => {
             let project_dir = cwd.map(|p| p.to_string_lossy().to_string());
-            let options = crate::view::ViewOptions { port, project_dir };
+            let options = crate::view::ViewOptions {
+                port,
+                project_dir,
+                env: ctx.env.clone(),
+            };
             crate::view::run(options).context("view failed")?;
             Ok(0)
         }

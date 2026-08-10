@@ -1,12 +1,17 @@
-//! `view_workspace.rs` — integration tests for workspace state API endpoints.
-//!
-//! Tests the 4 new endpoints: GET/PUT /api/workspace, GET /api/source,
-//! POST /api/open-editor. Uses TempDir to avoid polluting the real XDG dir.
+// Integration tests for workspace state API endpoints.
+// Tests the 4 new endpoints: GET/PUT /api/workspace, GET /api/source,
+// POST /api/open-editor. Uses TempDir to avoid polluting the real XDG dir.
+use std::sync::Arc;
 
 // `view_workspace` integration tests cover the 4 M71 endpoints at the
 // `handle_request_with_body` level — no socket, no thread pool, no real
 // HTTP framing. The handler is a pure function, so each test just calls
 // it directly with the desired method/url/body/project_dir.
+//
+// M72 note: `handle_request(_with_body)` gained an `env: &dyn Environment`
+// parameter. Tests use `SystemEnvironment` (real $EDITOR/$VISUAL of the
+// test process — fine because no test asserts on a specific editor binary,
+// and POST /api/open-editor without `$EDITOR` returns 503).
 
 /// Helper: call handle_request and return status, mime, body.
 fn call(
@@ -14,7 +19,12 @@ fn call(
     url: &str,
     project_dir: Option<&str>,
 ) -> (u16, String, Vec<u8>, Vec<(String, String)>) {
-    let (status, mime, body, extras) = archctl::view::handle_request(method, url, project_dir);
+    let (status, mime, body, extras) = archctl::view::handle_request(
+        method,
+        url,
+        project_dir,
+        &archctl::environment::SystemEnvironment,
+    );
     (status.0, mime, body, extras)
 }
 
@@ -222,6 +232,40 @@ fn get_source_line_clamped_to_total() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn post_open_editor_with_editor_var_returns_204() {
+    // M72 spec §3 S6 (deterministic handoff): with $EDITOR="echo" set in the
+    // injected Environment, POST /api/open-editor MUST return 204 (subprocess
+    // spawned), not 503. We override the per-call Environment with a
+    // FixedEnvironment to make the test deterministic.
+    use archctl::environment::FixedEnvironment;
+    let env = Arc::new(FixedEnvironment::new().with_var("EDITOR", "echo"));
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+    std::fs::create_dir(tmp.path().join("src")).unwrap();
+    let main_rs = tmp.path().join("src/main.rs");
+    std::fs::write(&main_rs, "fn main() {}\n").unwrap();
+    let project_dir = tmp.path().to_string_lossy().into_owned();
+
+    let body = serde_json::json!({
+        "file": "src/main.rs",
+        "line": 1
+    });
+
+    let (status, _, _, _) = archctl::view::handle_request_with_body(
+        "POST",
+        "/api/open-editor",
+        Some(&project_dir),
+        &*env,
+        &serde_json::to_vec(&body).unwrap(),
+    );
+    assert_eq!(
+        status.0, 204,
+        "with $EDITOR=echo, POST /api/open-editor must spawn and return 204"
+    );
+}
+
+#[test]
 fn post_open_editor_valid_returns_204_or_503() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
@@ -421,7 +465,12 @@ fn call_with_body(
 ) -> (u16, String, Vec<u8>, Vec<(String, String)>) {
     // Serialise the JSON body and dispatch through the body-aware handler.
     let bytes = serde_json::to_vec(body).expect("valid body JSON");
-    let (status, mime, body_bytes, extra) =
-        archctl::view::handle_request_with_body(method, url, project_dir, &bytes);
+    let (status, mime, body_bytes, extra) = archctl::view::handle_request_with_body(
+        method,
+        url,
+        project_dir,
+        &archctl::environment::SystemEnvironment,
+        &bytes,
+    );
     (status.0, mime, body_bytes, extra)
 }

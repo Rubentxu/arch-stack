@@ -31,13 +31,13 @@ pub fn source_preview(
     file: &Path,
     line: Option<u32>,
     cwd: &Path,
-) -> Result<SourcePreview, SourceError> {
+) -> Result<SourcePreview, WorkspaceError> {
     // Validate path containment first (before any I/O).
     let validated = validate_path_under_cwd(file, cwd)?;
 
     // Check if it's a directory.
     if validated.is_dir() {
-        return Err(SourceError::IsDirectory);
+        return Err(WorkspaceError::IsDirectory(validated));
     }
 
     // Open and count lines.
@@ -45,7 +45,7 @@ pub fn source_preview(
     let reader = BufReader::new(f);
     let all_lines: Vec<String> = reader
         .lines()
-        .map(|l| l.map_err(SourceError::Io))
+        .map(|l| l.map_err(WorkspaceError::Io))
         .collect::<Result<Vec<_>, _>>()?;
     let total_lines = all_lines.len() as u32;
 
@@ -81,33 +81,6 @@ pub fn source_preview(
         content,
         truncated,
     })
-}
-
-/// Error types for source preview operations.
-#[derive(Debug, thiserror::Error)]
-pub enum SourceError {
-    #[error("path is outside the allowed scope")]
-    OutsideScope,
-    #[error("file not found: {0}")]
-    NotFound(String),
-    #[error("path is a directory, not a file")]
-    IsDirectory,
-    #[error("path is invalid: {0}")]
-    InvalidPath(String),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-impl From<WorkspaceError> for SourceError {
-    fn from(e: WorkspaceError) -> Self {
-        match e {
-            WorkspaceError::PathOutsideScope { .. } => SourceError::OutsideScope,
-            WorkspaceError::NotFound => SourceError::NotFound("file not found".into()),
-            WorkspaceError::PathInvalid(s) => SourceError::InvalidPath(s),
-            WorkspaceError::CwdInvalid(s) => SourceError::InvalidPath(s),
-            _ => SourceError::Io(std::io::Error::other(e.to_string())),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -161,7 +134,10 @@ mod tests {
         let inner = tempfile::tempdir().unwrap();
         let result = source_preview(&secret, Some(1), inner.path());
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SourceError::OutsideScope));
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkspaceError::PathOutsideScope { .. }
+        ));
     }
 
     #[test]
@@ -179,7 +155,10 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         let result = source_preview(&dir, Some(1), tmp.path());
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SourceError::IsDirectory));
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkspaceError::IsDirectory(_)
+        ));
     }
 
     #[test]
