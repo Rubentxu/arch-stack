@@ -282,45 +282,34 @@ pub fn system_workspace_persistence() -> &'static Arc<dyn WorkspacePersistence> 
 /// filters, selection }`, I/O = `WorkspaceStore::load(cwd)` /
 /// `WorkspaceStore::save(state, cwd)`.
 ///
-/// Deprecated: use [`WorkspacePersistence`] trait + [`system_workspace_persistence()`]
-/// or inject via [`__set_workspace_persistence_for_tests`] in tests.
+/// Convenience namespace that delegates to the `WorkspacePersistence` trait.
+///
+/// `WorkspaceStore::load/save(cwd)` builds a per-call `WorkspacePersistenceFs`
+/// from the cwd-resolved XDG project dir and forwards to the trait. This
+/// keeps the existing call sites in `archctl/src/view.rs` working while
+/// making the trait the single source of truth for I/O (no duplicated
+/// filesystem code).
+///
+/// The trait itself stays a singleton (`system_workspace_persistence()`)
+/// for callers that don't have a per-request cwd — currently only unit
+/// tests. The two paths coexist; both go through the same impl.
 pub struct WorkspaceStore;
 
 impl WorkspaceStore {
-    /// Load workspace state from `workspace.json` in the XDG project dir.
-    ///
-    /// Returns `Ok(None)` if the file does not exist yet.
-    /// Returns `Ok(Some(state))` if the file exists and is valid.
+    /// Load workspace state for the project rooted at `cwd`. Delegates to
+    /// `WorkspacePersistence` via a per-call `WorkspacePersistenceFs`.
     pub fn load(cwd: &Path) -> Result<Option<WorkspaceState>, WorkspaceError> {
-        let path = workspace_path(cwd);
-        if !path.exists() {
-            return Ok(None);
-        }
-        let content = fs::read_to_string(&path)?;
-        let state: WorkspaceState = serde_json::from_str(&content)?;
-        state.validate()?;
-        Ok(Some(state))
+        let fs =
+            WorkspacePersistenceFs::new(workspace_path(cwd).parent().unwrap_or(cwd).to_path_buf());
+        fs.load()
     }
 
-    /// Save workspace state atomically: write to temp file, then rename.
-    ///
-    /// This ensures readers never see a partial file. The XDG project dir
-    /// is created lazily on first PUT (bootstrap case for new projects).
-    /// Re-validates the state to refuse writes that violate the schema.
+    /// Save workspace state for the project rooted at `cwd`. Delegates to
+    /// `WorkspacePersistence` via a per-call `WorkspacePersistenceFs`.
     pub fn save(state: &WorkspaceState, cwd: &Path) -> Result<(), WorkspaceError> {
-        state.validate()?;
-        let path = workspace_path(cwd);
-        let parent = path
-            .parent()
-            .ok_or_else(|| WorkspaceError::PathInvalid("no parent dir".into()))?;
-        fs::create_dir_all(parent)?;
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-        let json = serde_json::to_vec_pretty(state)?;
-        tmp.as_file_mut().write_all(&json)?;
-        tmp.as_file_mut().flush()?;
-        tmp.persist(&path)
-            .map_err(|e| WorkspaceError::Io(e.error))?;
-        Ok(())
+        let root = workspace_path(cwd).parent().unwrap_or(cwd).to_path_buf();
+        let fs = WorkspacePersistenceFs::new(root);
+        fs.save(state)
     }
 }
 
