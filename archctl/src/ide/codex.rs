@@ -20,7 +20,9 @@ impl IdeAdapter for CodexAdapter {
         })
     }
     fn config_root(&self) -> PathBuf {
-        crate::xdg::xdg_config_home().join("codex")
+        // Codex CLI does NOT respect XDG_CONFIG_HOME — it looks at
+        // ~/.codex/ directly. We must match that path exactly.
+        crate::xdg::home_dir().join(".codex")
     }
     fn install_stack(&self, payload: &StackPayload) -> Result<InstallReport> {
         let mut report = InstallReport::default();

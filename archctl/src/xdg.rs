@@ -60,6 +60,14 @@ pub fn xdg_config_home() -> PathBuf {
         })
 }
 
+/// Returns `$HOME`. Some IDEs (Claude Code, Codex) do not respect XDG and
+/// look at `~/.claude/` and `~/.codex/` directly. Used by their adapters.
+pub fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 pub fn resolve_xdg_from_env(env: &std::collections::HashMap<String, String>) -> XdgLayout {
     let home = env
         .get("HOME")
