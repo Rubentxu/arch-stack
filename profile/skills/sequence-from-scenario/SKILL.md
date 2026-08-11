@@ -1,6 +1,6 @@
 ---
 name: sequence-from-scenario
-description: Produce a UML sequence diagram for a use case, scenario, endpoint, test, or symbol. Use when the user asks for runtime trace, call path, or inter-service choreography. Drives `archctl code call-graph` + `archctl code sequence`.
+description: Produce a UML sequence diagram for a use case, scenario, endpoint, test, or symbol. Use when the user asks for a "sequence diagram", "call chain", "runtime trace", "call path", or "interaction flow". Drives `archctl code call-graph` + `archctl code sequence`.
 license: MIT
 compatibility: opencode
 metadata:

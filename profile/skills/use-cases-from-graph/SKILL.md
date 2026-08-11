@@ -1,6 +1,6 @@
 ---
 name: use-cases-from-graph
-description: Derive UML use cases from actors and confirmed goals in the graph. Use when the user asks for use cases, actor mapping, or system landscape analysis. Combines `code state-machine` extraction with `evidence put` for semantic facts.
+description: Derive UML use cases from actors and confirmed goals in the graph. Use when the user asks for "use cases", "actor mapping", "system landscape", or "user goals". Combines `code state-machine` extraction with `evidence put` for semantic facts.
 license: MIT
 compatibility: opencode
 metadata:

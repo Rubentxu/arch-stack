@@ -1,0 +1,133 @@
+# Routing test matrix for arch-stack skills
+# Each skill lists phrases it SHOULD trigger on and phrases it MUST NOT trigger on.
+# Generated from skill frontmatter descriptions; updated when skills change.
+
+architecture-discovery:
+  should_trigger:
+    - "discover"
+    - "scan"
+    - "map the architecture"
+    - "explain the codebase"
+    - "starting work on a repo"
+    - "after a refactor"
+  should_not_trigger:
+    - "class diagram"
+    - "sequence diagram"
+    - "review this diagram"
+    - "install archctl"
+    - "serve the workbench"
+
+c4-from-graph:
+  should_trigger:
+    - "c4 diagram"
+    - "context diagram"
+    - "container diagram"
+    - "component diagram"
+    - "system architecture"
+    - "show me the containers"
+  should_not_trigger:
+    - "discover"
+    - "class structure"
+    - "call chain"
+    - "evidence lifecycle"
+    - "install"
+
+class-view-from-graph:
+  should_trigger:
+    - "class diagram"
+    - "class structure"
+    - "interface contracts"
+    - "module boundaries"
+    - "uml class"
+    - "show me the classes"
+  should_not_trigger:
+    - "c4"
+    - "sequence"
+    - "state machine"
+    - "use case"
+    - "discover"
+
+diagram-review:
+  should_trigger:
+    - "review this diagram"
+    - "validate the bundle"
+    - "check the evidence"
+    - "is this diagram correct"
+    - "verify the projection"
+  should_not_trigger:
+    - "discover"
+    - "generate a diagram"
+    - "install"
+    - "serve"
+
+evidence-lifecycle:
+  should_trigger:
+    - "accept the evidence"
+    - "supersede evidence"
+    - "drafted evidence"
+    - "evidence list"
+    - "extract evidence"
+    - "evidence backing"
+  should_not_trigger:
+    - "class diagram"
+    - "c4 diagram"
+    - "install"
+    - "workbench"
+
+sequence-from-scenario:
+  should_trigger:
+    - "sequence diagram"
+    - "call chain"
+    - "runtime trace"
+    - "interaction flow"
+    - "inter-service"
+    - "call path"
+  should_not_trigger:
+    - "class diagram"
+    - "c4"
+    - "discover"
+    - "install"
+    - "evidence"
+
+stack-management:
+  should_trigger:
+    - "install archctl"
+    - "update archctl"
+    - "stack status"
+    - "doctor check"
+    - "setup a new machine"
+    - "onboarding"
+    - "version alignment"
+  should_not_trigger:
+    - "discover"
+    - "class diagram"
+    - "sequence"
+    - "workbench"
+
+use-cases-from-graph:
+  should_trigger:
+    - "use case"
+    - "actor mapping"
+    - "system landscape"
+    - "user goal"
+    - "usecase diagram"
+  should_not_trigger:
+    - "class diagram"
+    - "sequence"
+    - "c4"
+    - "install"
+    - "evidence"
+
+workbench-view:
+  should_trigger:
+    - "serve the workbench"
+    - "open in browser"
+    - "interactive view"
+    - "pan zoom"
+    - "archview"
+    - "explore the graph"
+  should_not_trigger:
+    - "discover"
+    - "class diagram"
+    - "install"
+    - "evidence"

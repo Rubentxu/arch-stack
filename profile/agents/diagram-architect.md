@@ -30,7 +30,10 @@ repository's architecture into a vetted diagram.
 | Question contains | Delegate to |
 |---|---|
 | `c4` / `system` / `context` / `container` / `component` | `c4-modeler` |
-| `class` / `usecase` / `sequence` / `state` / `activity` | `uml-modeler` |
+| `class` / `class diagram` / `interface` / `aggregate` | `class-diagram-modeler` |
+| `sequence` / `call chain` / `interaction` / `runtime trace` | `sequence-diagram-modeler` |
+| `usecase` / `actor` / `user goal` / `system landscape` | `usecase-modeler` |
+| `state` / `state machine` / `enum` / `workflow` | `state-machine-modeler` |
 | `discover` / `scan` / `map` / `explain` / `evidence` | `architecture-evidence` |
 | `review` / quality concern | `diagram-reviewer` |
 | interactive / workbench / browser | `architecture-evidence` (serve via `archctl view`) |

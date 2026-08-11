@@ -1,6 +1,6 @@
 ---
 name: evidence-lifecycle
-description: Manage the evidence lifecycle in the canonical graph — extract, list, accept, supersede. Use when accepting discoveries, reviewing drafted evidence, replacing stale facts, or auditing what backs a diagram. Drives `archctl evidence *`.
+description: Manage the evidence lifecycle in the canonical graph — extract, list, accept, supersede. Use when asked to "accept the evidence", "supersede evidence", "review drafted evidence", "audit evidence", or "evidence lifecycle". Drives `archctl evidence *`.
 license: MIT
 compatibility: opencode
 metadata:
