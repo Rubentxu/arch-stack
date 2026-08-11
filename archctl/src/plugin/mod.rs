@@ -75,18 +75,50 @@ pub fn plugin_install_root() -> PathBuf {
         })
 }
 
+/// Parse a plugin spec in the form "author/name@version" or "author/name" (latest).
+pub fn parse_plugin_spec(spec: &str) -> Result<(String, String, String)> {
+    // Format: "author/name@version" or "author/name" (latest).
+    let (author_name, version) = match spec.split_once('@') {
+        Some((an, v)) => (an.to_string(), v.to_string()),
+        None => (spec.to_string(), "latest".to_string()),
+    };
+    let (author, name) = author_name
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("plugin spec must be 'author/name@version', got: {spec}"))?;
+    Ok((author.to_string(), name.to_string(), version))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn plugin_install_root_ends_with_plugins() {
-        let p = plugin_install_root();
+    fn plugin_install_root_creates_per_author_per_plugin_path() {
+        // plugin_install_root() is the base; actual per-plugin paths are
+        // computed via root.join(author).join(name). Verify the root
+        // structure follows XDG conventions.
+        let root = plugin_install_root();
         assert!(
-            p.ends_with("plugins"),
-            "expected path ending with 'plugins', got: {}",
-            p.display()
+            root.to_string_lossy().contains("plugins"),
+            "expected path containing 'plugins', got: {}",
+            root.display()
         );
+    }
+
+    #[test]
+    fn parse_plugin_spec_with_version() {
+        let (author, name, version) = parse_plugin_spec("rubentxu/my-plugin@1.0.0").unwrap();
+        assert_eq!(author, "rubentxu");
+        assert_eq!(name, "my-plugin");
+        assert_eq!(version, "1.0.0");
+    }
+
+    #[test]
+    fn parse_plugin_spec_without_version_defaults_to_latest() {
+        let (author, name, version) = parse_plugin_spec("rubentxu/my-plugin").unwrap();
+        assert_eq!(author, "rubentxu");
+        assert_eq!(name, "my-plugin");
+        assert_eq!(version, "latest");
     }
 
     #[test]

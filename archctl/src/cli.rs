@@ -1004,18 +1004,43 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                         .to_string()
                 });
                 let tap = crate::plugin::fetch_tap(&tap_url)?;
-                // Parse "name@version"
-                let (name, _version) = spec.split_once('@').unwrap_or((&spec, "latest"));
-                let entry = tap
-                    .plugins
-                    .iter()
-                    .find(|p| p.name == name)
-                    .ok_or_else(|| anyhow::anyhow!("plugin {} not in tap", name))?;
+                let (author, name, version) = crate::plugin::parse_plugin_spec(&spec)
+                    .with_context(|| {
+                        format!(
+                            "invalid plugin spec '{}': expected author/name@version",
+                            spec
+                        )
+                    })?;
+
+                // Resolve version: "latest" = highest semver in tap.
+                let entry = if version == "latest" {
+                    tap.plugins
+                        .iter()
+                        .filter(|p| p.name == name)
+                        .max_by_key(|p| semver::Version::parse(&p.version).ok())
+                        .ok_or_else(|| anyhow::anyhow!("plugin {name} not in tap"))?
+                        .clone()
+                } else {
+                    tap.plugins
+                        .iter()
+                        .find(|p| p.name == name && p.version == version)
+                        .ok_or_else(|| anyhow::anyhow!("plugin {name}@{version} not in tap"))?
+                        .clone()
+                };
+
+                let dir = crate::plugin::install::install_plugin(&author, &name, &entry)
+                    .with_context(|| {
+                        format!(
+                            "install plugin {}@{} from {}",
+                            entry.name, entry.version, tap_url
+                        )
+                    })?;
                 eprintln!(
-                    "would install {}@{} from {}",
-                    entry.name, entry.version, tap_url
+                    "installed {}@{} to {}",
+                    entry.name,
+                    entry.version,
+                    dir.display()
                 );
-                // M77: actual download + extract.
                 Ok(0)
             }
             PluginAction::List { tap_url } => {
