@@ -143,6 +143,27 @@ pub enum McpAction {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum PluginAction {
+    /// Install a plugin from a tap.
+    Install {
+        /// Plugin spec in the form `name@version` (version defaults to `latest`).
+        spec: String,
+        /// Tap URL to use (defaults to official arch-stack tap).
+        #[arg(long)]
+        tap: Option<String>,
+    },
+    /// List plugins available in a tap.
+    List {
+        /// Tap URL to list plugins from.
+        #[arg(
+            long,
+            default_value = "https://raw.githubusercontent.com/Rubentxu/arch-stack/main/taps/official.json"
+        )]
+        tap_url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum InventoryAction {
     Tree {
         #[arg(long)]
@@ -479,6 +500,12 @@ pub enum Command {
     Mcp {
         #[command(subcommand)]
         action: McpAction,
+    },
+    /// Install and list plugins from a tap (ADR-040 §4).
+    #[command(name = "plugin")]
+    Plugin {
+        #[command(subcommand)]
+        action: PluginAction,
     },
     /// Manage the arch-stack product (binary + workbench + skills as ONE).
     Stack {
@@ -966,6 +993,35 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                             println!("result: {}", serde_json::to_string_pretty(&data).unwrap());
                         }
                     }
+                }
+                Ok(0)
+            }
+        },
+        Command::Plugin { action } => match action {
+            PluginAction::Install { spec, tap } => {
+                let tap_url = tap.unwrap_or_else(|| {
+                    "https://raw.githubusercontent.com/Rubentxu/arch-stack/main/taps/official.json"
+                        .to_string()
+                });
+                let tap = crate::plugin::fetch_tap(&tap_url)?;
+                // Parse "name@version"
+                let (name, _version) = spec.split_once('@').unwrap_or((&spec, "latest"));
+                let entry = tap
+                    .plugins
+                    .iter()
+                    .find(|p| p.name == name)
+                    .ok_or_else(|| anyhow::anyhow!("plugin {} not in tap", name))?;
+                eprintln!(
+                    "would install {}@{} from {}",
+                    entry.name, entry.version, tap_url
+                );
+                // M77: actual download + extract.
+                Ok(0)
+            }
+            PluginAction::List { tap_url } => {
+                let tap = crate::plugin::fetch_tap(&tap_url)?;
+                for p in &tap.plugins {
+                    println!("  {:<30} v{}", p.name, p.version);
                 }
                 Ok(0)
             }
