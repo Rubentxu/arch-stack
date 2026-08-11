@@ -1,0 +1,64 @@
+# scope: lifecycle
+# M73: archctl self lifecycle (multi-version + self-update)
+id = "self"
+version = "0.1.0"
+description = "archctl self — versioned CLI lifecycle (asdf-inspired)"
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/lifecycle/mod.rs",
+  "archctl/src/lifecycle/install_root.rs",
+  "archctl/src/lifecycle/shim.rs",
+  "archctl/src/lifecycle/install.rs",
+  "archctl/src/lifecycle/list.rs",
+  "archctl/src/lifecycle/use_version.rs",
+  "archctl/src/lifecycle/uninstall.rs",
+  "archctl/src/lifecycle/version_file.rs",
+  "archctl/src/lifecycle/channels.rs",
+  "archctl/src/lifecycle/release.rs",
+  "archctl/src/lifecycle/migration.rs",
+  "archctl/src/lifecycle/update.rs",
+]
+
+public_symbols = [
+     "install_root",
+     "install_dir",
+     "current_symlink",
+     "generate_shim",
+     "install_shim",
+     "install",
+     "list",
+     "InstalledVersion",
+     "use_version",
+     "uninstall",
+     "find_arch_version",
+     "resolve_active_version",
+     "Channel",
+     "ReleaseInfo",
+     "ReleaseAsset",
+     "fetch_release_info",
+     "pick_asset",
+     "current_target_triple",
+     "download_asset",
+     "fetch_sha256_for",
+     "verify_sha256",
+     "update",
+     "MigrationManifest",
+     "Migration",
+     "execute_manifest",
+   ]
+
+must_hold = [
+  "ARCHCTL_HOME",
+  "current",
+  "installs/v",
+  ".arch-version",
+  "migration-manifest.json",
+  "SHA256SUMS",
+]
+
+minimum_tests = 30
+
+must_not_contain = [
+  "unsafe_code",
+]

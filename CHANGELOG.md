@@ -4,6 +4,27 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.34.0] — 2026-08-10
+
+### Added
+- **M73 T1 — archctl self install**: multi-version install in
+  `~/.local/share/archctl/installs/<version>/`, shim binary generation,
+  `archctl self install [--version X]` (latest stable by default).
+- **M73 T2 — archctl self list/use/uninstall**: `archctl self list [--json]`,
+  `archctl self use <version>`, `archctl self uninstall [--purge]` with
+  per-project `.arch-version` pin via `ARCHCTL_VERSION` env var.
+- **M73 T3 — archctl self update**: GitHub Releases API client (`reqwest`
+  blocking), SHA256SUMS verification, migration manifest execution,
+  `archctl self update [--channel stable|rc|nightly] [--check]`.
+- **M73 T4 — manifests/self.toml**: manifest gate for lifecycle scope
+  with 30 minimum tests, must_hold invariants (ARCHCTL_HOME, current,
+  installs/v, .arch-version, migration-manifest.json, SHA256SUMS),
+  and must_not_contain unsafe_code.
+
+### Changed
+- **archctl**: version bumped 1.33.0 → 1.34.0.
+- **archview**: version bumped 1.33.0 → 1.34.0 (synchronized per ADR-038).
+
 ## [v1.30.0] — 2026-08-10
 
 ### Changed

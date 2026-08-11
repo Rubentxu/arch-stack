@@ -491,6 +491,64 @@ pub enum Command {
         #[arg(long)]
         cwd: Option<PathBuf>,
     },
+    /// Manage archctl itself — install, list, use, update, uninstall versioned binaries.
+    #[command(name = "self", alias = "lifecycle")]
+    Lifecycle {
+        #[command(subcommand)]
+        action: SelfAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SelfAction {
+    /// Install a versioned archctl binary.
+    Install {
+        /// Version to install. Defaults to the latest stable release.
+        #[arg(long)]
+        version: Option<String>,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
+    },
+    /// List installed versions.
+    List {
+        #[arg(long)]
+        json: bool,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
+    },
+    /// Switch the active version.
+    Use {
+        version: String,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
+    },
+    /// Uninstall a version (or purge all with --purge).
+    Uninstall {
+        /// Version to remove. Defaults to the current active version.
+        #[arg(long)]
+        version: Option<String>,
+        /// Remove all installed versions.
+        #[arg(long)]
+        purge: bool,
+        /// Override the install root directory.
+        #[arg(long)]
+        install_root: Option<std::path::PathBuf>,
+    },
+    /// Self-update to a newer version.
+    Update {
+        /// Target version. Defaults to latest available.
+        #[arg(long)]
+        version: Option<String>,
+        /// Channel: stable, rc, nightly.
+        #[arg(long)]
+        channel: Option<String>,
+        /// Check for updates without installing.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -872,6 +930,142 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                         }
                     }
                 }
+                Ok(0)
+            }
+        },
+        Command::Lifecycle { action } => match action {
+            SelfAction::Install {
+                version,
+                install_root,
+            } => {
+                let root = install_root
+                    .clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let source = std::env::current_exe().context("locate current binary")?;
+                let v = version.unwrap_or_else(|| "0.0.0".to_string());
+                // T2 stub: version is always provided; T2.1 will resolve latest.
+                let ver = semver::Version::parse(&v).context("parse version")?;
+                crate::lifecycle::install::install(&ver, &root, &source)?;
+                // Install shim (W2 fix). Try /usr/local/bin first, fall back to
+                // ~/.local/bin/ if permission denied.
+                let shim_targets = [
+                    PathBuf::from("/usr/local/bin/archctl"),
+                    crate::lifecycle::install_root::install_root()
+                        .parent()
+                        .map(|p| p.join(".local/bin/archctl"))
+                        .unwrap_or_else(|| PathBuf::from("~/.local/bin/archctl")),
+                ];
+                for target in &shim_targets {
+                    match crate::lifecycle::shim::install_shim(target) {
+                        Ok(()) => {
+                            eprintln!("installed shim at {}", target.display());
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("could not install shim at {}: {e}", target.display());
+                        }
+                    }
+                }
+                println!("installed archctl {} at {}", v, root.display());
+                Ok(0)
+            }
+            SelfAction::List { json, install_root } => {
+                let root = install_root
+                    .clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let versions = crate::lifecycle::list::list(&root)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&versions).context("serialize versions")?
+                    );
+                } else if versions.is_empty() {
+                    println!("no archctl versions installed");
+                } else {
+                    for v in versions {
+                        let marker = if v.is_active { "*" } else { " " };
+                        println!("{} v{} (installed)", marker, v.version);
+                    }
+                }
+                Ok(0)
+            }
+            SelfAction::Use {
+                version,
+                install_root,
+            } => {
+                let root = install_root
+                    .clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let ver = semver::Version::parse(&version).context("parse version")?;
+                crate::lifecycle::use_version::use_version(&ver, &root)?;
+                println!("switched archctl to v{}", ver);
+                Ok(0)
+            }
+            SelfAction::Uninstall {
+                version,
+                install_root,
+                purge,
+            } => {
+                let root = install_root
+                    .clone()
+                    .unwrap_or_else(crate::lifecycle::install_root::install_root);
+                let target = version
+                    .map(|v| semver::Version::parse(&v))
+                    .transpose()
+                    .context("parse version")?;
+                crate::lifecycle::uninstall::uninstall(target.as_ref(), &root, purge)?;
+                if purge {
+                    println!("purged all archctl installations");
+                } else if let Some(v) = target {
+                    println!("uninstalled archctl v{}", v);
+                } else {
+                    println!("uninstalled");
+                }
+                Ok(0)
+            }
+            SelfAction::Update {
+                version,
+                channel,
+                check,
+            } => {
+                use crate::lifecycle::{self as lc, Channel};
+                let root = std::env::var("ARCHCTL_HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| lc::install_root::install_root());
+                let current_str = std::env::var("ARCHCTL_VERSION")
+                    .ok()
+                    .or_else(|| {
+                        std::fs::read_to_string(root.join("current").join("archctl-version")).ok()
+                    })
+                    .unwrap_or_else(|| "0.0.0".into());
+                let current = semver::Version::parse(current_str.trim())
+                    .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                let chan: Channel = channel
+                    .as_deref()
+                    .unwrap_or("stable")
+                    .parse()
+                    .map_err(anyhow::Error::msg)?;
+                let target = version
+                    .as_ref()
+                    .map(|v| semver::Version::parse(v))
+                    .transpose()
+                    .context("parse target version")?;
+                if check {
+                    let release =
+                        lc::fetch_release_info(target.as_ref().map(|v| format!("v{v}")).as_deref())
+                            .context("fetch release info")?;
+                    let new_ver = semver::Version::parse(release.tag_name.trim_start_matches('v'))
+                        .context("parse tag as semver")?;
+                    if new_ver > current {
+                        println!("update available: {} -> {}", current, new_ver);
+                    } else {
+                        println!("already at latest ({})", current);
+                    }
+                    return Ok(0);
+                }
+                let new_ver = lc::update::update(target.as_ref(), chan, &root, &current)
+                    .context("self-update failed")?;
+                println!("updated: {} -> {}", current, new_ver);
                 Ok(0)
             }
         },

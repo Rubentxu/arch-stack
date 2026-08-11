@@ -60,6 +60,36 @@ Entregable: LensSpec introducido solo cuando hay evidencia real de necesidad.
 - **Reversibilidad**: cláusula de rollback documentada en el ADR si consumers < 2.
 - **Verificación**: ADR gate bloquea PRs que añaden LensSpec sin evidencia.
 
+### H4 — Distribución & ciclo de vida del CLI (asdf-inspired)
+
+Entregable: `archctl` se distribuye, actualiza, y desinstala como un CLI versionado moderno, con abstracción para múltiples IDEs agenticos.
+
+Inspirado en asdf-vm (multi-version, tap model, install/update/uninstall,
+per-project pin via `.tool-versions`). Adaptado a un binario pre-compilado
+Rust (no desde source) + assets embebidos (skills/agents/plugin).
+
+- **Multi-version**: N versiones de `archctl` instaladas simultáneamente en `~/.local/share/archctl/installs/v<version>/`. Symlink `current` cambia la versión activa. Shim binario en `/usr/local/bin/archctl` (8 líneas) delega al binario activo.
+- **Self-update**: `archctl self update [--channel=stable|rc|nightly]` descarga desde GitHub Releases con SHA256SUMS verify + migration scripts (rollback automático si falla). Sin firma GPG en v1 (M76).
+- **Per-project pin**: `.arch-version` (formato idéntico a `.tool-versions` de asdf) walking hasta `$HOME`. Override con `$ARCHCTL_VERSION` o `--archctl-version X.Y.Z`.
+- **Uninstall**: `archctl self uninstall [--purge]` elimina el binario activo + opcionalmente `~/.local/share/archctl/` completo.
+- **IDE adapter abstraction** (`archctl ide <subcommand>`): trait `IdeAdapter` con adapters built-in para OpenCode, ZCode, Claude Code, Codex. Cada adapter implementa `install_stack/remove_stack/diff_stack` para su discovery path nativo. Plugin tap para adapters externos en M76.
+- **Plugin tap model** (M76): `archctl plugin install <author>/<plugin>@<version>` desde un tap JSON. Skills/agents de terceros sin recompilar `archctl`.
+- **Backward compatibility**: `archctl stack install/update/status` queda como alias deprecated de `archctl ide install opencode` durante un ciclo. Removal en M77.
+- **Verificación**: `e2e/install_e2e.sh` extendido con multi-version, self-update (mocked), uninstall, pin per-project.
+
+Ver [ADR-040](../adr/ADR-040-archctl-versioned-distribution.md),
+[ADR-041](../adr/ADR-041-self-update-github-releases.md),
+[ADR-042](../adr/ADR-042-ide-adapter-abstraction.md),
+[specs/stack-distribution.md](../specs/stack-distribution.md),
+[specs/ide-adapters.md](../specs/ide-adapters.md).
+
+Milestones roadmap H4: **M73** (multi-version + self-update + uninstall), **M75**
+(IDE adapters OpenCode/ZCode/Claude Code/Codex), **M76** (plugin tap + firma GPG).
+
+---
+
+# `archctl` — milestones del sidecar
+
 ---
 
 # `archctl` — milestones del sidecar
