@@ -482,6 +482,12 @@ pub enum Command {
         #[command(subcommand)]
         action: StackAction,
     },
+    /// Manage IDE-specific stack installation (OpenCode, ZCode, Claude Code, Codex).
+    #[command(name = "ide")]
+    Ide {
+        #[command(subcommand)]
+        action: IdeAction,
+    },
     /// Serve the embedded archview workbench locally (ADR-033).
     View {
         /// Port to bind. 0 = ephemeral (default).
@@ -496,6 +502,34 @@ pub enum Command {
     Lifecycle {
         #[command(subcommand)]
         action: SelfAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IdeAction {
+    Install {
+        ide: String,
+        #[arg(long)]
+        stack: Option<String>,
+        #[arg(long)]
+        install_root: Option<PathBuf>,
+    },
+    List {
+        #[arg(long)]
+        installed: bool,
+    },
+    Doctor {
+        ide: String,
+    },
+    Remove {
+        ide: String,
+        #[arg(long)]
+        purge: bool,
+    },
+    Update {
+        ide: String,
+        #[arg(long, default_value_t = true)]
+        sync: bool,
     },
 }
 
@@ -1123,6 +1157,10 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
         },
+        Command::Ide { action: _ } => {
+            eprintln!("archctl ide: M75 PR #2 — not yet implemented");
+            Ok(1)
+        }
     }
 }
 

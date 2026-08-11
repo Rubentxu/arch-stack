@@ -48,6 +48,18 @@ pub fn resolve_xdg() -> XdgLayout {
     resolve_xdg_from_env(&env)
 }
 
+/// Returns `$XDG_CONFIG_HOME` falling back to `$HOME/.config`.
+/// Used by IDE adapters to resolve their config roots.
+pub fn xdg_config_home() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(|h| PathBuf::from(h).join(".config"))
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+}
+
 pub fn resolve_xdg_from_env(env: &std::collections::HashMap<String, String>) -> XdgLayout {
     let home = env
         .get("HOME")
