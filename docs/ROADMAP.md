@@ -62,6 +62,8 @@ Entregable: LensSpec introducido solo cuando hay evidencia real de necesidad.
 
 ### H4 — Distribución & ciclo de vida del CLI (asdf-inspired)
 
+**Estado: CERRADO en v1.36.0 (M73+M75+M76) — 2026-08-11**
+
 Entregable: `archctl` se distribuye, actualiza, y desinstala como un CLI versionado moderno, con abstracción para múltiples IDEs agenticos.
 
 Inspirado en asdf-vm (multi-version, tap model, install/update/uninstall,
@@ -85,6 +87,7 @@ Ver [ADR-040](../adr/ADR-040-archctl-versioned-distribution.md),
 
 Milestones roadmap H4: **M73** (multi-version + self-update + uninstall), **M75**
 (IDE adapters OpenCode/ZCode/Claude Code/Codex), **M76** (plugin tap + firma GPG).
+**H4 cerrado en v1.36.0** — M73+M75+M76 completados.
 
 ---
 

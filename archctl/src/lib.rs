@@ -15,6 +15,7 @@ pub mod identity;
 pub mod inventory;
 pub mod lifecycle;
 pub mod migrations;
+pub mod plugin;
 pub mod project;
 pub mod render;
 pub mod row;

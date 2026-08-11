@@ -1,0 +1,30 @@
+# scope: plugin
+# M76: plugin tap model + assets-stack content loading (ADR-040 §4)
+id = "plugin"
+version = "0.1.0"
+description = "archctl plugin — tap model for third-party skills/agents (ADR-040 §4)"
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/plugin/mod.rs",
+]
+
+public_symbols = [
+  "Tap",
+  "PluginEntry",
+  "fetch_tap",
+  "plugin_install_root",
+]
+
+must_hold = [
+  "Tap",
+  "PluginEntry",
+  "fetch_tap",
+  "plugin_install_root",
+]
+
+minimum_tests = 3
+
+must_not_contain = [
+  "unsafe_code",
+]

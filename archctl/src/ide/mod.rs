@@ -86,6 +86,7 @@ pub fn builtin_adapters() -> Vec<Box<dyn IdeAdapter>> {
     ]
 }
 
+pub mod assets;
 pub mod claude_code;
 pub mod codex;
 pub mod opencode;

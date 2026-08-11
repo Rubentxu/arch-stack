@@ -4,6 +4,31 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.36.0] — 2026-08-11
+
+### Added
+- M76 — `archctl plugin` subcommand with tap model (ADR-040 §4):
+  - `Tap` and `PluginEntry` types for plugin distribution.
+  - `fetch_tap()` to retrieve plugin list from a URL.
+  - `archctl plugin install <name>@<version> [--tap <url>]` (stub: M77 adds download).
+  - `archctl plugin list [--tap-url <url>]` — lists plugins from a tap.
+- M76 — `archctl ide` now loads real skills/agents/plugins from embedded
+  `assets-stack/` via `rust-embed`. `IdeAction::Install` uses
+  `current_stack_payload()` instead of empty payload.
+
+### Fixed
+- M76 W4 — migration script sandbox: replaced `sh -c` shell injection risk
+  with `Command::new(script_path)` + path validation (no `..`, no `/` prefix).
+  `run_sandboxed_script()` uses `env_clear()` + restricted `PATH=/bin:/usr/bin`.
+
+### Changed
+- archctl version 1.35.0 → 1.36.0.
+- archview version 1.35.0 → 1.36.0.
+
+### Tests
+- M76 W3 — `lifecycle_update_e2e.rs` with `tiny_http` mock server for
+  GitHub API testing (avoids tokio+blocking-reqwest incompatibility).
+
 ## [v1.35.0] — 2026-08-11
 
 ### Added
