@@ -7,6 +7,7 @@ use crate::astgrep::Lang;
 use crate::evidence::{self, Evidence, EvidenceKind, EvidenceStatus};
 use crate::filesystem::Filesystem;
 use crate::ide::StackPayload;
+use crate::ide::assets::current_stack_payload;
 use crate::ide::builtin_adapters;
 use crate::project::resolve_project;
 use crate::skills;
@@ -1176,20 +1177,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                             .join(", ")
                     )
                 })?;
-                // Load payload from embedded assets (M75 PR #3 extension).
-                // For now, build an empty payload — PR #4 will wire assets-stack.
-                let payload = StackPayload {
-                    id: format!("arch-stack-{}", env!("CARGO_PKG_VERSION")),
-                    version: semver::Version::parse(env!("CARGO_PKG_VERSION"))?,
-                    skills: vec![],
-                    agents: vec![],
-                    plugins: vec![],
-                };
+                let payload = current_stack_payload()?;
                 let report = adapter.install_stack(&payload)?;
                 println!(
-                    "installed {} skills, {} agents for {}",
+                    "installed {} skills, {} agents, {} plugins for {}",
                     report.written.len(),
-                    0,
+                    payload.agents.len(),
+                    payload.plugins.len(),
                     adapter.name()
                 );
                 Ok(0)
