@@ -1,0 +1,24 @@
+# scope: distribution
+# M77: distribution assets outside the binary (Homebrew formula, etc.)
+id = "distribution"
+version = "0.1.0"
+description = "External distribution assets — Homebrew formula, etc. (not built)"
+cargo_dir = "."
+
+editable = [
+  "Formula/archctl.rb",
+  "docs/maintainers/HOMEBREW_FORMULA.md",
+]
+
+public_symbols = [
+  # No Rust symbols (this scope is docs-only).
+]
+
+must_hold = [
+  "Formula/archctl.rb",
+  "HOMEBREW_FORMULA.md",
+]
+
+minimum_tests = 0
+
+must_not_contain = []
