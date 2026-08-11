@@ -4,11 +4,11 @@
 //! These tests run the public API of the lifecycle module directly,
 //! simulating the real install_root layout without touching the filesystem.
 
+use archctl::lifecycle::Version;
 use archctl::lifecycle::install::install as lifecycle_install;
 use archctl::lifecycle::list::list as lifecycle_list;
 use archctl::lifecycle::uninstall::uninstall as lifecycle_uninstall;
 use archctl::lifecycle::use_version::use_version as lifecycle_use_version;
-use archctl::lifecycle::Version;
 
 fn parse_version(s: &str) -> Version {
     // Use the module's Version type alias (semver::Version).
@@ -56,7 +56,10 @@ fn full_install_use_uninstall_cycle() {
 
     // After uninstall, list should be empty (current symlink is now dangling).
     let listed = lifecycle_list(tmp.path()).unwrap();
-    assert!(listed.is_empty(), "no versions should remain after uninstall");
+    assert!(
+        listed.is_empty(),
+        "no versions should remain after uninstall"
+    );
 }
 
 #[test]
@@ -109,6 +112,12 @@ fn purge_removes_all_versions_and_symlink() {
     lifecycle_uninstall(None, tmp.path(), true).unwrap();
 
     // Both versions + current symlink gone.
-    assert!(!tmp.path().join("installs").exists(), "installs dir should be gone");
-    assert!(!tmp.path().join("current").exists(), "current symlink should be gone");
+    assert!(
+        !tmp.path().join("installs").exists(),
+        "installs dir should be gone"
+    );
+    assert!(
+        !tmp.path().join("current").exists(),
+        "current symlink should be gone"
+    );
 }
