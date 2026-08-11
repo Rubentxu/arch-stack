@@ -50,11 +50,13 @@ pub fn update(
     let expected_sha = fetch_sha256_for(&release_info, &asset.name)?;
     verify_sha256(&asset_bytes, &expected_sha)?;
 
-    // 3. Extract tarball to a staging dir.
-    let staging = install_root
-        .join("cache")
-        .join(format!("staging-{}", new_version));
-    std::fs::create_dir_all(&staging)?;
+    // 3. Extract tarball to a staging dir. The staging dir is wrapped in a
+    //    guard struct so it's cleaned up automatically if any later step
+    //    fails before we move it into installs/.
+    let staging_guard = tempfile::Builder::new()
+        .prefix(&format!("staging-{new_version}-"))
+        .tempdir_in(install_root.join("cache"))?;
+    let staging = staging_guard.path().to_path_buf();
     extract_tarball(&asset_bytes, &staging)?;
 
     // 4. Run migrations if present.
@@ -66,13 +68,15 @@ pub fn update(
         execute_manifest(&manifest, &from_dir, &staging)?;
     }
 
-    // 5. Move staging into installs/v<new>/.
+    // 5. Move staging into installs/v<new>/. Disable the guard so the
+    //    staging dir persists under its new location.
     let target_dir = install_dir(install_root, &new_version);
     if target_dir.exists() {
         std::fs::remove_dir_all(&target_dir)?;
     }
     std::fs::create_dir_all(target_dir.parent().unwrap())?;
-    std::fs::rename(&staging, &target_dir)?;
+    let staging_path = staging_guard.keep(); // consumes guard, persists
+    std::fs::rename(&staging_path, &target_dir)?;
 
     // 6. Sanity check + switch symlink.
     let binary = target_dir.join("archctl");

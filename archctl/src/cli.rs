@@ -946,6 +946,26 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 // T2 stub: version is always provided; T2.1 will resolve latest.
                 let ver = semver::Version::parse(&v).context("parse version")?;
                 crate::lifecycle::install::install(&ver, &root, &source)?;
+                // Install shim (W2 fix). Try /usr/local/bin first, fall back to
+                // ~/.local/bin/ if permission denied.
+                let shim_targets = [
+                    PathBuf::from("/usr/local/bin/archctl"),
+                    crate::lifecycle::install_root::install_root()
+                        .parent()
+                        .map(|p| p.join(".local/bin/archctl"))
+                        .unwrap_or_else(|| PathBuf::from("~/.local/bin/archctl")),
+                ];
+                for target in &shim_targets {
+                    match crate::lifecycle::shim::install_shim(target) {
+                        Ok(()) => {
+                            eprintln!("installed shim at {}", target.display());
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("could not install shim at {}: {e}", target.display());
+                        }
+                    }
+                }
                 println!("installed archctl {} at {}", v, root.display());
                 Ok(0)
             }
