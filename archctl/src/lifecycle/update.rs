@@ -53,9 +53,13 @@ pub fn update(
     // 3. Extract tarball to a staging dir. The staging dir is wrapped in a
     //    guard struct so it's cleaned up automatically if any later step
     //    fails before we move it into installs/.
+    // Staging dir under <root>/cache/. Auto-cleaned if any step below fails.
+    let cache_root = install_root.join("cache");
+    std::fs::create_dir_all(&cache_root)
+        .with_context(|| format!("create dir {}", cache_root.display()))?;
     let staging_guard = tempfile::Builder::new()
         .prefix(&format!("staging-{new_version}-"))
-        .tempdir_in(install_root.join("cache"))?;
+        .tempdir_in(&cache_root)?;
     let staging = staging_guard.path().to_path_buf();
     extract_tarball(&asset_bytes, &staging)?;
 

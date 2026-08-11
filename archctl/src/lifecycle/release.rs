@@ -42,10 +42,21 @@ pub fn fetch_release_info(tag: Option<&str>) -> Result<ReleaseInfo> {
 /// `archctl-x86_64-unknown-linux-gnu.tar.gz`).
 pub fn pick_asset(release: &ReleaseInfo) -> Option<&ReleaseAsset> {
     let target = current_target_triple();
-    release
-        .assets
-        .iter()
-        .find(|a| a.name.starts_with(&format!("archctl-{target}")))
+    // Accept both naming conventions:
+    //   - archctl-<target>.tar.gz              (preferred; M78 workflow)
+    //   - archctl-v<version>-<target>.tar.gz   (legacy; v1.37.2 manual release)
+    let bare = format!("archctl-{target}.tar.gz");
+    let prefixed = format!(
+        "archctl-v{}-{}",
+        release.tag_name.trim_start_matches('v'),
+        target
+    );
+    release.assets.iter().find(|a| {
+        a.name == bare
+            || a.name == prefixed
+            || a.name.starts_with(&bare)
+            || a.name.starts_with(&prefixed)
+    })
 }
 
 pub fn current_target_triple() -> String {
