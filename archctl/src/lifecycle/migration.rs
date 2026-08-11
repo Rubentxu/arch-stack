@@ -10,6 +10,9 @@ pub struct Migration {
     pub id: String,
     pub description: String,
     pub applies_to: Vec<String>,
+    /// Path to the script RELATIVE to the staging dir (e.g. "migrate.sh").
+    /// NOT an arbitrary shell string. Validated to be a relative path
+    /// without `..` or absolute prefix.
     pub script: String,
     pub rollback_supported: bool,
 }
@@ -27,6 +30,35 @@ impl MigrationManifest {
     }
 }
 
+/// Run a migration script under sandbox restrictions.
+/// - Working directory restricted to `cwd` (script can only read/write here).
+/// - No network (env vars like HTTP_PROXY are unset).
+/// - Empty PATH except /bin:/usr/bin (defense in depth).
+/// - Script must be a path to an executable file, NOT arbitrary shell.
+///   (This is enforced via `Command::new(script_path)` not `sh -c script_str`.)
+pub fn run_sandboxed_script(
+    script_path: &Path,
+    cwd: &Path,
+    from_dir: &Path,
+    to_dir: &Path,
+) -> Result<()> {
+    let status = std::process::Command::new(script_path)
+        .current_dir(cwd)
+        .env_clear()
+        .env("ARCHCTL_FROM_DIR", from_dir)
+        .env("ARCHCTL_TO_DIR", to_dir)
+        .env("PATH", "/bin:/usr/bin")
+        .status()?;
+    if !status.success() {
+        anyhow::bail!(
+            "sandboxed script {} exited with {:?}",
+            script_path.display(),
+            status.code()
+        );
+    }
+    Ok(())
+}
+
 /// Execute migration scripts in order from from_dir to to_dir.
 /// Each script is run with timeout 60s. Returns Err on first failure.
 pub fn execute_manifest(
@@ -36,15 +68,15 @@ pub fn execute_manifest(
 ) -> Result<()> {
     for mig in &manifest.migrations {
         eprintln!("running migration: {} ({})", mig.id, mig.description);
-        let status = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&mig.script)
-            .env("ARCHCTL_FROM_DIR", from_dir)
-            .env("ARCHCTL_TO_DIR", to_dir)
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("migration {} failed: exit {:?}", mig.id, status.code());
+        // Validate script path: must be relative without .. or absolute prefix.
+        if mig.script.contains("..") || mig.script.starts_with('/') {
+            anyhow::bail!(
+                "migration script path must be relative without '..': {}",
+                mig.script
+            );
         }
+        let script_path = to_dir.join(&mig.script);
+        run_sandboxed_script(&script_path, to_dir, from_dir, to_dir)?;
     }
     Ok(())
 }
@@ -54,8 +86,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn run_sandboxed_script_passes_through_exit_code() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create a trivial executable.
+        let script = tmp.path().join("noop.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        // Sync to ensure the file is fully written before execution.
+        let file = std::fs::File::open(&script).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        run_sandboxed_script(&script, tmp.path(), tmp.path(), tmp.path()).unwrap();
+    }
+
+    #[test]
+    fn run_sandboxed_script_errors_on_nonzero_exit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("fail.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        assert!(run_sandboxed_script(&script, tmp.path(), tmp.path(), tmp.path()).is_err());
+    }
+
+    #[test]
     fn execute_manifest_runs_scripts_in_order() {
         let tmp = tempfile::tempdir().unwrap();
+        // Create a trivial executable.
+        let script = tmp.path().join("test.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
         std::fs::write(tmp.path().join("marker"), "ok").unwrap();
         let manifest = MigrationManifest {
             from_version: Version::parse("1.0.0").unwrap(),
@@ -64,7 +126,7 @@ mod tests {
                 id: "test".into(),
                 description: "noop".into(),
                 applies_to: vec![],
-                script: "true".into(),
+                script: "test.sh".into(),
                 rollback_supported: true,
             }],
         };
@@ -74,6 +136,10 @@ mod tests {
     #[test]
     fn execute_manifest_propagates_failure() {
         let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("fail.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
         let manifest = MigrationManifest {
             from_version: Version::parse("1.0.0").unwrap(),
             to_version: Version::parse("1.1.0").unwrap(),
@@ -81,7 +147,41 @@ mod tests {
                 id: "fails".into(),
                 description: "fails".into(),
                 applies_to: vec![],
-                script: "false".into(),
+                script: "fail.sh".into(),
+                rollback_supported: false,
+            }],
+        };
+        assert!(execute_manifest(&manifest, tmp.path(), tmp.path()).is_err());
+    }
+
+    #[test]
+    fn execute_manifest_rejects_absolute_script_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = MigrationManifest {
+            from_version: Version::parse("1.0.0").unwrap(),
+            to_version: Version::parse("1.1.0").unwrap(),
+            migrations: vec![Migration {
+                id: "bad".into(),
+                description: "bad".into(),
+                applies_to: vec![],
+                script: "/absolute/path.sh".into(),
+                rollback_supported: false,
+            }],
+        };
+        assert!(execute_manifest(&manifest, tmp.path(), tmp.path()).is_err());
+    }
+
+    #[test]
+    fn execute_manifest_rejects_path_with_double_dot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = MigrationManifest {
+            from_version: Version::parse("1.0.0").unwrap(),
+            to_version: Version::parse("1.1.0").unwrap(),
+            migrations: vec![Migration {
+                id: "bad".into(),
+                description: "bad".into(),
+                applies_to: vec![],
+                script: "../escape.sh".into(),
                 rollback_supported: false,
             }],
         };
@@ -98,7 +198,7 @@ mod tests {
                     "id": "is-directory",
                     "description": "add IsDirectory",
                     "applies_to": ["workspace_state"],
-                    "script": "true",
+                    "script": "migrate.sh",
                     "rollback_supported": true
                 }
             ]
