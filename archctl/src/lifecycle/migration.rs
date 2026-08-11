@@ -3,7 +3,9 @@
 use anyhow::Result;
 use semver::Version;
 use serde::Deserialize;
+use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Migration {
@@ -36,27 +38,57 @@ impl MigrationManifest {
 /// - Empty PATH except /bin:/usr/bin (defense in depth).
 /// - Script must be a path to an executable file, NOT arbitrary shell.
 ///   (This is enforced via `Command::new(script_path)` not `sh -c script_str`.)
+///
+/// Retries up to 3 times on `ExecutableFileBusy` (ETXTBSY), which can occur
+/// when the script file was just written (e.g. by a parallel updater) and
+/// the kernel still considers it open for writing. Production migrations
+/// unpack scripts before exec, so the race is real; tests can also hit it
+/// when a temp file is `fsync`'d then exec'd in the same tick.
 pub fn run_sandboxed_script(
     script_path: &Path,
     cwd: &Path,
     from_dir: &Path,
     to_dir: &Path,
 ) -> Result<()> {
-    let status = std::process::Command::new(script_path)
-        .current_dir(cwd)
-        .env_clear()
-        .env("ARCHCTL_FROM_DIR", from_dir)
-        .env("ARCHCTL_TO_DIR", to_dir)
-        .env("PATH", "/bin:/usr/bin")
-        .status()?;
-    if !status.success() {
-        anyhow::bail!(
-            "sandboxed script {} exited with {:?}",
-            script_path.display(),
-            status.code()
-        );
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut last_err: Option<io::Error> = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        if attempt > 0 {
+            // Linear backoff: 10ms, 20ms. Keeps p99 unchanged for the happy
+            // path (single attempt in <1ms) and bounds worst-case retry to 30ms.
+            std::thread::sleep(Duration::from_millis(10 * attempt as u64));
+        }
+        match std::process::Command::new(script_path)
+            .current_dir(cwd)
+            .env_clear()
+            .env("ARCHCTL_FROM_DIR", from_dir)
+            .env("ARCHCTL_TO_DIR", to_dir)
+            .env("PATH", "/bin:/usr/bin")
+            .status()
+        {
+            Ok(status) => {
+                if !status.success() {
+                    anyhow::bail!(
+                        "sandboxed script {} exited with {:?}",
+                        script_path.display(),
+                        status.code()
+                    );
+                }
+                return Ok(());
+            }
+            Err(e) if e.kind() == io::ErrorKind::ExecutableFileBusy => {
+                last_err = Some(e);
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        }
     }
-    Ok(())
+    Err(anyhow::anyhow!(
+        "sandboxed script {} busy after {} retries: {}",
+        script_path.display(),
+        MAX_ATTEMPTS,
+        last_err.map(|e| e.to_string()).unwrap_or_default()
+    ))
 }
 
 /// Execute migration scripts in order from from_dir to to_dir.
