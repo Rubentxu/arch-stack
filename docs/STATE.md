@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-10, housekeeping post-release v1.30.0.
+> Última actualización: 2026-08-11, post-release v1.36.0 (M76 + H4 CLOSED).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `b00e063` (HEAD, convergence cycle m69 — docs only) |
-| Versión | `v1.30.0` (latest tag) |
-| Tests | 201+ pasan, 0 fallan (verify-local PASS) |
+| Tip | `22b0330a6564001ff4c13132cbcde0d5e458dfdb` (HEAD, M76 — plugin tap + assets-stack content + W3/W4 fixes) |
+| Versión | `v1.36.0` (latest tag) |
+| Tests | 595 unit + 18 integration pasan, 0 fallan (verify-local PASS) |
 | Working tree | clean, en sync con `origin/main` (only `docs/CCMoldable/` untracked, per M69 spec) |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~31,254 |
-| LOC tests | ~6,560 |
+| LOC src | ~31,254 + ~200 (M76 plugin + ide/assets) |
+| LOC tests | ~6,560 + ~120 (M76 lifecycle_update_e2e) |
 | LOC benches | ~790 |
-| Vault milestones | 29 (M30–M61 + M69) |
-| Tags | 31 (v1.1.0 → v1.30.0) |
+| Vault milestones | 31 (M30–M61 + M69 + M73 + M75 + M76) |
+| Tags | 36 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -58,6 +58,12 @@
 | (no tag) | M58 | docs/specs/index.md (13 specs, audience-grouped) |
 | `v1.29.0` | M61 | Cognitive policy tests (22 unit tests; 111 → 133) |
 | `v1.30.0` | M69 | Arch-stack product roadmap convergence (ADR-038/039/040 + ROADMAP H0–H3) |
+| `v1.31.0` | M70 | H0 executable bundle contract |
+| `v1.32.0` | M71 | H1 durable workspace state |
+| `v1.33.0` | M72 | Post-M71 debt paydown |
+| `v1.34.0` | M73 | Archctl self lifecycle (multi-version + self-update + .arch-version) |
+| `v1.35.0` | M75 | IDE adapters (OpenCode/ZCode/Claude Code/Codex) |
+| `v1.36.0` | M76 | Plugin tap + assets-stack content + W3/W4 fixes (**H4 CLOSED**) |
 
 ## Capacidades shipped (v0.x — historical)
 
