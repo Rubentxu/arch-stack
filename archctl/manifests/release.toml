@@ -1,0 +1,21 @@
+# scope: release
+# M77: Bootstrap for SDDK011 permissions gate. Documentation-only scope.
+id = "release"
+version = "0.1.0"
+description = "Release agent permissions gate (SDDK011 bootstrap)"
+cargo_dir = "archctl"
+
+editable = [
+  "../permissions.yaml",
+]
+
+public_symbols = []
+
+must_hold = [
+  "../permissions.yaml",
+  "sddk.release.apply",
+]
+
+minimum_tests = 0
+
+must_not_contain = []

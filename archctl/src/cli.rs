@@ -1004,18 +1004,43 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                         .to_string()
                 });
                 let tap = crate::plugin::fetch_tap(&tap_url)?;
-                // Parse "name@version"
-                let (name, _version) = spec.split_once('@').unwrap_or((&spec, "latest"));
-                let entry = tap
-                    .plugins
-                    .iter()
-                    .find(|p| p.name == name)
-                    .ok_or_else(|| anyhow::anyhow!("plugin {} not in tap", name))?;
+                let (author, name, version) = crate::plugin::parse_plugin_spec(&spec)
+                    .with_context(|| {
+                        format!(
+                            "invalid plugin spec '{}': expected author/name@version",
+                            spec
+                        )
+                    })?;
+
+                // Resolve version: "latest" = highest semver in tap.
+                let entry = if version == "latest" {
+                    tap.plugins
+                        .iter()
+                        .filter(|p| p.name == name)
+                        .max_by_key(|p| semver::Version::parse(&p.version).ok())
+                        .ok_or_else(|| anyhow::anyhow!("plugin {name} not in tap"))?
+                        .clone()
+                } else {
+                    tap.plugins
+                        .iter()
+                        .find(|p| p.name == name && p.version == version)
+                        .ok_or_else(|| anyhow::anyhow!("plugin {name}@{version} not in tap"))?
+                        .clone()
+                };
+
+                let dir = crate::plugin::install::install_plugin(&author, &name, &entry)
+                    .with_context(|| {
+                        format!(
+                            "install plugin {}@{} from {}",
+                            entry.name, entry.version, tap_url
+                        )
+                    })?;
                 eprintln!(
-                    "would install {}@{} from {}",
-                    entry.name, entry.version, tap_url
+                    "installed {}@{} to {}",
+                    entry.name,
+                    entry.version,
+                    dir.display()
                 );
-                // M77: actual download + extract.
                 Ok(0)
             }
             PluginAction::List { tap_url } => {
@@ -1172,50 +1197,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             crate::view::run(options).context("view failed")?;
             Ok(0)
         }
-        Command::Stack { action } => match action {
-            StackAction::Install { dir, yes } => {
-                let root = dir.unwrap_or_else(crate::stack::default_install_root);
-                let _ = yes; // reserved for interactive prompts (v1: silent copy)
-                let written = crate::stack::install(&root).context("stack install failed")?;
-                if written.is_empty() {
-                    println!("stack already up-to-date at {}", root.display());
-                } else {
-                    println!(
-                        "installed {} components to {}",
-                        written.len(),
-                        root.display()
-                    );
-                    for w in written.iter().take(10) {
-                        println!("  + {w}");
-                    }
-                    if written.len() > 10 {
-                        println!("  ... and {} more", written.len() - 10);
-                    }
-                }
-                println!("\nrestart the agent session so skills are discovered.");
-                Ok(0)
-            }
-            StackAction::Update { dir, yes } => {
-                let root = dir.unwrap_or_else(crate::stack::default_install_root);
-                let _ = yes;
-                let written = crate::stack::install(&root).context("stack update failed")?;
-                if written.is_empty() {
-                    println!("stack is current ({} components aligned)", {
-                        crate::stack::status(&root)?.embedded_skills
-                            + crate::stack::status(&root)?.embedded_agents
-                    });
-                } else {
-                    println!("updated {} components at {}", written.len(), root.display());
-                }
-                Ok(0)
-            }
-            StackAction::Status { dir } => {
-                let root = dir.unwrap_or_else(crate::stack::default_install_root);
-                let s = crate::stack::status(&root).context("stack status failed")?;
-                crate::stack::print_status(&s);
-                Ok(0)
-            }
-        },
+        Command::Stack { .. } => {
+            eprintln!(
+                "error: 'archctl stack' is deprecated since v1.35.0 — use 'archctl ide install <ide>' instead."
+            );
+            eprintln!("       'archctl stack' will be removed in v1.38.0.");
+            std::process::exit(2)
+        }
         Command::Ide { action } => match action {
             IdeAction::Install {
                 ide,

@@ -1,0 +1,23 @@
+# archctl/permissions.yaml — local-dev policy for SDDK release agent.
+#
+# This file was missing (SDDK011 gap) since M73 — the sddk release apply
+# CLI uses this to decide which commands may be invoked without explicit
+# orchestrator gating. Without it, the agent falls back to manual receipts.
+#
+# This is a developer-policy file; not a runtime config. Delete it if you
+# want the release agent to require explicit approval for every action.
+
+version: "1"
+policies:
+  - id: "dev-policy-2026-08"
+    scope: "all"
+    allow:
+      - "sddk.cycle.*"
+      - "sddk.ledger.*"
+      - "sddk.release.apply"
+      - "sddk.archive.*"
+      - "sddk.release.report"
+    notes: |
+      Development policy for cycle-based work. Allows the release agent to
+      run apply + archive + report without explicit orchestrator gating.
+      Tighten (remove `sddk.release.apply`) for production-grade cycles.
