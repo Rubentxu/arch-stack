@@ -1,6 +1,6 @@
 ---
 name: workbench-view
-description: Serve the interactive archview workbench for a project. Use when the user wants to explore diagrams interactively, pan/zoom graphs, or inspect a bundle in the browser. Drives `archctl view`.
+description: Serve the interactive archview workbench for a project. Use when the user asks to "serve the workbench", "open in browser", "interactive view", "pan zoom", or "explore the graph interactively". Drives `archctl view`.
 license: MIT
 compatibility: opencode
 metadata:

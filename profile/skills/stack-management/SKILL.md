@@ -1,6 +1,6 @@
 ---
 name: stack-management
-description: Install, update, and verify the arch-stack product (archctl binary + archview workbench + agent skills). Use when setting up a new machine, upgrading versions, checking component alignment, or onboarding to OpenCode/ZCode. Drives `archctl stack *` + `archctl doctor`.
+description: Install, update, and verify the arch-stack product (archctl binary + archview workbench + agent skills). Use when asked to "install archctl", "update archctl", "stack status", "doctor check", "setup a new machine", or "onboarding". Drives `archctl ide install` + `archctl self *` + `archctl doctor`.
 license: MIT
 compatibility: opencode
 metadata:

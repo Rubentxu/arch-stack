@@ -1,6 +1,6 @@
 ---
 name: c4-from-graph
-description: Produce a C4 diagram (Context, Container, Component) from the canonical graph. Use when the user asks for any C4 diagram at a known level and root. Projects graph → bundle → DSL with `archctl diagram export` + `diagram project`.
+description: Produce a C4 diagram (Context, Container, Component) from the canonical graph. Use when the user asks for a "C4 diagram", "context diagram", "container diagram", "component diagram", or "system architecture". Projects graph → bundle → DSL with `archctl diagram export` + `diagram project`.
 license: MIT
 compatibility: opencode
 metadata:

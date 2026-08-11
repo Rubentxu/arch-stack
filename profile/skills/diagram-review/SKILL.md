@@ -1,6 +1,6 @@
 ---
 name: diagram-review
-description: Validate a generated diagram against its source spec and the canonical graph. Use as the final gate of any diagram invocation. Drives `archctl diagram validate` + `archctl diagram apply` for view-level corrections.
+description: Validate a generated diagram against its source spec and the canonical graph. Use when asked to "validate the bundle", "review the diagram", "check the evidence", "verify the projection", or "is this diagram correct". Drives `archctl diagram validate` + `archctl diagram apply` for view-level corrections.
 license: MIT
 compatibility: opencode
 metadata:

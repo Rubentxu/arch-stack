@@ -1,6 +1,6 @@
 ---
 name: class-view-from-graph
-description: Extract and project UML class diagrams from source. Use when the user wants class structure, interface contracts, aggregates, or module boundaries. Drives `archctl code class-diagram` (Rust/TypeScript/Python).
+description: Extract and project UML class diagrams from source. Use when the user asks for a "class diagram", "class structure", "interface contracts", "module boundaries", or "UML class". Drives `archctl code class-diagram` (Rust/TypeScript/Python).
 license: MIT
 compatibility: opencode
 metadata:
