@@ -139,6 +139,7 @@ Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
 **Next horizon (per ROADMAP H0–H3):**
 - **H0 — Ejecutable / verdad verificable**: contrato bundle schema ↔ Rust DTO ↔ TS types + selector configurable en `archctl view`. First code cycle of the H0 era.
 - H1, H2, H3 — pendiente, ver ROADMAP H0–H3 section.
+- **H4 — Distribución & ciclo de vida del CLI**: **CERRADO en v1.36.0 (M73+M75+M76)** — 2026-08-11. Multi-version installs, self-update, IDE adapters (OpenCode/ZCode/Claude Code/Codex), plugin tap model.
 
 ## Comandos de verificación
 
