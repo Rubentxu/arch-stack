@@ -10,6 +10,7 @@ pub mod evaluation;
 pub mod evidence;
 pub mod filesystem;
 pub mod graph;
+pub mod ide;
 pub mod identity;
 pub mod inventory;
 pub mod lifecycle;

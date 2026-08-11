@@ -6,6 +6,8 @@ use std::sync::Arc;
 use crate::astgrep::Lang;
 use crate::evidence::{self, Evidence, EvidenceKind, EvidenceStatus};
 use crate::filesystem::Filesystem;
+use crate::ide::StackPayload;
+use crate::ide::builtin_adapters;
 use crate::project::resolve_project;
 use crate::skills;
 use crate::source::SourceArtifact;
@@ -482,6 +484,12 @@ pub enum Command {
         #[command(subcommand)]
         action: StackAction,
     },
+    /// Manage IDE-specific stack installation (OpenCode, ZCode, Claude Code, Codex).
+    #[command(name = "ide")]
+    Ide {
+        #[command(subcommand)]
+        action: IdeAction,
+    },
     /// Serve the embedded archview workbench locally (ADR-033).
     View {
         /// Port to bind. 0 = ephemeral (default).
@@ -496,6 +504,34 @@ pub enum Command {
     Lifecycle {
         #[command(subcommand)]
         action: SelfAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IdeAction {
+    Install {
+        ide: String,
+        #[arg(long)]
+        stack: Option<String>,
+        #[arg(long)]
+        install_root: Option<PathBuf>,
+    },
+    List {
+        #[arg(long)]
+        installed: bool,
+    },
+    Doctor {
+        ide: String,
+    },
+    Remove {
+        ide: String,
+        #[arg(long)]
+        purge: bool,
+    },
+    Update {
+        ide: String,
+        #[arg(long, default_value_t = true)]
+        sync: bool,
     },
 }
 
@@ -1120,6 +1156,108 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 let root = dir.unwrap_or_else(crate::stack::default_install_root);
                 let s = crate::stack::status(&root).context("stack status failed")?;
                 crate::stack::print_status(&s);
+                Ok(0)
+            }
+        },
+        Command::Ide { action } => match action {
+            IdeAction::Install {
+                ide,
+                stack: _,
+                install_root: _,
+            } => {
+                let adapters = builtin_adapters();
+                let adapter = adapters.iter().find(|a| a.id() == ide).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "unknown IDE: {ide}; available: {}",
+                        adapters
+                            .iter()
+                            .map(|a| a.id())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })?;
+                // Load payload from embedded assets (M75 PR #3 extension).
+                // For now, build an empty payload — PR #4 will wire assets-stack.
+                let payload = StackPayload {
+                    id: format!("arch-stack-{}", env!("CARGO_PKG_VERSION")),
+                    version: semver::Version::parse(env!("CARGO_PKG_VERSION"))?,
+                    skills: vec![],
+                    agents: vec![],
+                    plugins: vec![],
+                };
+                let report = adapter.install_stack(&payload)?;
+                println!(
+                    "installed {} skills, {} agents for {}",
+                    report.written.len(),
+                    0,
+                    adapter.name()
+                );
+                Ok(0)
+            }
+            IdeAction::List { installed } => {
+                for adapter in builtin_adapters() {
+                    let presence = adapter.detect()?;
+                    let marker = if presence.installed { "✓" } else { "✗" };
+                    if installed && !presence.installed {
+                        continue;
+                    }
+                    println!("  [{marker}] {:<12} {}", adapter.id(), adapter.name());
+                }
+                Ok(0)
+            }
+            IdeAction::Doctor { ide } => {
+                let adapters = builtin_adapters();
+                let adapter = adapters
+                    .iter()
+                    .find(|a| a.id() == ide)
+                    .ok_or_else(|| anyhow::anyhow!("unknown IDE: {ide}"))?;
+                let presence = adapter.detect()?;
+                println!("{} ({})", adapter.name(), adapter.id());
+                println!("  installed: {}", presence.installed);
+                println!("  config_root: {}", adapter.config_root().display());
+                if let Some(hint) = presence.hint {
+                    println!("  hint: {hint}");
+                }
+                Ok(0)
+            }
+            IdeAction::Remove { ide, purge } => {
+                let adapters = builtin_adapters();
+                let adapter = adapters
+                    .iter()
+                    .find(|a| a.id() == ide)
+                    .ok_or_else(|| anyhow::anyhow!("unknown IDE: {ide}"))?;
+                let payload_id = format!("arch-stack-{}", env!("CARGO_PKG_VERSION"));
+                let report = adapter.remove_stack(&payload_id)?;
+                println!(
+                    "removed {} paths from {}",
+                    report.written.len(),
+                    adapter.name()
+                );
+                if purge {
+                    eprintln!("(purge: directory still exists; user-managed)");
+                }
+                Ok(0)
+            }
+            IdeAction::Update { ide, sync: _ } => {
+                // M75 PR #3 stub: Update is alias for install (re-sync).
+                let adapters = builtin_adapters();
+                let adapter = adapters
+                    .iter()
+                    .find(|a| a.id() == ide)
+                    .ok_or_else(|| anyhow::anyhow!("unknown IDE: {ide}"))?;
+                let payload = StackPayload {
+                    id: format!("arch-stack-{}", env!("CARGO_PKG_VERSION")),
+                    version: semver::Version::parse(env!("CARGO_PKG_VERSION"))?,
+                    skills: vec![],
+                    agents: vec![],
+                    plugins: vec![],
+                };
+                let report = adapter.install_stack(&payload)?;
+                println!(
+                    "re-installed {} paths for {}",
+                    report.written.len(),
+                    adapter.name()
+                );
                 Ok(0)
             }
         },
@@ -2501,6 +2639,100 @@ mod tests {
                 }
                 _ => panic!("expected Evidence List command"),
             }
+        }
+    }
+
+    // M75 T3 — IDE adapter CLI wiring tests
+
+    #[test]
+    fn ide_install_subcommand_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "install", "opencode"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(
+                    action,
+                    IdeAction::Install { ide, .. } if ide == "opencode"
+                ));
+            }
+            _ => panic!("expected Ide Install command"),
+        }
+    }
+
+    #[test]
+    fn ide_list_subcommand_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "list"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(action, IdeAction::List { installed: false }));
+            }
+            _ => panic!("expected Ide List command"),
+        }
+    }
+
+    #[test]
+    fn ide_list_installed_flag_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "list", "--installed"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(action, IdeAction::List { installed: true }));
+            }
+            _ => panic!("expected Ide List command"),
+        }
+    }
+
+    #[test]
+    fn ide_doctor_subcommand_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "doctor", "claude-code"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(
+                    action,
+                    IdeAction::Doctor { ide } if ide == "claude-code"
+                ));
+            }
+            _ => panic!("expected Ide Doctor command"),
+        }
+    }
+
+    #[test]
+    fn ide_remove_subcommand_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "remove", "zcode"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(
+                    action,
+                    IdeAction::Remove { ide, purge: false } if ide == "zcode"
+                ));
+            }
+            _ => panic!("expected Ide Remove command"),
+        }
+    }
+
+    #[test]
+    fn ide_remove_purge_flag_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "remove", "codex", "--purge"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(
+                    action,
+                    IdeAction::Remove { ide, purge: true } if ide == "codex"
+                ));
+            }
+            _ => panic!("expected Ide Remove command with purge"),
+        }
+    }
+
+    #[test]
+    fn ide_update_subcommand_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "update", "opencode"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(
+                    action,
+                    IdeAction::Update { ide, sync: true } if ide == "opencode"
+                ));
+            }
+            _ => panic!("expected Ide Update command"),
         }
     }
 }

@@ -4,6 +4,29 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.35.0] — 2026-08-11
+
+### Added
+- M75 — `archctl ide` subcommand with adapter abstraction (ADR-042):
+  - `IdeAdapter` trait + 4 built-in adapters (OpenCode, ZCode, Claude Code, Codex).
+  - `archctl ide install <ide>` — installs stack payload to the IDE's
+    native discovery path (e.g. `~/.config/opencode/skills/` for OpenCode,
+    `~/.claude/plugins/arch-stack/skills/` for Claude Code,
+    `~/.codex/prompts/<name>.toml` for Codex).
+  - `archctl ide list [--installed]` — lists supported IDEs + which are installed.
+  - `archctl ide doctor <ide>` — diagnostic specific to one IDE.
+  - `archctl ide remove <ide>` — removes our payload (preserves user files).
+  - `archctl ide update <ide>` — re-install (alias for install).
+  - `archctl stack install opencode` kept as alias deprecated for one cycle.
+
+### Changed
+- archctl version 1.34.0 → 1.35.0.
+- archview version 1.34.0 → 1.35.0.
+
+### Migrations
+- M75 migration-manifest.json: schema version 1.35.0 — new `ide` bounded
+  context; no breaking changes to existing IDE discovery paths.
+
 ## [v1.34.0] — 2026-08-10
 
 ### Added
