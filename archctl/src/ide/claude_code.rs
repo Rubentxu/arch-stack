@@ -20,7 +20,10 @@ impl IdeAdapter for ClaudeCodeAdapter {
         })
     }
     fn config_root(&self) -> PathBuf {
-        crate::xdg::xdg_config_home().join("claude")
+        // Claude Code does NOT respect XDG_CONFIG_HOME — it looks at
+        // ~/.claude/ directly. We must match that path exactly, or the
+        // installed skills/agents are invisible to the IDE.
+        crate::xdg::home_dir().join(".claude")
     }
     fn install_stack(&self, payload: &StackPayload) -> Result<InstallReport> {
         let mut report = InstallReport::default();
