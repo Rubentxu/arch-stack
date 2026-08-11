@@ -91,6 +91,8 @@ pub mod codex;
 pub mod opencode;
 pub mod zcode;
 
+pub use opencode::OpenCodeAdapter;
+
 #[cfg(test)]
 mod tests {
     use super::*;
