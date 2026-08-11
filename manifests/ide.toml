@@ -1,0 +1,48 @@
+# scope: ide
+# M75: IDE adapter abstraction (OpenCode, ZCode, Claude Code, Codex)
+id = "ide"
+version = "0.1.0"
+description = "archctl ide — multi-IDE adapter abstraction (ADR-042)"
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/ide/mod.rs",
+  "archctl/src/ide/opencode.rs",
+  "archctl/src/ide/zcode.rs",
+  "archctl/src/ide/claude_code.rs",
+  "archctl/src/ide/codex.rs",
+]
+
+public_symbols = [
+  "IdeAdapter",
+  "StackPayload",
+  "SkillFile",
+  "AgentFile",
+  "PluginFile",
+  "IdePresence",
+  "InstallReport",
+  "DriftEntry",
+  "DriftKind",
+  "OpenCodeAdapter",
+  "ZCodeAdapter",
+  "ClaudeCodeAdapter",
+  "CodexAdapter",
+  "builtin_adapters",
+]
+
+must_hold = [
+  "OpenCodeAdapter",
+  "ZCodeAdapter",
+  "ClaudeCodeAdapter",
+  "CodexAdapter",
+  "opencode",
+  "zcode",
+  "claude-code",
+  "codex",
+]
+
+minimum_tests = 12
+
+must_not_contain = [
+  "unsafe_code",
+]
