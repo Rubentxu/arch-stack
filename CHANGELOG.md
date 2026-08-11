@@ -4,6 +4,31 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.37.0] — 2026-08-11
+
+### Added
+- M77 — `archctl plugin install` download + extract with SHA256 verify:
+  - `install_plugin()`: download, verify, extract to `~/.config/archctl/plugins/`.
+  - `download_plugin()`: HTTP GET with 120s timeout + user-agent.
+  - `verify_plugin_sha256()`: SHA256 hash verification (bail on mismatch).
+  - `extract_plugin()`: tar.gz extraction via flate2+tar.
+  - `parse_plugin_spec()`: parses `author/name@version` or `author/name` (latest).
+  - `archctl plugin install <spec>` now wires to `install_plugin()` and resolves
+    `latest` to highest semver in the tap.
+- M77 — Homebrew formula (`Formula/archctl.rb`) for `brew install`.
+- M77 — `archctl/permissions.yaml` for SDDK011 permissions gate bootstrap.
+
+### Changed
+- M77 — `archctl stack` now exits with error code 2 and a deprecation
+  message pointing to `archctl ide install`. The subcommand will be
+  removed in v1.38.0.
+- archctl version 1.36.0 → 1.37.0.
+- archview version 1.36.0 → 1.37.0.
+
+### Removed
+- M77 — `archctl stack` subcommand body removed (stub remains with deprecation
+  error). Use `archctl ide install` instead.
+
 ## [v1.36.0] — 2026-08-11
 
 ### Added
