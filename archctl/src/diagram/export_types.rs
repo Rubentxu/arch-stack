@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(node.id, "el:1");
         assert_eq!(node.x, 0, "x defaults to 0");
         assert_eq!(node.y, 0, "y defaults to 0");
-        assert_eq!(node.collapsed, false, "collapsed defaults to false");
+        assert!(!node.collapsed, "collapsed defaults to false");
         assert_eq!(node.label_override, None, "label_override defaults to None");
     }
 }
