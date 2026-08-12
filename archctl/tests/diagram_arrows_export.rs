@@ -24,8 +24,7 @@ fn run_arrows_export(cwd: &std::path::Path, extra_args: &[&str]) -> std::process
         .arg(cwd)
         .args(["container:*", "--format", "arrows"])
         .args(extra_args);
-    let output = cmd.output().expect("cargo run should succeed");
-    output
+    cmd.output().expect("cargo run should succeed")
 }
 
 /// Smoke the JSON structure of an arrows document.

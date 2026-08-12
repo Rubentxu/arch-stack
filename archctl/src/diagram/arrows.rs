@@ -210,7 +210,7 @@ pub fn serialize(projection: &Projection, styles: &Styles) -> ArrowsDocument {
 ///   `"c4:domain/orders"` → `"c4_domain_orders.arrows"`
 ///   `"system"`            → `"system.arrows"`
 pub fn derive_default_path(selector: &str) -> PathBuf {
-    let sanitized = selector.replace(':', "_").replace('/', "_");
+    let sanitized = selector.replace([':', '/'], "_");
     PathBuf::from(format!("{sanitized}.arrows"))
 }
 
