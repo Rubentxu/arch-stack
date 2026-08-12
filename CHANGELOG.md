@@ -4,7 +4,7 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.38.0] — 2026-08-12
 
 ### Fixed
 - **M79 D1** — `inventory::tree()` now prunes `target/`, `node_modules/`,
@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     returned empty for all subdir repos).
   - `components`: `collect_container_dirs` now falls back to `find_manifests`
     for both Cargo and npm, correctly skipping sibling service directories.
+
+### Changed
+- archctl version 1.37.2 → 1.38.0.
+- README.md (`en` + `es`) + MANUAL.md + STATE.md refreshed for v1.38.0.
+- `archctl stack` deprecation carried forward (M77): removal deferred to
+  v1.39.x (slipped from this cycle; tracked in M79 next-up).
 
 ## [v1.37.1] — 2026-08-11
 

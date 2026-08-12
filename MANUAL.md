@@ -2,7 +2,7 @@
 
 > A complete guide to installing, configuring, and using arch-stack for architecture diagram generation from code.
 
-**Latest version:** v1.37.2 — [github.com/Rubentxu/arch-stack](https://github.com/Rubentxu/arch-stack)
+**Latest version:** v1.38.0 — [github.com/Rubentxu/arch-stack](https://github.com/Rubentxu/arch-stack)
 
 ---
 
@@ -152,7 +152,7 @@ Verify:
 
 ```bash
 archctl --version
-# archctl v1.37.2
+# archctl v1.38.0
 ```
 
 Update:

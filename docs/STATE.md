@@ -2,17 +2,17 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-12, post-cycle M79 (c4-discover nested workspace).
+> Última actualización: 2026-08-12, post-release v1.38.0 (M79 — c4-discover nested workspace).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `22b0330a6564001ff4c13132cbcde0d5e458dfdb` (HEAD, M76 — plugin tap + assets-stack content + W3/W4 fixes) |
-| Versión | `v1.36.0` (latest tag); M79 unreleased |
+| Tip | squash commit on `main` post-PR-M79 (M79 — c4-discover nested workspace) |
+| Versión | `v1.38.0` (latest tag, post-PR-M79 squash) |
 | Tests | 669 tests pasan (607 lib + integration); 5 ignored (env-specific) |
-| Working tree | feature branch `feat/m79-c4-discover-nested-workspace`, pre-push |
+| Working tree | trunk `main` en sync con `origin/main`, post-PR-M79 squash merge |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | ~31,254 + ~330 (M79 D1+D2) |
 | LOC tests | ~6,560 + ~370 (M79 integration tests) |
@@ -64,7 +64,10 @@
 | `v1.34.0` | M73 | Archctl self lifecycle (multi-version + self-update + .arch-version) |
 | `v1.35.0` | M75 | IDE adapters (OpenCode/ZCode/Claude Code/Codex) |
 | `v1.36.0` | M76 | Plugin tap + assets-stack content + W3/W4 fixes (**H4 CLOSED**) |
-| Unreleased | M79 | `c4-discover` nested workspace: D1 build-dir blocklist pruning (7 directories); D2 nested manifest fallback for cargo/npm/npm_single/components strategies (find_manifests helper, depth ≤ 3) |
+| `v1.37.0` | M77 | Plugin download + extract with SHA256 verify + Homebrew formula + `archctl/permissions.yaml` bootstrap + `archctl stack` deprecation |
+| `v1.37.1` | M77a | Claude Code + Codex `config_root` HOME-relative hotfix |
+| `v1.37.2` | M77a | Lifecycle fix (`unsupported manifest_key`) + version bump |
+| `v1.38.0` | M79 | `c4-discover` nested workspace: D1 build-dir blocklist pruning (7 directories); D2 nested manifest fallback for cargo/npm/npm_single/components strategies (`find_manifests` helper, depth ≤ 3) |
 
 ## Capacidades shipped (v0.x — historical)
 
