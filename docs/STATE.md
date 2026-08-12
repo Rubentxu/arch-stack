@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-12, post-release v1.39.0 (M81 — projection schema v1.1 cosmetic fields).
+> Última actualización: 2026-08-12, post-release v1.39.1 (M82 — npm-single pnpm-workspace path detection).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | squash commit on `main` post-PR-M81 (M81 — projection schema v1.1 cosmetic fields) |
-| Versión | `v1.39.0` (latest tag, post-PR-M81 squash) |
+| Tip | squash commit on `main` post-PR-M82 (M82 — npm-single pnpm-workspace path detection) |
+| Versión | `v1.39.1` (latest tag, post-PR-M82 squash) |
 | Tests | 785 Rust + 128 archview tests pasan; 15 ignored (env-specific) |
-| Working tree | trunk `main` en sync con `origin/main`, post-PR-M81 squash merge |
+| Working tree | trunk `main` en sync con `origin/main`, post-PR-M82 squash merge |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~31,254 + ~360 (M81 D1+D2 — `Node` cosmetic fields + `ViewMember.label` preservation) |
-| LOC tests | ~6,560 + ~270 (M81 cosmetic round-trip + archview loader tests) |
+| LOC src | ~31,254 + ~30 (M82 — 1-arg swap in `npm_single.rs:67` + 1 regression test) |
+| LOC tests | ~6,560 + ~25 (M82 — `nested_package_json_with_pnpm_workspace_in_same_dir_is_skipped` test) |
 | LOC benches | ~790 |
-| Vault milestones | 33 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M81) |
-| Tags | 38 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below; +v1.37.0–v1.39.0) |
+| Vault milestones | 33 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M81 + M82) |
+| Tags | 39 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below; +v1.37.0–v1.39.1) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -70,6 +70,7 @@
 | `v1.38.0` | M79 | `c4-discover` nested workspace: D1 build-dir blocklist pruning (7 directories); D2 nested manifest fallback for cargo/npm/npm_single/components strategies (`find_manifests` helper, depth ≤ 3) |
 | `v1.38.1` | M80 | Cosmetic ChangeSet round-trip e2e coverage: `apply_with_matching_base_revision_succeeds` + `apply_round_trips_export_revision` integration tests in `diagram_apply.rs`; baseRevision optimistic-concurrency token verified end-to-end |
 | `v1.39.0` | M81 | Projection schema v1.1 cosmetic fields: D1 `Command::MoveMember` preserves prior `ViewMember.label` (was resetting to empty string); D2 `Node` exposes `x`/`y`/`collapsed`/`labelOverride` (LEFT JOIN via `HashMap<element_id, &ViewMember>`, ADR-019 O(1)); archview renders `labelOverride ?? name`; backward-compat with 1.0 bundles; `cosmetic-changeset-roundtrip` spec promoted from stub to full |
+| `v1.39.1` | M82 | `npm-single` pnpm-workspace-path detection: 1-argument swap in `archctl/src/code/strategies/npm_single.rs:67` so `pnpm_workspace_declares_packages` reads from `pkg_json.parent()` instead of `project_root`. Aligns with the sibling convention at `archctl/src/code/strategies/npm.rs:52`. Fixes mis-classification of vueuse-style monorepos (`apps/web/{package.json,pnpm-workspace.yaml}`). 1 regression test added. |
 
 ## Capacidades shipped (v0.x — historical)
 

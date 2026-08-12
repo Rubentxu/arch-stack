@@ -64,7 +64,8 @@ impl Strategy for NpmSinglePackage {
             })
             .map(|a| !a.is_empty())
             .unwrap_or(false);
-        let pnpm_workspace_yaml = pnpm_workspace_declares_packages(project_root, fs);
+        let pnpm_workspace_yaml =
+            pnpm_workspace_declares_packages(pkg_json.parent().unwrap_or(project_root), fs);
         if npm_workspaces || pnpm_workspace_yaml {
             return Ok(Vec::new());
         }
@@ -242,5 +243,30 @@ mod tests {
         let cands = NpmSinglePackage.detect(tmp.path(), &fs).unwrap();
         assert_eq!(cands[0].canonical_key, "express");
         assert_eq!(cands[0].name, "express");
+    }
+
+    #[test]
+    fn nested_package_json_with_pnpm_workspace_in_same_dir_is_skipped() {
+        // vueuse-style nested layout: no package.json at project root,
+        // apps/web/package.json + apps/web/pnpm-workspace.yaml side by side.
+        // The workspace yaml declares packages:, so npm-single must skip it.
+        let tmp = tempfile::tempdir().unwrap();
+        let fs = MemoryFilesystem::new();
+        // No package.json at root — forces D2 fallback to find nested manifest.
+        fs.write(
+            &tmp.path().join("apps/web/package.json"),
+            br#"{"name":"web"}"#,
+        )
+        .unwrap();
+        fs.write(
+            &tmp.path().join("apps/web/pnpm-workspace.yaml"),
+            b"packages:\n  - 'apps/*'\n",
+        )
+        .unwrap();
+        let cands = NpmSinglePackage.detect(tmp.path(), &fs).unwrap();
+        assert!(
+            cands.is_empty(),
+            "nested manifest + sibling pnpm workspace yaml must skip npm-single"
+        );
     }
 }
