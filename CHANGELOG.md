@@ -4,7 +4,7 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.40.0] — 2026-08-12
 
 ### Removed
 - **M83** — `archctl stack` subcommand removed (deprecated since
