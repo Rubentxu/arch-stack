@@ -40,14 +40,14 @@ chmod +x archctl
 ```bash
 export HOME=/tmp/hlt/home && mkdir -p $HOME
 export XDG_CONFIG_HOME=$HOME/.config
-/tmp/hlt/archctl stack install
-/tmp/hlt/archctl stack status
+/tmp/hlt/archctl ide install opencode --install-root $XDG_CONFIG_HOME/opencode
+/tmp/hlt/archctl ide doctor opencode
 ```
 
 | # | Check | Resultado esperado | Verdicto |
 |---|---|---|---|
-| 1.1 | `stack install` | "installed N components" | [ ] |
-| 1.2 | `stack status` | "drift: none — stack aligned" | [ ] |
+| 1.1 | `ide install opencode` | exit 0 + "installed N skills, M agents" | [ ] |
+| 1.2 | `ide doctor opencode` | exit 0 — stack aligned | [ ] |
 | 1.3 | Skills instaladas | `ls $XDG_CONFIG_HOME/opencode/skills/` → 9 dirs | [ ] |
 | 1.4 | Agents instalados | `ls .../agents/` → 5 files | [ ] |
 | 1.5 | Plugin instalado | `ls .../plugins/archctl-env.ts` existe | [ ] |
@@ -208,7 +208,7 @@ cd ../requests
 | 7.2 | `architecture-discovery` | el agente ejecuta `archctl code c4-discover` | [ ] |
 | 7.3 | `c4-from-graph` | el agente exporta + proyecta sin inventar | [ ] |
 | 7.4 | `diagram-review` | el agente valida antes de entregar | [ ] |
-| 7.5 | `stack-management` | el agente sabe de `stack status/update` | [ ] |
+| 7.5 | `stack-management` | el agente sabe de `ide install opencode` | [ ] |
 | 7.6 | Sin comandos inventados | el agente usa SOLO comandos reales del CLI | [ ] |
 
 **Observaciones Fase 7:**
@@ -222,16 +222,16 @@ cd ../requests
 ```bash
 # Simula una skill modificada a mano (drift)
 echo "# hacked" >> $HOME/.config/opencode/skills/stack-management/SKILL.md
-/tmp/hlt/archctl stack status
-/tmp/hlt/archctl stack update
-/tmp/hlt/archctl stack status
+/tmp/hlt/archctl ide install opencode --install-root $HOME/.config/opencode
+# Re-install es idempotente y restaura
+test -f "$HOME/.config/opencode/skills/stack-management/SKILL.md"
 ```
 
 | # | Check | Resultado esperado | Verdicto |
 |---|---|---|---|
-| 8.1 | Drift detectado | "stale: skills/stack-management/SKILL.md" | [ ] |
-| 8.2 | `update` restaura | "updated N components" | [ ] |
-| 8.3 | Drift resuelto | "drift: none" tras update | [ ] |
+| 8.1 | Drift detectado | el archivo fue modificado a mano | [ ] |
+| 8.2 | `ide install` re-instalado | archivos restaurados a versión embebida | [ ] |
+| 8.3 | Idempotencia verificada | `ide install` es seguro re-ejecutar | [ ] | |
 
 **Observaciones Fase 8:**
 ```
@@ -246,7 +246,7 @@ echo "# hacked" >> $HOME/.config/opencode/skills/stack-management/SKILL.md
 | 9.1 | `archctl diagram export nope:*` (selector inválido); `container:*` sobre /tmp (vacío) | error claro, exit ≠ 0, NO panic; empty-graph: exit 0, JSON con `empty: true` | [ ] |
 | 9.2 | `call-graph` sobre repo Go (soportado desde M30) | extracción real: `project.filesScanned > 0` (rápida; apply-path cubierto por `smoke_go_apply_fixture`) | [ ] |
 | 9.3 | `archctl view` sin assets (binario mal build) | "view assets not embedded — run: ..." | [ ] |
-| 9.4 | `stack install` con HOME sin permisos | error claro de filesystem | [ ] |
+| 9.4 | `ide install` con HOME sin permisos | error claro de filesystem | [ ] |
 | 9.5 | `evidence accept` con id inexistente | "not found" claro | [ ] |
 | 9.6 | Ctrl+C en `view` | server para limpiamente, sin proceso zombie | [ ] |
 

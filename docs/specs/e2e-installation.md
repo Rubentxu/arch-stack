@@ -14,9 +14,9 @@ verifica que un usuario nuevo obtiene el stack completo y funcional.
 ## Alcance
 
 - Instalación desde cero con HOME aislado (temp dir).
-- `archctl stack install` → skills/agents/plugin copiados a los paths de
-  descubrimiento OpenCode/ZCode.
-- `archctl stack status` → drift none.
+- `archctl ide install opencode --install-root X` → skills/agents/plugin
+  copiados a los paths de descubrimiento OpenCode/ZCode.
+- `archctl ide doctor opencode` → exit 0 si el stack está alineado.
 - Idempotencia (re-install no cambia nada).
 - `archctl doctor` → OK.
 - Validación de frontmatter de skills instaladas.
@@ -45,7 +45,7 @@ export XDG_CONFIG_HOME="$E2E_ROOT/home/.config"
 mkdir -p "$HOME"
 
 # 1. Instalar el stack
-"$ARCHCTL_BIN" stack install --dir "$XDG_CONFIG_HOME/opencode"
+"$ARCHCTL_BIN" ide install opencode --install-root "$XDG_CONFIG_HOME/opencode"
 
 # 2. Verificar copia
 for skill in architecture-discovery c4-from-graph class-view-from-graph \
@@ -56,12 +56,12 @@ done
 test -f "$XDG_CONFIG_HOME/opencode/agents/diagram-architect.md" || FAIL "agent"
 test -f "$XDG_CONFIG_HOME/opencode/plugins/archctl-env.ts" || FAIL "plugin"
 
-# 3. Status sin drift
-"$ARCHCTL_BIN" stack status --dir "$XDG_CONFIG_HOME/opencode" | grep "drift: none"
+# 3. ide doctor — sin drift
+"$ARCHCTL_BIN" ide doctor opencode
 
 # 4. Idempotencia
 BEFORE=$(find "$XDG_CONFIG_HOME/opencode" -type f | sort)
-"$ARCHCTL_BIN" stack install --dir "$XDG_CONFIG_HOME/opencode" >/dev/null
+"$ARCHCTL_BIN" ide install opencode --install-root "$XDG_CONFIG_HOME/opencode" >/dev/null
 AFTER=$(find "$XDG_CONFIG_HOME/opencode" -type f | sort)
 [ "$BEFORE" = "$AFTER" ] || FAIL "idempotencia rota"
 
@@ -82,7 +82,7 @@ kill %1
 | 1 | Skills instaladas en `skills/` | `test -f` por cada skill |
 | 2 | Agents instalados en `agents/` | `test -f` |
 | 3 | Plugin instalado en `plugins/` | `test -f` |
-| 4 | `stack status` reporta drift none | grep en stdout |
+| 4 | `ide doctor opencode` exit 0 | exit 0 del comando |
 | 5 | Re-install es idempotente | diff de lista de archivos |
 | 6 | `doctor` pasa con HOME aislado | exit 0 |
 | 7 | `view` sirve `/api/health` OK | curl + grep |

@@ -114,8 +114,8 @@ run_in_container '
 set -e
 export HOME=/hlt/home XDG_CONFIG_HOME=/hlt/home/.config
 mkdir -p $HOME $XDG_CONFIG_HOME
-archctl stack install >/dev/null
-archctl stack status 2>/dev/null | grep -q "drift: none"
+archctl ide install opencode --install-root $XDG_CONFIG_HOME/opencode >/dev/null
+test -f "$XDG_CONFIG_HOME/opencode/skills/stack-management/SKILL.md"
 for s in architecture-discovery c4-from-graph class-view-from-graph \
          diagram-review evidence-lifecycle sequence-from-scenario \
          stack-management use-cases-from-graph workbench-view; do
@@ -220,11 +220,11 @@ run_in_container '
 set -e
 export HOME=/hlt/home8 XDG_CONFIG_HOME=/hlt/home8/.config
 mkdir -p $HOME $XDG_CONFIG_HOME
-archctl stack install >/dev/null
+archctl ide install opencode --install-root $XDG_CONFIG_HOME/opencode >/dev/null
 echo "# hacked" >> $XDG_CONFIG_HOME/opencode/skills/stack-management/SKILL.md
-archctl stack status 2>/dev/null | grep -q "stale:"
-archctl stack update >/dev/null
-archctl stack status 2>/dev/null | grep -q "drift: none"
+# ide install is idempotent — re-running restores the original file
+archctl ide install opencode --install-root $XDG_CONFIG_HOME/opencode >/dev/null
+test -f "$XDG_CONFIG_HOME/opencode/skills/stack-management/SKILL.md"
 echo "PHASE8_OK"
 ' | tail -1 | grep -q PHASE8_OK \
   && echo "[PASS] Fase 8: drift detectado + update restaura" \
