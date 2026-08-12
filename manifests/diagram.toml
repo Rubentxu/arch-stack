@@ -95,6 +95,6 @@ must_not_contain = [
 # Minimum number of `#[test]` items in the diagram module.
 # Counts (approximate): selector (10) + hash (4) + assets (3) + queries (2)
 # + validate (2) + view_types (4) + changeset_types (4) + changeset_schema (1)
-# + apply (15+) + apply_queries (3) + integration (8) + export unit test (1)
+# + apply (15+) + integration (8) + export unit test (1)
 # + CLI integration test (1) = ~58
 minimum_tests = 58
