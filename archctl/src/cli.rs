@@ -507,11 +507,6 @@ pub enum Command {
         #[command(subcommand)]
         action: PluginAction,
     },
-    /// Manage the arch-stack product (binary + workbench + skills as ONE).
-    Stack {
-        #[command(subcommand)]
-        action: StackAction,
-    },
     /// Manage IDE-specific stack installation (OpenCode, ZCode, Claude Code, Codex).
     #[command(name = "ide")]
     Ide {
@@ -612,31 +607,6 @@ pub enum SelfAction {
         /// Check for updates without installing.
         #[arg(long)]
         check: bool,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum StackAction {
-    /// Install embedded skills/agents/plugin into the OpenCode discovery paths.
-    Install {
-        /// Install root (default: $XDG_CONFIG_HOME/opencode).
-        #[arg(long)]
-        dir: Option<PathBuf>,
-        /// Non-interactive (no prompts).
-        #[arg(long)]
-        yes: bool,
-    },
-    /// Idempotent re-install (same as install).
-    Update {
-        #[arg(long)]
-        dir: Option<PathBuf>,
-        #[arg(long)]
-        yes: bool,
-    },
-    /// Report alignment between installed and embedded components.
-    Status {
-        #[arg(long)]
-        dir: Option<PathBuf>,
     },
 }
 
@@ -1196,13 +1166,6 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             };
             crate::view::run(options).context("view failed")?;
             Ok(0)
-        }
-        Command::Stack { .. } => {
-            eprintln!(
-                "error: 'archctl stack' is deprecated since v1.35.0 — use 'archctl ide install <ide>' instead."
-            );
-            eprintln!("       'archctl stack' will be removed in v1.38.0.");
-            std::process::exit(2)
         }
         Command::Ide { action } => match action {
             IdeAction::Install {

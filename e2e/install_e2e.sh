@@ -72,10 +72,10 @@ mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 INSTALL_DIR="$XDG_CONFIG_HOME/opencode"
 echo "== isolated HOME: $HOME =="
 
-# ── 3. stack install ────────────────────────────────────────────────────────
-echo "== stack install =="
-"$ARCHCTL_BIN" stack install --dir "$INSTALL_DIR" >/dev/null 2>&1 \
-  || { echo "[FAIL] stack install"; FAILURES=$((FAILURES + 1)); }
+# ── 3. ide install ───────────────────────────────────────────────────────────
+echo "== ide install =="
+"$ARCHCTL_BIN" ide install opencode --install-root "$INSTALL_DIR" >/dev/null 2>&1 \
+  || { echo "[FAIL] ide install opencode"; FAILURES=$((FAILURES + 1)); }
 
 # ── 4. Skills/agents/plugin present ─────────────────────────────────────────
 echo "== verifying installed components =="
@@ -91,19 +91,19 @@ check "agent: architecture-evidence" test -f "$INSTALL_DIR/agents/architecture-e
 check "agent: diagram-reviewer" test -f "$INSTALL_DIR/agents/diagram-reviewer.md"
 check "plugin: archctl-env" test -f "$INSTALL_DIR/plugins/archctl-env.ts"
 
-# ── 5. stack status — drift none ────────────────────────────────────────────
-echo "== stack status =="
-if "$ARCHCTL_BIN" stack status --dir "$INSTALL_DIR" 2>/dev/null | grep -q "drift: none"; then
-  echo "[PASS] drift: none"
+# ── 5. ide doctor — verify alignment ────────────────────────────────────────
+echo "== ide doctor =="
+if "$ARCHCTL_BIN" ide doctor opencode >/dev/null 2>&1; then
+  echo "[PASS] ide doctor opencode: aligned"
 else
-  echo "[FAIL] drift detected"
+  echo "[FAIL] ide doctor opencode: not aligned"
   FAILURES=$((FAILURES + 1))
 fi
 
 # ── 6. Idempotency ─────────────────────────────────────────────────────────
 echo "== idempotency =="
 BEFORE=$(find "$INSTALL_DIR" -type f | sort)
-"$ARCHCTL_BIN" stack install --dir "$INSTALL_DIR" >/dev/null 2>&1
+"$ARCHCTL_BIN" ide install opencode --install-root "$INSTALL_DIR" >/dev/null 2>&1
 AFTER=$(find "$INSTALL_DIR" -type f | sort)
 check "re-install is idempotent" test "$BEFORE" = "$AFTER"
 

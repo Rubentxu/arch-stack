@@ -27,7 +27,6 @@ pub mod self_lifecycle {
 }
 pub mod skills;
 pub mod source;
-pub mod stack;
 pub mod store;
 pub mod telemetry;
 /// Test-only helpers shared across integration test files.

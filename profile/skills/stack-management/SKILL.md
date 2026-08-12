@@ -21,27 +21,25 @@ installed, versioned, and updated as a unit (stack distribution model).
    ```
    Reports scope gates + environment. If it fails, the install is
    broken; do not proceed to feature work.
-2. See what's installed vs embedded in the binary:
+2. See which IDEs have the stack installed:
    ```bash
-   archctl stack status
+   archctl ide list --installed
    ```
-   Shows: binary version, workbench embedded version, skills installed
-   (per OpenCode/ZCode discovery path) and whether they match the
-   embedded set.
+   Shows: supported IDEs, which are currently installed, and the
+   install root for each.
 3. Install or update the full stack (skills + agents + plugin into
-   `~/.config/opencode/{skills,agents,plugins}`):
+   the IDE discovery path):
    ```bash
-   archctl stack install
-   # Idempotent update (same command re-runs safely)
-   archctl stack update
-   # Non-interactive (no prompts):
-   archctl stack install --yes
+   archctl ide install opencode --install-root ~/.config/opencode
+   # Idempotent update — same command re-runs safely
+   archctl ide update opencode --install-root ~/.config/opencode
    ```
-4. Verify skills are discoverable by the agent runtime:
+4. Verify the installation is healthy:
    ```bash
-   archctl skills list
-   archctl skills verify
+   archctl ide doctor opencode
    ```
+   Checks that all embedded skills and agents are present at the
+   install root and match what the binary ships.
 
 # Platform notes
 
@@ -57,4 +55,5 @@ installed, versioned, and updated as a unit (stack distribution model).
 
 - Patching skill files by hand in the install target (they get
   overwritten on update — edit the repo sources instead).
-- Claiming the stack is current when `stack status` shows drift.
+- Claiming the stack is current without running `archctl ide doctor <ide>`
+  to verify alignment.
