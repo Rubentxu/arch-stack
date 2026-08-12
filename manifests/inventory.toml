@@ -22,6 +22,8 @@ public_symbols = [
   "walk_to_paths",
   "depends",
   "depends_summary",
+  "find_manifests",
+  "BUILD_DIR_BLOCKLIST",
 ]
 
 must_hold = [
