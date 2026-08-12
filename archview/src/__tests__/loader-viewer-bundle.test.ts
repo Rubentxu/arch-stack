@@ -183,3 +183,86 @@ describe("namespace-derived hierarchy (R7)", () => {
     }
   });
 });
+
+// M81 D2: cosmetic fields (x/y/collapsed/labelOverride) — projection schema 1.1
+describe("cosmetic node fields (M81 / schema 1.1)", () => {
+  it("resolves labelOverride over name and propagates x/y/collapsed", () => {
+    const raw = {
+      ...MINIMAL_BUNDLE,
+      manifest: { ...MINIMAL_BUNDLE.manifest, schemaVersion: "1.1.0" },
+      projection: {
+        nodes: [
+          {
+            id: "n1",
+            type: "container",
+            name: "OldName",
+            labelOverride: "DisplayLabel",
+            x: 240,
+            y: 160,
+            collapsed: true,
+          },
+        ],
+        edges: [],
+      },
+    };
+    const bundle = normalizeBundle(raw, "test");
+    expect(bundle.nodes).toHaveLength(1);
+    const node = bundle.nodes[0];
+    // M81: labelOverride wins over name
+    expect(node.label).toBe("DisplayLabel");
+    // Cosmetic fields propagate
+    expect(node.x).toBe(240);
+    expect(node.y).toBe(160);
+    expect(node.collapsed).toBe(true);
+    expect(node.labelOverride).toBe("DisplayLabel");
+  });
+
+  it("falls back to name when labelOverride is absent", () => {
+    const raw = {
+      ...MINIMAL_BUNDLE,
+      projection: {
+        nodes: [
+          {
+            id: "n1",
+            type: "container",
+            name: "ActualName",
+            // no labelOverride, x, y, collapsed
+          },
+        ],
+        edges: [],
+      },
+    };
+    const bundle = normalizeBundle(raw, "test");
+    const node = bundle.nodes[0];
+    expect(node.label).toBe("ActualName");
+    expect(node.x).toBeUndefined();
+    expect(node.y).toBeUndefined();
+    expect(node.collapsed).toBeUndefined();
+    expect(node.labelOverride).toBeUndefined();
+  });
+
+  it("schema 1.1 bundle with no cosmetic fields loads identically to 1.0", () => {
+    const raw_v1_1 = {
+      ...MINIMAL_BUNDLE,
+      manifest: { ...MINIMAL_BUNDLE.manifest, schemaVersion: "1.1.0" },
+      projection: {
+        nodes: [{ id: "n1", type: "container", name: "Svc" }],
+        edges: [],
+      },
+    };
+    const raw_v1_0 = {
+      ...MINIMAL_BUNDLE,
+      manifest: { ...MINIMAL_BUNDLE.manifest, schemaVersion: "1.0.0" },
+      projection: {
+        nodes: [{ id: "n1", type: "container", name: "Svc" }],
+        edges: [],
+      },
+    };
+    const b1 = normalizeBundle(raw_v1_1, "test");
+    const b0 = normalizeBundle(raw_v1_0, "test");
+    // Nodes must be structurally equal (cosmetic fields undefined in both)
+    expect(b1.nodes[0].label).toBe(b0.nodes[0].label);
+    expect(b1.nodes[0].x).toBeUndefined();
+    expect(b0.nodes[0].x).toBeUndefined();
+  });
+});

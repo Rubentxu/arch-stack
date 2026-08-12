@@ -29,6 +29,19 @@ export interface RendererNode {
   level?: number;
   /** Parent element id (for C4 drill-down), derived from `canonicalKey`. */
   parentId?: string;
+  // ─── M81: projection schema 1.1 ─────────────────────────────────────────
+  /** View-level x coordinate. Undefined → renderer defaults to 0. */
+  x?: number;
+  /** View-level y coordinate. Undefined → renderer defaults to 0. */
+  y?: number;
+  /** Whether this member is collapsed in the view. Undefined → renderer defaults to false. */
+  collapsed?: boolean;
+  /**
+   * Per-view display label. When present, the loader resolves
+   * `label = labelOverride ?? name` (R2 of bundle/loader.ts + M81).
+   * When undefined, renderer-side falls back to `name`.
+   */
+  labelOverride?: string;
   meta?: Record<string, unknown>;
 }
 
