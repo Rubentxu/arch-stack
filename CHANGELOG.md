@@ -4,6 +4,16 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **M80b** — `archctl diagram export --format arrows` exports a deterministic
+  `.arrows` JSON document (Arrows.app v0.8 shape). The serializer is a pure
+  function over `BundleEnvelope { projection, styles }` — no I/O, no lbug
+  access. Default output path is derived from the selector (replaces `:` and
+  `/` with `_`). The `--json` envelope includes `unplaced_count` for cosmetic
+  overlap auditing.
+
 ## [1.40.0] — 2026-08-12
 
 ### Removed

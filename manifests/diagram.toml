@@ -33,6 +33,7 @@ editable = [
   "archctl/src/diagram/apply.rs",
   "archctl/src/diagram/changeset_types.rs",
   "archctl/src/diagram/changeset_schema.rs",
+  "archctl/src/diagram/arrows.rs",
   "archctl/src/cli.rs",
 ]
 
@@ -85,6 +86,8 @@ must_hold = [
   # M81 D2: build_bundle LEFT JOINs ViewMembers for cosmetic fields
   "pub fn build_bundle(",
   "get_view_members",
+  # M80b: arrows export serializer
+  "pub fn serialize(",
 ]
 
 # Banned patterns: no HTTP client, no direct std::fs in the diagram module.
@@ -100,4 +103,5 @@ must_not_contain = [
 # + validate (2) + view_types (4) + changeset_types (4) + changeset_schema (1)
 # + apply (15+) + integration (8) + export unit test (1)
 # + CLI integration test (1) = ~58
-minimum_tests = 58
+# M80b: +2 unit tests (arrows roundtrip, PascalCase) + 2 integration tests = 62
+minimum_tests = 60
