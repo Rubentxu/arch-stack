@@ -97,11 +97,26 @@ impl Command {
                 x,
                 y,
             } => {
+                // D1 (M81): look up the existing label so we preserve it on upsert.
+                // If no prior ViewMember row exists, label defaults to "" (existing
+                // semantics for a fresh move-member). This avoids a new port method
+                // by reusing the existing get_view_members() call.
+                let existing_label = store
+                    .get_view_members(diagram_id)
+                    .ok()
+                    .and_then(|members| {
+                        members
+                            .iter()
+                            .find(|m| m.id == *member_id)
+                            .map(|m| m.label.clone())
+                    })
+                    .unwrap_or_default();
+
                 let member = ViewMember {
                     id: member_id.clone(),
                     diagram_id: diagram_id.to_string(),
                     element_id: element_id.clone(),
-                    label: String::new(),
+                    label: existing_label,
                     x: *x,
                     y: *y,
                     collapsed: false,

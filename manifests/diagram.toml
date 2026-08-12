@@ -60,6 +60,11 @@ public_symbols = [
   "CHANGESET_COMMAND_TYPES",
   "ChangeSet",
   "Command",
+  # M81 D2 — cosmetic fields on Node
+  "Node.x",
+  "Node.y",
+  "Node.collapsed",
+  "Node.label_override",
 ]
 
 # Textual invariants that prove the module does what its scope
@@ -82,6 +87,9 @@ must_hold = [
   "pub fn run_apply(",
   "pub const CHANGESET_COMMAND_TYPES",
   "fn diagram_apply_cmd(",
+  # M81 D2: build_bundle LEFT JOINs ViewMembers for cosmetic fields
+  "pub fn build_bundle(",
+  "get_view_members",
 ]
 
 # Banned patterns: no HTTP client, no direct std::fs in the diagram module.

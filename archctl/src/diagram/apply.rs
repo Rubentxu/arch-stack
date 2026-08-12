@@ -575,6 +575,70 @@ mod tests {
             .unwrap();
         assert_eq!(m.x, 240);
         assert_eq!(m.y, 160);
+        // D1 (M81): fresh move-member without prior ViewMember → label ""
+        assert_eq!(m.label, "", "fresh move-member must start with empty label");
+    }
+
+    #[test]
+    fn dispatch_move_member_preserves_existing_label() {
+        // D1 (M81): MoveMember on an existing ViewMember must preserve the
+        // prior label, not overwrite it with String::new().
+        let (mut store, _tmp) = make_test_store();
+        let diagram_id = "container:be";
+
+        store
+            .put_diagram(&Diagram {
+                id: diagram_id.into(),
+                revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
+                selector: diagram_id.into(),
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+
+        store
+            .query(
+                "CREATE (:Element {id: 'el:api', kind_id: 'mt.system', category: 'c4', canonical_key: 'el:api'}) RETURN 1;",
+            )
+            .unwrap();
+
+        // Seed an existing ViewMember with a non-empty label.
+        store
+            .put_view_member(&ViewMember {
+                id: "vm:container:be:el:api".into(),
+                diagram_id: diagram_id.into(),
+                element_id: "el:api".into(),
+                label: "PreservedLabel".into(),
+                x: 50,
+                y: 100,
+                collapsed: false,
+                props: serde_json::json!({}),
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+
+        let cmd = Command::MoveMember {
+            member_id: "vm:container:be:el:api".into(),
+            element_id: "el:api".into(),
+            x: 240,
+            y: 160,
+        };
+        dispatch_command(&mut store, &cmd, diagram_id).unwrap();
+
+        let members = store.get_view_members(diagram_id).unwrap();
+        let m = members
+            .iter()
+            .find(|mm| mm.id == "vm:container:be:el:api")
+            .unwrap();
+        assert_eq!(
+            m.label, "PreservedLabel",
+            "D1 (M81): MoveMember must preserve the prior label"
+        );
+        assert_eq!(m.x, 240);
+        assert_eq!(m.y, 160);
     }
 
     #[test]
