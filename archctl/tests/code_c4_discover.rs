@@ -613,6 +613,11 @@ fn components_strategy() -> Box<dyn archctl::code::strategies::Strategy> {
 #[test]
 #[ignore = "requires cargo_metadata exec (cargo binary in PATH)"]
 fn cargo_workspace_from_nested_member() {
+    // Skip early when cargo is not in PATH (CI without the toolchain).
+    if !cargo_available() {
+        eprintln!("skipping: cargo binary not available in PATH");
+        return;
+    }
     // Root has NO Cargo.toml; archctl/Cargo.toml exists at depth 1.
     // Strategy must find it and resolve the full workspace via cargo metadata.
     let tmp = TempDir::new().unwrap();
