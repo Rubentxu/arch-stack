@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-12, post-release v1.40.0 (M83 — `archctl stack` removal).
+> Última actualización: 2026-08-12, post-release v1.41.0 (M80b — arrows export adapter).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | squash commit on `main` post-PR-M83 (M83 — `archctl stack` removal) |
-| Versión | `v1.40.0` (latest tag, post-PR-M83 squash) |
+| Tip | squash commit on `main` post-PR-166 (M80b — arrows export adapter) |
+| Versión | `v1.41.0` (latest tag, post-PR-166 squash) |
 | Tests | 785 Rust + 128 archview tests pasan; 15 ignored (env-specific) |
-| Working tree | trunk `main` en sync con `origin/main`, post-PR-M83 squash merge |
+| Working tree | trunk `main` en sync con `origin/main`, post-PR-166 squash merge |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~30,951 + ~30 (M82 unchanged) + (**M83** −303 net: removed `archctl/src/stack.rs` 229 LOC + `manifests/stack.toml` 41 LOC + 37 LOC `cli.rs`/`lib.rs` + e2e migration offset) |
-| LOC tests | ~6,560 + ~25 (M82 — `nested_package_json_with_pnpm_workspace_in_same_dir_is_skipped` test) |
+| LOC src | ~30,951 + ~30 (M82) + (M83 −303) + (**M80b** +720 net: `arrows.rs` 423 + `export_types.rs` +47 + `cli.rs` +119 + `mod.rs` +1 + `manifests/diagram.toml` +6 + `tests/diagram_arrows_export.rs` +206 + `index.md` +2 + `arrows-compatibility-adapter.md` +103 + `.gitignore` +3 + `Cargo.toml` +2 + `Cargo.lock` +2 − `CHANGELOG.md` +10 = ~878 / 46 truncated) |
+| LOC tests | ~6,560 + ~25 (M82) + (M80b: 7 inline unit tests in `arrows.rs` + 4 integration tests in `diagram_arrows_export.rs` + 1 `ExportFormat::parse_case_insensitive` = 12 new) |
 | LOC benches | ~790 |
-| Vault milestones | 34 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M81 + M82 + M83) |
-| Tags | 40 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below; +v1.37.0–v1.40.0) |
+| Vault milestones | 35 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83) |
+| Tags | 41 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below; +v1.37.0–v1.41.0) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -72,6 +72,7 @@
 | `v1.39.0` | M81 | Projection schema v1.1 cosmetic fields: D1 `Command::MoveMember` preserves prior `ViewMember.label` (was resetting to empty string); D2 `Node` exposes `x`/`y`/`collapsed`/`labelOverride` (LEFT JOIN via `HashMap<element_id, &ViewMember>`, ADR-019 O(1)); archview renders `labelOverride ?? name`; backward-compat with 1.0 bundles; `cosmetic-changeset-roundtrip` spec promoted from stub to full |
 | `v1.39.1` | M82 | `npm-single` pnpm-workspace-path detection: 1-argument swap in `archctl/src/code/strategies/npm_single.rs:67` so `pnpm_workspace_declares_packages` reads from `pkg_json.parent()` instead of `project_root`. Aligns with the sibling convention at `archctl/src/code/strategies/npm.rs:52`. Fixes mis-classification of vueuse-style monorepos (`apps/web/{package.json,pnpm-workspace.yaml}`). 1 regression test added. |
 | `v1.40.0` | M83 | `archctl stack` removal: hard delete of the CLI surface (Command::Stack, StackAction, dispatch arm), the dead-code module (`archctl/src/stack.rs` 229 LOC), and the orphaned manifest gate (`manifests/stack.toml`). Migrated 3 e2e contracts (`e2e/install_e2e.sh`, `e2e/human_loop_sandbox.sh`, `e2e/HUMAN_LOOP_TEST.md`) + `docs/specs/e2e-installation.md` + the embedded `stack-management` skill to `archctl ide install <ide>` / `archctl ide doctor <ide>`. Breaking change — semver minor. ADRs untouched (historical truth preserved). |
+| `v1.41.0` | M80b | Arrows export adapter: `archctl diagram export <selector> --format arrows` produces a deterministic `.arrows` JSON document (Arrows.app v0.8 shape). Pure serializer over `BundleEnvelope { projection, styles }` (`archctl/src/diagram/arrows.rs` 423 LOC, 7 inline unit tests). Case-insensitive `--format` dispatch wired via `ExportFormat::parse()` in `cli.rs::diagram_export_cmd`. Default output path derived from the selector (replaces `:` and `/` with `_`). `--json` envelope includes `unplaced_count` for cosmetic audit. 4 integration tests in `archctl/tests/diagram_arrows_export.rs`. Manifest gate updated (`editable[] += arrows.rs`, `must_hold[] += "pub fn serialize("`, `minimum_tests: 58 → 60`). M69 stub (`docs/specs/arrows-compatibility-adapter.md`) realigned to reflect export-only-public-surface; import marked as phase 2 deferred until a real consumer trigger fires. Path A-lite, no new ADR, no new port, no new bounded context. |
 
 ## Capacidades shipped (v0.x — historical)
 
