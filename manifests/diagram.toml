@@ -60,11 +60,6 @@ public_symbols = [
   "CHANGESET_COMMAND_TYPES",
   "ChangeSet",
   "Command",
-  # M81 D2 — cosmetic fields on Node
-  "Node.x",
-  "Node.y",
-  "Node.collapsed",
-  "Node.label_override",
 ]
 
 # Textual invariants that prove the module does what its scope
