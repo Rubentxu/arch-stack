@@ -4,6 +4,30 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **M79 D1** — `inventory::tree()` now prunes `target/`, `node_modules/`,
+  `dist/`, `build/`, `.git/`, `.venv/`, `__pycache__/`, `.gradle/` by exact
+  directory name regardless of `.gitignore`. Previously, a subdir walk without
+  a local `.gitignore` entry for `target/` would traverse thousands of build
+  artefact files, causing timeouts on large repos (root `.gitignore` was not
+  inherited because `parents(false)` is intentionally set).
+
+### Added
+- **M79 D2** — Nested manifest fallback for all four C4 strategies:
+  - `cargo-workspace`: when `Cargo.toml` is absent at project root, finds the
+    nearest nested `Cargo.toml` (depth ≤ 3) and resolves the full workspace
+    via `cargo metadata --manifest-path`. Works for arch-stack's own layout
+    (`archctl/` at depth 1).
+  - `npm-workspace`: root-first `package.json` + `workspaces` detection
+    unchanged; fallback now finds first nested `package.json` with `workspaces`
+    and re-bases glob patterns to the manifest's parent directory.
+  - `npm-single`: first nested `package.json` within depth ≤ 3 (previously
+    returned empty for all subdir repos).
+  - `components`: `collect_container_dirs` now falls back to `find_manifests`
+    for both Cargo and npm, correctly skipping sibling service directories.
+
 ## [v1.37.1] — 2026-08-11
 
 ### Fixed
