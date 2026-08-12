@@ -242,3 +242,50 @@ mod tests {
         assert_eq!(node.label_override, None, "label_override defaults to None");
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Export format (arrows / viewer-bundle)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Output format for `archctl diagram export`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    ViewerBundle,
+    Arrows,
+}
+
+impl ExportFormat {
+    /// Parse a string into an `ExportFormat`, case-insensitively.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "viewer-bundle" => Some(Self::ViewerBundle),
+            "arrows" => Some(Self::Arrows),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod export_format_tests {
+    use super::*;
+
+    #[test]
+    fn parse_case_insensitive() {
+        assert_eq!(ExportFormat::parse("arrows"), Some(ExportFormat::Arrows));
+        assert_eq!(ExportFormat::parse("ARROWS"), Some(ExportFormat::Arrows));
+        assert_eq!(ExportFormat::parse("Arrows"), Some(ExportFormat::Arrows));
+        assert_eq!(
+            ExportFormat::parse("viewer-bundle"),
+            Some(ExportFormat::ViewerBundle)
+        );
+        assert_eq!(
+            ExportFormat::parse("VIEWER-BUNDLE"),
+            Some(ExportFormat::ViewerBundle)
+        );
+        assert_eq!(
+            ExportFormat::parse("Viewer-Bundle"),
+            Some(ExportFormat::ViewerBundle)
+        );
+        assert_eq!(ExportFormat::parse("unknown"), None);
+    }
+}

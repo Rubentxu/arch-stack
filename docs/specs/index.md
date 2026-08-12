@@ -27,7 +27,7 @@
 | [`durable-workspace-state.md`](durable-workspace-state.md) | H1 | WorkspaceState persisted to XDG (not localStorage) for ephemeral-port restart recovery. |
 | [`source-drawer-read-only.md`](source-drawer-read-only.md) | H1 | Read-only source drawer with path-traversal rejection and IDE handoff. |
 | [`cosmetic-changeset-roundtrip.md`](cosmetic-changeset-roundtrip.md) | H2 | Cosmetic ChangeSet round-trip with baseRevision integrity; **closed by M81** (schema v1.1, D1 label preservation, D2 cosmetic fields). |
-| [`arrows-compatibility-adapter.md`](arrows-compatibility-adapter.md) | H2 | `.arrows` import/export adapter; graph untouched on import; canonical graph never is `.arrows` format. |
+| [`arrows-compatibility-adapter.md`](arrows-compatibility-adapter.md) | H2 | `.arrows` (Arrows.app v0.8) export adapter; **export realised in v1.41.0 (M80b)** via `archctl diagram export --format arrows`; import deferred to phase 2 (not implemented until a real consumer triggers it). Canonical graph is the only source of truth. |
 | [`lens-spec-entry-criteria.md`](lens-spec-entry-criteria.md) | H3 | LensSpec entry criteria gated by 2 consumers OR measured need; reversibility clause required. |
 
 ## Code extraction (3)
