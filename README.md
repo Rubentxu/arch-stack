@@ -1,92 +1,278 @@
-# Arch Stack
+# arch-stack
 
-Monorepo que agrupa el ecosistema de diagramación de arquitectura:
+**Architecture diagrams from code — C4, UML, sequence, and more.**
 
-- **`archctl/`** — CLI sidecar Rust: persistencia (LadybugDB), extracción
-  (ast-grep/tree-sitter), proyecciones C4/UML deterministas. La
-  especificación canónica vive en [`docs/`](docs/) y los ADRs en
-  [`docs/adr/`](docs/adr/).
-- **`archview/`** — workbench web (SolidJS + G6): visualización de las
-  proyecciones (C4, call graph, sequence, class diagram, packages,
-  drift, impact).
+`arch-stack` is a local-first CLI + workbench that reverse-engineers your repository into an architecture knowledge graph and projects it as interactive C4 and UML diagrams. It runs entirely on your machine; nothing leaves your environment by default.
 
-Historia: `archctl` se incorporó como raíz del monorepo; `archview` como
-subtree (rama histórica `v0.14.0`–`v0.21.3` conservada vía merge commit
-`a2ba561`). Los tags `v0.13.x` pertenecen a archctl; `v0.14.0+` a
-archview.
+[![Latest Release](https://img.shields.io/github/v/release/Rubentxu/arch-stack?logo=github&label=latest)](https://github.com/Rubentxu/arch-stack/releases/latest)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![Build](https://img.shields.io/github/actions/workflow/status/Rubentxu/arch-stack/release.yml?logo=github)](https://github.com/Rubentxu/arch-stack/actions)
+[![rust-version](https://img.shields.io/badge/rust-1.91%2B-blue.svg?logo=rust)](archctl/Cargo.toml)
 
 ---
 
-# `archctl`
-
-OpenCode Architecture Diagrammer — C4 + UML diagrams by reverse-engineering
-a repository, with a `archctl` CLI sidecar that owns persistence,
-extraction and rendering.
-
-> The authoritative spec is under [`docs/`](docs/).
-> Start with [`docs/README.md`](docs/README.md) and
-> [`docs/ROADMAP.md`](docs/ROADMAP.md) (M0 → M11).
-
-## Status
-
-- **M0 — Validación de OpenCode (in progress).** This scaffold ships the
-  OpenCode profile and a minimal `archctl` CLI (`doctor`, `project
-  resolve`, `render`). Persistent graph, full Rust binary, and the rest
-  of the milestones land in M1 → M11.
-
-## Layout
+## At a Glance
 
 ```
-.
-├── docs/                       v2 authoritative spec (README, ROADMAP M0–M11, ADRs, data model, schema)
-├── profile/                    OpenCode profile source (installed by scripts/install.sh)
-│   ├── opencode.jsonc
-│   ├── agents/                 diagram-architect + 4 subagents
-│   ├── commands/               /diagram dispatcher
-│   ├── skills/                 c4-context, plantuml-sequence (M0 skeleton)
-│   └── plugins/                archctl-env.ts (env injection)
-├── archctl/                    M0 minimal CLI (TypeScript; replaced by Rust in M2)
-│   ├── src/
-│   │   ├── cli.ts              dispatcher
-│   │   ├── doctor.ts           env check
-│   │   ├── render.ts           DSL/PUML → local Kroki
-│   │   └── resolve.ts          project resolve (SourceIdentity stub)
-│   └── package.json
-├── scripts/
-│   └── install.sh              copies profile/ to $XDG_CONFIG_HOME/opencode-architecture
-├── CHANGELOG.md
-├── CONTEXT.md
-├── ROADMAP.md                  redirect to docs/ROADMAP.md
-└── .opencode-version           OpenCode pin (1.18.x)
+$ archctl doctor                              # verify setup
+$ archctl ide install opencode                 # connect to OpenCode
+$ /diagram c4 context                          # C4 System Context
+$ /diagram c4 container                       # C4 Container
+$ /diagram class order-domain                # UML Class diagram
+$ /diagram sequence "create order"            # UML Sequence
+$ archctl view                               # open the workbench
 ```
 
-## Install
+---
+
+## Features
+
+| Capability | Description |
+|---|---|
+| **C4 Diagrams** | Context, Container, Component levels from code extraction |
+| **UML Diagrams** | Class, Sequence, State, Use Case |
+| **Multi-language** | Rust, Go, Python, Java, Kotlin (call-graph) |
+| **Local-first** | All data stays in `~/.local/share/archctl/` (XDG) |
+| **Evidence-backed** | Every node and edge links to `file:line` provenance |
+| **Embedded workbench** | `archctl view` serves archview from the binary (no separate install) |
+| **IDE integration** | OpenCode, ZCode, Claude Code, Codex via `archctl ide` |
+| **Reproducible** | Deterministic projections from the same code base |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Your IDE (OpenCode / Claude Code)         │
+│                                                                  │
+│   /diagram c4 container                                            │
+│        │                                                         │
+│        ▼                                                         │
+│   diagram-architect  (orchestrator agent)                         │
+│   ├── c4-modeler        → c4-from-graph skill                   │
+│   ├── uml-modeler        → class/sequence/usecase skills         │
+│   ├── architecture-evidence → architecture-discovery skill        │
+│   └── diagram-reviewer    → diagram-review skill                │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ archctl code / archctl diagram
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       archctl (Rust CLI)                         │
+│                                                                  │
+│   code call-graph   → extract facts from source code            │
+│   code class-diagram                                             │
+│   code sequence                                                   │
+│   code state-machine                                              │
+│   diagram export   → project views (C4 / UML)                    │
+│   view             → serve embedded archview workbench           │
+│                                                                  │
+│   LadybugDB (graph) ← persists in ~/.local/share/archctl/       │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        archview (Embedded Workbench)              │
+│   G6 canvas renderer · pan/zoom · evidence inspector · filters   │
+│   (served by archctl view — no separate installation needed)     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Installation
+
+### Option 1 — Homebrew (recommended)
 
 ```bash
-./scripts/install.sh             # installs profile/ to ~/.config/opencode-architecture/
-cd archctl && npm install        # archctl CLI dependencies
+brew install Rubentxu/arch-stack/archctl
 ```
 
-## Run
+### Option 2 — Binary release
 
 ```bash
-export OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode-architecture"
-opencode
+# Download the latest release for Linux x86_64
+curl -L https://github.com/Rubentxu/arch-stack/releases/latest/download/archctl-x86_64-unknown-linux-gnu.tar.gz \
+  -o /tmp/archctl.tar.gz
+
+# Extract to a directory in your PATH
+tar -xzf /tmp/archctl.tar.gz -C ~/.local/bin/
+
+# Verify
+archctl --version
 ```
 
-Inside OpenCode, `/diagram c4 context` and `/diagram sequence` reach the
-right subagent, which delegates to `archctl`.
+For other platforms, see [Releases](https://github.com/Rubentxu/arch-stack/releases/latest).
 
-Outside OpenCode:
+### Option 3 — From source
 
 ```bash
-cd archctl
-npx tsx src/cli.ts doctor
-npx tsx src/cli.ts render ./docs/schema/001_initial_schema.cypher
+git clone https://github.com/Rubentxu/arch-stack.git
+cd arch-stack/archctl
+cargo build --release
+./target/release/archctl --version
 ```
 
-## Milestones
+### Option 4 — With self-update (once you have archctl)
 
-The complete milestone plan is in [`docs/ROADMAP.md`](docs/ROADMAP.md):
-M0 → M11. The first useful MVP per the v2 plan is `M0 → M1 → M2 → M3 →
-M4 → M5 → M6`.
+```bash
+archctl self install          # install latest stable
+archctl self update          # update to the latest
+archctl self update --check  # check without installing
+```
+
+---
+
+## IDE Integration
+
+After installing `archctl`, connect it to your IDE:
+
+```bash
+# OpenCode
+archctl ide install opencode
+
+# Claude Code
+archctl ide install claude-code
+
+# ZCode
+archctl ide install zcode
+
+# Codex
+archctl ide install codex
+
+# Check what's installed
+archctl ide list --installed
+
+# Diagnose an IDE
+archctl ide doctor opencode
+```
+
+---
+
+## CLI Reference
+
+### Diagnosis and setup
+
+```bash
+archctl doctor              # verify environment and dependencies
+archctl project resolve      # detect current repository identity
+```
+
+### Code extraction
+
+```bash
+archctl code call-graph        # extract call graph (all supported languages)
+archctl code class-diagram    # extract class / struct definitions
+archctl code sequence         # extract sequence / call chains
+archctl code state-machine    # extract state machine candidates
+```
+
+### Diagram projection
+
+```bash
+archctl diagram export c4-context             # C4 System Context view
+archctl diagram export c4-container          # C4 Container view
+archctl diagram export c4-component          # C4 Component view
+archctl diagram project --view sequence:*   # UML Sequence view
+archctl diagram project --view class:*      # UML Class view
+archctl diagram project --view usecase:*    # UML Use Case view
+archctl diagram project --view state:*      # UML State Machine view
+```
+
+### Workbench
+
+```bash
+archctl view                # start embedded workbench (random port)
+archctl view --port 9000   # start on a fixed port
+```
+
+### Graph introspection
+
+```bash
+archctl graph list-elements                # list all nodes
+archctl graph list-relations               # list all edges
+archctl evidence list --element <id>       # evidence for a node
+archctl evidence list --relation <rel>      # evidence for an edge
+```
+
+### Lifecycle management
+
+```bash
+archctl self install [version]   # install a version
+archctl self list                 # list installed versions
+archctl self use <version>       # switch active version
+archctl self update              # update to latest
+archctl self uninstall           # remove current version
+```
+
+---
+
+## OpenCode Commands
+
+When integrated with OpenCode, the `/diagram` command is the entry point:
+
+| Command | Description |
+|---|---|
+| `/diagram c4 context` | C4 System Context diagram |
+| `/diagram c4 container` | C4 Container diagram |
+| `/diagram c4 container <scope>` | C4 Container scoped to a module |
+| `/diagram c4 component <module>` | C4 Component diagram |
+| `/diagram class <module>` | UML Class diagram |
+| `/diagram sequence <function>` | UML Sequence for a call chain |
+| `/diagram usecase <name>` | UML Use Case diagram |
+| `/diagram state <entity>` | UML State Machine |
+| `/diagram explain <element-id>` | Show evidence for a node |
+| `/diagram evidence <relation-id>` | Show evidence for a relation |
+| `/diagram update` | Refresh diagrams after code changes |
+| `/diagram review` | Validate diagram quality against the graph |
+
+---
+
+## External Dependencies (optional)
+
+Some commands require external tools. `archctl` reports a clear error if they are missing.
+
+| Tool | Needed for | Install |
+|---|---|---|
+| Java | PlantUML rendering | `sudo apt install default-jre` |
+| PlantUML | PlantUML diagram export | [plantuml.com](https://plantuml.com/download) |
+| ast-grep | Rust / TypeScript extraction | `cargo install ast-grep` |
+| tree-sitter-graph | Advanced extraction | `cargo install tree-sitter-graph` |
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`docs/README.md`](docs/README.md) | Full documentation index |
+| [`docs/STATE.md`](docs/STATE.md) | Current ship state, shipped capabilities |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Horizons H0–H3 + milestone history |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (041 ADRs) |
+| [`docs/specs/`](docs/specs/) | View specifications and contracts |
+| [`docs/DATA-MODEL-LADYBUGDB.md`](docs/DATA-MODEL-LADYBUGDB.md) | Canonical graph data model |
+| [`MANUAL.md`](MANUAL.md) | Complete user guide |
+
+---
+
+## Data Persistence
+
+All data lives outside your repository, following [ADR-004](docs/adr/ADR-004-persistencia-externa-xdg.md):
+
+```
+~/.local/share/archctl/
+└── projects/<hash>/
+    └── architecture.lbdb      # the canonical graph
+
+~/.config/archctl/
+├── config.toml                 # global configuration
+└── plugins/                   # installed plugins
+```
+
+Your source code is **never modified**. `archctl` only reads.
+
+---
+
+## License
+
+`arch-stack` is distributed under **MIT OR Apache-2.0**. See [`LICENSE`](LICENSE) for details.

@@ -23,6 +23,7 @@ use serde_json;
 use crate::code::c4_discover::{ContainerCandidate, Evidence, EvidenceKind};
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
+use crate::inventory::find_manifests;
 
 pub struct ComponentsStrategy;
 
@@ -65,6 +66,8 @@ impl Strategy for ComponentsStrategy {
 }
 
 /// Collect directories that are themselves containers (workspace members).
+/// D2: when root manifest is absent, uses find_manifests to locate nested
+/// manifests and collect their parent dirs.
 fn collect_container_dirs(project_root: &Path, fs: &dyn Filesystem) -> Result<HashSet<String>> {
     let mut dirs = HashSet::new();
 
@@ -90,6 +93,17 @@ fn collect_container_dirs(project_root: &Path, fs: &dyn Filesystem) -> Result<Ha
                 {
                     dirs.insert(parent_rel.to_string_lossy().replace('\\', "/"));
                 }
+            }
+        }
+    } else {
+        // D2 fallback: root Cargo.toml absent — find nested Cargo.toml via find_manifests
+        let nested = find_manifests(project_root, &["Cargo.toml"], 3)?;
+        for manifest in nested {
+            let full = project_root.join(&manifest);
+            if let Some(parent) = full.parent()
+                && let Ok(parent_rel) = parent.strip_prefix(project_root)
+            {
+                dirs.insert(parent_rel.to_string_lossy().replace('\\', "/"));
             }
         }
     }
@@ -121,6 +135,17 @@ fn collect_container_dirs(project_root: &Path, fs: &dyn Filesystem) -> Result<Ha
             }
         }
         let _ = workspaces;
+    } else {
+        // D2 fallback: root package.json absent — find nested package.json via find_manifests
+        let nested = find_manifests(project_root, &["package.json"], 3)?;
+        for manifest in nested {
+            let full = project_root.join(&manifest);
+            if let Some(parent) = full.parent()
+                && let Ok(parent_rel) = parent.strip_prefix(project_root)
+            {
+                dirs.insert(parent_rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
     }
 
     Ok(dirs)

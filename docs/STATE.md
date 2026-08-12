@@ -2,22 +2,22 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-11, post-release v1.36.0 (M76 + H4 CLOSED).
+> Última actualización: 2026-08-12, post-release v1.38.0 (M79 — c4-discover nested workspace).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `22b0330a6564001ff4c13132cbcde0d5e458dfdb` (HEAD, M76 — plugin tap + assets-stack content + W3/W4 fixes) |
-| Versión | `v1.36.0` (latest tag) |
-| Tests | 595 unit + 18 integration pasan, 0 fallan (verify-local PASS) |
-| Working tree | clean, en sync con `origin/main` (only `docs/CCMoldable/` untracked, per M69 spec) |
+| Tip | squash commit on `main` post-PR-M79 (M79 — c4-discover nested workspace) |
+| Versión | `v1.38.0` (latest tag, post-PR-M79 squash) |
+| Tests | 669 tests pasan (607 lib + integration); 5 ignored (env-specific) |
+| Working tree | trunk `main` en sync con `origin/main`, post-PR-M79 squash merge |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~31,254 + ~200 (M76 plugin + ide/assets) |
-| LOC tests | ~6,560 + ~120 (M76 lifecycle_update_e2e) |
+| LOC src | ~31,254 + ~330 (M79 D1+D2) |
+| LOC tests | ~6,560 + ~370 (M79 integration tests) |
 | LOC benches | ~790 |
-| Vault milestones | 31 (M30–M61 + M69 + M73 + M75 + M76) |
+| Vault milestones | 32 (M30–M61 + M69 + M73 + M75 + M76 + M79) |
 | Tags | 36 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
@@ -64,6 +64,10 @@
 | `v1.34.0` | M73 | Archctl self lifecycle (multi-version + self-update + .arch-version) |
 | `v1.35.0` | M75 | IDE adapters (OpenCode/ZCode/Claude Code/Codex) |
 | `v1.36.0` | M76 | Plugin tap + assets-stack content + W3/W4 fixes (**H4 CLOSED**) |
+| `v1.37.0` | M77 | Plugin download + extract with SHA256 verify + Homebrew formula + `archctl/permissions.yaml` bootstrap + `archctl stack` deprecation |
+| `v1.37.1` | M77a | Claude Code + Codex `config_root` HOME-relative hotfix |
+| `v1.37.2` | M77a | Lifecycle fix (`unsupported manifest_key`) + version bump |
+| `v1.38.0` | M79 | `c4-discover` nested workspace: D1 build-dir blocklist pruning (7 directories); D2 nested manifest fallback for cargo/npm/npm_single/components strategies (`find_manifests` helper, depth ≤ 3) |
 
 ## Capacidades shipped (v0.x — historical)
 

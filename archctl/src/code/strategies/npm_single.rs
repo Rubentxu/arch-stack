@@ -9,7 +9,7 @@
 //! deployable/package unit, but the container boundary is softer than a
 //! cargo workspace member.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -17,6 +17,7 @@ use serde_json::Value;
 use crate::code::c4_discover::{ContainerCandidate, Evidence, EvidenceKind};
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
+use crate::inventory::find_manifests;
 
 pub struct NpmSinglePackage;
 
@@ -32,10 +33,17 @@ impl Strategy for NpmSinglePackage {
     }
 
     fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
-        let pkg_json = project_root.join("package.json");
-        if !fs.exists(&pkg_json) {
-            return Ok(Vec::new());
-        }
+        // D2: root-first, then fallback to first nested package.json
+        let pkg_json: PathBuf = if fs.exists(&project_root.join("package.json")) {
+            project_root.join("package.json")
+        } else {
+            // Fallback: find first nested package.json within depth 3
+            let nested = find_manifests(project_root, &["package.json"], 3)?;
+            match nested.into_iter().next() {
+                Some(p) => project_root.join(p),
+                None => return Ok(Vec::new()),
+            }
+        };
 
         let pkg_json_text = fs
             .read_to_string(&pkg_json)
@@ -70,6 +78,12 @@ impl Strategy for NpmSinglePackage {
         let line = find_name_field_line(&pkg_json_text).unwrap_or(1);
         let text = format!("npm single package: {}", name);
 
+        let rel_path = pkg_json
+            .strip_prefix(project_root)
+            .unwrap_or(&pkg_json)
+            .to_string_lossy()
+            .replace('\\', "/");
+
         Ok(vec![ContainerCandidate {
             canonical_key: name.clone(),
             name,
@@ -77,7 +91,7 @@ impl Strategy for NpmSinglePackage {
             confidence: self.confidence(),
             evidences: vec![Evidence {
                 content_hash: String::new(),
-                file: "package.json".to_string(),
+                file: rel_path,
                 line,
                 kind: EvidenceKind::Structural,
                 text,

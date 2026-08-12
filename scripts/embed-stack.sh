@@ -18,11 +18,18 @@ fi
 rm -rf "${DST}"
 mkdir -p "${DST}"
 
-for component in skills agents plugins; do
+for component in agents plugins; do
   if [[ -d "${SRC}/${component}" ]]; then
     cp -R "${SRC}/${component}" "${DST}/${component}"
   fi
 done
+
+# skills: exclude eval/ (routing test framework, not a distributable skill)
+if [[ -d "${SRC}/skills" ]]; then
+  cp -R "${SRC}/skills" "${DST}/skills"
+  # Remove non-skill directories that should not be distributed
+  rm -rf "${DST}/skills/eval"
+fi
 
 # Guard: every skill dir must have a SKILL.md (frontmatter contract).
 missing=0
