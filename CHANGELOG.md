@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.39.1] — 2026-08-12
+
 ### Fixed
 - **M82** — `npm-single` strategy now resolves `pnpm-workspace.yaml` relative to the manifest it actually read (parent directory), instead of always checking `project_root`. Prevents mis-classifying monorepos whose `package.json` lives in a subdirectory next to a sibling `pnpm-workspace.yaml` (vueuse-style `apps/web/...` layouts).
 
