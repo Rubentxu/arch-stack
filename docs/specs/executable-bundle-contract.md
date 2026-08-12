@@ -3,6 +3,12 @@
 > **Horizon:** H0 — Ejecutable / verdad verificable
 > **Cycle:** `p-38e02210a9f14317/h0-executable-bundle-contract`
 > **Status:** **promoted** — stub → full spec (R-DOC)
+>
+> **M81 update (2026-08-12):** Schema bumped to **v1.1** (`projection-schema-v1_1`
+> capability, `schemas/diagram-projection.schema.json`). Added four optional
+> cosmetic fields to `$defs.Node`: `x` (integer), `y` (integer), `collapsed`
+> (boolean), `labelOverride` (string). Backward compatible with 1.0 bundles.
+> See `sddk/m81-h2-contract-cosmetic-node-fields/`.
 
 ## Purpose
 
@@ -90,6 +96,8 @@ bundle without field-name surprises.
 - [ADR-038](adr/ADR-038-one-product-five-invariants.md) — one product identity
 - [ADR-019](adr/ADR-019-performance-budget.md) — TTFP budget
 - [ADR-024](adr/ADR-024-c4-hierarchy-namespacing.md) — C4 kind/category separation
-- `schemas/diagram-projection.schema.json` — canonical field definitions
+- `schemas/diagram-projection.schema.json` — canonical field definitions (v1.1)
 - `archctl/src/diagram/export_types.rs` — Rust DTO field names
 - `archview/src/types.ts` — TypeScript bundle types
+- [`cosmetic-changeset-roundtrip.md`](cosmetic-changeset-roundtrip.md) — H2 cosmetic round-trip (closed by M81)
+- [`sddk/m81-h2-contract-cosmetic-node-fields/`](../../../sddk/m81-h2-contract-cosmetic-node-fields/) — M81 cycle that added cosmetic fields (schema v1.1)

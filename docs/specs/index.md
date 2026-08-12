@@ -13,7 +13,7 @@
 
 | Spec | Audience | One-line summary |
 |---|---|---|
-| [`diagram-projection-bundle.md`](diagram-projection-bundle.md) | `diagram` module, external tooling | Bundle contract: manifest + projection + evidence + styles envelope (`schemaVersion: 1.0`). |
+| [`diagram-projection-bundle.md`](diagram-projection-bundle.md) | `diagram` module, external tooling | Bundle contract: manifest + projection + evidence + styles envelope (`schemaVersion: 1.1`; cosmetic fields added in M81). |
 | [`use-case-view.md`](use-case-view.md) | `diagram` module, Mermaid renderer | `usecase:*` view: `uml.actor`, `uml.use_case`, `participates_in` edges. |
 | [`state-and-c4-views.md`](state-and-c4-views.md) | `diagram` module, Mermaid renderer | `state:*` and `c4-*:*` views with Mermaid shape mapping (M41). |
 | [`sequence-view-labels.md`](sequence-view-labels.md) | `diagram` module, Mermaid renderer | `sequence:*` view with edge label support from `edge.props["label"]` (M45). |
@@ -26,7 +26,7 @@
 | [`executable-bundle-contract.md`](executable-bundle-contract.md) | H0 | viewer-bundle schema as cross-language executable truth; Rust DTO ↔ JSON schema ↔ TS types field alignment; configurable selector. |
 | [`durable-workspace-state.md`](durable-workspace-state.md) | H1 | WorkspaceState persisted to XDG (not localStorage) for ephemeral-port restart recovery. |
 | [`source-drawer-read-only.md`](source-drawer-read-only.md) | H1 | Read-only source drawer with path-traversal rejection and IDE handoff. |
-| [`cosmetic-changeset-roundtrip.md`](cosmetic-changeset-roundtrip.md) | H2 | Cosmetic ChangeSet round-trip with baseRevision integrity; undo/redo via inverse ChangeSets. |
+| [`cosmetic-changeset-roundtrip.md`](cosmetic-changeset-roundtrip.md) | H2 | Cosmetic ChangeSet round-trip with baseRevision integrity; **closed by M81** (schema v1.1, D1 label preservation, D2 cosmetic fields). |
 | [`arrows-compatibility-adapter.md`](arrows-compatibility-adapter.md) | H2 | `.arrows` import/export adapter; graph untouched on import; canonical graph never is `.arrows` format. |
 | [`lens-spec-entry-criteria.md`](lens-spec-entry-criteria.md) | H3 | LensSpec entry criteria gated by 2 consumers OR measured need; reversibility clause required. |
 
