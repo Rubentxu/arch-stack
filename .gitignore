@@ -77,3 +77,6 @@ openspec/changes/archive/
 sddk-config.json
 sddk.local.*
 .sddk/
+
+# Arrows.app export artifacts
+*.arrows
