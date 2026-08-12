@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.39.0] — 2026-08-12
+
+### Added
+- **M81 D2** — Projection schema v1.1: `Node` exposes cosmetic view fields
+  (`x`, `y`, `collapsed`, `labelOverride`). `build_bundle` LEFT JOINs
+  `ViewMember` rows (one query + HashMap lookup, ADR-019). `archview`
+  renders `labelOverride ?? name`. Backward-compatible: bundles v1.0 keep
+  validating (optional fields with defaults).
+
+### Fixed
+- **M81 D1** — `Command::MoveMember` preserves the existing `ViewMember.label`
+  instead of resetting it to an empty string.
+
+### Changed
+- `baseRevision` of existing diagrams is invalidated one-time: the hash now
+  covers cosmetic fields, so pre-1.39.0 revisions are stale by design. Apply
+  rejects them with `baseRevision mismatch`; re-export regenerates. No
+  migration needed (ADR-017 not triggered).
+
 ## [1.38.1] — 2026-08-12
 
 ### Added
