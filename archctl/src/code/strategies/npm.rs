@@ -1,6 +1,6 @@
 //! S2: npm/yarn/pnpm workspace detection.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::code::c4_discover::{ContainerCandidate, Evidence, EvidenceKind};
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
+use crate::inventory::find_manifests;
 
 pub struct NpmWorkspace;
 
@@ -23,14 +24,39 @@ impl Strategy for NpmWorkspace {
     }
 
     fn detect(&self, project_root: &Path, fs: &dyn Filesystem) -> Result<Vec<ContainerCandidate>> {
+        // D2: root-first, then fallback to nearest nested package.json with workspaces
         let pkg_json = project_root.join("package.json");
-        if !fs.exists(&pkg_json) {
-            return Ok(Vec::new());
-        }
+        let (manifest_path, glob_base): (PathBuf, PathBuf) = if fs.exists(&pkg_json) {
+            (pkg_json.clone(), project_root.to_path_buf())
+        } else {
+            // Fallback: find first nested package.json that has a workspaces field
+            let nested = find_manifests(project_root, &["package.json"], 3)?;
+            let mut candidate: Option<PathBuf> = None;
+            for p in nested {
+                let full = project_root.join(&p);
+                if !fs.exists(&full) {
+                    continue;
+                }
+                let Ok(text) = fs.read_to_string(&full) else {
+                    continue;
+                };
+                let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                if value.get("workspaces").is_some() {
+                    candidate = Some(full);
+                    break;
+                }
+            }
+            match candidate {
+                Some(p) => (p.clone(), p.parent().unwrap_or(project_root).to_path_buf()),
+                None => return Ok(Vec::new()),
+            }
+        };
 
         let pkg_json_text = fs
-            .read_to_string(&pkg_json)
-            .with_context(|| format!("read {}", pkg_json.display()))?;
+            .read_to_string(&manifest_path)
+            .with_context(|| format!("read {}", manifest_path.display()))?;
         let pkg: Value = serde_json::from_str(&pkg_json_text).context("parse package.json")?;
 
         // workspaces can be ["packages/*"] or { "packages": ["packages/*"] }
@@ -54,8 +80,8 @@ impl Strategy for NpmWorkspace {
         let mut candidates = Vec::new();
         for glob_pattern in workspaces {
             // glob_pattern like "packages/*" or "apps/*"
-            // Walk the root of the glob pattern and look for subdirs with package.json
-            let glob_root = project_root.join(&glob_pattern);
+            // Walk the root of the glob pattern — glob_base is the parent of the manifest
+            let glob_root = glob_base.join(&glob_pattern);
             // Walk one level deep (the glob pattern's root)
             let walker = ignore::WalkBuilder::new(&glob_root)
                 .max_depth(Some(2))
