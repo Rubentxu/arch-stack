@@ -4,6 +4,11 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **M80** — Cosmetic ChangeSet round-trip e2e coverage: `apply_with_matching_base_revision_succeeds` and `apply_round_trips_export_revision` integration tests in `diagram_apply.rs`. Verifies baseRevision optimistic-concurrency token works across the v1.38.0 cosmetic apply plumbing.
+
 ## [1.38.0] — 2026-08-12
 
 ### Fixed
