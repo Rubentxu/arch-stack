@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+- **M83** — `archctl stack` subcommand removed (deprecated since
+  v1.35.0, stub since v1.37.0). Use `archctl ide install <ide>
+  --install-root X` and `archctl ide doctor <ide>` instead. Migration
+  script: see `e2e/install_e2e.sh`.
+
 ## [1.39.1] — 2026-08-12
 
 ### Fixed
