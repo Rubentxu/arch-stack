@@ -110,6 +110,16 @@ pub fn build_bundle(
     let version_map: std::collections::HashMap<String, &crate::diagram::queries::VersionPropsRow> =
         version_props.iter().map(|v| (v.id.clone(), v)).collect();
 
+    // M81 D2: fetch ViewMembers and index by element_id for LEFT JOIN.
+    // One query + HashMap lookup avoids N+1 Cypher calls (ADR-019 perf budget).
+    let all_members: Vec<crate::diagram::view_types::ViewMember> =
+        store.get_view_members(selector).unwrap_or_default();
+    let view_member_map: std::collections::HashMap<&str, &crate::diagram::view_types::ViewMember> =
+        all_members
+            .iter()
+            .map(|m| (m.element_id.as_str(), m))
+            .collect();
+
     let nodes: Vec<ExportNode> = element_rows
         .iter()
         .map(|e: &ElementRow| {
@@ -127,6 +137,17 @@ pub fn build_bundle(
                 .map(|e| e.id.clone())
                 .collect();
 
+            // M81 D2: LEFT JOIN against ViewMember map for cosmetic fields.
+            // Defaults: x=0, y=0, collapsed=false, label_override=None.
+            let vm = view_member_map.get(e.id.as_str());
+            let label_override: Option<String> = vm.and_then(|v| {
+                if v.label.is_empty() {
+                    None
+                } else {
+                    Some(v.label.clone())
+                }
+            });
+
             ExportNode {
                 id: e.id.clone(),
                 // ADR-024: kind_id holds the projection kind
@@ -142,6 +163,11 @@ pub fn build_bundle(
                 status: Some(schema_valid_status(&e.current_status)).filter(|s| !s.is_empty()),
                 confidence: Some(e.current_confidence).filter(|&c| c > 0.0),
                 evidence_refs: Some(evidence_refs).filter(|v| !v.is_empty()),
+                // M81 D2: cosmetic fields from ViewMember
+                x: vm.map(|v| v.x).unwrap_or(0),
+                y: vm.map(|v| v.y).unwrap_or(0),
+                collapsed: vm.map(|v| v.collapsed).unwrap_or(false),
+                label_override,
             }
         })
         .collect();
@@ -172,7 +198,7 @@ pub fn build_bundle(
 
     // 5. Build manifest
     let manifest = Manifest {
-        schema_version: "1.0.0".into(),
+        schema_version: "1.1.0".into(), // M81: bumped from 1.0.0 → 1.1.0 for cosmetic fields
         format: "viewer-bundle".into(),
         view_selector: selector.to_string(),
         base_revision: revision,
@@ -325,6 +351,7 @@ mod tests {
         edges: Vec<Row>,
         evidence: Vec<Row>,
         version_props: Vec<Row>,
+        view_members: Vec<crate::diagram::view_types::ViewMember>,
     }
 
     impl MockGraphStore {
@@ -333,12 +360,14 @@ mod tests {
             edges: Vec<Row>,
             evidence: Vec<Row>,
             version_props: Vec<Row>,
+            view_members: Vec<crate::diagram::view_types::ViewMember>,
         ) -> Self {
             Self {
                 elements,
                 edges,
                 evidence,
                 version_props,
+                view_members,
             }
         }
     }
@@ -567,7 +596,7 @@ mod tests {
             &self,
             _: &str,
         ) -> anyhow::Result<Vec<crate::diagram::view_types::ViewMember>> {
-            unimplemented!()
+            Ok(self.view_members.clone())
         }
         fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
             unimplemented!()
@@ -678,7 +707,7 @@ mod tests {
             make_version_row("v:2", "PaymentService", "Handles payment processing"),
         ];
 
-        let store = MockGraphStore::new(elements, edges, evidence, version_props);
+        let store = MockGraphStore::new(elements, edges, evidence, version_props, vec![]);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -690,7 +719,7 @@ mod tests {
         assert_eq!(report.element_count, 1);
         assert_eq!(report.edge_count, 1);
         assert_eq!(report.evidence_count, 1);
-        assert_eq!(report.manifest.schema_version, "1.0.0");
+        assert_eq!(report.manifest.schema_version, "1.1.0");
         assert_eq!(report.manifest.format, "viewer-bundle");
         assert_eq!(report.manifest.view_selector, "container:orders");
         assert!(!report.manifest.base_revision.is_empty());
@@ -739,7 +768,7 @@ mod tests {
             make_element_row("el:1", "c4", "ServiceA", "v:1", "mt.container", "svc-a"),
             make_element_row("el:2", "c4", "ServiceB", "v:2", "mt.container", "svc-b"),
         ];
-        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
+        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new(), vec![]);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -768,7 +797,7 @@ mod tests {
             "mt.container",
             "svc",
         )];
-        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
+        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new(), vec![]);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out2");
@@ -782,7 +811,7 @@ mod tests {
 
     #[test]
     fn export_rejects_malformed_selector() {
-        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new(), vec![]);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -799,7 +828,7 @@ mod tests {
     #[test]
     fn export_empty_graph_sets_empty_true() {
         // Mock store with zero elements — empty graph
-        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new(), vec![]);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -830,7 +859,7 @@ mod tests {
     fn envelope_is_schema_valid() {
         use crate::diagram::schema_embed::SCHEMA;
 
-        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new(), vec![]);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let bundle = build_bundle(&store, "container:*", &clock).unwrap();
         let envelope = build_export_envelope(&bundle);

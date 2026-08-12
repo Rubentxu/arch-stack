@@ -237,11 +237,18 @@ function classDiagramEdgeToEdge(e: Record<string, unknown>): RendererEdge {
  */
 function c4NodeToNode(n: Record<string, unknown>): RendererNode {
   const type = stringOr(n.type, "unknown");
+  // M81 D2: labelOverride ?? name (R2 + schema 1.1)
+  const override = stringOrUndefined(n.labelOverride);
+  const name = stringOr(n.name, "?");
   return {
     id: stringOr(n.id, ""),
-    label: stringOr(n.name, "?"),
+    label: override ?? name,
     kind: type,
     level: c4LevelForType(type),
+    x: numberOrUndefined(n.x),
+    y: numberOrUndefined(n.y),
+    collapsed: typeof n.collapsed === "boolean" ? n.collapsed : undefined,
+    labelOverride: override,
     meta: { ...n },
   };
 }

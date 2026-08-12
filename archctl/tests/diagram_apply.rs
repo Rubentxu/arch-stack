@@ -350,10 +350,12 @@ fn apply_with_matching_base_revision_succeeds() {
         })
         .unwrap();
 
-    // Create Element node so link_renders finds it (idiom apply.rs:559)
+    // Create Element node so link_renders finds it (idiom apply.rs:559).
+    // canonical_key must match the view selector scope: query_elements filters
+    // `canonical_key STARTS WITH 'api'` for selector `container:api`.
     store
         .query(
-            "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'el:api'}) RETURN 1;",
+            "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'api'}) RETURN 1;",
         )
         .unwrap();
 
@@ -449,7 +451,7 @@ fn apply_round_trips_export_revision() {
     // Create Element node so link_renders finds it (idiom apply.rs:559)
     store
         .query(
-            "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'el:api'}) RETURN 1;",
+            "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'api', current_name: 'API', current_version_id: 'v:api'}) RETURN 1;",
         )
         .unwrap();
 
@@ -500,11 +502,262 @@ fn apply_round_trips_export_revision() {
     let bundle2 = build_bundle(&store, diagram_id, &clock).expect("re-export must succeed");
     let r3 = bundle2.manifest.base_revision.clone();
 
-    // H2-contract debt: cosmetic state (label) is absent from export_types::Node,
-    // so build_bundle ignores ViewMember.label and R3 == R1.
-    // The asymmetry is out-of-scope per spec scenario 4 / proposal §Out-of-Scope.
-    assert_eq!(
+    // M81 regression: cosmetic state (x/y/collapsed/label) is NOW in Node,
+    // so build_bundle LEFT JOINs ViewMember and R3 != R1.
+    // M80 inverted — H2-contract debt is closed.
+    assert_ne!(
         r3, r1,
-        "R3 must equal R1 — cosmetic state absent from export_types::Node (H2-contract debt)"
+        "M81: cosmetic fields in Node make R3 != R1 — H2-contract regression closed"
+    );
+    // NOTE: r3 (build_bundle) intentionally differs from report.new_revision
+    // (reexport_view): export uses element.id/current_name as node identity,
+    // apply uses member.id/label. Both hash their own canonical projection.
+}
+
+// M81 D1+D2: cosmetic edit (set-label + move-member) flips base_revision.
+#[test]
+fn apply_round_trips_export_revision_after_cosmetic_edit() {
+    // Scenario from spec §Scenario: Round-trip flips revision on cosmetic edit.
+    // GIVEN an initial export producing base_revision R1,
+    // WHEN the user applies set-label("X") + move-member(x:240,y:160) then re-exports,
+    // THEN the new base_revision R3 differs from R1.
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path().join("proj");
+    std::fs::create_dir_all(&project).unwrap();
+
+    let mut store = LbugStore::open(&project).unwrap();
+    store.init().unwrap();
+
+    let diagram_id = "container:orders";
+    let clock = FixedClock::new("2026-08-12T00:00:00Z");
+
+    // Seed Element
+    store
+        .query(
+            "CREATE (:Element {id: 'el:1', kind_id: 'mt.container', category: 'c4', canonical_key: 'orders'}) RETURN 1;",
+        )
+        .unwrap();
+
+    // Seed Diagram with zero revision
+    store
+        .put_diagram(&Diagram {
+            id: diagram_id.into(),
+            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                .into(),
+            selector: diagram_id.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+
+    // Seed ViewMember so set-label + move-member find the member
+    store
+        .put_view_member(&ViewMember {
+            id: "vm:container:orders:el:1".into(),
+            diagram_id: diagram_id.into(),
+            element_id: "el:1".into(),
+            label: "OrdersService".into(),
+            x: 100,
+            y: 200,
+            collapsed: false,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+
+    // First export — capture R1
+    let bundle1 = build_bundle(&store, diagram_id, &clock).expect("first export must succeed");
+    let r1 = bundle1.manifest.base_revision.clone();
+
+    // Update stored revision to R1 so apply accepts it
+    store
+        .put_diagram(&Diagram {
+            id: diagram_id.into(),
+            revision: r1.clone(),
+            selector: diagram_id.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+
+    // Apply set-label + move-member in one changeset
+    let changeset = ChangeSet {
+        schema_version: "1.0".to_string(),
+        diagram_id: diagram_id.into(),
+        base_revision: r1.clone(),
+        commands: vec![
+            archctl::diagram::changeset_types::Command::SetLabel {
+                member_id: "vm:container:orders:el:1".into(),
+                label: "X".into(),
+            },
+            archctl::diagram::changeset_types::Command::MoveMember {
+                member_id: "vm:container:orders:el:1".into(),
+                element_id: "el:1".into(),
+                x: 240,
+                y: 160,
+            },
+        ],
+    };
+
+    let report = archctl::diagram::apply::apply_to_store(&mut store, changeset)
+        .expect("apply must succeed with matching baseRevision");
+    let _ = report; // apply-side revision validated via the re-export below
+
+    // Re-export — capture R3
+    let bundle2 = build_bundle(&store, diagram_id, &clock).expect("re-export must succeed");
+    let r3 = bundle2.manifest.base_revision.clone();
+
+    // M81: cosmetic edit flips revision
+    assert_ne!(
+        r3, r1,
+        "cosmetic edit (set-label + move-member) must flip base_revision"
+    );
+    // NOTE: r3 (build_bundle) intentionally differs from report.new_revision
+    // (reexport_view): export uses element.id/current_name as node identity,
+    // apply uses member.id/label. Both hash their own canonical projection.
+}
+
+// M81: build_bundle LEFT JOIN propagates ViewMember cosmetics to Node fields.
+#[test]
+fn build_bundle_propagates_view_member_cosmetics() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path().join("proj");
+    std::fs::create_dir_all(&project).unwrap();
+
+    let mut store = LbugStore::open(&project).unwrap();
+    store.init().unwrap();
+
+    let diagram_id = "container:api";
+    let clock = FixedClock::new("2026-08-12T00:00:00Z");
+
+    // Seed Element
+    store
+        .query(
+            "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'api', current_name: 'API', current_status: 'active', current_confidence: 0.9, current_version_id: 'v:api'}) RETURN 1;",
+        )
+        .unwrap();
+
+    // Seed ElementVersion
+    store
+        .query(
+            "CREATE (:ElementVersion {id: 'v:api', name: 'API', description: 'API service'}) RETURN 1;",
+        )
+        .unwrap();
+
+    // Seed Diagram
+    store
+        .put_diagram(&Diagram {
+            id: diagram_id.into(),
+            revision: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                .into(),
+            selector: diagram_id.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+
+    // Seed ViewMember with non-default cosmetic fields
+    store
+        .put_view_member(&ViewMember {
+            id: "vm:container:api:el:api".into(),
+            diagram_id: diagram_id.into(),
+            element_id: "el:api".into(),
+            label: "DisplayName".into(),
+            x: 240,
+            y: 160,
+            collapsed: true,
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+
+    let bundle = build_bundle(&store, diagram_id, &clock).expect("build_bundle must succeed");
+
+    // schema version must be 1.1.0
+    assert_eq!(
+        bundle.manifest.schema_version, "1.1.0",
+        "M81: manifest schemaVersion must be 1.1.0"
+    );
+
+    // Find the node for el:api
+    let node = bundle
+        .projection
+        .nodes
+        .iter()
+        .find(|n| n.id == "el:api")
+        .expect("el:api node must exist in projection");
+
+    assert_eq!(node.x, 240, "node.x must match ViewMember.x");
+    assert_eq!(node.y, 160, "node.y must match ViewMember.y");
+    assert!(
+        node.collapsed,
+        "node.collapsed must match ViewMember.collapsed"
+    );
+    assert_eq!(
+        node.label_override,
+        Some("DisplayName".into()),
+        "node.label_override must be Some(\"DisplayName\")"
+    );
+}
+
+// M81: schema 1.1 accepts 1.0 bundles (backward-compat).
+// The 4 cosmetic fields are optional (not in required), so a v1.0 bundle
+// with only id/type/name validates successfully.
+#[test]
+fn schema_1_1_accepts_1_0_bundle() {
+    // A v1.0 bundle has no cosmetic fields; it must still validate.
+    let v1_0_bundle = serde_json::json!({
+        "manifest": {
+            "schemaVersion": "1.0.0",
+            "format": "viewer-bundle",
+            "viewSelector": "container:api",
+            "baseRevision": "blake3:0000000000000000000000000000000000000000000000000000000000000000",
+            "generatedAt": "2026-08-12T00:00:00Z",
+            "elementCount": 1,
+            "edgeCount": 0,
+            "evidenceCount": 0
+        },
+        "projection": {
+            "nodes": [
+                {
+                    "id": "el:api",
+                    "type": "container",
+                    "name": "API"
+                }
+            ],
+            "edges": []
+        },
+        "evidence": { "evidence": [] },
+        "styles": {
+            "theme": "default",
+            "version": "1.0.0",
+            "elementColors": {
+                "context": "#1168bd",
+                "container": "#438dd5",
+                "component": "#85b8e8",
+                "dynamic": "#2694ab",
+                "deployment": "#999999"
+            },
+            "edgeColors": { "default": "#707070" }
+        }
+    });
+
+    // Validate against the embedded schema (now at 1.1)
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../schemas/diagram-projection.schema.json"))
+            .expect("schema must be valid JSON");
+
+    let validator = jsonschema::validator_for(&schema).expect("schema must compile");
+    let result = validator.validate(&v1_0_bundle);
+
+    assert!(
+        result.is_ok(),
+        "v1.0 bundle must validate against schema 1.1: {:?}",
+        result.err()
     );
 }

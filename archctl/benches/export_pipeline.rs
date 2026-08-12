@@ -76,6 +76,11 @@ fn bench_base_revision(c: &mut Criterion) {
                     status: Some("accepted".into()),
                     confidence: Some(0.9),
                     evidence_refs: None,
+                    // M81: cosmetic fields (defaults — bench measures hash cost, not cosmetic cost)
+                    x: 0,
+                    y: 0,
+                    collapsed: false,
+                    label_override: None,
                 })
                 .collect();
             let projection = Projection {

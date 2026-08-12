@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-12, post-release v1.38.0 (M79 — c4-discover nested workspace).
+> Última actualización: 2026-08-12, post-release v1.39.0 (M81 — projection schema v1.1 cosmetic fields).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | squash commit on `main` post-PR-M79 (M79 — c4-discover nested workspace) |
-| Versión | `v1.38.0` (latest tag, post-PR-M79 squash) |
-| Tests | 669 tests pasan (607 lib + integration); 5 ignored (env-specific) |
-| Working tree | trunk `main` en sync con `origin/main`, post-PR-M79 squash merge |
+| Tip | squash commit on `main` post-PR-M81 (M81 — projection schema v1.1 cosmetic fields) |
+| Versión | `v1.39.0` (latest tag, post-PR-M81 squash) |
+| Tests | 785 Rust + 128 archview tests pasan; 15 ignored (env-specific) |
+| Working tree | trunk `main` en sync con `origin/main`, post-PR-M81 squash merge |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~31,254 + ~330 (M79 D1+D2) |
-| LOC tests | ~6,560 + ~370 (M79 integration tests) |
+| LOC src | ~31,254 + ~360 (M81 D1+D2 — `Node` cosmetic fields + `ViewMember.label` preservation) |
+| LOC tests | ~6,560 + ~270 (M81 cosmetic round-trip + archview loader tests) |
 | LOC benches | ~790 |
-| Vault milestones | 32 (M30–M61 + M69 + M73 + M75 + M76 + M79) |
-| Tags | 36 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below) |
+| Vault milestones | 33 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M81) |
+| Tags | 38 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below; +v1.37.0–v1.39.0) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -68,6 +68,8 @@
 | `v1.37.1` | M77a | Claude Code + Codex `config_root` HOME-relative hotfix |
 | `v1.37.2` | M77a | Lifecycle fix (`unsupported manifest_key`) + version bump |
 | `v1.38.0` | M79 | `c4-discover` nested workspace: D1 build-dir blocklist pruning (7 directories); D2 nested manifest fallback for cargo/npm/npm_single/components strategies (`find_manifests` helper, depth ≤ 3) |
+| `v1.38.1` | M80 | Cosmetic ChangeSet round-trip e2e coverage: `apply_with_matching_base_revision_succeeds` + `apply_round_trips_export_revision` integration tests in `diagram_apply.rs`; baseRevision optimistic-concurrency token verified end-to-end |
+| `v1.39.0` | M81 | Projection schema v1.1 cosmetic fields: D1 `Command::MoveMember` preserves prior `ViewMember.label` (was resetting to empty string); D2 `Node` exposes `x`/`y`/`collapsed`/`labelOverride` (LEFT JOIN via `HashMap<element_id, &ViewMember>`, ADR-019 O(1)); archview renders `labelOverride ?? name`; backward-compat with 1.0 bundles; `cosmetic-changeset-roundtrip` spec promoted from stub to full |
 
 ## Capacidades shipped (v0.x — historical)
 
