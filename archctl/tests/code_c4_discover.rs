@@ -588,3 +588,253 @@ fn apply_roundtrip_to_export() {
     assert!(r.evidences_written >= 1);
     assert!(r.source_artifacts_written >= 1);
 }
+
+// ─── M79 D2: nested manifest discovery ────────────────────────────────────────
+
+/// Returns true if `cargo` is available in PATH (required for cargo_metadata exec).
+fn cargo_available() -> bool {
+    std::process::Command::new("cargo")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn npm_single_strategy() -> Box<dyn archctl::code::strategies::Strategy> {
+    Box::new(archctl::code::strategies::npm_single::NpmSinglePackage)
+}
+
+fn components_strategy() -> Box<dyn archctl::code::strategies::Strategy> {
+    Box::new(archctl::code::strategies::components::ComponentsStrategy)
+}
+
+/// SCN-M79-1: Cargo workspace discovered from nested member (D2 key test).
+/// Requires real cargo_metadata exec → subprocess shell-out.
+#[test]
+#[ignore = "requires cargo_metadata exec (cargo binary in PATH)"]
+fn cargo_workspace_from_nested_member() {
+    // Root has NO Cargo.toml; archctl/Cargo.toml exists at depth 1.
+    // Strategy must find it and resolve the full workspace via cargo metadata.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    // Create nested workspace member: archctl/Cargo.toml
+    write(
+        root,
+        "archctl/Cargo.toml",
+        r#"[workspace]
+members = ["archctl"]
+resolver = "2"
+"#,
+    );
+    write(
+        root,
+        "archctl/Cargo.toml",
+        r#"[package]
+name = "archctl"
+version = "0.1.0"
+edition = "2021"
+description = "archctl library"
+"#,
+    );
+    write(root, "archctl/src/lib.rs", "pub fn run() {}");
+
+    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> = vec![cargo_strategy()];
+    let fs = archctl::filesystem::MemoryFilesystem::new();
+    let clock: &dyn archctl::clock::Clock =
+        &archctl::clock::FixedClock::new("2025-01-01T00:00:00Z");
+
+    let report = archctl::code::c4_discover::discover(root, &strategies, &fs, clock)
+        .expect("discover must succeed");
+
+    let cargo_containers: Vec<_> = report
+        .discovered
+        .iter()
+        .filter(|c| c.strategy == "cargo-workspace")
+        .collect();
+
+    assert!(
+        !cargo_containers.is_empty(),
+        "should detect cargo-workspace from nested member, got: {:?}",
+        report.discovered
+    );
+    assert!(
+        cargo_containers
+            .iter()
+            .any(|c| c.canonical_key == "archctl"),
+        "archctl member should be in workspace containers"
+    );
+}
+
+/// SCN-M79-2: npm_single discovers nested package.json when root has none.
+#[test]
+fn npm_single_from_nested_package_json() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    // No package.json at root; frontend/package.json at depth 1.
+    write(
+        root,
+        "frontend/package.json",
+        r#"{
+  "name": "@myco/frontend",
+  "version": "1.0.0"
+}
+"#,
+    );
+    write(root, "frontend/src/index.ts", "export const x = 1;");
+
+    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> = vec![npm_single_strategy()];
+    let fs = archctl::filesystem::SystemFilesystem;
+    let clock: &dyn archctl::clock::Clock =
+        &archctl::clock::FixedClock::new("2025-01-01T00:00:00Z");
+
+    let report = archctl::code::c4_discover::discover(root, &strategies, &fs, clock)
+        .expect("discover must succeed");
+
+    let npm_single: Vec<_> = report
+        .discovered
+        .iter()
+        .filter(|c| c.strategy == "npm-single")
+        .collect();
+
+    assert_eq!(
+        npm_single.len(),
+        1,
+        "should detect one npm-single container from nested package.json"
+    );
+    assert_eq!(
+        npm_single[0].canonical_key, "@myco/frontend",
+        "name should match nested package.json"
+    );
+}
+
+/// SCN-M79-3: components strategy skips nested containers found via find_manifests.
+#[test]
+fn components_from_nested_manifests() {
+    // Root has no Cargo.toml; services/auth/Cargo.toml and services/billing/package.json exist.
+    // Components strategy should skip those container dirs and find internal src/ modules.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    write(
+        root,
+        "services/auth/Cargo.toml",
+        "[package]\nname = \"auth\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"auth svc\"\n",
+    );
+    write(root, "services/auth/src/lib.rs", "pub mod handler;");
+    write(root, "services/auth/src/handler.rs", "pub fn login() {}");
+
+    write(
+        root,
+        "services/billing/package.json",
+        r#"{"name":"@myco/billing","version":"1.0.0"}"#,
+    );
+    write(
+        root,
+        "services/billing/src/index.ts",
+        "export const invoice = 1;",
+    );
+
+    // Also add internal src/ modules that should be detected as components
+    write(root, "src/shared/mod.rs", "pub mod utils;");
+    write(root, "src/shared/utils.rs", "pub fn helper() {}");
+
+    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> = vec![components_strategy()];
+    let fs = archctl::filesystem::SystemFilesystem;
+    let fixed_clock = archctl::clock::FixedClock::new("2025-01-01T00:00:00Z");
+    let clock: &dyn archctl::clock::Clock = &fixed_clock;
+
+    let report = archctl::code::c4_discover::discover(root, &strategies, &fs, clock)
+        .expect("discover must succeed");
+
+    let component_names: Vec<_> = report
+        .discovered
+        .iter()
+        .filter(|c| c.strategy == "components")
+        .map(|c| c.name.clone())
+        .collect();
+
+    // services/auth and services/billing should be SKIPPED (they are containers)
+    assert!(
+        !component_names.contains(&"auth".to_string()),
+        "auth (container) should be skipped: {component_names:?}"
+    );
+    assert!(
+        !component_names.contains(&"billing".to_string()),
+        "billing (container) should be skipped: {component_names:?}"
+    );
+    // src/shared should be detected as a component
+    assert!(
+        component_names.contains(&"shared".to_string()),
+        "shared module should be detected as component: {component_names:?}"
+    );
+}
+
+/// SCN-M79-4: no manifest at root or within depth ≤ 3 → all four strategies return empty.
+#[test]
+fn no_manifest_returns_empty() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    // Pure source-only project: no Cargo.toml, no package.json
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/main.py"), "def main(): pass").unwrap();
+
+    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> = vec![
+        cargo_strategy(),
+        Box::new(archctl::code::strategies::npm::NpmWorkspace),
+        npm_single_strategy(),
+        components_strategy(),
+    ];
+    let fs = archctl::filesystem::MemoryFilesystem::new();
+    let clock: &dyn archctl::clock::Clock =
+        &archctl::clock::FixedClock::new("2025-01-01T00:00:00Z");
+
+    let report = archctl::code::c4_discover::discover(root, &strategies, &fs, clock)
+        .expect("discover must succeed");
+
+    assert!(
+        report.discovered.is_empty(),
+        "no manifest project should yield zero containers, got: {:?}",
+        report.discovered
+    );
+}
+
+/// SCN-M79-5: npm_single skips workspaces (must go to NpmWorkspace, not npm_single).
+#[test]
+fn npm_single_skips_workspaces_root() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    write(
+        root,
+        "packages/web/package.json",
+        r#"{"name":"@myco/web","version":"1.0.0"}"#,
+    );
+    write(
+        root,
+        "package.json",
+        r#"{"name":"monorepo","workspaces":["packages/*"]}"#,
+    );
+
+    let strategies: Vec<Box<dyn archctl::code::strategies::Strategy>> = vec![npm_single_strategy()];
+    let fs = archctl::filesystem::MemoryFilesystem::new();
+    let clock: &dyn archctl::clock::Clock =
+        &archctl::clock::FixedClock::new("2025-01-01T00:00:00Z");
+
+    let report = archctl::code::c4_discover::discover(root, &strategies, &fs, clock)
+        .expect("discover must succeed");
+
+    let npm_single: Vec<_> = report
+        .discovered
+        .iter()
+        .filter(|c| c.strategy == "npm-single")
+        .collect();
+
+    assert!(
+        npm_single.is_empty(),
+        "npm_single should not detect workspace root, got: {:?}",
+        npm_single
+    );
+}
