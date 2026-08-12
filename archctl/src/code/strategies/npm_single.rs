@@ -64,7 +64,8 @@ impl Strategy for NpmSinglePackage {
             })
             .map(|a| !a.is_empty())
             .unwrap_or(false);
-        let pnpm_workspace_yaml = pnpm_workspace_declares_packages(project_root, fs);
+        let pnpm_workspace_yaml =
+            pnpm_workspace_declares_packages(pkg_json.parent().unwrap_or(project_root), fs);
         if npm_workspaces || pnpm_workspace_yaml {
             return Ok(Vec::new());
         }
