@@ -230,6 +230,15 @@ fn reexport_view(store: &dyn DiagramOps, diagram_id: &str) -> Result<Projection>
             status: None,
             confidence: None,
             evidence_refs: None,
+            // M81 D2: copy cosmetic fields from ViewMember
+            x: m.x,
+            y: m.y,
+            collapsed: m.collapsed,
+            label_override: if m.label.is_empty() {
+                None
+            } else {
+                Some(m.label.clone())
+            },
         })
         .collect();
 

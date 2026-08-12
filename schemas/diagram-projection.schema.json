@@ -85,6 +85,18 @@
         "evidenceRefs": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "collapsed": {
+          "type": "boolean"
+        },
+        "labelOverride": {
+          "type": "string"
         }
       }
     },

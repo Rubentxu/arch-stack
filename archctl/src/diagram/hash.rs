@@ -112,6 +112,11 @@ mod tests {
                 status: Some("accepted".into()),
                 confidence: Some(0.9),
                 evidence_refs: None,
+                // M81: cosmetic fields default to 0/0/false/None
+                x: 0,
+                y: 0,
+                collapsed: false,
+                label_override: None,
             }],
             vec![],
         );
@@ -134,6 +139,10 @@ mod tests {
                 status: Some("accepted".into()),
                 confidence: Some(0.9),
                 evidence_refs: None,
+                x: 0,
+                y: 0,
+                collapsed: false,
+                label_override: None,
             }],
             vec![],
         );
@@ -148,6 +157,10 @@ mod tests {
                 status: Some("accepted".into()),
                 confidence: Some(0.9),
                 evidence_refs: None,
+                x: 0,
+                y: 0,
+                collapsed: false,
+                label_override: None,
             }],
             vec![],
         );
@@ -167,6 +180,10 @@ mod tests {
                 status: None,
                 confidence: None,
                 evidence_refs: None,
+                x: 0,
+                y: 0,
+                collapsed: false,
+                label_override: None,
             }],
             vec![],
         );
@@ -181,6 +198,10 @@ mod tests {
                 status: None,
                 confidence: None,
                 evidence_refs: None,
+                x: 0,
+                y: 0,
+                collapsed: false,
+                label_override: None,
             }],
             vec![],
         );
