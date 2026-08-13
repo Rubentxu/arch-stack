@@ -55,24 +55,9 @@ pub fn fetch_tap(url: &str) -> Result<Tap> {
 }
 
 /// Returns the plugin install root path.
-/// Uses XDG_DATA_HOME/plugins or ~/.local/share/archctl/plugins.
+/// Uses ~/.local/share/archctl/plugins (via lifecycle::install_root).
 pub fn plugin_install_root() -> PathBuf {
-    // Use lifecycle::install_root to get the archctl data dir,
-    // then navigate to plugins subdirectory.
-    let archctl_data = crate::lifecycle::install_root::install_root();
-    archctl_data
-        .parent()
-        .map(|p| p.join("plugins"))
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
-                format!(
-                    "{}/.local/share",
-                    std::env::var("HOME").unwrap_or_else(|_| "~".into())
-                )
-            }))
-            .join("archctl")
-            .join("plugins")
-        })
+    crate::lifecycle::install_root::install_root().join("plugins")
 }
 
 /// Parse a plugin spec in the form "author/name@version" or "author/name" (latest).
@@ -93,15 +78,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plugin_install_root_creates_per_author_per_plugin_path() {
-        // plugin_install_root() is the base; actual per-plugin paths are
-        // computed via root.join(author).join(name). Verify the root
-        // structure follows XDG conventions.
+    fn plugin_install_root_is_install_root_plus_plugins() {
+        // P0-04 regression: plugin root must be install_root().join("plugins"),
+        // not install_root().parent().join("plugins").
         let root = plugin_install_root();
-        assert!(
-            root.to_string_lossy().contains("plugins"),
-            "expected path containing 'plugins', got: {}",
-            root.display()
+        let expected = crate::lifecycle::install_root::install_root().join("plugins");
+        assert_eq!(
+            root, expected,
+            "plugin_install_root must be install_root/plugins"
         );
     }
 

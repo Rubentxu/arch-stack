@@ -25,6 +25,8 @@ pub fn install_plugin(author: &str, name: &str, entry: &PluginEntry) -> Result<P
 
     // 3. Extract to staging.
     let root = plugin_install_root().join(author).join(name);
+    std::fs::create_dir_all(&root)
+        .with_context(|| format!("create plugin root {}", root.display()))?;
     let staging = tempfile::Builder::new()
         .prefix(&format!("{}-", entry.version))
         .tempdir_in(&root)?;
