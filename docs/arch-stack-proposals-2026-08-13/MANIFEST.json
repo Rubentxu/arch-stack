@@ -1,0 +1,294 @@
+{
+  "package": "arch-stack-proposals-2026-08-13",
+  "generated": "2026-08-13",
+  "baseline": "main@518bb79d4c87a491fc901d54441de15e72c40bc2",
+  "fileCountIncludingManifest": 58,
+  "note": "MANIFEST.json no incluye su propio hash para evitar autorreferencia.",
+  "files": [
+    {
+      "path": "00-EXECUTIVE-SUMMARY.md",
+      "bytes": 3464,
+      "sha256": "23bd94022f73b4263da2fcd1c34f4d0c5bfcffc4e3db7a66de33f550d94d8ca1"
+    },
+    {
+      "path": "01-ROADMAP-CONSOLIDATION.md",
+      "bytes": 2878,
+      "sha256": "f3c67bfabaa13bb35d6b837a37d719b84ee3098e9d51f0588246be33ee8adaf2"
+    },
+    {
+      "path": "02-TARGET-ARCHITECTURE.md",
+      "bytes": 4419,
+      "sha256": "57b309f5fee6e62c9aebbc830b1f16f0c04d7de1cbf3d00e9109c1c4acabe0b5"
+    },
+    {
+      "path": "03-IMPLEMENTATION-BACKLOG.md",
+      "bytes": 3431,
+      "sha256": "2a2a56d1f8285ae74e2e958ad61ace34b1f211fb440eea2aaa0e4fbab1d5760a"
+    },
+    {
+      "path": "04-MIGRATION-STRATEGY.md",
+      "bytes": 1952,
+      "sha256": "fc8205312f3581fe870a5ad3b0fcf1c1b96228e5a8320b46149cb6be08fe8f7b"
+    },
+    {
+      "path": "05-QUALITY-GATES.md",
+      "bytes": 1167,
+      "sha256": "6638decf1cebdff303b4103ace5236c7381fcce681287a6d007ee85c2c1b2ec9"
+    },
+    {
+      "path": "06-RISK-REGISTER.md",
+      "bytes": 959,
+      "sha256": "25e4cf3c990ee2cf6a8a08d2ddc76eea35fa05f31651004a6e2d5c1b23f601cb"
+    },
+    {
+      "path": "07-ADR-INTEGRATION-MAP.md",
+      "bytes": 1198,
+      "sha256": "52b5ebed1a1875754f5af401e2f59e8d4190244e3c316378a3618f57765f5c1c"
+    },
+    {
+      "path": "08-DECISION-MATRIX.md",
+      "bytes": 839,
+      "sha256": "ef189f0f8fd75e2b9dc8f7539599b35fb55efd8bef7849cb94d6953e990fa9bb"
+    },
+    {
+      "path": "09-IMPLEMENTATION-PR-PLAN.md",
+      "bytes": 1344,
+      "sha256": "45b569971851ad8608d8811536a9756c8abe8eb0085ce8047dc75241ba85973b"
+    },
+    {
+      "path": "10-TRACEABILITY.md",
+      "bytes": 1071,
+      "sha256": "4d6ea941102ceb061b533866bc86d0a908534108460c726e5dde7f903093075d"
+    },
+    {
+      "path": "ALL-IN-ONE.md",
+      "bytes": 88921,
+      "sha256": "e44502f4519a70baf45edfecb28cde08763a6ca4e9deb66e8c61f9d6be97b131"
+    },
+    {
+      "path": "INDEX.md",
+      "bytes": 4374,
+      "sha256": "66c46efaad742ec13d13e2dbdc6c223e726bfc21276b392544863d0e16650413"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2746,
+      "sha256": "08f5036b32380d71abaf1713adc3bf6fcf6f1bbf39ad2d40293a9183fa692790"
+    },
+    {
+      "path": "TREE.txt",
+      "bytes": 1967,
+      "sha256": "d21a935821cacc3975dca758703378bdf1143a0c36b51a5da3808b94c04d6df6"
+    },
+    {
+      "path": "adr/ADR-043-modular-hexagonal-boundaries.md",
+      "bytes": 2681,
+      "sha256": "9f6caba60086797472d99bd890ffdeef90e87130c73e294764a4633dbc9e4cd2"
+    },
+    {
+      "path": "adr/ADR-044-persistence-ports-and-raw-query-boundary.md",
+      "bytes": 2413,
+      "sha256": "87a51be4c56267fd67f6c4a4f5c04efb08f5cb1c2ec24da35460a739f9fd7f8c"
+    },
+    {
+      "path": "adr/ADR-045-capability-registry-single-source-of-truth.md",
+      "bytes": 2288,
+      "sha256": "0ab81d49bce6a171c5254426620592cb77cd9fcebb6ca29dbac440f71c32007a"
+    },
+    {
+      "path": "adr/ADR-046-plugin-supply-chain-and-capability-security.md",
+      "bytes": 2381,
+      "sha256": "b48bcb123528e758c298f225e289422333f8729e064811948dae60737401740c"
+    },
+    {
+      "path": "adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md",
+      "bytes": 2038,
+      "sha256": "b217304e228d0a3d7800441c350e5370851d169f54a1db925706b0fcf10574b6"
+    },
+    {
+      "path": "adr/ADR-048-ladybugdb-native-compatibility-boundary.md",
+      "bytes": 2249,
+      "sha256": "7bf341e12acab5d669c119ceee03d36b105a892ad00d1f139b66654adb85fb63"
+    },
+    {
+      "path": "adr/ADR-049-evidence-observation-claim-confidence-model.md",
+      "bytes": 2182,
+      "sha256": "32abcc45b4278f3b2d74b843de15c7fdbad63289381ea8eb56d1ac631c5a5ec8"
+    },
+    {
+      "path": "adr/ADR-050-architecture-snapshots-and-git-identity.md",
+      "bytes": 1921,
+      "sha256": "88fa03de300be3381c741f2ce4993408d4dde76731ca128b0a52ff2177bcfba9"
+    },
+    {
+      "path": "adr/ADR-051-loopback-workbench-session-security.md",
+      "bytes": 1824,
+      "sha256": "82c80520d77853e9b8911ee9a76ff94b35228863a66d55cf4b3874c9d0246fab"
+    },
+    {
+      "path": "adr/ADR-052-architecture-context-compiler.md",
+      "bytes": 2213,
+      "sha256": "7466301f4dcff003cfc0b69d3882622c3566b0e8975fb87159f830fa35755a93"
+    },
+    {
+      "path": "adr/ADR-053-architecture-diff-as-first-class-capability.md",
+      "bytes": 2046,
+      "sha256": "fec31d2953ebcbb78be4e605dfe291891eff98c917608aca2112cf60003382b9"
+    },
+    {
+      "path": "adr/ADR-054-architecture-policy-and-fitness-functions.md",
+      "bytes": 2091,
+      "sha256": "de587cac7ba823a903c79f120cc64b6a4c0688f3625e8b194252ad06f372088a"
+    },
+    {
+      "path": "adr/ADR-055-sanitized-architecture-bundle.md",
+      "bytes": 1897,
+      "sha256": "5a5644942a067c7a8550b710167747a0d4a34ed9a77f474f7d4df70501b8db6e"
+    },
+    {
+      "path": "adr/ADR-056-moldable-architecture-workbench.md",
+      "bytes": 2033,
+      "sha256": "c55c0a4db1e570d88ec426bd19e52839cd689be08ec2e44deb3446f0e9f35046"
+    },
+    {
+      "path": "checklists/P0-stabilization.md",
+      "bytes": 1005,
+      "sha256": "ba35f930065f269e05146235d8f2cd21bab729737c9a1a6e1073c22f24c941e6"
+    },
+    {
+      "path": "checklists/P1-hexagonal-consolidation.md",
+      "bytes": 622,
+      "sha256": "a15e3cff1ac9157975839a0022255a037eafd7f7a3cf4be5b457a54715c768ea"
+    },
+    {
+      "path": "checklists/P2-intelligence-features.md",
+      "bytes": 692,
+      "sha256": "444fdd826a4e5247f93ae652ff8cbdca7a9b18ac3025b4bea26bec9a0f8ea0aa"
+    },
+    {
+      "path": "checklists/P3-workbench-platform.md",
+      "bytes": 512,
+      "sha256": "bf09850b01519bb539b2b3f6e285be139c1023698c042a68c1b758988e4d1925"
+    },
+    {
+      "path": "examples/adr-check-output.json",
+      "bytes": 463,
+      "sha256": "aadcbd98140406a744a9ccc0a8cc0b51e174017c7f76cd2b94ba716c571cc056"
+    },
+    {
+      "path": "examples/architecture-diff-output.json",
+      "bytes": 716,
+      "sha256": "6c41ae4fba48402c97e24ee05c86141dc66b1d2ddd3bb4c377c422752e3c00f0"
+    },
+    {
+      "path": "examples/architecture-policy.toml",
+      "bytes": 764,
+      "sha256": "aeb73b589a014fea0893bc94cd814f6072c5e335a55291c07d815ee087e78e3a"
+    },
+    {
+      "path": "examples/capability-registry.yaml",
+      "bytes": 980,
+      "sha256": "8d3c75f1a087b2774d5176de500091a03d00fbca8525b02b8f34bac09db589cb"
+    },
+    {
+      "path": "examples/plugin-manifest.yaml",
+      "bytes": 544,
+      "sha256": "c1dcc7b5bf5b4af04c23512fff62ee5078baa101e6473b34d4fb521f7a249c78"
+    },
+    {
+      "path": "examples/task-context-output.json",
+      "bytes": 1103,
+      "sha256": "e255beff104fcdd6a5058ad19efcf23cdb009760d30c85a755d54837dcecf561"
+    },
+    {
+      "path": "specs/adr-integrity-gate.md",
+      "bytes": 1297,
+      "sha256": "e8e105310d1aca5cd5a5a52e0fd96539129941792112cbf6db09f766821773bc"
+    },
+    {
+      "path": "specs/architecture-consolidation.md",
+      "bytes": 1441,
+      "sha256": "0e9082ed26e4d8c0bf810f5a47d314642d1d31ad66ad4fe8fce2b34c2e315c37"
+    },
+    {
+      "path": "specs/architecture-diff.md",
+      "bytes": 1321,
+      "sha256": "d0432751bcf9a12946f0c6bd14dc15d24dcf9f6acf86abecc527c771653c1c15"
+    },
+    {
+      "path": "specs/architecture-policy.md",
+      "bytes": 1248,
+      "sha256": "f191b99acf15867be1d133d281f7c3922ad2a058e70189f38f57b469684304a6"
+    },
+    {
+      "path": "specs/architecture-snapshots.md",
+      "bytes": 1174,
+      "sha256": "bac5ee3fa36a8818755ec7abb843f1b7c12d375203f515deaf92f382e5bb8e2e"
+    },
+    {
+      "path": "specs/capability-registry.md",
+      "bytes": 1233,
+      "sha256": "c48fe3bea41501c17f03bb56ab6b9e37b19fa6d68f5931cc646001f207bd5b0d"
+    },
+    {
+      "path": "specs/confidence-coverage.md",
+      "bytes": 1175,
+      "sha256": "9041d179e5ec9bf237f898b32f0b5d3879b873c70bc8c891f4715bd6088ab68b"
+    },
+    {
+      "path": "specs/evidence-fusion.md",
+      "bytes": 1248,
+      "sha256": "234db373f28e4b9aefc33147b6afc7f588678418de3a988c0dc74b5da47bc081"
+    },
+    {
+      "path": "specs/explain-provenance.md",
+      "bytes": 1247,
+      "sha256": "29d11a412caef598fbdb270428554cdaec44b1a8b73e03d6ecbbd7883913769b"
+    },
+    {
+      "path": "specs/filesystem-contract-tests.md",
+      "bytes": 1143,
+      "sha256": "68743eff7583718094ef37726a0bcd35a05686b2fa12cb5677c3eabc98295225"
+    },
+    {
+      "path": "specs/ladybug-compatibility-doctor.md",
+      "bytes": 1242,
+      "sha256": "5a7d6afdb64e5393b742c9b2672946cd197aaf81428c46520ddd959d0de10fb7"
+    },
+    {
+      "path": "specs/license-coherence.md",
+      "bytes": 1082,
+      "sha256": "91470c5ba743adfb65cec1bc33ac5fa789ea4128d28a6ab74677555739760982"
+    },
+    {
+      "path": "specs/plugin-security-hardening.md",
+      "bytes": 1526,
+      "sha256": "4a79b6db0025753851651dcaa88aafe18ff9e516f5de9f66da034a0697fa0f9e"
+    },
+    {
+      "path": "specs/pre-merge-ci.md",
+      "bytes": 1127,
+      "sha256": "31270a79294b00906c3138c22dc98cd092977dfa25dd6e587203e2f77848db5d"
+    },
+    {
+      "path": "specs/sanitized-archbundle.md",
+      "bytes": 1342,
+      "sha256": "ce800dbf58307a3546e2f49423918ed9c5fcb726a35d76a4f62b08cae179c02c"
+    },
+    {
+      "path": "specs/task-context-compiler.md",
+      "bytes": 1432,
+      "sha256": "6cf5ab4aaadff6030f421f2e38f010f440a09727ed39eabdaa60d39ae67555d4"
+    },
+    {
+      "path": "specs/workbench-moldable-navigation.md",
+      "bytes": 1304,
+      "sha256": "0f34c0fc89a89d54e8f822e0bea1d48704163510bd275cce26b7911b0ae2b019"
+    },
+    {
+      "path": "specs/workbench-session-security.md",
+      "bytes": 1218,
+      "sha256": "76749ed68d74e26b673495dec8b99e077185f908c017def8eb3e5f56ceeb899d"
+    }
+  ]
+}

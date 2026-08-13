@@ -1,0 +1,26 @@
+schemaVersion: 2
+plugin:
+  author: example
+  name: rust-extra-analysis
+  version: 1.2.0
+  artifact:
+    url: https://example.invalid/rust-extra-analysis-1.2.0.tar.gz
+    sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+capabilities:
+  provides: [code.custom_lint]
+  permissions:
+    filesystem:
+      read: [project]
+      write: [archctl-data]
+    network:
+      hosts: []
+    process:
+      exec: []
+    graph:
+      read: true
+      writeObservations: true
+      rawQuery: false
+
+trust:
+  publisherSignature: null

@@ -1,0 +1,24 @@
+# Checklist P1 — Hexagonal Consolidation
+
+- [ ] Dependency baseline.
+- [ ] Composition root.
+- [ ] Runtime/AppServices injectable.
+- [ ] CLI golden tests.
+- [ ] Migrar doctor.
+- [ ] Migrar diagram.
+- [ ] Migrar code.
+- [ ] Migrar view.
+- [ ] Migrar plugin.
+- [ ] Migrar lifecycle/IDE.
+- [ ] ArchitectureRepository.
+- [ ] EvidenceRepository.
+- [ ] GraphReadModel.
+- [ ] UnitOfWork.
+- [ ] RawGraphQuery aislado.
+- [ ] Extractor language strategies.
+- [ ] Extractor contracts.
+- [ ] CapabilityRegistry.
+- [ ] Generated capability docs.
+- [ ] Dependency fitness gate.
+- [ ] Size ratchet.
+- [ ] Evaluar extracción a crates.

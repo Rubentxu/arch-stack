@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "gitSha": "aaaaaaaa",
+    "snapshot": "snap:a"
+  },
+  "target": {
+    "gitSha": "bbbbbbbb",
+    "snapshot": "snap:b"
+  },
+  "compatibility": {
+    "schema": "same",
+    "extractorDigest": "same"
+  },
+  "summary": {
+    "added": 1,
+    "removed": 0,
+    "changed": 1,
+    "policyRegressions": 1
+  },
+  "changes": [
+    {
+      "kind": "added_relation",
+      "relation": "component:checkout->component:redis",
+      "predicate": "depends_on",
+      "evidence": [
+        "ev:456"
+      ],
+      "confidence": 0.91
+    },
+    {
+      "kind": "policy_regression",
+      "rule": "HEX-001",
+      "path": [
+        "domain:checkout",
+        "adapter:http"
+      ]
+    }
+  ]
+}

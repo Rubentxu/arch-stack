@@ -1,0 +1,21 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "code": "duplicate_id",
+      "id": "ADR-040",
+      "files": [
+        "docs/adr/ADR-040-archctl-versioned-distribution.md",
+        "docs/adr/ADR-040-cognitive-conditional-activation.md"
+      ]
+    },
+    {
+      "code": "duplicate_id",
+      "id": "ADR-041",
+      "files": [
+        "docs/adr/ADR-041-self-update-github-releases.md",
+        "docs/adr/ADR-041-workspace-state-persistence.md"
+      ]
+    }
+  ]
+}
