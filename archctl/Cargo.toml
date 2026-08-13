@@ -9,7 +9,7 @@ edition = "2024"
 # CI runs above MSRV on the exact pin 1.97.1 (root rust-toolchain.toml).
 rust-version = "1.91"
 description = "Sidecar CLI for OpenCode Architecture Diagrammer. Implements M1 (skillset reproducible) of docs/ROADMAP.md."
-license = "MIT"
+license = "MIT OR Apache-2.0"
 publish = false
 
 [lib]
