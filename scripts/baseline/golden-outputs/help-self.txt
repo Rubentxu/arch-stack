@@ -1,0 +1,14 @@
+Manage archctl itself — install, list, use, update, uninstall versioned binaries
+
+Usage: archctl self <COMMAND>
+
+Commands:
+  install    Install a versioned archctl binary
+  list       List installed versions
+  use        Switch the active version
+  uninstall  Uninstall a version (or purge all with --purge)
+  update     Self-update to a newer version
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

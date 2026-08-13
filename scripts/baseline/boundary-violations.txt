@@ -1,0 +1,34 @@
+# Architecture Boundary Baseline — 2026-08-13
+# main @ c3ba8ce | 112 .rs files | 1289 KB total
+
+## Files >30 KB (erosion of boundaries)
+  WARN  96.8 KB  archctl/src/cli.rs
+  WARN  94.7 KB  archctl/src/store.rs
+  WARN  82.7 KB  archctl/src/code/call_graph.rs
+  WARN  58.7 KB  archctl/src/code/class_diagram.rs
+  WARN  46.4 KB  archctl/src/evidence.rs
+  WARN  46.3 KB  archctl/src/code/state_machine.rs
+  WARN  38.3 KB  archctl/src/scope.rs
+  WARN  35.7 KB  archctl/src/code/c4_discover.rs
+  WARN  35.5 KB  archctl/src/view.rs
+  WARN  34.4 KB  archctl/src/diagram/export.rs
+
+## std::fs usage outside adapters (should be in StdFilesystem)
+  archctl/src/scope.rs
+  archctl/src/cognitive/event.rs
+  archctl/src/cognitive/audit/log.rs
+
+## Command::new usage (should be in adapters only)
+  archctl/src/doctor.rs
+  archctl/src/inventory.rs
+  archctl/src/skills.rs
+  archctl/src/lifecycle/migration.rs
+  archctl/src/lifecycle/update.rs
+  archctl/src/render/plantuml.rs
+  archctl/src/cognitive/mcp/tools.rs
+  archctl/src/view/editor.rs
+  archctl/src/code/strategies/cargo.rs
+  archctl/src/test_helpers/plantuml.rs
+
+## Cypher/SPARQL queries outside store adapter
+
