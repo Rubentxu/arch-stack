@@ -60,6 +60,27 @@ pub fn plugin_install_root() -> PathBuf {
     crate::lifecycle::install_root::install_root().join("plugins")
 }
 
+/// Validate a plugin identifier (author or name) for path traversal safety.
+/// Rejects empty strings, `..`, path separators, null bytes, and flag-like inputs.
+fn validate_plugin_identifier(id: &str, kind: &str) -> Result<()> {
+    if id.is_empty() {
+        anyhow::bail!("plugin {kind} cannot be empty");
+    }
+    if id.contains("..") {
+        anyhow::bail!("plugin {kind} contains path traversal ('..'): {id}");
+    }
+    if id.contains('/') || id.contains('\\') {
+        anyhow::bail!("plugin {kind} contains path separator: {id}");
+    }
+    if id.contains('\0') {
+        anyhow::bail!("plugin {kind} contains null byte");
+    }
+    if id.starts_with('-') {
+        anyhow::bail!("plugin {kind} starts with '-' (flag-like): {id}");
+    }
+    Ok(())
+}
+
 /// Parse a plugin spec in the form "author/name@version" or "author/name" (latest).
 pub fn parse_plugin_spec(spec: &str) -> Result<(String, String, String)> {
     // Format: "author/name@version" or "author/name" (latest).
@@ -70,6 +91,9 @@ pub fn parse_plugin_spec(spec: &str) -> Result<(String, String, String)> {
     let (author, name) = author_name
         .split_once('/')
         .ok_or_else(|| anyhow::anyhow!("plugin spec must be 'author/name@version', got: {spec}"))?;
+    // P0-06: validate identifiers before any I/O (SCN-PLG-01).
+    validate_plugin_identifier(author, "author")?;
+    validate_plugin_identifier(name, "name")?;
     Ok((author.to_string(), name.to_string(), version))
 }
 
@@ -90,11 +114,33 @@ mod tests {
     }
 
     #[test]
-    fn parse_plugin_spec_with_version() {
-        let (author, name, version) = parse_plugin_spec("rubentxu/my-plugin@1.0.0").unwrap();
+    fn parse_plugin_spec_rejects_path_traversal_in_author() {
+        // SCN-PLG-01: ../../evil rejected before I/O.
+        let result = parse_plugin_spec("../evil/my-plugin@1.0.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("traversal"));
+    }
+
+    #[test]
+    fn parse_plugin_spec_rejects_path_traversal_in_name() {
+        let result = parse_plugin_spec("author/../../etc/passwd@1.0.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("traversal"));
+    }
+
+    #[test]
+    fn parse_plugin_spec_rejects_flag_like_identifier() {
+        let result = parse_plugin_spec("-flag/my-plugin");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("flag"));
+    }
+
+    #[test]
+    fn parse_plugin_spec_accepts_valid_identifiers() {
+        let (author, name, version) = parse_plugin_spec("rubentxu/my-cool-plugin@2.3.4").unwrap();
         assert_eq!(author, "rubentxu");
-        assert_eq!(name, "my-plugin");
-        assert_eq!(version, "1.0.0");
+        assert_eq!(name, "my-cool-plugin");
+        assert_eq!(version, "2.3.4");
     }
 
     #[test]
