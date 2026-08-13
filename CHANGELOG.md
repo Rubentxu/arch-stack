@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **P0-12** — Pre-merge CI workflow (`.github/workflows/pr.yml`): fast
+  deterministic checks on every PR (build, test, clippy, fmt, doctor,
+  script gates + ADR integrity). Benchmarks remain post-merge in `ci.yml`.
+
 ### Fixed
 - **P0-11** — License coherence: Cargo.toml updated from `MIT` to
   `MIT OR Apache-2.0` (matching README). Added `LICENSE-MIT` and

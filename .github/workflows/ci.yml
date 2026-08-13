@@ -1,9 +1,10 @@
 name: CI
 
 # Post-merge detection only (ADR-025): CI runs exclusively when a push
-# updates main. Feature branches are verified locally via
-# scripts/verify-local.sh (pre-push hook) — remote CI is evidence, not
-# prevention. No pull_request / workflow_dispatch / schedule triggers.
+# updates main. Pre-merge fast checks live in pr.yml (ADR-047).
+# Feature branches are also verified locally via scripts/verify-local.sh
+# (pre-push hook). No pull_request trigger here — benchmarks are
+# post-merge evidence, not PR gates.
 on:
   push:
     branches: [main]
