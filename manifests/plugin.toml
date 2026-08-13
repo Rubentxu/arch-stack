@@ -1,8 +1,8 @@
 # scope: plugin
-# M76: plugin tap model + assets-stack content loading (ADR-040 §4)
+# M76: plugin tap model + assets-stack content loading (ADR-057 §4)
 id = "plugin"
 version = "0.1.0"
-description = "archctl plugin — tap model for third-party skills/agents (ADR-040 §4)"
+description = "archctl plugin — tap model for third-party skills/agents (ADR-057 §4)"
 cargo_dir = "archctl"
 
 editable = [

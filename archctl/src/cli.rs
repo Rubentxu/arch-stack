@@ -501,7 +501,7 @@ pub enum Command {
         #[command(subcommand)]
         action: McpAction,
     },
-    /// Install and list plugins from a tap (ADR-040 §4).
+    /// Install and list plugins from a tap (ADR-057 §4).
     #[command(name = "plugin")]
     Plugin {
         #[command(subcommand)]

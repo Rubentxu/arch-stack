@@ -1,6 +1,6 @@
 //! `archctl self` — CLI lifecycle management (asdf-inspired).
 //!
-//! Implements ADR-040 (versioned distribution): multi-version installs in
+//! Implements ADR-057 (versioned distribution): multi-version installs in
 //! `~/.local/share/archctl/installs/<version>/`, per-project pin via
 //! `.arch-version`, shim binary, self-update via GitHub Releases.
 

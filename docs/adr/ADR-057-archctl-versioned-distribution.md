@@ -1,4 +1,4 @@
-# ADR-040 — `archctl` como CLI versionado distribuible (asdf-inspired)
+# ADR-057 — `archctl` como CLI versionado distribuible (asdf-inspired)
 
 > **Ciclo:** `m73-distribution-stack-rework` (planning)
 > **Estado:** Propuesto — 2026-08-10
@@ -254,4 +254,4 @@ firma SHA256.
 
 ## Changelog
 
-- 2026-08-10 | proposed | ADR-040 archctl versioned distribution (asdf-inspired)
+- 2026-08-10 | proposed | ADR-057 archctl versioned distribution (asdf-inspired)

@@ -79,8 +79,8 @@ Rust (no desde source) + assets embebidos (skills/agents/plugin).
 - **Backward compatibility**: `archctl stack install/update/status` queda como alias deprecated de `archctl ide install opencode` durante un ciclo. Removal en M77.
 - **Verificación**: `e2e/install_e2e.sh` extendido con multi-version, self-update (mocked), uninstall, pin per-project.
 
-Ver [ADR-040](../adr/ADR-040-archctl-versioned-distribution.md),
-[ADR-041](../adr/ADR-041-self-update-github-releases.md),
+Ver [ADR-057](../adr/ADR-057-archctl-versioned-distribution.md),
+[ADR-058](../adr/ADR-058-self-update-github-releases.md),
 [ADR-042](../adr/ADR-042-ide-adapter-abstraction.md),
 [specs/stack-distribution.md](../specs/stack-distribution.md),
 [specs/ide-adapters.md](../specs/ide-adapters.md).

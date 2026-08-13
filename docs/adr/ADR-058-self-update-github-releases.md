@@ -1,8 +1,8 @@
-# ADR-041 — Self-update via GitHub Releases (binarios pre-compilados)
+# ADR-058 — Self-update via GitHub Releases (binarios pre-compilados)
 
 > **Ciclo:** `m73-distribution-stack-rework` (planning)
 > **Estado:** Propuesto — 2026-08-10
-> **Complementa:** ADR-040 (versioned distribution)
+> **Complementa:** ADR-057 (versioned distribution)
 > **Aplica a:** `archctl self update` / `archctl self install`
 
 ## Contexto
@@ -153,4 +153,4 @@ archctl self update --channel=nightly # pre-releases etiquetados nightly-YYYY-MM
 
 ## Changelog
 
-- 2026-08-10 | proposed | ADR-041 self-update via GitHub Releases
+- 2026-08-10 | proposed | ADR-058 self-update via GitHub Releases

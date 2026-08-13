@@ -49,6 +49,10 @@
 | [ADR-038](ADR-038-one-product-five-invariants.md) | Un producto, cinco invariantes (arch-stack identity) — supersedes ADR-013 "repositorio separado" | Aceptado (2026-08-09) |
 | [ADR-039](ADR-039-renderer-reality-anti-roadmap.md) | Renderer reality + anti-roadmap — G6 canvas, no WASM/WebGPU/Arrow; deferred decisions con reopen triggers | Aceptado (2026-08-09) |
 | [ADR-040](ADR-040-cognitive-conditional-activation.md) | Cognitive layer conditional activation — ADR-021/022/023 marcados conditional/parcial/diferido | Aceptado (2026-08-09) |
+| [ADR-041](ADR-041-workspace-state-persistence.md) | Workspace state persistence — durable workspace state for `archctl view` | Aceptado (2026-08-10) |
+| [ADR-042](ADR-042-ide-adapter-abstraction.md) | IDE adapter abstraction — multi-IDE plugin target | Propuesto (2026-08-10) |
+| [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | Propuesto (2026-08-10) |
+| [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | Propuesto (2026-08-10) |
 
 ## Cómo se relacionan
 

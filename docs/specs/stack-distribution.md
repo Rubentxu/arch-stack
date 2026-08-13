@@ -2,7 +2,7 @@
 
 > **Ciclo:** `m73-distribution-stack-rework`
 > **Estado:** Propuesto — 2026-08-10
-> **ADR fuente:** [ADR-040](../adr/ADR-040-archctl-versioned-distribution.md), [ADR-041](../adr/ADR-041-self-update-github-releases.md)
+> **ADR fuente:** [ADR-057](../adr/ADR-057-archctl-versioned-distribution.md), [ADR-058](../adr/ADR-058-self-update-github-releases.md)
 > **Reemplaza:** parte de `archctl/src/stack.rs` (install/update/status en `~/.config/opencode/`)
 
 ## Objetivo
@@ -297,8 +297,8 @@ INSTALLED=$("$E2E_ROOT/installs/current/archctl" --version)
 
 ## Referencias
 
-- ADR-040 (versioned distribution)
-- ADR-041 (self-update via GitHub Releases)
+- ADR-057 (versioned distribution)
+- ADR-058 (self-update via GitHub Releases)
 - ADR-042 (IDE adapter abstraction)
 - asdf-vm `.tool-versions` format: https://asdf-vm.com/manage/configuration.html#tool-versions
 - GitHub Releases API: https://docs.github.com/en/rest/releases
