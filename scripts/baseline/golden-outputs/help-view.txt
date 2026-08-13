@@ -1,0 +1,8 @@
+Serve the embedded archview workbench locally (ADR-033)
+
+Usage: archctl view [OPTIONS]
+
+Options:
+      --port <PORT>  Port to bind. 0 = ephemeral (default) [default: 0]
+      --cwd <CWD>    Project directory for /api/export (graph-backed bundles)
+  -h, --help         Print help

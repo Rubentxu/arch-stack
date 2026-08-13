@@ -1,0 +1,13 @@
+Usage: archctl code <COMMAND>
+
+Commands:
+  c4-discover    Discover C4 Container boundaries using multiple strategies
+  call-graph     Extract static call-graph (function→function call edges) via tree-sitter-graph
+  sequence       Project a call chain into an ordered interaction list (read-only)
+  class-diagram  Extract UML class diagram from source files (Rust, TypeScript, Python)
+  state-machine  Extract state machines from source code (Rust enum+match, TypeScript state pattern,
+                 Python transitions)
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

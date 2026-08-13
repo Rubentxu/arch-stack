@@ -1,0 +1,14 @@
+Manage IDE-specific stack installation (OpenCode, ZCode, Claude Code, Codex)
+
+Usage: archctl ide <COMMAND>
+
+Commands:
+  install  
+  list     
+  doctor   
+  remove   
+  update   
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

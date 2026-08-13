@@ -1,0 +1,11 @@
+Usage: archctl diagram <COMMAND>
+
+Commands:
+  export    
+  validate  
+  apply     Apply a changeset (view-level edits) to a persisted diagram
+  project   Project graph elements to editable DSL source (PlantUML, Mermaid, Structurizr)
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

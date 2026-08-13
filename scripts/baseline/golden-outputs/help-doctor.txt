@@ -1,0 +1,9 @@
+Usage: archctl doctor [OPTIONS]
+
+Options:
+      --scopes <scope-id>  Run scope gates from `manifests/<id>.toml`. If scope IDs are given
+                           (comma-separated), check only those; otherwise check all. Example:
+                           `doctor --scopes evidence,store,tsg`
+      --cwd <CWD>          Project directory to read manifests from. Defaults to the current working
+                           directory
+  -h, --help               Print help

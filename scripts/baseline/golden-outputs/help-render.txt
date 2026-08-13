@@ -1,0 +1,9 @@
+Usage: archctl render [OPTIONS] <SOURCE>
+
+Arguments:
+  <SOURCE>  
+
+Options:
+      --format <FORMAT>  [default: auto] [possible values: auto, structurizr, plantuml, mermaid]
+      --out <OUT>        
+  -h, --help             Print help

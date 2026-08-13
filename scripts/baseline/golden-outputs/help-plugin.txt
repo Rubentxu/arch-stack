@@ -1,0 +1,11 @@
+Install and list plugins from a tap (ADR-057 §4)
+
+Usage: archctl plugin <COMMAND>
+
+Commands:
+  install  Install a plugin from a tap
+  list     List plugins available in a tap
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

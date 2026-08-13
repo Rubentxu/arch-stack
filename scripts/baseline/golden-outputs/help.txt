@@ -1,0 +1,25 @@
+OpenCode Architecture Diagrammer sidecar CLI (M4)
+
+Usage: archctl <COMMAND>
+
+Commands:
+  doctor     
+  project    
+  graph      
+  inventory  
+  diagram    
+  evidence   
+  render     
+  code       
+  skills     
+  agent      
+  mcp        
+  plugin     Install and list plugins from a tap (ADR-057 §4)
+  ide        Manage IDE-specific stack installation (OpenCode, ZCode, Claude Code, Codex)
+  view       Serve the embedded archview workbench locally (ADR-033)
+  self       Manage archctl itself — install, list, use, update, uninstall versioned binaries
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
