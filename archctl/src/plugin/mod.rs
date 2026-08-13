@@ -78,25 +78,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plugin_install_root_includes_archctl_segment() {
-        // P0-04 regression: plugin root must be under archctl/, not a sibling.
+    fn plugin_install_root_is_install_root_plus_plugins() {
+        // P0-04 regression: plugin root must be install_root().join("plugins"),
+        // not install_root().parent().join("plugins").
         let root = plugin_install_root();
-        let path_str = root.to_string_lossy();
-        assert!(
-            path_str.contains("archctl"),
-            "expected path containing 'archctl', got: {}",
-            root.display()
-        );
-        assert!(
-            path_str.contains("plugins"),
-            "expected path containing 'plugins', got: {}",
-            root.display()
-        );
-        // Must NOT be under installs/ (that's for archctl binaries, not plugins)
-        assert!(
-            !path_str.contains("installs"),
-            "plugin root must not be under installs/, got: {}",
-            root.display()
+        let expected = crate::lifecycle::install_root::install_root().join("plugins");
+        assert_eq!(
+            root, expected,
+            "plugin_install_root must be install_root/plugins"
         );
     }
 
