@@ -4,6 +4,19 @@ All notable changes to `archctl` are documented here. The format is
 loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **P0-10** — `scripts/check-adr-integrity.sh` validates ADR directory integrity
+  (unique IDs, filename↔H1 match, valid status, index consistency, broken links,
+  gap info). Supports `--json` for CI consumption. Test fixtures in
+  `scripts/fixtures/adr/`.
+
+### Changed
+- **P0-09** — Resolved duplicate ADR IDs: `ADR-040-archctl-versioned-distribution`
+  renumbered to ADR-057, `ADR-041-self-update-github-releases` renumbered to
+  ADR-058. All cross-references updated.
+
 ## [1.41.0] — 2026-08-12
 
 ### Added
@@ -117,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [v1.36.0] — 2026-08-11
 
 ### Added
-- M76 — `archctl plugin` subcommand with tap model (ADR-040 §4):
+- M76 — `archctl plugin` subcommand with tap model (ADR-057 §4):
   - `Tap` and `PluginEntry` types for plugin distribution.
   - `fetch_tap()` to retrieve plugin list from a URL.
   - `archctl plugin install <name>@<version> [--tap <url>]` (stub: M77 adds download).

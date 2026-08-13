@@ -1,4 +1,4 @@
-//! Plugin tap model (ADR-040 §4) — minimal viable version.
+//! Plugin tap model (ADR-057 §4) — minimal viable version.
 //!
 //! A "tap" is a JSON file served at a URL that lists available plugins.
 //! Each plugin has a name, version, and (optional) archive URL.

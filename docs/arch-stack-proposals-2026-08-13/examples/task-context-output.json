@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "task": "añadir cache distribuida al servicio checkout",
+  "mode": "deterministic",
+  "seeds": [
+    {
+      "id": "component:checkout",
+      "reason": "exact-symbol-match"
+    }
+  ],
+  "elements": [
+    {
+      "id": "component:checkout",
+      "score": 1.0
+    },
+    {
+      "id": "component:redis-adapter",
+      "score": 0.82
+    }
+  ],
+  "dependencyPaths": [
+    [
+      "component:checkout",
+      "port:cache",
+      "component:redis-adapter"
+    ]
+  ],
+  "constraints": [
+    "HEX-001",
+    "SEC-NET-002"
+  ],
+  "adrs": [
+    "ADR-043",
+    "ADR-044"
+  ],
+  "evidence": [
+    {
+      "id": "ev:123",
+      "file": "src/checkout.rs",
+      "line": 42
+    }
+  ],
+  "changeSurface": [
+    "src/checkout.rs",
+    "src/cache/mod.rs"
+  ],
+  "risks": [
+    "cache consistency boundary"
+  ],
+  "unknowns": [
+    "no runtime evidence for cache invalidation"
+  ],
+  "budget": {
+    "requestedTokens": 12000,
+    "estimatedTokens": 3850,
+    "truncated": false
+  },
+  "selectionTrace": [
+    "seed exact match",
+    "1-hop outgoing dependencies",
+    "policy enrichment"
+  ]
+}

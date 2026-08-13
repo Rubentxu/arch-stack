@@ -1,0 +1,36 @@
+schemaVersion: 1
+capabilities:
+  - id: code.call_graph
+    maturity: stable
+    deterministic: true
+    outputSchema: call-graph-report/1
+    providers:
+      - { language: rust, maturity: stable }
+      - { language: typescript, maturity: stable }
+      - { language: python, maturity: stable }
+      - { language: go, maturity: stable }
+      - { language: java, maturity: beta }
+      - { language: kotlin, maturity: beta }
+
+  - id: code.class_diagram
+    maturity: stable
+    deterministic: true
+    outputSchema: class-diagram-report/1
+    providers:
+      - { language: rust }
+      - { language: typescript }
+      - { language: python }
+
+  - id: code.state_machine
+    maturity: beta
+    deterministic: true
+    outputSchema: state-machine-report/1
+    providers:
+      - { language: rust }
+      - { language: typescript }
+      - { language: python }
+
+  - id: architecture.diff
+    maturity: proposed
+    deterministic: true
+    outputSchema: architecture-diff-report/1

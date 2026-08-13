@@ -1,0 +1,41 @@
+version = 1
+
+[[rules]]
+id = "HEX-001"
+type = "forbid_dependency"
+from = "module:arch-model/**"
+to = "crate:reqwest"
+severity = "error"
+message = "El modelo no puede depender de HTTP."
+
+[[rules]]
+id = "HEX-002"
+type = "forbid_dependency"
+from = "layer:application"
+to = "crate:lbug"
+severity = "error"
+
+[[rules]]
+id = "GRAPH-001"
+type = "forbid_cycle"
+scope = "component:*"
+severity = "error"
+
+[[rules]]
+id = "EVIDENCE-001"
+type = "evidence_required"
+selector = "relation:architecture:*"
+severity = "warning"
+
+[[rules]]
+id = "CONF-001"
+type = "confidence_min"
+selector = "claim:runtime_dependency:*"
+min = 0.75
+severity = "warning"
+
+[[waivers]]
+rule = "HEX-LEGACY-001"
+selector = "module:legacy-adapter"
+reason = "Pendiente migración P1-03"
+expires = "2026-11-01"

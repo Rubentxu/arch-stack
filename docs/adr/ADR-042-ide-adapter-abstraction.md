@@ -2,7 +2,7 @@
 
 > **Ciclo:** `m73-distribution-stack-rework` (planning)
 > **Estado:** Propuesto — 2026-08-10
-> **Complementa:** ADR-040 (versioned distribution), ADR-041 (self-update)
+> **Complementa:** ADR-057 (versioned distribution), ADR-058 (self-update)
 > **Reemplaza:** la hardcoded `default_install_root()` en `archctl/src/stack.rs:18`
 
 ## Contexto
@@ -95,7 +95,7 @@ pub fn builtin_adapters() -> Vec<Box<dyn IdeAdapter>> {
 }
 ```
 
-Adapters externos (terceros) se registran vía plugin tap (ADR-040 §4):
+Adapters externos (terceros) se registran vía plugin tap (ADR-057 §4):
 
 ```toml
 # ~/.config/archctl/plugins/<author>/<my-ide-adapter>/plugin.toml
@@ -197,8 +197,8 @@ APIs deprecated).
 - Claude Code plugins: https://docs.claude.com/en/docs/claude-code (commands, plugins)
 - Codex CLI: https://github.com/openai/codex
 - `archctl/src/stack.rs:18` — `default_install_root()` a eliminar
-- ADR-040 §4 (plugin tap model)
-- ADR-041 (GitHub Releases distribution)
+- ADR-057 §4 (plugin tap model)
+- ADR-058 (GitHub Releases distribution)
 
 ## Changelog
 

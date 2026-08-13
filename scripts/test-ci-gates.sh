@@ -471,6 +471,41 @@ require "CHANGELOG references ci-main-gates" \
   grep -q 'ci-main-gates' CHANGELOG.md
 
 # ---------------------------------------------------------------------------
+# ADR Integrity Gate
+# ---------------------------------------------------------------------------
+echo ""
+echo "Checking ADR integrity..."
+if scripts/check-adr-integrity.sh; then
+  note_pass "ADR integrity gate: docs/adr clean"
+else
+  ec=$?
+  if [ "$ec" -eq 2 ]; then
+    note_fail "ADR integrity gate: violations found in docs/adr"
+  else
+    note_fail "ADR integrity gate: script error (exit $ec)"
+  fi
+fi
+
+# Fixture tests
+for fixture in valid duplicate-id broken-link missing-from-index filename-mismatch; do
+  case "$fixture" in
+    valid|missing-from-index)
+      expect_exit=0
+      ;;
+    *)
+      expect_exit=2
+      ;;
+  esac
+  scripts/check-adr-integrity.sh --adr-dir "scripts/fixtures/adr/$fixture" >/dev/null 2>&1
+  actual_exit=$?
+  if [ "$actual_exit" -eq "$expect_exit" ]; then
+    note_pass "ADR fixture: $fixture (expected exit $expect_exit)"
+  else
+    note_fail "ADR fixture: $fixture (expected exit $expect_exit, got $actual_exit)"
+  fi
+done
+
+# ---------------------------------------------------------------------------
 echo ""
 echo "----------------------------------------"
 echo "test-ci-gates.sh: ${PASSED} passed, ${FAILED} failed"
