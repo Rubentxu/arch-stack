@@ -5,7 +5,7 @@
 `arch-stack` is a local-first CLI + workbench that reverse-engineers your repository into an architecture knowledge graph and projects it as interactive C4 and UML diagrams. It runs entirely on your machine; nothing leaves your environment by default.
 
 [![Latest Release](https://img.shields.io/github/v/release/Rubentxu/arch-stack?logo=github&label=latest)](https://github.com/Rubentxu/arch-stack/releases/latest)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 [![Build](https://img.shields.io/github/actions/workflow/status/Rubentxu/arch-stack/release.yml?logo=github)](https://github.com/Rubentxu/arch-stack/actions)
 [![rust-version](https://img.shields.io/badge/rust-1.91%2B-blue.svg?logo=rust)](archctl/Cargo.toml)
 
@@ -275,4 +275,4 @@ Your source code is **never modified**. `archctl` only reads.
 
 ## License
 
-`arch-stack` is distributed under **MIT OR Apache-2.0**. See [`LICENSE`](LICENSE) for details.
+`arch-stack` is distributed under **MIT OR Apache-2.0**. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE) for details.

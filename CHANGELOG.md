@@ -6,16 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **P0-11** — License coherence: Cargo.toml updated from `MIT` to
+  `MIT OR Apache-2.0` (matching README). Added `LICENSE-MIT` and
+  `LICENSE-APACHE` files. Fixed broken LICENSE link in README badge.
+  Added `"license"` field to `archview/package.json`.
+
+## [1.41.1] — 2026-08-13
+
 ### Added
-- **P0-10** — `scripts/check-adr-integrity.sh` validates ADR directory integrity
-  (unique IDs, filename↔H1 match, valid status, index consistency, broken links,
-  gap info). Supports `--json` for CI consumption. Test fixtures in
-  `scripts/fixtures/adr/`.
+- **P0-10** — `scripts/check-adr-integrity.sh` validates ADR directory
+  integrity (unique IDs, filename↔H1 match, valid status, index
+  consistency, broken links, gap info). Supports `--json` for CI.
+  Test fixtures in `scripts/fixtures/adr/`.
 
 ### Changed
-- **P0-09** — Resolved duplicate ADR IDs: `ADR-040-archctl-versioned-distribution`
-  renumbered to ADR-057, `ADR-041-self-update-github-releases` renumbered to
-  ADR-058. All cross-references updated.
+- **P0-09** — Resolved duplicate ADR IDs:
+  `ADR-040-archctl-versioned-distribution` → ADR-057,
+  `ADR-041-self-update-github-releases` → ADR-058.
+  All cross-references updated (11 files).
+- Landed H5-H8 consolidation pack at `docs/arch-stack-proposals-2026-08-13/`
+  (4 horizons, 14 ADRs 043-056, 18 specs, 34-PR plan).
 
 ## [1.41.0] — 2026-08-12
 

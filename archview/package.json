@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Code Knowledge Graph Workbench — consumes archctl bundles",
+  "license": "MIT OR Apache-2.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
