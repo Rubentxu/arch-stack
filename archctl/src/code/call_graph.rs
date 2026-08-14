@@ -1360,8 +1360,9 @@ fn link_function_edges(
 ///   separate `RelationVersion` hop to access.
 /// - the call-graph writer is a single MERGE … CREATE round-trip;
 ///   the reified model would require 3 round-trips per edge.
+#[allow(dead_code)]
 fn write_call_edge(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     edge: &CallEdge,
     src_element_id: &str,
     sa_id: &str,
@@ -1380,27 +1381,11 @@ fn write_call_edge(
         "rel_id": rel_id,
     });
     let rel_props_str = serde_json::to_string(&rel_props).unwrap_or_default();
-    let rel_props_escaped = escape_cypher_string(&rel_props_str);
 
     // Try to find the callee Element by matching canonical_key pattern
-    // MVP: we don't do symbol resolution, so callee may not exist
-    //
-    // NOTE: The call-graph writer uses the direct edge model
-    // (Element→Element with props on SEMANTIC_EDGE). The reified model
-    // (SemanticRelation + REL_SOURCE/REL_TARGET/RELATION_TYPE +
-    // RelationVersion) is reserved in the schema for future use per
-    // ADR-009 deferral; see module-level doc comment for rationale.
-    //
-    // Use MERGE to avoid duplicates; set properties unconditionally.
+    // MVP: we don't do symbol resolution, so callee may not exist.
     let callee_escaped = escape_cypher_string(&edge.callee);
-    // Include all properties in MERGE so lbug accepts them (lbug requires relationship
-    // properties to be declared in the MERGE pattern, not added via SET afterward).
-    // version_id is captured on the Evidence node (see put_evidence)
-    // and on the Element's current_version_id pointer, not on the
-    // SEMANTIC_EDGE itself. The reified model with RelationVersion is
-    // reserved in the schema for future use.
-    // (only relation_id, predicate_id, active, order_key, props are declared).
-    // We omit it from the MERGE; the Evidence node tracks version lineage instead.
+    let safe_props = rel_props_str.replace('\'', "\\'");
     let cypher = format!(
         "MATCH (src:Element {{id: '{src_id}'}}) \
          OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
@@ -1410,65 +1395,63 @@ fn write_call_edge(
         src_id = src_element_id,
         callee = callee_escaped,
         rel_id = rel_id,
-        props = rel_props_escaped,
+        props = safe_props,
     );
-    // Note: errors are silently ignored (matches prior behavior for MVP)
-    let _ = store.query(&cypher);
+    // Note: errors are silently ignored (matches prior behavior for MVP).
+    // Inline cypher — the OPTIONAL MATCH + WITH/WHERE + MERGE pattern is
+    // hard to abstract into a repository without losing the callee-
+    // resolution semantics.
+    let _ = GraphStore::query(store, &cypher);
 
-    // Write Evidence for this call edge
+    // Evidence node via EvidenceRepository::put_structural_evidence
     let evidence_id = format!(
         "ev:{}",
         blake3::hash(edge.canonical_key.as_bytes()).to_hex()
     );
-    let evidence_props = serde_json::json!({
-        "file_refs": [format!("{}:{}", edge.file, edge.line)],
-        "status": "drafted",
-        "classification": "derived",
-    });
-    let ev_props_str = serde_json::to_string(&evidence_props).unwrap_or_default();
-    let ev_props_escaped = escape_cypher_string(&ev_props_str);
-    let file_escaped = escape_cypher_string(&edge.file);
-
-    let cypher_ev = format!(
-        "MERGE (ev:Evidence {{id: '{ev_id}'}}) SET \
-         ev.kind = 'structural', \
-         ev.claim = 'call-graph edge', \
-         ev.classification = 'derived', \
-         ev.confidence = {confidence}, \
-         ev.props = '{props}', \
-         ev.start_line = {line}, \
-         ev.end_line = {line}, \
-         ev.path = '{file}';",
-        ev_id = evidence_id,
-        props = ev_props_escaped,
-        confidence = edge.confidence,
-        line = edge.line,
-        file = file_escaped,
+    let mut ev_props = serde_json::Map::new();
+    ev_props.insert(
+        "file_refs".to_string(),
+        serde_json::Value::Array(vec![serde_json::Value::String(format!(
+            "{}:{}",
+            edge.file, edge.line
+        ))]),
     );
-    store
-        .query(&cypher_ev)
-        .with_context(|| format!("write_call_evidence {}", evidence_id))?;
+    ev_props.insert(
+        "status".to_string(),
+        serde_json::Value::String("drafted".to_string()),
+    );
+    ev_props.insert(
+        "classification".to_string(),
+        serde_json::Value::String("derived".to_string()),
+    );
+    crate::store::EvidenceRepository::put_structural_evidence(
+        store,
+        &crate::graph::StructuralEvidence {
+            id: evidence_id.clone(),
+            kind: "structural".to_string(),
+            claim: "call-graph edge".to_string(),
+            file: edge.file.clone(),
+            line: u64::from(edge.line),
+            confidence: edge.confidence,
+            rule_id: format!("call_graph_edge"),
+            props: ev_props,
+        },
+    )
+    .with_context(|| format!("write_call_evidence {}", evidence_id))?;
 
     // Link Evidence to SourceArtifact
-    let cypher_sa = format!(
-        "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
-         MATCH (sa:SourceArtifact {{id: '{sa_id}'}}) \
-         MERGE (ev)-[r:EXTRACTED_FROM]->(sa);",
-        ev_id = evidence_id,
-        sa_id = sa_id,
+    let _ = crate::store::EvidenceRepository::link_extracted_from(
+        store,
+        &evidence_id,
+        sa_id,
     );
-    let _ = store.query(&cypher_sa);
 
-    // Link Evidence to ElementVersion via SUPPORTED_BY. See
-    // `c4_discover.rs:397` for the canonical pattern.
-    let cypher_el = format!(
-        "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
-         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
-         MERGE (v)-[r:SUPPORTED_BY]->(ev);",
-        ev_id = evidence_id,
-        version_id = _version_id,
+    // Link Evidence to ElementVersion via SUPPORTED_BY
+    let _ = crate::store::EvidenceRepository::link_supported_by(
+        store,
+        _version_id,
+        &evidence_id,
     );
-    let _ = store.query(&cypher_el);
 
     Ok(())
 }

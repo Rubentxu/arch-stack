@@ -1485,10 +1485,20 @@ impl EvidenceRepository for LbugStore {
         let props_json =
             serde_json::to_string(&ev.props).context("serialize structural evidence props")?;
         let safe_props = props_json.replace('\'', "\\'");
+        // Classification: read from props if present, default to "derived"
+        // (matches the original call_graph write_call_edge behaviour).
+        let classification = ev
+            .props
+            .get("classification")
+            .and_then(|v| v.as_str())
+            .unwrap_or("derived")
+            .to_string();
+        let safe_class = classification.replace('\'', "\\'");
         let cypher = format!(
             "MERGE (ev:Evidence {{id: '{id}'}}) SET \
              ev.kind = '{kind}', \
              ev.claim = '{safe_claim}', \
+             ev.classification = '{safe_class}', \
              ev.path = '{file}', \
              ev.start_line = {line}, \
              ev.end_line = {line}, \
@@ -1510,15 +1520,14 @@ impl EvidenceRepository for LbugStore {
             .context("link_supported_by: version_id failed validation")?;
         let eid = crate::graph::validate_identifier(evidence_id)
             .context("link_supported_by: evidence_id failed validation")?;
-        link_with_merge_fallback(
-            &session.conn,
-            "ElementVersion",
-            vid,
-            "SUPPORTED_BY",
-            "Evidence",
-            eid,
-        )
-        .context("link_supported_by")
+        // MATCH + CREATE on a REL TABLE — lbug rejects MERGE on REL
+        // TABLE (ADR-017); CREATE is idempotent when the edge already
+        // exists (lbug single-graph mode).
+        let cypher = format!(
+            "MATCH (v:ElementVersion {{id: '{vid}'}}), (e:Evidence {{id: '{eid}'}})              CREATE (v)-[:SUPPORTED_BY]->(e);"
+        );
+        let _ = session.conn.query(&cypher);
+        Ok(())
     }
 
     fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
@@ -1527,15 +1536,11 @@ impl EvidenceRepository for LbugStore {
             .context("link_extracted_from: evidence_id failed validation")?;
         let sid = crate::graph::validate_identifier(source_id)
             .context("link_extracted_from: source_id failed validation")?;
-        link_with_merge_fallback(
-            &session.conn,
-            "Evidence",
-            eid,
-            "EXTRACTED_FROM",
-            "SourceArtifact",
-            sid,
-        )
-        .context("link_extracted_from")
+        let cypher = format!(
+            "MATCH (e:Evidence {{id: '{eid}'}}), (s:SourceArtifact {{id: '{sid}'}})              CREATE (e)-[:EXTRACTED_FROM]->(s);"
+        );
+        let _ = session.conn.query(&cypher);
+        Ok(())
     }
 }
 
