@@ -45,6 +45,7 @@ pub use cli::{
     RenderFormat, SkillsAction, run,
 };
 pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
+pub use store::{GraphStoreFactory, LbugStoreFactory};
 pub use doctor::{
     DoctorScope, StorageFinding, StorageReport, StorageSeverity, StorageStatus,
     manifest::validate_manifests,
