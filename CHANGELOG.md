@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **P0-12** — Pre-merge CI workflow (`.github/workflows/pr.yml`): fast
   deterministic checks on every PR (build, test, clippy, fmt, doctor,
   script gates + ADR integrity). Benchmarks remain post-merge in `ci.yml`.
+- **P0-ladybug-doctor** — `archctl doctor --scope storage` checks
+  LadybugDB (lbug) availability, schema initialization, and basic
+  read/write operations. The new `doctor/` module (`archctl/src/doctor/`)
+  provides `DoctorScope` enum, `LbugStorageProbe`, `NativeProbe`,
+  and smoke gate runner. CLI dispatch via `--scope` flag on the existing
+  `doctor` subcommand.
 
 ### Fixed
 - **P0-11** — License coherence: Cargo.toml updated from `MIT` to
