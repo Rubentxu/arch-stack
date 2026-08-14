@@ -373,10 +373,31 @@ cd archctl && cargo test --quiet && \
   cargo fmt --check && \
   cargo run --bin archctl -- doctor --scopes <id>,<id2> --cwd <repo_root>
 
-# Validación de CI
+# Validación de CI (los mismos comandos que corren en la nube)
 cd archctl && cargo test --all-features && \
   cargo clippy --all-targets -- -D warnings
 ```
+
+## CI Policy — local-first, cloud async
+
+**El gate de verificación es LOCAL, no la nube.**
+
+- **Gate real**: el pre-push hook (`scripts/verify-local.sh` cheap mode:
+  build + test + clippy + fmt + doctor scopes). Si pasa localmente,
+  el push procede. **No esperes runs de GitHub Actions para mergear**
+  ni los trates como bloqueantes — son evidencia asíncrona.
+- **GitHub Actions es post-hoc**: `ci.yml` (post-merge en main) y
+  `pr.yml` (informativo en PRs) corren en la nube sin required status
+  checks. Si fallan, se abre fix en el siguiente cambio; no se
+  reverte ni se bloquea el merge.
+- **Ejecutar workflows en local**: `act` (v0.2.89, `/usr/local/bin/act`)
+  + podman con `ubuntu-latest` mapeado a `catthehacker/ubuntu:rust-latest`
+  (`~/.config/act/actrc`). Ejemplo: `act pull_request -W .github/workflows/pr.yml`.
+- **Prohibido**: `gh pr checks --watch`, demorar un merge esperando la
+  nube, o "arreglar CI" sin antes reproducir localmente.
+- Nota: los runners de GH exportan `XDG_CONFIG_HOME`; si un test
+  depende de la forma de paths bajo `$HOME`, pinea ambas variables
+  (ver `archctl/tests/ide_config_root_paths.rs`).
 
 ## Validation Matrix
 
