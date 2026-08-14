@@ -18,6 +18,13 @@ use crate::filesystem::Filesystem;
 use crate::identity::{identity_summary, resolve_source_identity};
 use crate::scope::{ScopeCheckReport, check_all_scopes, render_report_line};
 use crate::xdg::{resolve_xdg, user_home};
+
+// Re-export storage types for use in CLI and tests.
+pub use storage::{
+    Finding as StorageFinding, Severity as StorageSeverity, Status as StorageStatus, StorageProbe,
+    StorageReport, render_json, render_text, run_storage_probe,
+};
+
 use std::path::Path;
 use std::process::Command;
 use tracing::{info, warn};
@@ -243,21 +250,22 @@ impl std::str::FromStr for DoctorScope {
 /// Run the doctor diagnostics for a specific scope.
 ///
 /// Returns the exit code: 0 if all checks pass, 1 if any fail.
-pub fn run_scope(scope: DoctorScope, project_dir: &Path) -> Result<i32, anyhow::Error> {
+/// If `json` is true, emits a JSON envelope to stdout.
+pub fn run_scope(scope: DoctorScope, project_dir: &Path, json: bool) -> Result<i32, anyhow::Error> {
     match scope {
         DoctorScope::Storage => {
             let probe = storage::LbugStorageProbe::new();
-            let result = storage::StorageProbe::probe(&probe, project_dir)?;
-            if result.ok {
-                println!(
-                    "STORAGE: OK — lbug {} ({})",
-                    result.version.as_deref().unwrap_or("?"),
-                    result.backend
-                );
-                Ok(0)
+            let report = storage::run_storage_probe(&probe, project_dir)?;
+            if json {
+                storage::render_json(&report, &mut std::io::stdout())?;
             } else {
-                println!("STORAGE: FAIL — {}", result.error.unwrap_or_default());
-                Ok(1)
+                storage::render_text(&report)?;
+            }
+            // Exit code: 0 for Compatible, 1 for Mismatch/Unknown
+            let status = &report.status;
+            match status.as_str() {
+                "Compatible" => Ok(0),
+                _ => Ok(1),
             }
         }
     }

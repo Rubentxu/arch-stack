@@ -4,7 +4,7 @@
 //! scope. These are fast, in-process checks suitable for the pre-merge
 //! CI gate (P0-12 fast lane).
 
-use super::{DoctorScope, storage::StorageProbe};
+use super::DoctorScope;
 use crate::filesystem::Filesystem;
 use std::path::Path;
 
@@ -61,21 +61,25 @@ pub fn run_smoke_gate(
 /// 2. The schema is initialized
 /// 3. Basic read/write operations work
 fn run_storage_smoke(project_dir: &Path) -> Result<SmokeResult, anyhow::Error> {
-    use super::storage::LbugStorageProbe;
+    use super::storage::{LbugStorageProbe, run_storage_probe};
 
     let probe = LbugStorageProbe::new();
-    let result = probe.probe(project_dir)?;
+    let report = run_storage_probe(&probe, project_dir)?;
 
-    if result.ok {
-        Ok(SmokeResult::pass(format!(
-            "storage smoke: lbug {} ({})",
-            result.version.unwrap_or_default(),
-            result.backend
-        )))
+    // Check the fresh_crud finding specifically
+    let fresh_finding = report
+        .findings
+        .iter()
+        .find(|f| f.id == "storage.fresh_crud");
+    if let Some(finding) = fresh_finding {
+        match finding.severity {
+            super::storage::Severity::Ok => Ok(SmokeResult::pass(finding.detail.clone())),
+            _ => Ok(SmokeResult::fail("storage.fresh_crud", &finding.detail)),
+        }
     } else {
         Ok(SmokeResult::fail(
-            "storage smoke: lbug probe failed",
-            result.error.unwrap_or_default(),
+            "storage.fresh_crud",
+            "finding not present",
         ))
     }
 }

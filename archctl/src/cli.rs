@@ -457,6 +457,9 @@ pub enum Command {
         /// Example: `doctor --scopes evidence,store,tsg`
         #[arg(long, value_delimiter = ',', value_name = "scope-id")]
         scopes: Option<Vec<String>>,
+        /// Emit machine-readable JSON output for `--scope` probes.
+        #[arg(long)]
+        json: bool,
         /// Project directory to read manifests from. Defaults to
         /// the current working directory.
         #[arg(long)]
@@ -628,7 +631,12 @@ pub fn run(cli: Cli) -> Result<i32> {
 /// a `FixedEnvironment`.
 pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
     match cli.command {
-        Command::Doctor { scope, scopes, cwd } => {
+        Command::Doctor {
+            scope,
+            scopes,
+            json,
+            cwd,
+        } => {
             let cwd = ctx.resolve_cwd(cwd.as_ref());
 
             if let Some(scope_name) = scope {
@@ -636,7 +644,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 let parsed: crate::doctor::DoctorScope = scope_name
                     .parse()
                     .map_err(|e: String| anyhow::anyhow!("unknown doctor scope: {e}"))?;
-                doctor::run_scope(parsed, &cwd).context("doctor scope")
+                doctor::run_scope(parsed, &cwd, json).context("doctor scope")
             } else if let Some(scope_ids) = scopes {
                 // --scopes is the scope-gates pass
                 doctor::check_scope(&cwd, scope_ids, &*ctx.fs).context("scope gates")

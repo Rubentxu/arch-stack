@@ -49,4 +49,9 @@ must_not_contain = [
   # doctor/storage.rs is the lbug adapter; other doctor modules
   # should remain adapter-agnostic
   "lbug::Connection",
+  # Boundary: concrete lbug/store types that leak the internal
+  # implementation. open_default is the port factory (returns
+  # Box<dyn GraphStore>) — that is the public API, not a leak.
+  "use crate::graph::Session",
+  "use crate::store::LbugStore",
 ]
