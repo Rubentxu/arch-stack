@@ -36,28 +36,34 @@ jobs:
   # ---------------------------------------------------------------------------
   build_matrix:
     name: build ${{ matrix.label }}
-    runs-on: ubuntu-22.04
+    # Native runners per target (P0-03): darwin binaries MUST be built on
+    # macOS (no cross toolchain for the lbug C++ FFI), aarch64 on ARM.
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           # Linux x86_64 — primary target, Tier 1 per ADR-040.
           - label: linux-x86_64
+            runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             os: linux
             archive: tar.gz
-          # Linux aarch64 — Tier 1 (Graviton, Asahi).
+          # Linux aarch64 — Tier 1 (Graviton, Asahi). Native ARM runner.
           - label: linux-aarch64
+            runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             os: linux
             archive: tar.gz
           # macOS Intel — Tier 1 (Apple Silicon emulator support).
           - label: macos-x86_64
+            runner: macos-13
             target: x86_64-apple-darwin
             os: macos
             archive: tar.gz
           # macOS Apple Silicon — Tier 1.
           - label: macos-aarch64
+            runner: macos-14
             target: aarch64-apple-darwin
             os: macos
             archive: tar.gz
@@ -69,6 +75,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      # Bootstrap rust-embed assets (ADR-033): archctl/assets-stack/ is
+      # gitignored; the crate cannot compile without it.
+      - name: Bootstrap assets-stack
+        run: scripts/embed-stack.sh
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
