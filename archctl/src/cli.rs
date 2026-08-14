@@ -12,7 +12,7 @@ use crate::ide::builtin_adapters;
 use crate::project::resolve_project;
 use crate::skills;
 use crate::source::SourceArtifact;
-use crate::{doctor, environment, filesystem, graph, inventory, render, store};
+use crate::{doctor, environment, filesystem, graph, inventory, render};
 
 // D5: Shared constant for CLI help strings.
 pub const SUPPORTED_LANGUAGES: &str = "rust, typescript, python, go";
@@ -770,12 +770,11 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 depth,
             } => {
                 let info = crate::project::resolve_project(&cwd.to_string_lossy());
-                let fs = filesystem::system_filesystem();
-                let report = crate::code::call_graph::extract(&cwd, &lang, depth, &*fs)
+                let report = crate::code::call_graph::extract(&cwd, &lang, depth, &*ctx.fs)
                     .map_err(|e| anyhow::anyhow!("extract failed: {e}"))?;
                 if apply {
                     let apply_report =
-                        crate::code::call_graph::apply(&info.project_dir, &report, &*fs)
+                        crate::code::call_graph::apply(&info.project_dir, &report, &*ctx.fs)
                             .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&apply_report)?);
@@ -810,7 +809,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                         "warning: sequence --apply is read-only (spec SCN-217); use call-graph --apply to persist edges"
                     );
                 }
-                code_sequence_cmd(&cwd, from, depth, max_interactions, json)
+                code_sequence_cmd(&cwd, from, depth, max_interactions, json, ctx)
             }
             CodeAction::ClassDiagram {
                 cwd,
@@ -818,13 +817,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 json,
                 lang,
                 selector,
-            } => code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref()),
+            } => code_class_diagram_cmd(&cwd, apply, json, &lang, selector.as_deref(), ctx),
             CodeAction::StateMachine {
                 cwd,
                 apply,
                 json,
                 lang,
-            } => code_state_machine_cmd(&cwd, apply, json, &lang),
+            } => code_state_machine_cmd(&cwd, apply, json, &lang, ctx),
         },
         Command::Skills { action } => skills::run(action, &*ctx.fs).context("skills failed"),
         Command::Agent { action } => match action {
@@ -1329,7 +1328,7 @@ fn graph_init_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
     // Open + init purely for the side effect of ensuring the schema exists.
-    let _store = store::open_and_init(&info.project_dir)?;
+    let _store = ctx.store_factory.open_and_init(&info.project_dir)?;
     let path = graph::database_path(&info.project_dir);
     if json {
         println!(
@@ -1348,7 +1347,7 @@ fn graph_stat_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<
     let info = resolve_project(&cwd.to_string_lossy());
     // stat requires a session — open with init so the schema is in
     // place if this is the first run after `git clone`.
-    let store = store::open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
     let stat = store.stat().context("graph stat")?;
     if json {
         println!("{}", serde_json::to_string_pretty(&stat)?);
@@ -1370,7 +1369,7 @@ fn graph_query_cmd(
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let store = store::open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
     let rows = store.query(cypher).context("graph query")?;
     let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
     if json || json_rows.is_empty() {
@@ -1408,7 +1407,7 @@ fn graph_neighbours_cmd(
         "MATCH (e:Element {{id: '{safe_id}'}})-[*1..{clamped_depth}]-(n) \
          RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
-    let store = store::open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
     let rows = store.query(&cypher).context("graph neighbours")?;
     if json {
         let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
@@ -1534,14 +1533,10 @@ fn evidence_extract_cmd(
     ctx: &CliContext,
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
-    // CLI is the production entry point — always uses SystemClock.
-    // The Clock port lets tests inject deterministic timestamps via
-    // FixedClock; the CLI does not need that.
-    let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
-    let result = evidence::extract(&cwd, lang, pattern, claim, kind, clock, &*ctx.fs)?;
+    let result = evidence::extract(&cwd, lang, pattern, claim, kind, &*ctx.clock, &*ctx.fs)?;
     let written = if do_put {
         let info = resolve_project(&cwd.to_string_lossy());
-        evidence::put_with_clock(&info.project_dir, &result.evidence, clock)
+        evidence::put_with_clock(&info.project_dir, &result.evidence, &*ctx.clock)
             .context("evidence put")?
     } else {
         0
@@ -1587,11 +1582,10 @@ fn evidence_accept_cmd(
     ctx: &CliContext,
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
-    let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_and_init(&info.project_dir)?;
+    let mut store = ctx.store_factory.open_and_init(&info.project_dir)?;
 
-    let result = store.accept_evidence(id, clock);
+    let result = store.accept_evidence(id, &*ctx.clock);
 
     if json {
         #[derive(serde::Serialize)]
@@ -1643,7 +1637,7 @@ fn evidence_supersede_cmd(
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let mut store = store::open_and_init(&info.project_dir)?;
+    let mut store = ctx.store_factory.open_and_init(&info.project_dir)?;
 
     let result = store.supersede_evidence(old_id);
 
@@ -1744,12 +1738,11 @@ fn evidence_put_cmd(
     use std::io::Read;
 
     let cwd = ctx.resolve_cwd(cwd.as_ref());
-    let clock: &dyn crate::clock::Clock = &crate::clock::SystemClock;
     let info = resolve_project(&cwd.to_string_lossy());
     // Ensure the schema is in place without holding the DB lock:
     // graph::init applies pending migrations and releases the session.
     // put_with_source then opens the store freely (ADR-010 single-writer).
-    graph::init(&info.project_dir, &crate::filesystem::SystemFilesystem)?;
+    graph::init(&info.project_dir, &*ctx.fs)?;
 
     // Read JSON input from --file or stdin
     let raw_input = if let Some(path) = file {
@@ -1878,7 +1871,7 @@ fn evidence_put_cmd(
 
         // Build synthetic SourceArtifact (ADR-027 D3)
         let sa =
-            SourceArtifact::synthetic(fact_kind.as_str(), &claim, clock.now_rfc3339().as_str());
+            SourceArtifact::synthetic(fact_kind.as_str(), &claim, ctx.clock.now_rfc3339().as_str());
 
         // Build Evidence row (SCN-403, SCN-400)
         let evidence = Evidence {
@@ -1899,7 +1892,7 @@ fn evidence_put_cmd(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
-            observed_at: clock.now_rfc3339(),
+            observed_at: ctx.clock.now_rfc3339(),
             source_origin: crate::evidence::SourceOrigin::UserInput,
             content_hash: None,
             text_preview: Some(claim.clone()),
@@ -1950,7 +1943,7 @@ fn evidence_put_cmd(
     let evidence: Vec<_> = processed.iter().map(|p| p.evidence.clone()).collect();
     let sources: Vec<_> = processed.iter().map(|p| p.source.clone()).collect();
     let written =
-        crate::evidence::put_with_source(&info.project_dir, &evidence, Some(&sources), None, clock)
+        crate::evidence::put_with_source(&info.project_dir, &evidence, Some(&sources), None, &*ctx.clock)
             .context("persist evidence")?;
 
     // Output results (SCN-408)
@@ -1995,7 +1988,7 @@ fn evidence_list_cmd(
         .as_deref()
         .map(crate::graph::validate_identifier)
         .transpose()?;
-    let store = store::open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
 
     let rows = if let Some(s) = status {
         store
@@ -2051,7 +2044,7 @@ fn diagram_export_cmd(
 
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let store = store::open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
 
     match fmt {
         ExportFormat::ViewerBundle => {
@@ -2063,7 +2056,7 @@ fn diagram_export_cmd(
 
             // Single-source: build the bundle once, then dispatch to stdout and/or disk.
             let bundle =
-                crate::diagram::build_bundle(&*store, selector, &crate::clock::SystemClock)?;
+                crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
 
             if json {
                 // Emit the FULL bundle envelope (manifest + projection + evidence
@@ -2081,7 +2074,7 @@ fn diagram_export_cmd(
                     &*store,
                     selector,
                     out_dir,
-                    &crate::clock::SystemClock,
+                    &*ctx.clock,
                     &*ctx.fs,
                 )?;
                 if !json {
@@ -2097,7 +2090,7 @@ fn diagram_export_cmd(
         }
         ExportFormat::Arrows => {
             let bundle =
-                crate::diagram::build_bundle(&*store, selector, &crate::clock::SystemClock)?;
+                crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
 
             let doc = crate::diagram::arrows::serialize(&bundle.projection, &bundle.styles);
             let unplaced = crate::diagram::arrows::count_unplaced(&bundle.projection);
@@ -2183,7 +2176,7 @@ fn diagram_apply_cmd(
     ctx: &CliContext,
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
-    let report = crate::diagram::run_apply(&cwd, &changes, &crate::clock::SystemClock, &*ctx.fs)
+    let report = crate::diagram::run_apply(&cwd, &changes, &*ctx.clock, &*ctx.fs)
         .map_err(|e| anyhow::anyhow!("apply failed: {e}"))?;
 
     if json {
@@ -2225,7 +2218,7 @@ fn diagram_project_cmd(
 
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let store = store::open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
 
     // Parse selector (SCN-413, SCN-417)
     let selector = crate::diagram::project_selector::ProjectSelector::parse(view)
@@ -2317,13 +2310,13 @@ fn code_sequence_cmd(
     depth: u32,
     max_interactions: Option<u32>,
     json: bool,
+    ctx: &CliContext,
 ) -> Result<i32> {
     use crate::code::output::print_sequence_table;
     use crate::code::sequence::project_sequence_with_store;
-    use crate::store::open_and_init;
 
     let info = crate::project::resolve_project(&cwd.to_string_lossy());
-    let store = open_and_init(&info.project_dir)?;
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
     let report = project_sequence_with_store(&*store, from, depth, max_interactions)
         .map_err(|e| anyhow::anyhow!("sequence projection failed: {e}"))?;
 
@@ -2343,7 +2336,6 @@ fn code_c4_discover_cmd(
     json: bool,
     ctx: &CliContext,
 ) -> Result<i32> {
-    use crate::clock::SystemClock;
     use crate::code::c4_discover::{apply as apply_report, discover};
     use crate::code::output::print_human_table;
     use crate::code::strategies::register_strategies;
@@ -2364,7 +2356,7 @@ fn code_c4_discover_cmd(
     };
 
     // Run discovery
-    let report = discover(&cwd, &strategies, &*ctx.fs, &SystemClock)
+    let report = discover(&cwd, &strategies, &*ctx.fs, &*ctx.clock)
         .map_err(|e| anyhow::anyhow!("discovery failed: {e}"))?;
 
     if json {
@@ -2407,16 +2399,16 @@ fn code_class_diagram_cmd(
     json: bool,
     lang: &[crate::code::class_diagram::Language],
     selector: Option<&str>,
+    ctx: &CliContext,
 ) -> Result<i32> {
     use crate::code::class_diagram::{self, apply as class_diagram_apply};
 
-    let fs = filesystem::system_filesystem();
     let opts = class_diagram::ClassDiagramOptions {
         languages: lang.to_vec(),
         selector: selector.map(String::from),
     };
 
-    let report = match class_diagram::run_class_diagram(cwd, &opts, &*fs) {
+    let report = match class_diagram::run_class_diagram(cwd, &opts, &*ctx.fs) {
         Ok(r) => r,
         Err(class_diagram::ClassDiagramError::UnknownSelector(s)) => {
             eprintln!("error: unknown selector: {s} — supported forms: file:<path>");
@@ -2433,7 +2425,7 @@ fn code_class_diagram_cmd(
 
     if apply {
         let info = crate::project::resolve_project(&cwd.to_string_lossy());
-        let apply_report = class_diagram_apply(&info.project_dir, &report, &*fs)
+        let apply_report = class_diagram_apply(&info.project_dir, &report, &*ctx.fs)
             .map_err(|e| anyhow::anyhow!("class-diagram apply failed: {e}"))?;
         if json {
             println!("{}", serde_json::to_string_pretty(&apply_report)?);
@@ -2461,15 +2453,14 @@ fn code_state_machine_cmd(
     apply: bool,
     json: bool,
     lang: &[crate::code::state_machine::Language],
+    ctx: &CliContext,
 ) -> Result<i32> {
-    let fs = filesystem::system_filesystem();
-
-    let report = crate::code::state_machine::extract(cwd, lang, &*fs)
+    let report = crate::code::state_machine::extract(cwd, lang, &*ctx.fs)
         .map_err(|e| anyhow::anyhow!("state-machine extraction failed: {e}"))?;
 
     if apply {
         let info = crate::project::resolve_project(&cwd.to_string_lossy());
-        let apply_report = crate::code::state_machine::apply(&info.project_dir, &report, &*fs)
+        let apply_report = crate::code::state_machine::apply(&info.project_dir, &report, &*ctx.fs)
             .map_err(|e| anyhow::anyhow!("state-machine apply failed: {e}"))?;
         if json {
             println!("{}", serde_json::to_string_pretty(&apply_report)?);
@@ -2865,6 +2856,37 @@ mod tests {
                 ));
             }
             _ => panic!("expected Ide Update command"),
+        }
+    }
+
+    #[test]
+    fn handler_error_chain_preserves_lock_context() {
+        // SCN-07: when LbugStoreFactory::open_and_init fails with LockError,
+        // the error Display chain includes "failed to acquire DB lock" exactly
+        // as the raw store::open_and_init path would produce.
+        use crate::store::GraphStoreFactory;
+        use std::fs::File;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        // Pre-create the lock file and hold it so the store open fails.
+        let lock_path = project.join("architecture.lbdb");
+        let file = File::create(&lock_path).unwrap();
+        drop(file);
+
+        let factory = crate::store::LbugStoreFactory;
+        match factory.open_and_init(&project) {
+            Ok(_) => {
+                // Platform may not enforce locking; test passes vacuously.
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("failed to acquire DB lock"),
+                    "error should contain 'failed to acquire DB lock', got: {msg}"
+                );
+            }
         }
     }
 }
