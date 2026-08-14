@@ -1345,11 +1345,14 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::code::apply_common::escape_cypher_string;
-    use crate::store::{GraphStore, open_and_init};
+    use crate::store::{GraphStore, LbugStore};
 
     let start = Instant::now();
-    let mut store = open_and_init(project_dir).map_err(ClassDiagramError::GraphWrite)?;
+    let mut store = LbugStore::open(project_dir)
+        .map_err(|e| ClassDiagramError::GraphWrite(anyhow::anyhow!("open: {e}")))?;
+    store
+        .init()
+        .map_err(ClassDiagramError::GraphWrite)?;
 
     let mut elements_written = 0;
     let mut elements_skipped = 0;
@@ -1390,7 +1393,7 @@ pub fn apply(
     })?;
 
     let inner_result: Result<(), ClassDiagramError> = {
-        let s: &mut dyn GraphStore = store.as_mut();
+        let s: &mut LbugStore = &mut store;
 
         for mt in &meta_types {
             let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
@@ -1410,8 +1413,8 @@ pub fn apply(
                 TypeKind::Record => "uml.record",
             };
 
-            let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
-            let name_escaped = escape_cypher_string(&node.name);
+            let canonical_key_escaped = crate::store::escape_cypher_string(&node.canonical_key);
+            let name_escaped = crate::store::escape_cypher_string(&node.name);
             let id = format!("cd:{}", node.canonical_key);
 
             let version_props = serde_json::json!({
@@ -1421,7 +1424,7 @@ pub fn apply(
                 "members": node.members.len(),
             });
             let version_props_str = version_props.to_string();
-            let version_props_escaped = escape_cypher_string(&version_props_str);
+            let version_props_escaped = crate::store::escape_cypher_string(&version_props_str);
 
             let cypher = format!(
                 "MERGE (e:Element {{id: '{id}'}}) SET \
@@ -1464,7 +1467,7 @@ pub fn apply(
                 ClassEdgeKind::Composes => "uml.composition",
             };
 
-            let _canonical_key_escaped = escape_cypher_string(&edge.canonical_key);
+            let _canonical_key_escaped = crate::store::escape_cypher_string(&edge.canonical_key);
             let source_id = format!("cd:{}", edge.source);
             let target_id = format!("cd:{}", edge.target);
             let rel_id = format!("cd:{}→{}", edge.source, edge.target);
@@ -1474,7 +1477,7 @@ pub fn apply(
                 "confidence": edge.confidence,
             });
             let rel_props_str = rel_props.to_string();
-            let rel_props_escaped = escape_cypher_string(&rel_props_str);
+            let rel_props_escaped = crate::store::escape_cypher_string(&rel_props_str);
 
             let cypher = format!(
                 "MATCH (s:Element {{id: '{source_id}'}}), (t:Element {{id: '{target_id}'}}) \

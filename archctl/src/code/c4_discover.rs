@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use crate::code::apply_common::escape_cypher_string;
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
-use crate::store::GraphStore;
+use crate::store::{
+    ElementRepository, EvidenceRepository, GraphStore, LbugStore,
+};
 
 /// JSON Schema for DiscoverReport (JSON Schema 2020-12).
 pub const DISCOVER_REPORT_SCHEMA: &str =
@@ -219,39 +221,32 @@ fn c4_language_label(file: &str) -> &'static str {
 /// Write the Element node. `metatype` is the MetaType id (e.g. "mt.container", "mt.component").
 /// `element_id_prefix` is "container" or "component" (used in the element_id format).
 fn write_element(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     element_id: &str,
     container: &Container,
     version_id: &str,
     metatype: &str,
 ) -> Result<()> {
-    let canonical_key_escaped = escape_cypher_string(&container.canonical_key);
-    let name_escaped = escape_cypher_string(&container.name);
-    let cypher = format!(
-        "MERGE (e:Element {{id: '{element_id}'}}) SET \
-         e.kind_id = '{kind_id}', \
-         e.category = 'c4', \
-         e.canonical_key = '{canonical_key_escaped}', \
-         e.current_name = '{name_escaped}', \
-         e.current_status = 'active', \
-         e.current_confidence = {confidence}, \
-         e.current_version_id = '{version_id}';",
-        element_id = element_id,
-        kind_id = metatype,
-        canonical_key_escaped = canonical_key_escaped,
-        name_escaped = name_escaped,
-        confidence = container.confidence,
-        version_id = version_id,
-    );
-    store
-        .query(&cypher)
-        .with_context(|| format!("put_element {element_id}"))?;
+    ElementRepository::upsert_element(
+        store,
+        &crate::graph::Element {
+            id: element_id.to_string(),
+            kind_id: metatype.to_string(),
+            category: "c4".to_string(),
+            canonical_key: container.canonical_key.clone(),
+            current_name: container.name.clone(),
+            current_status: "active".to_string(),
+            current_confidence: container.confidence,
+            current_version_id: version_id.to_string(),
+        },
+    )
+    .with_context(|| format!("put_element {element_id}"))?;
     Ok(())
 }
 
 /// Write the ElementVersion node for a Container. Returns the version_id.
 fn write_element_version(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     element_id: &str,
     container: &Container,
 ) -> Result<String> {
@@ -263,67 +258,42 @@ fn write_element_version(
         "discovery_schema_version": "1.0",
     });
     let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-    // Include element_id so each container gets a distinct ElementVersion
-    // (was a bug: all containers hashed to the same blake3 because
-    // version_props was identical for every candidate).
+    // Include element_id so each container gets a distinct ElementVersion.
     let version_id = format!(
         "blake3:{}",
         blake3::hash(format!("{version_props_str}:{element_id}").as_bytes()).to_hex()
     );
-    let version_props_escaped = escape_cypher_string(&version_props_str);
-    let name_escaped = escape_cypher_string(&container.name);
-
-    let cypher = format!(
-        "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
-         v.element_id = '{element_id}', \
-         v.name = '{name_escaped}', \
-         v.status = 'drafted', \
-         v.origin = 'c4-discover', \
-         v.confidence = {confidence}, \
-         v.props = '{version_props_escaped}';",
-        version_id = version_id,
-        element_id = element_id,
-        name_escaped = name_escaped,
-        confidence = container.confidence,
-        version_props_escaped = version_props_escaped,
-    );
-    store
-        .query(&cypher)
-        .with_context(|| format!("put_element_version {version_id}"))?;
+    let mut props_map = serde_json::Map::new();
+    for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
+        props_map.insert(k, v);
+    }
+    ElementRepository::upsert_element_version(
+        store,
+        &crate::graph::ElementVersion {
+            id: version_id.clone(),
+            element_id: element_id.to_string(),
+            name: container.name.clone(),
+            status: "drafted".to_string(),
+            origin: "c4-discover".to_string(),
+            confidence: container.confidence,
+            props: props_map,
+        },
+    )
+    .with_context(|| format!("put_element_version {version_id}"))?;
     Ok(version_id)
 }
 
 /// Write the CURRENT_VERSION, VERSION_OF, and OF_TYPE edges for an Element.
-/// Write the CURRENT_VERSION, VERSION_OF, and OF_TYPE edges for an Element.
 /// `metatype` is the MetaType id (e.g. "mt.container", "mt.component").
 fn link_element_edges(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     element_id: &str,
     version_id: &str,
     metatype: &str,
 ) -> Result<()> {
-    // CURRENT_VERSION: Element → ElementVersion
-    let cypher = format!(
-        "MATCH (e:Element {{id: '{element_id}'}}), (v:ElementVersion {{id: '{version_id}'}}) \
-         MERGE (e)-[:CURRENT_VERSION]->(v);"
-    );
-    store.query(&cypher).ok(); // best-effort edge creation
-
-    // VERSION_OF: ElementVersion → Element
-    let cypher = format!(
-        "MATCH (v:ElementVersion {{id: '{version_id}'}}), (e:Element {{id: '{element_id}'}}) \
-         MERGE (v)-[:VERSION_OF]->(e);"
-    );
-    store.query(&cypher).ok(); // best-effort edge creation
-
-    // OF_TYPE: Element → MetaType
-    let cypher = format!(
-        "MATCH (e:Element {{id: '{element_id}'}}), (mt:MetaType {{id: '{metatype}'}}) \
-         MERGE (e)-[:OF_TYPE]->(mt);",
-        metatype = metatype
-    );
-    store.query(&cypher).ok(); // best-effort edge creation
-
+    let _ = ElementRepository::link_current_version(store, element_id, version_id);
+    let _ = ElementRepository::link_version_of(store, element_id, version_id);
+    let _ = ElementRepository::link_of_type(store, element_id, metatype);
     Ok(())
 }
 
@@ -332,7 +302,7 @@ fn link_element_edges(
 
 /// Write an Evidence node and its two edges (SUPPORTED_BY, EXTRACTED_FROM).
 fn write_evidence(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     element_id: &str,
     version_id: &str,
     sa_id: &str,
@@ -345,17 +315,6 @@ fn write_evidence(
             .to_hex()
     );
 
-    let evidence_props = serde_json::json!({
-        "file_refs": [format!("{}:{}", evidence.file, evidence.line)],
-        "text": evidence.text,
-        "status": "drafted",
-    });
-    let ev_props_json = serde_json::to_string(&evidence_props).unwrap_or_default();
-    let ev_props_escaped = escape_cypher_string(&ev_props_json);
-    let evidence_text_escaped = escape_cypher_string(&evidence.text);
-    let file_escaped = escape_cypher_string(&evidence.file);
-    let strategy_escaped = escape_cypher_string(strategy);
-
     let kind_str = match evidence.kind {
         EvidenceKind::Structural => "structural",
         EvidenceKind::Config => "config",
@@ -364,51 +323,40 @@ fn write_evidence(
         EvidenceKind::Other => "other",
     };
 
-    let cypher = format!(
-        "MERGE (ev:Evidence {{id: '{evidence_id}'}}) SET \
-         ev.kind = '{kind}', \
-         ev.claim = '{text}', \
-         ev.path = '{file}', \
-         ev.start_line = {line}, \
-         ev.end_line = {line}, \
-         ev.tool_name = 'archctl', \
-         ev.tool_version = '{0}', \
-         ev.rule_id = 'c4-discover:{strategy_escaped}', \
-         ev.props = '{ev_props_escaped}';",
-        env!("CARGO_PKG_VERSION"),
-        evidence_id = evidence_id,
-        kind = kind_str,
-        text = evidence_text_escaped,
-        file = file_escaped,
-        line = evidence.line,
-        strategy_escaped = strategy_escaped,
-        ev_props_escaped = ev_props_escaped,
+    let mut props_map = serde_json::Map::new();
+    props_map.insert(
+        "file_refs".to_string(),
+        serde_json::Value::Array(vec![serde_json::Value::String(format!(
+            "{}:{}",
+            evidence.file, evidence.line
+        ))]),
     );
-    // `status` and `language` live in `ev.props` (per schema v1-initial),
-    // not as top-level Evidence columns. The legacy `.ok()` here silently
-    // swallowed schema errors and produced zero evidence rows — fixed.
-    store
-        .query(&cypher)
-        .context("write_evidence: MERGE Evidence")?;
-
-    // SUPPORTED_BY: ElementVersion → Evidence
-    let link_ev_cypher = format!(
-        "MATCH (v:ElementVersion {{id: '{version_id}'}}), (ev:Evidence {{id: '{evidence_id}'}}) \
-         MERGE (v)-[:SUPPORTED_BY]->(ev);"
+    props_map.insert(
+        "text".to_string(),
+        serde_json::Value::String(evidence.text.clone()),
     );
-    store
-        .query(&link_ev_cypher)
-        .with_context(|| format!("link SUPPORTED_BY {version_id} → {evidence_id}"))?;
-
-    // EXTRACTED_FROM: Evidence → SourceArtifact
-    let link_cypher = format!(
-        "MATCH (ev:Evidence {{id: '{evidence_id}'}}), (s:SourceArtifact {{id: '{sa_id}'}}) \
-         MERGE (ev)-[:EXTRACTED_FROM]->(s);"
+    props_map.insert(
+        "status".to_string(),
+        serde_json::Value::String("drafted".to_string()),
     );
-    store
-        .query(&link_cypher)
-        .with_context(|| format!("link EXTRACTED_FROM {evidence_id} → {sa_id}"))?;
 
+    EvidenceRepository::put_structural_evidence(
+        store,
+        &crate::graph::StructuralEvidence {
+            id: evidence_id.clone(),
+            kind: kind_str.to_string(),
+            claim: evidence.text.clone(),
+            file: evidence.file.clone(),
+            line: u64::from(evidence.line),
+            confidence: 0.85,
+            rule_id: format!("c4-discover:{}", strategy),
+            props: props_map,
+        },
+    )
+    .context("write_evidence: put_structural_evidence")?;
+
+    let _ = EvidenceRepository::link_supported_by(store, version_id, &evidence_id);
+    let _ = EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
     Ok(())
 }
 
@@ -421,10 +369,12 @@ pub fn apply(
     report: &DiscoverReport,
     fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
-    use crate::code::apply_common::{existing_canonical_keys, write_source_artifact};
-    use crate::store::open_and_init;
+    use crate::code::apply_common::write_source_artifact;
+    use crate::store::{ElementRepository, EvidenceRepository, GraphStore, LbugStore};
 
-    let mut store = open_and_init(project_dir)?;
+    let mut store = LbugStore::open(project_dir)
+        .map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
+    store.init().context("c4_discover apply: init")?;
 
     // Seed mt.container MetaType if it doesn't exist
     let seed_metatype_container = r#"
@@ -447,7 +397,7 @@ pub fn apply(
     let mut evidences_written = 0usize;
     let mut source_artifacts_written = 0usize;
 
-    let existing_keys = existing_canonical_keys(&*store)?;
+    let existing_keys = ElementRepository::existing_canonical_keys(&store)?;
 
     for container in &report.discovered {
         if existing_keys.contains(&container.canonical_key) {
@@ -462,11 +412,11 @@ pub fn apply(
         };
         let element_id = format!("c4:{}:{}", element_prefix, container.canonical_key);
 
-        let version_id = write_element_version(&mut *store, &element_id, container)?;
-        write_element(&mut *store, &element_id, container, &version_id, metatype)?;
+        let version_id = write_element_version(&mut store, &element_id, container)?;
+        write_element(&mut store, &element_id, container, &version_id, metatype)?;
         elements_written += 1;
 
-        link_element_edges(&mut *store, &element_id, &version_id, metatype)?;
+        link_element_edges(&mut store, &element_id, &version_id, metatype)?;
 
         // SourceArtifact deduplication map (keyed by file path)
         let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
@@ -480,14 +430,14 @@ pub fn apply(
                     .unwrap_or_default();
                 let lang_label = c4_language_label(&evidence.file);
                 let id =
-                    write_source_artifact(&mut *store, &evidence.file, &content_hash, lang_label)?;
+                    write_source_artifact(&mut store, &evidence.file, &content_hash, lang_label)?;
                 source_artifact_ids.insert(evidence.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id
             };
 
             write_evidence(
-                &mut *store,
+                &mut store,
                 &element_id,
                 &version_id,
                 &sa_id,
