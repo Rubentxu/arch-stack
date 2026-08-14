@@ -11,13 +11,25 @@ description = "Project diagnostics (XDG, identity, renderers, binaries) + scope 
 
 cargo_dir = "archctl"
 
-editable = ["archctl/src/doctor.rs"]
+editable = [
+  "archctl/src/doctor/",
+  "archctl/src/doctor/mod.rs",
+  "archctl/src/doctor/storage.rs",
+  "archctl/src/doctor/manifest.rs",
+  "archctl/src/doctor/runner.rs",
+]
 
 public_symbols = [
   "Finding",
   "Severity",
+  "DoctorScope",
   "run",
   "check_scope",
+  "run_scope",
+  "validate_manifests",
+  "LbugStorageProbe",
+  "run_smoke_gate",
+  "run_all_smoke_gates",
 ]
 
 must_hold = [
@@ -30,6 +42,11 @@ must_hold = [
   "check_all_scopes",
 ]
 
-minimum_tests = 0
+minimum_tests = 3
 
-must_not_contain = ["use std::fs::"]
+must_not_contain = [
+  "use std::fs::",
+  # doctor/storage.rs is the lbug adapter; other doctor modules
+  # should remain adapter-agnostic
+  "lbug::Connection",
+]

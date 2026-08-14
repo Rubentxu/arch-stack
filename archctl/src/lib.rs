@@ -45,6 +45,13 @@ pub use cli::{
     RenderFormat, SkillsAction, run,
 };
 pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
+pub use doctor::{
+    DoctorScope,
+    manifest::validate_manifests,
+    run_scope,
+    runner::{SmokeResult, run_all_smoke_gates, run_smoke_gate},
+    storage::{LbugStorageProbe, NativeProbe, ProbeResult, StorageProbe},
+};
 pub use environment::{
     Environment, FixedEnvironment, SystemEnvironment, fixed_environment, system_environment,
 };
