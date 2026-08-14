@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tree_sitter::{Parser, Tree};
 
 use crate::filesystem::Filesystem;
-use crate::store::GraphStore;
+use crate::store::{ElementRepository, GraphStore, LbugStore};
 
 /// JSON Schema for CallGraphReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -1360,8 +1360,9 @@ fn link_function_edges(
 ///   separate `RelationVersion` hop to access.
 /// - the call-graph writer is a single MERGE … CREATE round-trip;
 ///   the reified model would require 3 round-trips per edge.
+#[allow(dead_code)]
 fn write_call_edge(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     edge: &CallEdge,
     src_element_id: &str,
     sa_id: &str,
@@ -1380,27 +1381,11 @@ fn write_call_edge(
         "rel_id": rel_id,
     });
     let rel_props_str = serde_json::to_string(&rel_props).unwrap_or_default();
-    let rel_props_escaped = escape_cypher_string(&rel_props_str);
 
     // Try to find the callee Element by matching canonical_key pattern
-    // MVP: we don't do symbol resolution, so callee may not exist
-    //
-    // NOTE: The call-graph writer uses the direct edge model
-    // (Element→Element with props on SEMANTIC_EDGE). The reified model
-    // (SemanticRelation + REL_SOURCE/REL_TARGET/RELATION_TYPE +
-    // RelationVersion) is reserved in the schema for future use per
-    // ADR-009 deferral; see module-level doc comment for rationale.
-    //
-    // Use MERGE to avoid duplicates; set properties unconditionally.
+    // MVP: we don't do symbol resolution, so callee may not exist.
     let callee_escaped = escape_cypher_string(&edge.callee);
-    // Include all properties in MERGE so lbug accepts them (lbug requires relationship
-    // properties to be declared in the MERGE pattern, not added via SET afterward).
-    // version_id is captured on the Evidence node (see put_evidence)
-    // and on the Element's current_version_id pointer, not on the
-    // SEMANTIC_EDGE itself. The reified model with RelationVersion is
-    // reserved in the schema for future use.
-    // (only relation_id, predicate_id, active, order_key, props are declared).
-    // We omit it from the MERGE; the Evidence node tracks version lineage instead.
+    let safe_props = rel_props_str.replace('\'', "\\'");
     let cypher = format!(
         "MATCH (src:Element {{id: '{src_id}'}}) \
          OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
@@ -1410,65 +1395,55 @@ fn write_call_edge(
         src_id = src_element_id,
         callee = callee_escaped,
         rel_id = rel_id,
-        props = rel_props_escaped,
+        props = safe_props,
     );
-    // Note: errors are silently ignored (matches prior behavior for MVP)
-    let _ = store.query(&cypher);
+    // Note: errors are silently ignored (matches prior behavior for MVP).
+    // Inline cypher — the OPTIONAL MATCH + WITH/WHERE + MERGE pattern is
+    // hard to abstract into a repository without losing the callee-
+    // resolution semantics.
+    let _ = GraphStore::query(store, &cypher);
 
-    // Write Evidence for this call edge
+    // Evidence node via EvidenceRepository::put_structural_evidence
     let evidence_id = format!(
         "ev:{}",
         blake3::hash(edge.canonical_key.as_bytes()).to_hex()
     );
-    let evidence_props = serde_json::json!({
-        "file_refs": [format!("{}:{}", edge.file, edge.line)],
-        "status": "drafted",
-        "classification": "derived",
-    });
-    let ev_props_str = serde_json::to_string(&evidence_props).unwrap_or_default();
-    let ev_props_escaped = escape_cypher_string(&ev_props_str);
-    let file_escaped = escape_cypher_string(&edge.file);
-
-    let cypher_ev = format!(
-        "MERGE (ev:Evidence {{id: '{ev_id}'}}) SET \
-         ev.kind = 'structural', \
-         ev.claim = 'call-graph edge', \
-         ev.classification = 'derived', \
-         ev.confidence = {confidence}, \
-         ev.props = '{props}', \
-         ev.start_line = {line}, \
-         ev.end_line = {line}, \
-         ev.path = '{file}';",
-        ev_id = evidence_id,
-        props = ev_props_escaped,
-        confidence = edge.confidence,
-        line = edge.line,
-        file = file_escaped,
+    let mut ev_props = serde_json::Map::new();
+    ev_props.insert(
+        "file_refs".to_string(),
+        serde_json::Value::Array(vec![serde_json::Value::String(format!(
+            "{}:{}",
+            edge.file, edge.line
+        ))]),
     );
-    store
-        .query(&cypher_ev)
-        .with_context(|| format!("write_call_evidence {}", evidence_id))?;
+    ev_props.insert(
+        "status".to_string(),
+        serde_json::Value::String("drafted".to_string()),
+    );
+    ev_props.insert(
+        "classification".to_string(),
+        serde_json::Value::String("derived".to_string()),
+    );
+    crate::store::EvidenceRepository::put_structural_evidence(
+        store,
+        &crate::graph::StructuralEvidence {
+            id: evidence_id.clone(),
+            kind: "structural".to_string(),
+            claim: "call-graph edge".to_string(),
+            file: edge.file.clone(),
+            line: u64::from(edge.line),
+            confidence: edge.confidence,
+            rule_id: "call_graph_edge".to_string(),
+            props: ev_props,
+        },
+    )
+    .with_context(|| format!("write_call_evidence {}", evidence_id))?;
 
     // Link Evidence to SourceArtifact
-    let cypher_sa = format!(
-        "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
-         MATCH (sa:SourceArtifact {{id: '{sa_id}'}}) \
-         MERGE (ev)-[r:EXTRACTED_FROM]->(sa);",
-        ev_id = evidence_id,
-        sa_id = sa_id,
-    );
-    let _ = store.query(&cypher_sa);
+    let _ = crate::store::EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
 
-    // Link Evidence to ElementVersion via SUPPORTED_BY. See
-    // `c4_discover.rs:397` for the canonical pattern.
-    let cypher_el = format!(
-        "MATCH (ev:Evidence {{id: '{ev_id}'}}) \
-         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
-         MERGE (v)-[r:SUPPORTED_BY]->(ev);",
-        ev_id = evidence_id,
-        version_id = _version_id,
-    );
-    let _ = store.query(&cypher_el);
+    // Link Evidence to ElementVersion via SUPPORTED_BY
+    let _ = crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id);
 
     Ok(())
 }
@@ -1480,10 +1455,12 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::{existing_canonical_keys, write_source_artifact};
-    use crate::store::{GraphStore, open_and_init};
+    use crate::code::apply_common::write_source_artifact;
+    use crate::store::{GraphStore, LbugStore};
 
-    let mut store = open_and_init(project_dir).map_err(CallGraphError::GraphWrite)?;
+    let mut store = LbugStore::open(project_dir)
+        .map_err(|e| CallGraphError::GraphWrite(anyhow::anyhow!("failed to open store: {e}")))?;
+    store.init().map_err(CallGraphError::GraphWrite)?;
 
     // M32 BREAK-1: removed the inline seed MERGEs. MetaType/Predicate
     // rows now come from the migration runner (`docs/schema/`). The
@@ -1491,7 +1468,7 @@ pub fn apply(
     // happened inside the apply. The ApplyReport no longer carries
     // the field; CLI `--json` output drops it.
 
-    let existing_keys = existing_canonical_keys(&*store)
+    let existing_keys = ElementRepository::existing_canonical_keys(&store)
         .context("fetch existing keys")
         .map_err(CallGraphError::GraphWrite)?;
 
@@ -1530,12 +1507,11 @@ pub fn apply(
     // ≈ 100KB per query) vs N/BATCH_SIZE query roundtrips. For echo
     // 1307 elements: ~3 queries instead of ~6535. Expected additional
     // 2-10× speedup over PR1's transaction wrap.
-    const BATCH_SIZE: usize = 500;
 
     // Scope the mutable borrow of `store` so we can re-borrow for
     // commit/rollback after.
     let inner_result: Result<(), CallGraphError> = {
-        let s: &mut dyn GraphStore = store.as_mut();
+        let s: &mut LbugStore = &mut store;
 
         // Pre-compute SourceArtifact IDs for all unique files (in memory).
         // Same per-file dedup as PR1; just hoisted out of the per-node loop
@@ -1566,175 +1542,66 @@ pub fn apply(
             .filter(|n| !existing_keys.contains(&n.canonical_key))
             .collect();
 
-        // UNWIND batched ElementVersion writes.
-        for chunk in candidate_nodes.chunks(BATCH_SIZE) {
-            let batch_rows: Vec<String> = chunk
-                .iter()
-                .map(|n| {
-                    let version_props = serde_json::json!({
-                        "kind": format!("{:?}", n.kind).to_lowercase(),
-                        "language": lang_label(&n.language),
-                        "confidence": n.confidence,
-                        "call_graph_schema_version": "1.0",
-                    });
-                    let version_props_str =
-                        serde_json::to_string(&version_props).unwrap_or_default();
-                    let version_id = format!(
-                        "cgv:{}",
-                        blake3::hash(version_props_str.as_bytes()).to_hex()
-                    );
-                    format!(
-                        "{{id: '{}', element_id: '{}', name: '{}', status: 'drafted', origin: 'call-graph', confidence: {}, props: '{}'}}",
-                        escape_cypher_string(&version_id),
-                        escape_cypher_string(&format!("cg:{}", n.canonical_key)),
-                        escape_cypher_string(&n.name),
-                        n.confidence,
-                        escape_cypher_string(&version_props_str),
-                    )
-                })
-                .collect();
-
-            let cypher = format!(
-                "UNWIND [{}] AS row MERGE (v:ElementVersion {{id: row.id}}) SET \
-                 v.element_id = row.element_id, \
-                 v.name = row.name, \
-                 v.status = row.status, \
-                 v.origin = row.origin, \
-                 v.confidence = row.confidence, \
-                 v.props = row.props;",
-                batch_rows.join(", ")
+        // Per-node repository writes (P1-03: no inline Cypher in apply paths).
+        // M32 batched UNWIND is preserved as an internal optimisation path
+        // (`_legacy_*`); new code goes through `ElementRepository::*`.
+        for n in &candidate_nodes {
+            let version_props = serde_json::json!({
+                "kind": format!("{:?}", n.kind).to_lowercase(),
+                "language": lang_label(&n.language),
+                "confidence": n.confidence,
+                "call_graph_schema_version": "1.0",
+            });
+            let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+            let version_id = format!(
+                "cgv:{}",
+                blake3::hash(version_props_str.as_bytes()).to_hex()
             );
-            s.query(&cypher)
-                .context("UNWIND ElementVersion batch")
-                .map_err(CallGraphError::GraphWrite)?;
-            elements_written += chunk.len();
-        }
-
-        // UNWIND batched Element writes.
-        for chunk in candidate_nodes.chunks(BATCH_SIZE) {
-            let batch_rows: Vec<String> = chunk
-                .iter()
-                .map(|n| {
-                    let version_props = serde_json::json!({
-                        "kind": format!("{:?}", n.kind).to_lowercase(),
-                        "language": lang_label(&n.language),
-                        "confidence": n.confidence,
-                        "call_graph_schema_version": "1.0",
-                    });
-                    let version_props_str =
-                        serde_json::to_string(&version_props).unwrap_or_default();
-                    let version_id = format!(
-                        "cgv:{}",
-                        blake3::hash(version_props_str.as_bytes()).to_hex()
-                    );
-                    let kind_id = match n.kind {
-                        FunctionKind::Function => "code.function",
-                        FunctionKind::Method => "code.method",
-                        FunctionKind::Closure => "code.closure",
-                    };
-                    format!(
-                        "{{id: '{}', kind_id: '{}', category: 'code', canonical_key: '{}', current_name: '{}', current_status: 'active', current_version_id: '{}', current_confidence: {}}}",
-                        escape_cypher_string(&format!("cg:{}", n.canonical_key)),
-                        kind_id,
-                        escape_cypher_string(&n.canonical_key),
-                        escape_cypher_string(&n.name),
-                        escape_cypher_string(&version_id),
-                        n.confidence,
-                    )
-                })
-                .collect();
-
-            let cypher = format!(
-                "UNWIND [{}] AS row MERGE (e:Element {{id: row.id}}) SET \
-                 e.kind_id = row.kind_id, \
-                 e.category = row.category, \
-                 e.canonical_key = row.canonical_key, \
-                 e.current_name = row.current_name, \
-                 e.current_status = row.current_status, \
-                 e.current_version_id = row.current_version_id, \
-                 e.current_confidence = row.current_confidence;",
-                batch_rows.join(", ")
-            );
-            s.query(&cypher)
-                .context("UNWIND Element batch")
-                .map_err(CallGraphError::GraphWrite)?;
-        }
-
-        // UNWIND batched CURRENT_VERSION + VERSION_OF edges.
-        for chunk in candidate_nodes.chunks(BATCH_SIZE) {
-            // CURRENT_VERSION: Element → ElementVersion
-            let cv_rows: Vec<String> = chunk
-                .iter()
-                .map(|n| {
-                    let version_props = serde_json::json!({
-                        "kind": format!("{:?}", n.kind).to_lowercase(),
-                        "language": lang_label(&n.language),
-                        "confidence": n.confidence,
-                        "call_graph_schema_version": "1.0",
-                    });
-                    let version_props_str =
-                        serde_json::to_string(&version_props).unwrap_or_default();
-                    let version_id = format!(
-                        "cgv:{}",
-                        blake3::hash(version_props_str.as_bytes()).to_hex()
-                    );
-                    format!(
-                        "{{element_id: '{}', version_id: '{}'}}",
-                        escape_cypher_string(&format!("cg:{}", n.canonical_key)),
-                        escape_cypher_string(&version_id),
-                    )
-                })
-                .collect();
-            let cv_cypher = format!(
-                "UNWIND [{}] AS row \
-                 MATCH (e:Element {{id: row.element_id}}) \
-                 MATCH (v:ElementVersion {{id: row.version_id}}) \
-                 MERGE (e)-[r:CURRENT_VERSION]->(v);",
-                cv_rows.join(", ")
-            );
-            s.query(&cv_cypher)
-                .context("UNWIND CURRENT_VERSION batch")
-                .map_err(CallGraphError::GraphWrite)?;
-
-            // VERSION_OF: ElementVersion → Element
-            let vo_cypher = format!(
-                "UNWIND [{}] AS row \
-                 MATCH (e:Element {{id: row.element_id}}) \
-                 MATCH (v:ElementVersion {{id: row.version_id}}) \
-                 MERGE (v)-[r:VERSION_OF]->(e);",
-                cv_rows.join(", ")
-            );
-            s.query(&vo_cypher)
-                .context("UNWIND VERSION_OF batch")
-                .map_err(CallGraphError::GraphWrite)?;
-
-            // OF_TYPE: Element → MetaType (3 separate batches — one per kind).
-            // We could batch by kind_id, but the simple approach is one batch
-            // per kind for the whole candidate set. For now keep it per-chunk
-            // to avoid building a third mapping structure.
-            let kind_id = match chunk.first().map(|n| n.kind) {
-                Some(FunctionKind::Function) => "code.function",
-                Some(FunctionKind::Method) => "code.method",
-                Some(FunctionKind::Closure) => "code.closure",
-                None => continue,
+            let kind_id = match n.kind {
+                FunctionKind::Function => "code.function",
+                FunctionKind::Method => "code.method",
+                FunctionKind::Closure => "code.closure",
             };
-            let ot_rows: Vec<String> = chunk
-                .iter()
-                .map(|n| {
-                    format!(
-                        "'{}'",
-                        escape_cypher_string(&format!("cg:{}", n.canonical_key))
-                    )
-                })
-                .collect();
-            let ot_cypher = format!(
-                "UNWIND [{}] AS eid MATCH (e:Element {{id: eid}}) MATCH (mt:MetaType {{id: '{}'}}) MERGE (e)-[r:OF_TYPE]->(mt);",
-                ot_rows.join(", "),
-                kind_id,
-            );
-            s.query(&ot_cypher)
-                .context("UNWIND OF_TYPE batch")
+
+            s.upsert_element(&crate::graph::Element {
+                id: format!("cg:{}", n.canonical_key),
+                kind_id: kind_id.to_string(),
+                category: "code".to_string(),
+                canonical_key: n.canonical_key.clone(),
+                current_name: n.name.clone(),
+                current_status: "active".to_string(),
+                current_confidence: n.confidence,
+                current_version_id: version_id.clone(),
+            })
+            .context("upsert_element")
+            .map_err(CallGraphError::GraphWrite)?;
+
+            let mut props_map = serde_json::Map::new();
+            for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
+                props_map.insert(k, v);
+            }
+            s.upsert_element_version(&crate::graph::ElementVersion {
+                id: version_id.clone(),
+                element_id: format!("cg:{}", n.canonical_key),
+                name: n.name.clone(),
+                status: "drafted".to_string(),
+                origin: "call-graph".to_string(),
+                confidence: n.confidence,
+                props: props_map,
+            })
+            .context("upsert_element_version")
+            .map_err(CallGraphError::GraphWrite)?;
+
+            s.link_current_version(&format!("cg:{}", n.canonical_key), &version_id)
+                .context("link_current_version")
                 .map_err(CallGraphError::GraphWrite)?;
+            s.link_version_of(&format!("cg:{}", n.canonical_key), &version_id)
+                .context("link_version_of")
+                .map_err(CallGraphError::GraphWrite)?;
+            s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
+                .context("link_of_type")
+                .map_err(CallGraphError::GraphWrite)?;
+            elements_written += 1;
         }
 
         // Write call edges (per-edge, since the OPTIONAL MATCH semantics

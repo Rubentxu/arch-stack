@@ -354,6 +354,40 @@ mod tests {
         view_members: Vec<crate::diagram::view_types::ViewMember>,
     }
 
+    impl crate::store::DiagramRepository for MockGraphStore {
+        fn list_elements(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
+            // run_export → query_elements → DiagramRepository::list_elements
+            // path; the run_export tests use `&dyn GraphStore` and the
+            // MockGraphStore's `query()` impl handles `MATCH (E:ELEMENT)`.
+            // This list_elements exists only to satisfy the super-trait
+            // bound.
+            Ok(Vec::new())
+        }
+        fn list_semantic_edges(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
+            Ok(Vec::new())
+        }
+        fn list_evidence_for_versions(
+            &self,
+            _: &[String],
+        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
+            Ok(Vec::new())
+        }
+        fn list_version_props(
+            &self,
+            _: &[String],
+        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
+            Ok(Vec::new())
+        }
+    }
+
     impl MockGraphStore {
         fn new(
             elements: Vec<Row>,
@@ -599,6 +633,69 @@ mod tests {
             Ok(self.view_members.clone())
         }
         fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl crate::store::ElementRepository for MockGraphStore {
+        fn upsert_element(&mut self, _: &crate::graph::Element) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn upsert_element_version(
+            &mut self,
+            _: &crate::graph::ElementVersion,
+        ) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_current_version(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_version_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_of_type(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn existing_canonical_keys(&self) -> anyhow::Result<std::collections::HashSet<String>> {
+            let mut out = std::collections::HashSet::new();
+            for row in &self.elements {
+                if let Some(crate::row::Cell::String(k)) = row.get("e.canonical_key") {
+                    out.insert(k.clone());
+                }
+            }
+            Ok(out)
+        }
+    }
+
+    impl crate::store::EvidenceRepository for MockGraphStore {
+        fn put_structural_evidence(
+            &mut self,
+            _: &crate::graph::StructuralEvidence,
+        ) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_supported_by(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl crate::store::SourceRepository for MockGraphStore {
+        fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl crate::store::EvaluationRepository for MockGraphStore {
+        fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
             unimplemented!()
         }
     }

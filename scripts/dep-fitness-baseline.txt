@@ -1,11 +1,11 @@
-4
+3
 # dep-fitness baseline — finding count ratchet (P1-09 report-only).
 # Edit DOWN as violations are paid down; never up without an ADR.
 #
-# Current findings (2026-08-14, Wave 1 item 8):
-#   1. domain!->lbug              archctl/src/graph.rs:2
-#      Legacy: graph.rs (domain) holds create_db_session/lbug session helpers.
-#      Paydown: P1-03/P1-04 repository ports move lbug behind store.rs adapter.
+# Current findings (2026-08-15, post-P1-03):
+#   1. [PAID DOWN P1-03] domain!->lbug  archctl/src/graph.rs:2
+#      Domain repository traits (ElementRepository, EvidenceRepository, …)
+#      live in store.rs; graph.rs no longer imports `use lbug::{…}`.
 #   2. application!->std::process archctl/src/doctor/mod.rs:29
 #   3. application!->std::process archctl/src/doctor/storage.rs:20
 #      NativeProbe runs the lbug native binary to compare crate/native ABI

@@ -61,7 +61,8 @@ pub use filesystem::{
     system_filesystem,
 };
 pub use graph::{
-    GraphStat, database_path, init as graph_init, neighbours, open_session, query as graph_query,
+    Element, ElementRow, ElementVersion, GraphStat, SemanticEdgeRow, StructuralEvidence,
+    VersionPropsRow, database_path, init as graph_init, neighbours, query as graph_query,
     stat as graph_stat, validate_identifier,
 };
 pub use identity::{
@@ -79,5 +80,8 @@ pub use skills::{
     sync_skill, sync_skills, verify_skills,
 };
 pub use source::SourceArtifact;
-pub use store::{GraphStoreFactory, LbugStoreFactory};
+pub use store::{
+    DiagramRepository, ElementRepository, EvaluationRepository, EvidenceRepository,
+    GraphStoreFactory, LbugStoreFactory, SourceRepository,
+};
 pub use xdg::{XdgLayout, ensure_xdg, resolve_xdg, user_home};
