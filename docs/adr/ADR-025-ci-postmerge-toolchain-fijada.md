@@ -10,6 +10,13 @@
 > La **prevención** ocurre localmente: `scripts/verify-local.sh` (pre-push, tier barato)
 > y `--full` antes de mergear. El rol del CI remoto ya no es bloquear PRs, sino
 > **evidencia de detección y punto de rollback** tras cada merge a `main`.
+>
+> **Amendment 2026-08-14:** el hook pre-push `.githooks/pre-push` fue **eliminado**.
+> La prevención local queda a cargo de los gates SDDK (verify/debt-verify) para
+> trabajo de ciclo y de `scripts/verify-local.sh` ejecutado manualmente fuera de
+> ciclo. Motivo: el hook validaba cada commit del push en un worktree temporal
+> (tax O(N) por push) duplicando gates que el framework SDDK ya ejecuta. El
+> hook `commit-msg` (conventional commits) se conserva.
 
 ## Contexto
 

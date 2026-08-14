@@ -365,98 +365,15 @@ require "check-bundle-cap.sh accepts within-limit bundle" \
 rm -rf "$CAP_DIR"
 
 # ---------------------------------------------------------------------------
-# 9. Pre-push hook wiring + behavioral ref validation.
+# 9. install-hooks wiring (commit-msg only; pre-push removed 2026-08-14 —
+#    redundant with SDDK gates, O(N) per-push tax).
 # ---------------------------------------------------------------------------
-PRE_PUSH=".githooks/pre-push"
-require "pre-push hook exists" test -f "$PRE_PUSH"
-require "pre-push hook executable" test -x "$PRE_PUSH"
+require "commit-msg hook exists" test -f .githooks/commit-msg
+require "commit-msg hook executable" test -x .githooks/commit-msg
 require "install-hooks.sh sets core.hooksPath" \
   grep -q 'core.hooksPath' scripts/install-hooks.sh
-require "install-hooks.sh covers pre-push" \
-  grep -q 'pre-push' scripts/install-hooks.sh
-
-# Behavioral: the hook must consume Git's stdin ref lines (local_ref
-# local_sha remote_ref remote_sha), validate the pushed commits in a temp
-# worktree (never the ambient tree), skip zero-SHA deletions, handle
-# multiple refs, and clean up worktrees + git metadata on success/failure.
-SCRATCH="$(mktemp -d)"
-git -C "$SCRATCH" init -q
-git -C "$SCRATCH" config user.email test@example.com
-git -C "$SCRATCH" config user.name test
-mkdir -p "$SCRATCH/scripts" "$SCRATCH/.githooks"
-printf 'hello\n' > "$SCRATCH/f.txt"
-git -C "$SCRATCH" add f.txt
-git -C "$SCRATCH" commit -qm one
-SHA1="$(git -C "$SCRATCH" rev-parse HEAD)"
-printf 'world\n' >> "$SCRATCH/f.txt"
-git -C "$SCRATCH" commit -qam two
-SHA2="$(git -C "$SCRATCH" rev-parse HEAD)"
-
-# A fake verify-local.sh that records the worktree path it was invoked from.
-cat > "$SCRATCH/scripts/verify-local.sh" <<'FAKE'
-#!/usr/bin/env bash
-pwd >> "$PP_MARKER"
-exit "${PP_EXIT:-0}"
-FAKE
-chmod +x "$SCRATCH/scripts/verify-local.sh"
-cp "$PRE_PUSH" "$SCRATCH/.githooks/pre-push"
-chmod +x "$SCRATCH/.githooks/pre-push"
-
-ZERO="0000000000000000000000000000000000000000"
-PP_MARKER="$SCRATCH/marker"
-# One real push (SHA1) plus one deletion (zero SHA) on stdin.
-printf 'refs/heads/main %s refs/heads/main %s\nrefs/heads/del %s refs/heads/del %s\n' \
-  "$SHA1" "$SHA1" "$ZERO" "$ZERO" \
-  | (cd "$SCRATCH" && PP_MARKER="$PP_MARKER" .githooks/pre-push >/dev/null 2>&1)
-PP_EXIT=$?
-if [ "$PP_EXIT" -eq 0 ] && [ "$(wc -l < "$PP_MARKER")" -eq 1 ] \
-   && [ "$(cat "$PP_MARKER")" != "$SCRATCH" ] \
-   && [ "$(git -C "$SCRATCH" worktree list | wc -l)" -eq 1 ]; then
-  note_pass "pre-push validates pushed commit in worktree and skips deletion"
-else
-  note_fail "pre-push validates pushed commit in worktree and skips deletion (exit=$PP_EXIT, lines=$(wc -l < "$PP_MARKER" 2>/dev/null || echo 0), wts=$(git -C "$SCRATCH" worktree list | wc -l))"
-fi
-
-# Multiple refs: each unique pushed commit is validated, none from ambient tree.
-PP_MARKER="$SCRATCH/marker2"
-printf 'refs/heads/a %s refs/heads/a %s\nrefs/heads/b %s refs/heads/b %s\n' \
-  "$SHA1" "$SHA1" "$SHA2" "$SHA2" \
-  | (cd "$SCRATCH" && PP_MARKER="$PP_MARKER" .githooks/pre-push >/dev/null 2>&1)
-if [ "$(wc -l < "$PP_MARKER")" -eq 2 ] \
-   && [ "$(git -C "$SCRATCH" worktree list | wc -l)" -eq 1 ]; then
-  note_pass "pre-push validates multiple pushed commits"
-else
-  note_fail "pre-push validates multiple pushed commits (lines=$(wc -l < "$PP_MARKER" 2>/dev/null || echo 0), wts=$(git -C "$SCRATCH" worktree list | wc -l))"
-fi
-
-# Failure inside verify-local must propagate exit 1 AND still clean up.
-PP_MARKER="$SCRATCH/marker3"
-set +e
-printf 'refs/heads/main %s refs/heads/main %s\n' "$SHA1" "$SHA1" \
-  | (cd "$SCRATCH" && PP_MARKER="$PP_MARKER" PP_EXIT=1 .githooks/pre-push >/dev/null 2>&1)
-PP_FAIL_EXIT=$?
-set -e
-if [ "$PP_FAIL_EXIT" -eq 1 ] \
-   && [ "$(git -C "$SCRATCH" worktree list | wc -l)" -eq 1 ]; then
-  note_pass "pre-push failure exits 1 and cleans worktrees"
-else
-  note_fail "pre-push failure exits 1 and cleans worktrees (exit=$PP_FAIL_EXIT, wts=$(git -C "$SCRATCH" worktree list | wc -l))"
-fi
-
-# Missing verify-local.sh: fail closed with the documented remediation.
-rm "$SCRATCH/scripts/verify-local.sh"
-set +e
-printf 'refs/heads/main %s refs/heads/main %s\n' "$SHA1" "$SHA1" \
-  | (cd "$SCRATCH" && .githooks/pre-push >/dev/null 2>&1)
-PP_MISS_EXIT=$?
-PP_MISS_MSG="$(cd "$SCRATCH" && printf 'refs/heads/main %s refs/heads/main %s\n' "$SHA1" "$SHA1" | .githooks/pre-push 2>&1 || true)"
-set -e
-if [ "$PP_MISS_EXIT" -eq 1 ] && grep -q 'refusing push' <<<"$PP_MISS_MSG"; then
-  note_pass "pre-push fails closed when verify-local.sh missing"
-else
-  note_fail "pre-push fails closed when verify-local.sh missing (exit=$PP_MISS_EXIT)"
-fi
-rm -rf "$SCRATCH"
+require "pre-push hook is gone" \
+  bash -c '! compgen -G ".githooks/pre-push" >/dev/null'
 
 # ---------------------------------------------------------------------------
 # 10. ADR-025 recorded and indexed.
