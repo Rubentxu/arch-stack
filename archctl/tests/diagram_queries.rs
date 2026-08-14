@@ -13,7 +13,10 @@ use archctl::diagram::queries::{
     query_elements, query_evidence_for_versions, query_semantic_edges, query_version_props,
 };
 use archctl::row::{Cell, Row};
-use archctl::store::{DiagramOps, EvidenceOps, GraphStore, SourceOps};
+use archctl::store::{
+    DiagramOps, DiagramRepository, ElementRepository, EvaluationRepository, EvidenceOps,
+    EvidenceRepository, GraphStore, SourceOps, SourceRepository,
+};
 
 /// Build a Row from a flat list of (column, value) pairs.
 fn row_from_pairs(pairs: Vec<(&str, Cell)>) -> Row {
@@ -303,6 +306,92 @@ impl DiagramOps for TinyGraphStore {
         unimplemented!()
     }
     fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl ElementRepository for TinyGraphStore {
+    fn upsert_element(&mut self, _: &archctl::graph::Element) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn upsert_element_version(
+        &mut self,
+        _: &archctl::graph::ElementVersion,
+    ) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_current_version(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_version_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_of_type(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn existing_canonical_keys(&self) -> anyhow::Result<std::collections::HashSet<String>> {
+        unimplemented!()
+    }
+}
+
+impl EvidenceRepository for TinyGraphStore {
+    fn put_structural_evidence(
+        &mut self,
+        _: &archctl::graph::StructuralEvidence,
+    ) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_supported_by(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl SourceRepository for TinyGraphStore {
+    fn put_source(&mut self, _: &archctl::source::SourceArtifact) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl EvaluationRepository for TinyGraphStore {
+    fn put_evaluation(&mut self, _: &archctl::evaluation::Evaluation) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl DiagramRepository for TinyGraphStore {
+    fn list_elements(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> anyhow::Result<Vec<archctl::graph::ElementRow>> {
+        unimplemented!()
+    }
+    fn list_semantic_edges(
+        &self,
+        _: &str,
+    ) -> anyhow::Result<Vec<archctl::graph::SemanticEdgeRow>> {
+        unimplemented!()
+    }
+    fn list_evidence_for_versions(
+        &self,
+        _: &[String],
+    ) -> anyhow::Result<Vec<archctl::diagram::export_types::EvidenceEntry>> {
+        unimplemented!()
+    }
+    fn list_version_props(
+        &self,
+        _: &[String],
+    ) -> anyhow::Result<Vec<archctl::graph::VersionPropsRow>> {
         unimplemented!()
     }
 }

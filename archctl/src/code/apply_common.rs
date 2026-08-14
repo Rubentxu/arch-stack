@@ -65,7 +65,7 @@ pub fn write_source_artifact(
         "",
         env!("CARGO_PKG_VERSION"),
     );
-    store.put_source(&artifact)?;
+    crate::store::SourceOps::put_source(store, &artifact)?;
     Ok(artifact.id)
 }
 

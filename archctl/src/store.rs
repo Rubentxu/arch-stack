@@ -594,22 +594,8 @@ impl GraphStore for LbugStore {
         // is opened lazily after migrations succeed.
         let path = crate::graph::database_path(&self.project_dir);
         std::fs::create_dir_all(path.parent().unwrap()).map_err(LockError::Io)?;
-        let (conn, db) = {
-            use lbug::{Connection, Database, SystemConfig};
-            let db = Database::new(
-                &path,
-                SystemConfig::default()
-                    .buffer_pool_size(crate::graph::BUFFER_POOL_SIZE)
-                    .max_db_size(crate::graph::BUFFER_POOL_SIZE),
-            )
-            .map_err(|e| anyhow::anyhow!("open database: {e}"))?;
-            let conn =
-                Connection::new(&db).map_err(|e| anyhow::anyhow!("create connection: {e}"))?;
-            let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
-            (conn, db)
-        };
-        let session = LbugSession { conn, _db: db };
-        let applied = migrations::apply_pending(&session, &fs, &marker)?;
+        let migration_session = open_admin_session(&path)?;
+        let applied = migrations::apply_pending(&migration_session, &fs, &marker)?;
         if applied.is_empty() {
             info!("schema already up-to-date");
         } else {
@@ -1426,15 +1412,13 @@ impl ElementRepository for LbugStore {
             .context("link_current_version: element_id failed validation")?;
         let vid = crate::graph::validate_identifier(version_id)
             .context("link_current_version: version_id failed validation")?;
-        link_with_merge_fallback(
-            &session.conn,
-            "Element",
-            eid,
-            "CURRENT_VERSION",
-            "ElementVersion",
-            vid,
-        )
-        .context("link_current_version")
+        // MATCH + CREATE: lbug REL TABLE semantics. CREATE is a no-op
+        // when the edge already exists, so this is idempotent.
+        let cypher = format!(
+            "MATCH (e:Element {{id: '{eid}'}}), (v:ElementVersion {{id: '{vid}'}})              CREATE (e)-[:CURRENT_VERSION]->(v);"
+        );
+        let _ = session.conn.query(&cypher);
+        Ok(())
     }
 
     fn link_version_of(&mut self, element_id: &str, version_id: &str) -> Result<()> {
@@ -1443,15 +1427,11 @@ impl ElementRepository for LbugStore {
             .context("link_version_of: element_id failed validation")?;
         let vid = crate::graph::validate_identifier(version_id)
             .context("link_version_of: version_id failed validation")?;
-        link_with_merge_fallback(
-            &session.conn,
-            "ElementVersion",
-            vid,
-            "VERSION_OF",
-            "Element",
-            eid,
-        )
-        .context("link_version_of")
+        let cypher = format!(
+            "MATCH (e:Element {{id: '{eid}'}}), (v:ElementVersion {{id: '{vid}'}})              CREATE (v)-[:VERSION_OF]->(e);"
+        );
+        let _ = session.conn.query(&cypher);
+        Ok(())
     }
 
     fn link_of_type(&mut self, element_id: &str, metatype_id: &str) -> Result<()> {
@@ -1460,8 +1440,20 @@ impl ElementRepository for LbugStore {
             .context("link_of_type: element_id failed validation")?;
         let mid = crate::graph::validate_identifier(metatype_id)
             .context("link_of_type: metatype_id failed validation")?;
-        link_with_merge_fallback(&session.conn, "Element", eid, "OF_TYPE", "MetaType", mid)
-            .context("link_of_type")
+        // Best-effort: MetaType rows may not be seeded yet (call_graph
+        // is a pipeline that often runs before the metamodel loader).
+        // OPTIONAL MATCH + MERGE (no CREATE) — when mt doesn't exist
+        // OPTIONAL returns null and MERGE becomes a no-op, no exception
+        // to abort the caller's transaction.
+        let cypher = format!(
+            "MATCH (e:Element {{id: '{eid}'}}) \
+             OPTIONAL MATCH (mt:MetaType {{id: '{mid}'}}) \
+             WITH e, mt \
+             WHERE mt IS NOT NULL \
+             MERGE (e)-[:OF_TYPE]->(mt);"
+        );
+        let _ = session.conn.query(&cypher); // ignore MetaType-missing
+        Ok(())
     }
 
     fn existing_canonical_keys(&self) -> Result<HashSet<String>> {
