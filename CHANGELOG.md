@@ -6,10 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.42.0] — 2026-08-14
+
 ### Added
-- **P0-12** — Pre-merge CI workflow (`.github/workflows/pr.yml`): fast
-  deterministic checks on every PR (build, test, clippy, fmt, doctor,
-  script gates + ADR integrity). Benchmarks remain post-merge in `ci.yml`.
 - **P0-ladybug-doctor** — `archctl doctor --scope storage [--json]` checks
   LadybugDB (lbug) availability, schema initialization, and basic
   read/write operations. The new `doctor/` module (`archctl/src/doctor/`)
@@ -19,6 +18,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`archctlVersion`, `lbugCrateVersion`, `native`, `targetCompilerStdlib`,
   `findings[]`) per ADR-048. Integrates with Tier-1 CI smoke gate in
   `pr.yml` and release gate in `release.yml`.
+
+### Fixed
+- **CI red on main (100+ runs)** — `ci.yml` and `pr.yml` now bootstrap
+  `archctl/assets-stack/` via `scripts/embed-stack.sh` before building
+  (the rust-embed folder is gitignored; same gap M33 fixed for the
+  pre-push hook was never applied to CI workflows).
+- Version sync guard failure — `archctl/Cargo.toml` bumped 1.41.0 →
+  1.42.0 to match tag `v1.42.0` (tag was pushed without the bump).
+
+## [1.41.6] — 2026-08-14
+
+### Added
+- **P0-12** — Pre-merge CI workflow (`.github/workflows/pr.yml`): fast
+  deterministic checks on every PR (build, test, clippy, fmt, doctor,
+  script gates + ADR integrity). Benchmarks remain post-merge in `ci.yml`.
+
+## [1.41.5] — 2026-08-13
+
+### Fixed
+- **P0-06/07/08** — Plugin security hardening: identifier validation,
+  SHA256 checksum verification, safe tar extraction.
+
+## [1.41.4] — 2026-08-13
+
+### Fixed
+- **P0-04/05** — Plugin install: XDG root path resolution +
+  `create_dir_all` on first install.
+
+## [1.41.3] — 2026-08-13
+
+### Added
+- Frontier freeze baseline: golden outputs + size/import map
+  (`chore(baseline)`, PR #170).
+
+## [1.41.2] — 2026-08-13
 
 ### Fixed
 - **P0-11** — License coherence: Cargo.toml updated from `MIT` to
