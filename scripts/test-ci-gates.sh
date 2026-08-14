@@ -376,6 +376,20 @@ require "pre-push hook is gone" \
   bash -c '! compgen -G ".githooks/pre-push" >/dev/null'
 
 # ---------------------------------------------------------------------------
+# 9b. Dependency fitness ratchet (P1-09 report-only).
+# ---------------------------------------------------------------------------
+FIT="scripts/check-dep-fitness.sh"
+require "check-dep-fitness.sh exists" test -f "$FIT"
+require "check-dep-fitness.sh executable" test -x "$FIT"
+require "dep-fitness baseline file exists" test -f scripts/dep-fitness-baseline.txt
+require "dep-fitness default mode exits 0 (ratchet honored)" \
+  bash -c '"$0" >/dev/null 2>&1' "$FIT"
+require "dep-fitness --strict fails on current findings" \
+  bash -c '"$0" --strict >/dev/null 2>&1 && exit 1 || exit 0' "$FIT"
+require "dep-fitness --json emits valid JSON object" \
+  bash -c '"$0" --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert \"findings\" in d and \"baseline\" in d"' "$FIT"
+
+# ---------------------------------------------------------------------------
 # 10. ADR-025 recorded and indexed.
 # ---------------------------------------------------------------------------
 require "ADR-025 file exists" \
