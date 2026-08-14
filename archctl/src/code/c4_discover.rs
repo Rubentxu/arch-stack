@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
-use crate::store::{
-    ElementRepository, EvidenceRepository, GraphStore, LbugStore,
-};
+use crate::store::{ElementRepository, EvidenceRepository, GraphStore, LbugStore};
 
 /// JSON Schema for DiscoverReport (JSON Schema 2020-12).
 pub const DISCOVER_REPORT_SCHEMA: &str =
@@ -371,8 +369,8 @@ pub fn apply(
     use crate::code::apply_common::write_source_artifact;
     use crate::store::{ElementRepository, LbugStore};
 
-    let mut store = LbugStore::open(project_dir)
-        .map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
+    let mut store =
+        LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
     store.init().context("c4_discover apply: init")?;
 
     // Seed mt.container MetaType if it doesn't exist

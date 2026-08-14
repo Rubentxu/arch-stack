@@ -1440,18 +1440,10 @@ fn write_call_edge(
     .with_context(|| format!("write_call_evidence {}", evidence_id))?;
 
     // Link Evidence to SourceArtifact
-    let _ = crate::store::EvidenceRepository::link_extracted_from(
-        store,
-        &evidence_id,
-        sa_id,
-    );
+    let _ = crate::store::EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
 
     // Link Evidence to ElementVersion via SUPPORTED_BY
-    let _ = crate::store::EvidenceRepository::link_supported_by(
-        store,
-        _version_id,
-        &evidence_id,
-    );
+    let _ = crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id);
 
     Ok(())
 }
@@ -1466,9 +1458,8 @@ pub fn apply(
     use crate::code::apply_common::write_source_artifact;
     use crate::store::{GraphStore, LbugStore};
 
-    let mut store = LbugStore::open(project_dir).map_err(|e| {
-        CallGraphError::GraphWrite(anyhow::anyhow!("failed to open store: {e}"))
-    })?;
+    let mut store = LbugStore::open(project_dir)
+        .map_err(|e| CallGraphError::GraphWrite(anyhow::anyhow!("failed to open store: {e}")))?;
     store.init().map_err(CallGraphError::GraphWrite)?;
 
     // M32 BREAK-1: removed the inline seed MERGEs. MetaType/Predicate
@@ -1517,10 +1508,10 @@ pub fn apply(
     // 1307 elements: ~3 queries instead of ~6535. Expected additional
     // 2-10× speedup over PR1's transaction wrap.
 
-// Scope the mutable borrow of `store` so we can re-borrow for
-        // commit/rollback after.
-        let inner_result: Result<(), CallGraphError> = {
-            let s: &mut LbugStore = &mut store;
+    // Scope the mutable borrow of `store` so we can re-borrow for
+    // commit/rollback after.
+    let inner_result: Result<(), CallGraphError> = {
+        let s: &mut LbugStore = &mut store;
 
         // Pre-compute SourceArtifact IDs for all unique files (in memory).
         // Same per-file dedup as PR1; just hoisted out of the per-node loop
@@ -1561,8 +1552,7 @@ pub fn apply(
                 "confidence": n.confidence,
                 "call_graph_schema_version": "1.0",
             });
-            let version_props_str =
-                serde_json::to_string(&version_props).unwrap_or_default();
+            let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
             let version_id = format!(
                 "cgv:{}",
                 blake3::hash(version_props_str.as_bytes()).to_hex()
@@ -1602,24 +1592,15 @@ pub fn apply(
             .context("upsert_element_version")
             .map_err(CallGraphError::GraphWrite)?;
 
-            s.link_current_version(
-                &format!("cg:{}", n.canonical_key),
-                &version_id,
-            )
-            .context("link_current_version")
-            .map_err(CallGraphError::GraphWrite)?;
-            s.link_version_of(
-                &format!("cg:{}", n.canonical_key),
-                &version_id,
-            )
-            .context("link_version_of")
-            .map_err(CallGraphError::GraphWrite)?;
-            s.link_of_type(
-                &format!("cg:{}", n.canonical_key),
-                kind_id,
-            )
-            .context("link_of_type")
-            .map_err(CallGraphError::GraphWrite)?;
+            s.link_current_version(&format!("cg:{}", n.canonical_key), &version_id)
+                .context("link_current_version")
+                .map_err(CallGraphError::GraphWrite)?;
+            s.link_version_of(&format!("cg:{}", n.canonical_key), &version_id)
+                .context("link_version_of")
+                .map_err(CallGraphError::GraphWrite)?;
+            s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
+                .context("link_of_type")
+                .map_err(CallGraphError::GraphWrite)?;
             elements_written += 1;
         }
 

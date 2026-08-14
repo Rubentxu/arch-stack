@@ -13,8 +13,8 @@ use crate::diagram::export_types::{
 };
 use crate::diagram::hash::base_revision;
 use crate::diagram::queries::{
-    query_elements, query_evidence_for_versions, query_semantic_edges, query_version_props,
-    ElementRow,
+    ElementRow, query_elements, query_evidence_for_versions, query_semantic_edges,
+    query_version_props,
 };
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
 use crate::filesystem::Filesystem;

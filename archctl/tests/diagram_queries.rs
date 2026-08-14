@@ -314,10 +314,7 @@ impl ElementRepository for TinyGraphStore {
     fn upsert_element(&mut self, _: &archctl::graph::Element) -> anyhow::Result<()> {
         unimplemented!()
     }
-    fn upsert_element_version(
-        &mut self,
-        _: &archctl::graph::ElementVersion,
-    ) -> anyhow::Result<()> {
+    fn upsert_element_version(&mut self, _: &archctl::graph::ElementVersion) -> anyhow::Result<()> {
         unimplemented!()
     }
     fn link_current_version(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
@@ -376,10 +373,7 @@ impl DiagramRepository for TinyGraphStore {
     ) -> anyhow::Result<Vec<archctl::graph::ElementRow>> {
         unimplemented!()
     }
-    fn list_semantic_edges(
-        &self,
-        _: &str,
-    ) -> anyhow::Result<Vec<archctl::graph::SemanticEdgeRow>> {
+    fn list_semantic_edges(&self, _: &str) -> anyhow::Result<Vec<archctl::graph::SemanticEdgeRow>> {
         unimplemented!()
     }
     fn list_evidence_for_versions(

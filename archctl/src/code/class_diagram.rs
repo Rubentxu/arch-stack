@@ -1350,9 +1350,7 @@ pub fn apply(
     let start = Instant::now();
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| ClassDiagramError::GraphWrite(anyhow::anyhow!("open: {e}")))?;
-    store
-        .init()
-        .map_err(ClassDiagramError::GraphWrite)?;
+    store.init().map_err(ClassDiagramError::GraphWrite)?;
 
     let mut elements_written = 0;
     let mut elements_skipped = 0;

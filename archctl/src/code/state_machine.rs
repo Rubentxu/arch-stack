@@ -1102,8 +1102,7 @@ pub fn apply(
     use crate::store::{GraphStore, LbugStore};
 
     let start = Instant::now();
-    let mut store = LbugStore::open(project_dir)
-        .map_err(|e| anyhow::anyhow!("open: {e}"))?;
+    let mut store = LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("open: {e}"))?;
     store.init().context("state_machine apply: init")?;
 
     let mut elements_written = 0usize;
