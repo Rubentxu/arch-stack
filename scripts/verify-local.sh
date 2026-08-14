@@ -107,6 +107,9 @@ fi
     run_gate "$REPO_ROOT/archctl/target/release/archctl" doctor --scopes code --cwd "$REPO_ROOT"
 )
 
+# ---- dependency fitness ratchet (P1-09, report-only with baseline) ---------
+run_gate "$REPO_ROOT/scripts/check-dep-fitness.sh"
+
 if [ "$MODE" = "full" ]; then
     # ---- fresh baseline: fetch origin/main unless --baseline given ----
     if [ -z "$BASELINE" ]; then

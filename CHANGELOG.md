@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **P1-09 (Wave 1 item 8)** — `scripts/check-dep-fitness.sh`: architectural
+  dependency fitness check implementing the self-dogfood rules from the
+  2026-08-13 plan (`domain !-> lbug/reqwest`, `application !-> tiny_http/
+  std::process`, `projection !-> cli`, `analysis !-> view`). Report-only
+  with a baseline ratchet (`scripts/dep-fitness-baseline.txt`, 4 legacy
+  findings documented with paydown paths); `--strict` mode for the future
+  CI-blocking DoD; `--json` for tooling. Wired into `verify-local.sh`
+  (cheap tier) and `scripts/test-ci-gates.sh` (6 new gate assertions).
+- **P0-03** — `release.yml` native runners per target: darwin binaries
+  built on macOS (`macos-13`/`macos-14`), linux aarch64 on `ubuntu-24.04-arm`;
+  plus assets-stack bootstrap before the release build.
+
 ## [1.42.0] — 2026-08-14
 
 ### Added
