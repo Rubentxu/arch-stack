@@ -221,7 +221,7 @@ impl StorageProbe for LbugStorageProbe {
     fn observe(&self) -> NativeObservation {
         // Try to open the store and read schema/migration info
         NativeObservation {
-            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            version: Some(lbug::VERSION.to_string()),
             storage_version: Some(lbug_version_from_cargo_lock()),
             source_digest: None,
             source: Some("lbug-rs".to_string()),
@@ -482,9 +482,13 @@ fn rustc_version_string() -> String {
     }
 }
 
-/// Get the TARGET environment variable (runtime, not compile-time).
+/// Get the TARGET environment variable (compile-time).
+/// Uses `option_env!("TARGET")` to capture the value at compile time,
+/// falling back to runtime lookup only if compile-time capture returns None.
 fn target_triple() -> String {
-    std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string())
+    option_env!("TARGET")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +519,7 @@ pub fn render_text(report: &StorageReport) -> Result<(), anyhow::Error> {
 /// The envelope uses camelCase field names per the spec.
 pub fn render_json(report: &StorageReport, out: &mut dyn Write) -> Result<(), anyhow::Error> {
     #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct JsonFinding {
         id: String,
         severity: String,
@@ -524,6 +529,7 @@ pub fn render_json(report: &StorageReport, out: &mut dyn Write) -> Result<(), an
     }
 
     #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct NativeInfo {
         #[serde(skip_serializing_if = "Option::is_none")]
         version: Option<String>,
@@ -536,6 +542,7 @@ pub fn render_json(report: &StorageReport, out: &mut dyn Write) -> Result<(), an
     }
 
     #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct TargetInfo {
         target: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -545,6 +552,7 @@ pub fn render_json(report: &StorageReport, out: &mut dyn Write) -> Result<(), an
     }
 
     #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct JsonReport {
         archctl_version: String,
         #[serde(skip_serializing_if = "Option::is_none")]

@@ -30,6 +30,8 @@ public_symbols = [
   "Command",
   "run",
   "run_inner",
+  "DoctorScope",
+  "run_scope",
 ]
 
 must_hold = [
@@ -45,6 +47,10 @@ must_hold = [
   "use clap::",
   "Parser",
   "Subcommand",
+  "DoctorScope",
+  "--scope",
+  "--scopes",
+  "run_scope(",
 ]
 
 minimum_tests = 13

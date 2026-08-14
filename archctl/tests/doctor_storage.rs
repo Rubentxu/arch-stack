@@ -9,9 +9,6 @@
 //! - SCN 6: release_smoke_treats_unknown_as_failure
 //! - SCN 7: domain_boundary_is_preserved (manifest gate)
 
-use assert_cmd::assert::OutputAssertExt;
-use predicates::prelude::*;
-use std::process::Command;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -325,14 +322,14 @@ fn doctor_scope_storage_json_produces_valid_envelope() {
     let parsed: serde_json::Value =
         serde_json::from_str(&json_str).expect("stdout must be valid JSON");
 
-    // Required envelope fields per spec
+    // Required envelope fields per spec (camelCase per interfaces spec)
     assert!(
-        parsed.get("archctl_version").is_some(),
-        "archctl_version required"
+        parsed.get("archctlVersion").is_some(),
+        "archctlVersion required"
     );
     assert!(
-        parsed.get("schema_version").is_some(),
-        "schema_version required"
+        parsed.get("schemaVersion").is_some(),
+        "schemaVersion required"
     );
     assert!(parsed.get("status").is_some(), "status required");
     assert!(parsed.get("findings").is_some(), "findings required");

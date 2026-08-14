@@ -5,12 +5,10 @@
 // - `doctor --scope unknown` (error handling)
 // - `doctor --help` (help text includes --scope)
 
-use assert_cmd::assert::OutputAssertExt;
 use predicates::prelude::*;
-use std::process::Command;
 use tempfile::TempDir;
 
-fn archctl() -> Command {
+fn archctl() -> assert_cmd::Command {
     // Use the debug binary directly
     let bin = std::env::current_exe()
         .unwrap()
@@ -19,8 +17,7 @@ fn archctl() -> Command {
         .parent()
         .unwrap()
         .join("archctl");
-    let cmd = Command::new(&bin);
-    cmd
+    assert_cmd::Command::new(bin)
 }
 
 #[test]
