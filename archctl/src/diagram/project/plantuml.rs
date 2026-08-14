@@ -7,7 +7,7 @@
 //! before projection.
 
 use crate::diagram::project_selector::{ProjectSelector, ViewKind};
-use crate::diagram::queries::{ElementRow, SemanticEdgeRow};
+use crate::graph::{ElementRow, SemanticEdgeRow};
 
 /// Project elements + edges to PlantUML DSL.
 pub fn project(

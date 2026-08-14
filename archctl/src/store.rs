@@ -190,7 +190,16 @@ pub trait DiagramOps: Send + Sync {
 /// `SourceOps`, and `DiagramOps`. Functions that need only a subset can
 /// take `&mut dyn EvidenceOps` (or whichever) instead of the full
 /// `&mut dyn GraphStore`. This is the ISP benefit of the split.
-pub trait GraphStore: EvidenceOps + SourceOps + DiagramOps {
+pub trait GraphStore:
+    EvidenceOps
+    + SourceOps
+    + DiagramOps
+    + ElementRepository
+    + EvidenceRepository
+    + SourceRepository
+    + EvaluationRepository
+    + DiagramRepository
+{
     /// Open or create a store rooted at `project_dir`. Each adapter
     /// decides what file (or set of files) lives there.
     fn open(project_dir: &Path) -> Result<Self>

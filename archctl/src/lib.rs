@@ -61,7 +61,8 @@ pub use filesystem::{
     system_filesystem,
 };
 pub use graph::{
-    GraphStat, database_path, init as graph_init, neighbours, query as graph_query,
+    Element, ElementRow, ElementVersion, GraphStat, SemanticEdgeRow, StructuralEvidence,
+    VersionPropsRow, database_path, init as graph_init, neighbours, query as graph_query,
     stat as graph_stat, validate_identifier,
 };
 pub use identity::{

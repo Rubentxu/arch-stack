@@ -3,7 +3,7 @@
 //! Projects graph elements and edges to Mermaid flowchart/sequence DSL.
 
 use crate::diagram::project_selector::{ProjectSelector, ViewKind};
-use crate::diagram::queries::{ElementRow, SemanticEdgeRow};
+use crate::graph::{ElementRow, SemanticEdgeRow};
 
 /// Project elements + edges to Mermaid DSL.
 pub fn project(

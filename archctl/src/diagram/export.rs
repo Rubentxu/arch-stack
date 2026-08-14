@@ -13,9 +13,9 @@ use crate::diagram::export_types::{
 };
 use crate::diagram::hash::base_revision;
 use crate::diagram::queries::{
-    ElementRow, query_elements, query_evidence_for_versions, query_semantic_edges,
-    query_version_props,
+    query_elements, query_evidence_for_versions, query_semantic_edges, query_version_props,
 };
+use crate::graph::{ElementRow, VersionPropsRow};
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
 use crate::filesystem::Filesystem;
 use crate::store::GraphStore;
@@ -107,7 +107,7 @@ pub fn build_bundle(
         query_version_props(store, &version_ids).context("query_version_props failed")?;
 
     // 3. Build projection (nodes + edges)
-    let version_map: std::collections::HashMap<String, &crate::diagram::queries::VersionPropsRow> =
+    let version_map: std::collections::HashMap<String, &VersionPropsRow> =
         version_props.iter().map(|v| (v.id.clone(), v)).collect();
 
     // M81 D2: fetch ViewMembers and index by element_id for LEFT JOIN.
