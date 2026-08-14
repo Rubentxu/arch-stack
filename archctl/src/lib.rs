@@ -45,6 +45,13 @@ pub use cli::{
     RenderFormat, SkillsAction, run,
 };
 pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
+pub use doctor::{
+    DoctorScope, StorageFinding, StorageReport, StorageSeverity, StorageStatus,
+    manifest::validate_manifests,
+    render_json, render_text, run_scope, run_storage_probe,
+    runner::{SmokeResult, run_all_smoke_gates, run_smoke_gate},
+    storage::{LbugStorageProbe, StorageProbe},
+};
 pub use environment::{
     Environment, FixedEnvironment, SystemEnvironment, fixed_environment, system_environment,
 };

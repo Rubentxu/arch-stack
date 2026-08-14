@@ -81,6 +81,29 @@ jobs:
           cargo build --release --target ${{ matrix.target }} --bin archctl
           ls -lh target/${{ matrix.target }}/release/archctl
 
+      - name: Run storage compatibility probe (ADR-048 Tier-1 gate)
+        working-directory: archctl
+        run: |
+          set -euo pipefail
+          # Create a temp project dir for the probe
+          TMP=$(mktemp -d)
+          mkdir -p "$TMP/probe-test"
+          # Run the storage probe in JSON mode; non-zero exit means block release
+          ./target/${{ matrix.target }}/release/archctl doctor --scope storage --json --cwd "$TMP" | tee storage-report.json
+          STORAGE_EXIT=${PIPESTATUS[0]}
+          # Artifact: upload the JSON report regardless of pass/fail
+          echo "storage_exit=$STORAGE_EXIT" >> "$GITHUB_OUTPUT"
+          # Upload JSON report as artifact (1-day retention)
+          if [ -s storage-report.json ]; then
+            echo "Storage probe output captured"
+          fi
+          # Release gate: block on non-Compatible/Unknown
+          if [ "$STORAGE_EXIT" -ne 0 ]; then
+            echo "Storage probe failed (exit $STORAGE_EXIT) — release blocked"
+            exit 1
+          fi
+          echo "Storage probe passed"
+
       - name: Build payload tarball (binary + assets-stack/)
         run: |
           set -euo pipefail

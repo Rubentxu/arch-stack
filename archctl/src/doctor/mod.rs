@@ -1,11 +1,37 @@
+//! Doctor module — architecture compatibility and storage compatibility checks.
+//!
+//! This module provides the `doctor` subcommand. It checks XDG layout,
+//! source identity, renderer availability, and scope manifests.
+//!
+//! ## Scope architecture
+//!
+//! The `DoctorScope` enum enumerates available diagnostic scopes.
+//! The `runner` submodule orchestrates smoke gates for each scope.
+
+pub mod manifest;
+pub mod runner;
+pub mod storage;
+
 use crate::cli::CliContext;
 use crate::environment::Environment;
 use crate::filesystem::Filesystem;
 use crate::identity::{identity_summary, resolve_source_identity};
 use crate::scope::{ScopeCheckReport, check_all_scopes, render_report_line};
 use crate::xdg::{resolve_xdg, user_home};
+
+// Re-export storage types for use in CLI and tests.
+pub use storage::{
+    Finding as StorageFinding, Severity as StorageSeverity, Status as StorageStatus, StorageProbe,
+    StorageReport, render_json, render_text, run_storage_probe,
+};
+
+use std::path::Path;
 use std::process::Command;
 use tracing::{info, warn};
+
+// ---------------------------------------------------------------------------
+// Original doctor types (XDG, renderers, binaries)
+// ---------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct Finding {
@@ -21,6 +47,7 @@ pub enum Severity {
     Fail,
 }
 
+/// Run the main doctor diagnostics (XDG, renderers, binaries).
 pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
     let layout = resolve_xdg();
     let mut findings: Vec<Finding> = Vec::new();
@@ -187,5 +214,89 @@ fn print_scope_reports(reports: &[ScopeCheckReport]) {
                 f.message
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// New scope-based doctor system
+// ---------------------------------------------------------------------------
+
+/// Available doctor diagnostic scopes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctorScope {
+    /// Storage compatibility: LadybugDB (lbug) availability and basic operations.
+    Storage,
+}
+
+impl std::fmt::Display for DoctorScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DoctorScope::Storage => write!(f, "storage"),
+        }
+    }
+}
+
+impl std::str::FromStr for DoctorScope {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "storage" => Ok(DoctorScope::Storage),
+            _ => Err(format!("unknown doctor scope: {s}")),
+        }
+    }
+}
+
+/// Run the doctor diagnostics for a specific scope.
+///
+/// Returns the exit code: 0 if all checks pass, 1 if any fail.
+/// If `json` is true, emits a JSON envelope to stdout.
+pub fn run_scope(scope: DoctorScope, project_dir: &Path, json: bool) -> Result<i32, anyhow::Error> {
+    match scope {
+        DoctorScope::Storage => {
+            let probe = storage::LbugStorageProbe::new();
+            let report = storage::run_storage_probe(&probe, project_dir)?;
+            if json {
+                storage::render_json(&report, &mut std::io::stdout())?;
+            } else {
+                storage::render_text(&report)?;
+            }
+            // Exit code: 0 for Compatible, 1 for Mismatch/Unknown
+            let status = &report.status;
+            match status.as_str() {
+                "Compatible" => Ok(0),
+                _ => Ok(1),
+            }
+        }
+    }
+}
+
+/// Validate manifest contracts for all scopes.
+///
+/// Checks that every scope's manifest exists and that the declared
+/// symbols and invariants match the actual code.
+pub fn validate_manifests(project_dir: &Path, fs: &dyn Filesystem) -> Result<i32, anyhow::Error> {
+    manifest::validate_manifests(project_dir, fs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doctor_scope_parse_storage() {
+        let scope: DoctorScope = "storage".parse().unwrap();
+        assert_eq!(scope, DoctorScope::Storage);
+    }
+
+    #[test]
+    fn doctor_scope_parse_unknown() {
+        let result: Result<DoctorScope, _> = "unknown".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn doctor_scope_display() {
+        assert_eq!(DoctorScope::Storage.to_string(), "storage");
     }
 }

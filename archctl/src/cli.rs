@@ -448,11 +448,18 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Doctor {
+        /// Run a specific doctor diagnostic scope (e.g., `storage`).
+        /// Run `archctl doctor` without this flag for the full diagnostic.
+        #[arg(long, value_name = "scope-name")]
+        scope: Option<String>,
         /// Run scope gates from `manifests/<id>.toml`. If scope IDs are
         /// given (comma-separated), check only those; otherwise check all.
         /// Example: `doctor --scopes evidence,store,tsg`
         #[arg(long, value_delimiter = ',', value_name = "scope-id")]
         scopes: Option<Vec<String>>,
+        /// Emit machine-readable JSON output for `--scope` probes.
+        #[arg(long)]
+        json: bool,
         /// Project directory to read manifests from. Defaults to
         /// the current working directory.
         #[arg(long)]
@@ -624,14 +631,25 @@ pub fn run(cli: Cli) -> Result<i32> {
 /// a `FixedEnvironment`.
 pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
     match cli.command {
-        Command::Doctor { scopes, cwd } => {
-            if let Some(scope_ids) = scopes {
-                // --scopes is the scope-gates pass; it does not depend
-                // on cwd but takes one for consistency with the rest of
-                // the CLI's `cwd` flag contract.
-                let cwd = ctx.resolve_cwd(cwd.as_ref());
+        Command::Doctor {
+            scope,
+            scopes,
+            json,
+            cwd,
+        } => {
+            let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+            if let Some(scope_name) = scope {
+                // --scope is the storage/specific-scope diagnostic
+                let parsed: crate::doctor::DoctorScope = scope_name
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("unknown doctor scope: {e}"))?;
+                doctor::run_scope(parsed, &cwd, json).context("doctor scope")
+            } else if let Some(scope_ids) = scopes {
+                // --scopes is the scope-gates pass
                 doctor::check_scope(&cwd, scope_ids, &*ctx.fs).context("scope gates")
             } else {
+                // Full doctor diagnostics
                 doctor::run(ctx)
             }
         }

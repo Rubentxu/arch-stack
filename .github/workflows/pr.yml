@@ -47,6 +47,10 @@ jobs:
           cargo build --quiet --release
           ./target/release/archctl doctor --scopes code --cwd ..
 
+      - name: Doctor Storage Scope (P0-ladybug-doctor)
+        run: |
+          ./target/release/archctl doctor --scope storage --cwd ..
+
       - name: Script gates (CI checks + ADR integrity)
         working-directory: ${{ github.workspace }}
         run: scripts/test-ci-gates.sh
