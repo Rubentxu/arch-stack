@@ -26,6 +26,71 @@ pub struct GraphStat {
     pub predicates: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct Element {
+    pub id: String,
+    pub kind_id: String,
+    pub category: String,
+    pub canonical_key: String,
+    pub current_name: String,
+    pub current_status: String,
+    pub current_confidence: f64,
+    pub current_version_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ElementVersion {
+    pub id: String,
+    pub element_id: String,
+    pub name: String,
+    pub status: String,
+    pub origin: String,
+    pub confidence: f64,
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructuralEvidence {
+    pub id: String,
+    pub kind: String,
+    pub claim: String,
+    pub file: String,
+    pub line: u64,
+    pub confidence: f64,
+    pub rule_id: String,
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ElementRow {
+    pub id: String,
+    pub kind_id: String,
+    pub category: String,
+    pub canonical_key: String,
+    pub current_name: String,
+    pub current_status: String,
+    pub current_confidence: f64,
+    pub current_version_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticEdgeRow {
+    pub relation_id: String,
+    pub predicate_id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub order_key: String,
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionPropsRow {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
 pub fn database_path(project_dir: &Path) -> PathBuf {
     project_dir.join("architecture.lbdb")
 }
