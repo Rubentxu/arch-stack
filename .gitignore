@@ -80,3 +80,6 @@ sddk.local.*
 
 # Arrows.app export artifacts
 *.arrows
+docs/CCMoldable/
+scripts/boundary-violations.txt
+verify/
