@@ -79,4 +79,5 @@ pub use skills::{
     sync_skill, sync_skills, verify_skills,
 };
 pub use source::SourceArtifact;
+pub use store::{GraphStoreFactory, LbugStoreFactory};
 pub use xdg::{XdgLayout, ensure_xdg, resolve_xdg, user_home};

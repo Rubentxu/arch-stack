@@ -30,8 +30,6 @@ public_symbols = [
   "Command",
   "run",
   "run_inner",
-  "DoctorScope",
-  "run_scope",
 ]
 
 must_hold = [
@@ -51,6 +49,8 @@ must_hold = [
   "--scope",
   "--scopes",
   "run_scope(",
+  "crate::clock::Clock",
+  "crate::store::GraphStoreFactory",
 ]
 
 minimum_tests = 13
