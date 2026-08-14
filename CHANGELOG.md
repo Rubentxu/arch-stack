@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P1-01** — `GraphStoreFactory` trait + `LbugStoreFactory` adapter as the
+  composition root for store initialisation (ADR-010 single-writer flock).
+  `CliContext` extended with `clock: Arc<dyn Clock>` and
+  `store_factory: Arc<dyn GraphStoreFactory>`; all 9 store call sites and
+  8 clock literals rewired through context. Eliminates ad-hoc `LbugStore::open`
+  scattered across handlers.
 - **P1-09 (Wave 1 item 8)** — `scripts/check-dep-fitness.sh`: architectural
   dependency fitness check implementing the self-dogfood rules from the
   2026-08-13 plan (`domain !-> lbug/reqwest`, `application !-> tiny_http/
