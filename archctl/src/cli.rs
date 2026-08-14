@@ -27,23 +27,31 @@ pub const SUPPORTED_LANGUAGES: &str = "rust, typescript, python, go";
 pub struct CliContext {
     pub env: Arc<dyn environment::Environment>,
     pub fs: Arc<dyn Filesystem>,
+    pub clock: Arc<dyn crate::clock::Clock>,
+    pub store_factory: Arc<dyn crate::store::GraphStoreFactory>,
 }
 
 impl CliContext {
-    /// Production context: real `std::env::*` and `std::fs` adapters.
+    /// Production context: real `std::env::*`, `std::fs`, `SystemClock`,
+    /// and `LbugStoreFactory` adapters.
     pub fn production() -> Self {
         Self {
             env: environment::system_environment(),
             fs: filesystem::system_filesystem(),
+            clock: Arc::new(crate::clock::SystemClock),
+            store_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
 
-    /// Test context: `FixedEnvironment` + empty `MemoryFilesystem`. Call
-    /// `with_env(...)` to pre-load answers.
+    /// Test context: `FixedEnvironment` + empty `MemoryFilesystem` +
+    /// `FixedClock` + `LbugStoreFactory`. Call `with_env(...)` to
+    /// pre-load answers.
     pub fn for_test(env: Arc<dyn environment::Environment>) -> Self {
         Self {
             env,
             fs: filesystem::memory_filesystem(),
+            clock: Arc::new(crate::clock::FixedClock::new("2024-01-01T00:00:00Z")),
+            store_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
 
@@ -53,7 +61,12 @@ impl CliContext {
         env: Arc<dyn environment::Environment>,
         fs: Arc<dyn Filesystem>,
     ) -> Self {
-        Self { env, fs }
+        Self {
+            env,
+            fs,
+            clock: Arc::new(crate::clock::FixedClock::new("2024-01-01T00:00:00Z")),
+            store_factory: Arc::new(crate::store::LbugStoreFactory),
+        }
     }
 
     /// Resolve the user's working directory.
@@ -2524,6 +2537,51 @@ mod tests {
         // contract that the *construction* uses SystemEnvironment
         // (which we trust to read std::env).
         let _: &dyn crate::environment::Environment = ctx.env.as_ref();
+    }
+
+    #[test]
+    fn production_clock_ends_with_z_and_factory_opens() {
+        // SCN-01: production().clock.now_rfc3339() ends with Z;
+        // production().store_factory.open_and_init(tempdir) returns Ok.
+        let ctx = CliContext::production();
+        let ts = ctx.clock.now_rfc3339();
+        assert!(
+            ts.ends_with('Z'),
+            "production clock should end with Z, got: {ts}"
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let result = ctx.store_factory.open_and_init(&project);
+        assert!(result.is_ok(), "store_factory should open temp project");
+    }
+
+    #[test]
+    fn cli_context_clone_shares_arc_pointers() {
+        // SCN-02: cloning a CliContext reuses the same Arc pointers;
+        // Arc::strong_count increments.
+        let env: std::sync::Arc<dyn crate::environment::Environment> =
+            std::sync::Arc::new(FixedEnvironment::new().with_cwd("/test"));
+        let ctx = CliContext::for_test(env.clone());
+        let clock_arc = ctx.clock.clone();
+        let factory_arc = ctx.store_factory.clone();
+        let clock_before = std::sync::Arc::strong_count(&clock_arc);
+        let factory_before = std::sync::Arc::strong_count(&factory_arc);
+        let ctx2 = ctx.clone();
+        assert!(
+            std::sync::Arc::strong_count(&clock_arc) == clock_before + 1,
+            "clock Arc strong_count should increment on clone"
+        );
+        assert!(
+            std::sync::Arc::strong_count(&factory_arc) == factory_before + 1,
+            "store_factory Arc strong_count should increment on clone"
+        );
+        drop(ctx2);
+        assert_eq!(
+            std::sync::Arc::strong_count(&clock_arc),
+            clock_before,
+            "clock Arc should be restored after cloned ctx is dropped"
+        );
     }
 
     #[test]
