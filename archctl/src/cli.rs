@@ -1942,9 +1942,14 @@ fn evidence_put_cmd(
     // Each fact gets a synthetic SourceArtifact linked via SUPPORTED_BY
     let evidence: Vec<_> = processed.iter().map(|p| p.evidence.clone()).collect();
     let sources: Vec<_> = processed.iter().map(|p| p.source.clone()).collect();
-    let written =
-        crate::evidence::put_with_source(&info.project_dir, &evidence, Some(&sources), None, &*ctx.clock)
-            .context("persist evidence")?;
+    let written = crate::evidence::put_with_source(
+        &info.project_dir,
+        &evidence,
+        Some(&sources),
+        None,
+        &*ctx.clock,
+    )
+    .context("persist evidence")?;
 
     // Output results (SCN-408)
     let ids: Vec<_> = processed.iter().map(|p| p.evidence_id.clone()).collect();
@@ -2055,8 +2060,7 @@ fn diagram_export_cmd(
             }
 
             // Single-source: build the bundle once, then dispatch to stdout and/or disk.
-            let bundle =
-                crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
+            let bundle = crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
 
             if json {
                 // Emit the FULL bundle envelope (manifest + projection + evidence
@@ -2070,13 +2074,8 @@ fn diagram_export_cmd(
                 // File-write mode: emit 5 files using `run_export`. The bundle
                 // is built again internally (queries are idempotent + cached via
                 // graph layer); this keeps `run_export` callable independently.
-                let report = crate::diagram::run_export(
-                    &*store,
-                    selector,
-                    out_dir,
-                    &*ctx.clock,
-                    &*ctx.fs,
-                )?;
+                let report =
+                    crate::diagram::run_export(&*store, selector, out_dir, &*ctx.clock, &*ctx.fs)?;
                 if !json {
                     println!(
                         "Exported {} elements, {} edges, {} evidence to {}",
@@ -2089,8 +2088,7 @@ fn diagram_export_cmd(
             }
         }
         ExportFormat::Arrows => {
-            let bundle =
-                crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
+            let bundle = crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
 
             let doc = crate::diagram::arrows::serialize(&bundle.projection, &bundle.styles);
             let unplaced = crate::diagram::arrows::count_unplaced(&bundle.projection);

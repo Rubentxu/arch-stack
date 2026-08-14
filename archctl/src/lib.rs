@@ -45,7 +45,6 @@ pub use cli::{
     RenderFormat, SkillsAction, run,
 };
 pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
-pub use store::{GraphStoreFactory, LbugStoreFactory};
 pub use doctor::{
     DoctorScope, StorageFinding, StorageReport, StorageSeverity, StorageStatus,
     manifest::validate_manifests,
@@ -80,4 +79,5 @@ pub use skills::{
     sync_skill, sync_skills, verify_skills,
 };
 pub use source::SourceArtifact;
+pub use store::{GraphStoreFactory, LbugStoreFactory};
 pub use xdg::{XdgLayout, ensure_xdg, resolve_xdg, user_home};
