@@ -926,6 +926,7 @@ Incluye:
 | `m57-contributing-md` | `docs/m57-contributing-md` (merged to main via PR #136) | `cb0b83f` | **Cerrado** ✅ · tag `v1.28.0` · adds CONTRIBUTING.md (248 lines) with cycle workflow, manifest hygiene conventions, bounded contexts, testing rules, what-not-to-do list; cross-referenced from AGENTS.md |
 | `m58-specs-index` | `docs/m58-specs-index` (merged to main via PR #138) | `e16e249` | **Cerrado** ✅ · tag none · adds docs/specs/index.md (85 lines) with 13 specs grouped by audience (diagram views, code extraction, rendering, benchmarks, E2E); each row carries audience + one-line summary; pure docs cycle (M62 precedent, no tag bump) |
 | `m61-cognitive-policy-tests` | `test/m61-cognitive-policy-tests` (merged to main via PR #140) | `78c1e0d` | **Cerrado** ✅ · tag `v1.29.0` · adds 22 unit tests for cognitive/policy/{context,decision} (the 0-test gap in M55 study M61 audit); side-fix: `PolicyResult` derives PartialEq; cognitive test count 111 → 133 |
+| `p0-ladybug-compatibility-doctor-v2` | `feat/p0-ladybug-doctor-v2` (merged to main via PR #174) | `31b17e1` | **Cerrado** ✅ · tag `v1.42.0` · `archctl doctor --scope storage [--json]`: LadybugDB availability + crate/native alignment + schema init + CRUD smoke probe (ADR-048 5-axis envelope); debt-verify PASS_WITH_WARNINGS |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -1387,3 +1388,17 @@ Razones:
 - **Bench**: 10+ datasets (Rust/TS/JS/Go/Python/Java/Kotlin), regression gate >10%, report template
 - **Desbloquea**: v1.0 — M27 empirical validation completada
 - **Próximo candidato**: Ejecutar `bench/run-bench.sh` contra los 10+ datasets y publicar resultados. Si thresholds de v1.0 se cumplen → preparar v1.0 release. Si no → abrir M28 hotfix.
+
+## Cycle cerrado — `p0-ladybug-compatibility-doctor-v2` (v1.42.0)
+
+- **Fecha**: 2026-08-14
+- **Branch**: `feat/p0-ladybug-doctor-v2` (merged a main via PR #174)
+- **Tag**: `v1.42.0` (`31b17e1`)
+- **Verdict**: verify PASS (2 rondas de corrección) · debt-verify PASS_WITH_WARNINGS (1 CRITICAL residual `target_triple` cerrado post-audit con `archctl/build.rs`)
+- **Commits**: 6 (doctor/mod.rs, storage.rs, manifest.rs, runner.rs, cli.rs, build.rs) + chore PR #175 (gitignore debt-verify artifacts)
+- **Tests**: 9 integration tests cubriendo los 7 escenarios del spec
+- **Output**: `archctl doctor --scope storage [--json]` — probe de compatibilidad LadybugDB (lbug): disponibilidad de crate, alineación crate/native, inicialización de schema y smoke CRUD. Módulo `archctl/src/doctor/` nuevo con `DoctorScope`, `LbugStorageProbe`, `NativeProbe`, smoke gate runner. JSON envelope de 5 ejes per ADR-048 (`archctlVersion`, `lbugCrateVersion`, `native`, `targetCompilerStdlib`, `findings[]`). Tier-1 CI smoke gate en `pr.yml` + release gate en `release.yml`.
+- **Bugfix crítico**: `target_triple()` devolvía `"unknown"` porque `option_env!("TARGET")` requiere propagación desde `build.rs` (Cargo no la expone sin build script). Fix: `archctl/build.rs` con `println!("cargo:rustc-env=TARGET={}", ...)` — documentado como jurisprudencia.
+- **Notas de proceso**: main es rama protegida → feature branch + PR obligatorio. El ciclo v1 (`p0-ladybug-compatibility-doctor`) quedó bloqueado permanentemente por receipt collision (UNIQUE constraint en `gate_receipts`); v2 reutilizó spec/design verbatim tras validar que seguían vigentes.
+- **Wave 0 status**: este ciclo cierra el item 5 del plan de remediation (docs/arch-stack-proposals-2026-08-13). Items 1–6 DONE (PRs #168–#174). Falta item 7 (native release runners: `release.yml` compila targets darwin en ubuntu-22.04).
+- **Próximo candidato**: Wave 0 item 7 (native release runners) o Wave 1 — architecture scaffolding (items 8–16 del plan 2026-08-13).
