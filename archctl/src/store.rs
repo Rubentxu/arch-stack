@@ -317,10 +317,7 @@ pub trait DiagramRepository: Send + Sync {
         kind: Option<&str>,
     ) -> Result<Vec<ElementRow>>;
     fn list_semantic_edges(&self, category: &str) -> Result<Vec<SemanticEdgeRow>>;
-    fn list_evidence_for_versions(
-        &self,
-        version_ids: &[String],
-    ) -> Result<Vec<EvidenceEntry>>;
+    fn list_evidence_for_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>>;
     fn list_version_props(&self, version_ids: &[String]) -> Result<Vec<VersionPropsRow>>;
 }
 /// Factory: pick the concrete adapter the CLI requested. Today only
@@ -510,12 +507,12 @@ pub struct LbugStore {
 
 /// Internal scope-bounded handle. Mirrors the previous `Session` but
 /// stays private to the adapter.
-struct LbugSession {
+pub(crate) struct LbugSession {
     // SAFETY: see `crate::graph::Session` (the old comment explains the
     // 'static transmute trick). Kept identical so the original tests
     // that rely on it still pass.
-    conn: lbug::Connection<'static>,
-    _db: lbug::Database,
+    pub(crate) conn: lbug::Connection<'static>,
+    pub(crate) _db: lbug::Database,
 }
 
 impl LbugStore {
@@ -562,6 +559,20 @@ impl LbugStore {
         }
         Ok(self.session.as_mut().expect("just initialised"))
     }
+
+    /// Borrow the inner lbug session (test + migrations runner only).
+    /// Caller MUST hold the borrow for no longer than the store.
+    #[allow(dead_code)]
+    pub(crate) fn session_for_migrations(&mut self) -> &LbugSession {
+        if self.session.is_none() {
+            // Lazy-init so tests that bypass `init()` still get a session.
+            self.session = Some(
+                open_lbug_session(&self.project_dir)
+                    .expect("open_lbug_session in session_for_migrations"),
+            );
+        }
+        self.session.as_ref().expect("just initialised")
+    }
 }
 
 impl GraphStore for LbugStore {
@@ -579,7 +590,25 @@ impl GraphStore for LbugStore {
         // store touches the DB.
         let marker = self.project_dir.join(migrations::SCHEMA_MARKER_FILENAME);
         let fs = SystemFilesystem;
-        let session = crate::graph::open_session(&self.project_dir, &fs)?;
+        // Open a fresh session for migrations; the store's own session
+        // is opened lazily after migrations succeed.
+        let path = crate::graph::database_path(&self.project_dir);
+        std::fs::create_dir_all(path.parent().unwrap()).map_err(LockError::Io)?;
+        let (conn, db) = {
+            use lbug::{Connection, Database, SystemConfig};
+            let db = Database::new(
+                &path,
+                SystemConfig::default()
+                    .buffer_pool_size(crate::graph::BUFFER_POOL_SIZE)
+                    .max_db_size(crate::graph::BUFFER_POOL_SIZE),
+            )
+            .map_err(|e| anyhow::anyhow!("open database: {e}"))?;
+            let conn =
+                Connection::new(&db).map_err(|e| anyhow::anyhow!("create connection: {e}"))?;
+            let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
+            (conn, db)
+        };
+        let session = LbugSession { conn, _db: db };
         let applied = migrations::apply_pending(&session, &fs, &marker)?;
         if applied.is_empty() {
             info!("schema already up-to-date");
@@ -1397,8 +1426,15 @@ impl ElementRepository for LbugStore {
             .context("link_current_version: element_id failed validation")?;
         let vid = crate::graph::validate_identifier(version_id)
             .context("link_current_version: version_id failed validation")?;
-        link_with_merge_fallback(&session.conn, "Element", eid, "CURRENT_VERSION", "ElementVersion", vid)
-            .context("link_current_version")
+        link_with_merge_fallback(
+            &session.conn,
+            "Element",
+            eid,
+            "CURRENT_VERSION",
+            "ElementVersion",
+            vid,
+        )
+        .context("link_current_version")
     }
 
     fn link_version_of(&mut self, element_id: &str, version_id: &str) -> Result<()> {
@@ -1407,8 +1443,15 @@ impl ElementRepository for LbugStore {
             .context("link_version_of: element_id failed validation")?;
         let vid = crate::graph::validate_identifier(version_id)
             .context("link_version_of: version_id failed validation")?;
-        link_with_merge_fallback(&session.conn, "ElementVersion", vid, "VERSION_OF", "Element", eid)
-            .context("link_version_of")
+        link_with_merge_fallback(
+            &session.conn,
+            "ElementVersion",
+            vid,
+            "VERSION_OF",
+            "Element",
+            eid,
+        )
+        .context("link_version_of")
     }
 
     fn link_of_type(&mut self, element_id: &str, metatype_id: &str) -> Result<()> {
@@ -1422,9 +1465,8 @@ impl ElementRepository for LbugStore {
     }
 
     fn existing_canonical_keys(&self) -> Result<HashSet<String>> {
-        let rows = self.query(
-            "MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;",
-        )?;
+        let rows = self
+            .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?;
         Ok(rows
             .into_iter()
             .filter_map(|r| {
@@ -1476,8 +1518,15 @@ impl EvidenceRepository for LbugStore {
             .context("link_supported_by: version_id failed validation")?;
         let eid = crate::graph::validate_identifier(evidence_id)
             .context("link_supported_by: evidence_id failed validation")?;
-        link_with_merge_fallback(&session.conn, "ElementVersion", vid, "SUPPORTED_BY", "Evidence", eid)
-            .context("link_supported_by")
+        link_with_merge_fallback(
+            &session.conn,
+            "ElementVersion",
+            vid,
+            "SUPPORTED_BY",
+            "Evidence",
+            eid,
+        )
+        .context("link_supported_by")
     }
 
     fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
@@ -1486,8 +1535,15 @@ impl EvidenceRepository for LbugStore {
             .context("link_extracted_from: evidence_id failed validation")?;
         let sid = crate::graph::validate_identifier(source_id)
             .context("link_extracted_from: source_id failed validation")?;
-        link_with_merge_fallback(&session.conn, "Evidence", eid, "EXTRACTED_FROM", "SourceArtifact", sid)
-            .context("link_extracted_from")
+        link_with_merge_fallback(
+            &session.conn,
+            "Evidence",
+            eid,
+            "EXTRACTED_FROM",
+            "SourceArtifact",
+            sid,
+        )
+        .context("link_extracted_from")
     }
 }
 
@@ -1581,10 +1637,7 @@ impl DiagramRepository for LbugStore {
         rows.into_iter().map(row_to_semantic_edge_row).collect()
     }
 
-    fn list_evidence_for_versions(
-        &self,
-        version_ids: &[String],
-    ) -> Result<Vec<EvidenceEntry>> {
+    fn list_evidence_for_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>> {
         if version_ids.is_empty() {
             return Ok(vec![]);
         }
@@ -1605,9 +1658,7 @@ impl DiagramRepository for LbugStore {
                     e.tool_name, e.tool_version, e.rule_id, e.props, \
                     e.content_hash, e.observed_at;"
         );
-        let rows = self
-            .query(&cypher)
-            .context("list_evidence_for_versions")?;
+        let rows = self.query(&cypher).context("list_evidence_for_versions")?;
         Ok(rows.into_iter().filter_map(row_to_evidence_entry).collect())
     }
 
@@ -1639,9 +1690,8 @@ fn row_to_element_row(r: Row) -> Result<ElementRow> {
     let str_col = |r: &Row, k: &str| -> Result<String> {
         Ok(r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string())
     };
-    let f64_col = |r: &Row, k: &str| -> f64 {
-        r.get(k).and_then(|c| c.to_json().as_f64()).unwrap_or(0.0)
-    };
+    let f64_col =
+        |r: &Row, k: &str| -> f64 { r.get(k).and_then(|c| c.to_json().as_f64()).unwrap_or(0.0) };
     Ok(ElementRow {
         id: str_col(&r, "e.id")?,
         kind_id: str_col(&r, "e.kind_id")?,
@@ -1658,7 +1708,10 @@ fn row_to_semantic_edge_row(r: Row) -> Result<SemanticEdgeRow> {
     let str_col = |r: &Row, k: &str| -> Result<String> {
         Ok(r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string())
     };
-    let props = r.get("edge.props").map(cell_to_json_map).unwrap_or_default();
+    let props = r
+        .get("edge.props")
+        .map(cell_to_json_map)
+        .unwrap_or_default();
     Ok(SemanticEdgeRow {
         relation_id: str_col(&r, "edge.relation_id")?,
         predicate_id: str_col(&r, "edge.predicate_id")?,
@@ -1671,19 +1724,15 @@ fn row_to_semantic_edge_row(r: Row) -> Result<SemanticEdgeRow> {
 
 fn row_to_evidence_entry(r: Row) -> Option<EvidenceEntry> {
     let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
-    let status = props
-        .get("status")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let status = props.get("status").and_then(|v| v.as_str()).unwrap_or("");
     if status != "accepted" {
         return None;
     }
     let str_col = |r: &Row, k: &str| -> String {
         r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string()
     };
-    let i64_col = |r: &Row, k: &str| -> u64 {
-        r.get(k).and_then(|c| c.as_i64()).unwrap_or(0) as u64
-    };
+    let i64_col =
+        |r: &Row, k: &str| -> u64 { r.get(k).and_then(|c| c.as_i64()).unwrap_or(0) as u64 };
     Some(EvidenceEntry {
         id: str_col(&r, "e.id"),
         kind: str_col(&r, "e.kind"),
@@ -1715,6 +1764,37 @@ fn row_to_version_props_row(r: Row) -> Result<VersionPropsRow> {
 // ---------------------------------------------------------------------------
 // Internal helpers — formerly in `graph.rs`, now private to the adapter
 // ---------------------------------------------------------------------------
+
+/// Open a fresh lbug session against `path` without acquiring the
+/// `LbugStore` flock. Used by the `graph.rs` admin boundary
+/// (`archctl graph query` / `graph neighbours` / `graph init`) which
+/// intentionally does not serialize against regular writers (ADR-010).
+///
+/// Caller MUST ensure the parent directory exists; the helper does not
+/// create it.
+pub(crate) fn open_admin_session(path: &Path) -> Result<LbugSession> {
+    use lbug::{Connection, Database, SystemConfig};
+    let db = Database::new(
+        path,
+        SystemConfig::default()
+            .buffer_pool_size(crate::graph::BUFFER_POOL_SIZE)
+            .max_db_size(crate::graph::BUFFER_POOL_SIZE),
+    )
+    .with_context(|| format!("open database at {}", path.display()))?;
+    let conn = Connection::new(&db).context("create connection")?;
+    let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
+    Ok(LbugSession { conn, _db: db })
+}
+
+/// Escape a string for use inside a Cypher single-quoted string.
+///
+/// P1-03: moved from `code/apply_common.rs` (the apply helpers don't
+/// need Cypher anymore — every consumer goes through a repository).
+/// Public re-export for `code/apply_common::escape_cypher_string`
+/// backwards compat.
+pub fn escape_cypher_string(s: &str) -> String {
+    s.replace('\'', "\\'")
+}
 
 /// Convert a `Cell` value (typically `e.props` from a Cypher result)
 /// into a `serde_json::Map<String, serde_json::Value>`. Handles
@@ -1751,7 +1831,17 @@ fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
 }
 
 fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
-    let (conn, db) = crate::graph::create_db_session(&crate::graph::database_path(project_dir))?;
+    use lbug::{Connection, Database, SystemConfig};
+    let path = crate::graph::database_path(project_dir);
+    let db = Database::new(
+        &path,
+        SystemConfig::default()
+            .buffer_pool_size(crate::graph::BUFFER_POOL_SIZE)
+            .max_db_size(crate::graph::BUFFER_POOL_SIZE),
+    )
+    .with_context(|| format!("open database at {}", path.display()))?;
+    let conn = Connection::new(&db).context("create connection")?;
+    let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
     Ok(LbugSession { conn, _db: db })
 }
 

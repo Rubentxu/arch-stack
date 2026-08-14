@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
-use lbug::{Connection, Database, SystemConfig, Value};
 use serde::Serialize;
-use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::filesystem::Filesystem;
 use crate::migrations::{self, SCHEMA_MARKER_FILENAME};
+use crate::store::open_admin_session;
 
 /// Bounded buffer pool size: 256 MiB per database.
 ///
@@ -95,70 +94,15 @@ pub fn database_path(project_dir: &Path) -> PathBuf {
     project_dir.join("architecture.lbdb")
 }
 
-/// Scope-bounded Database + Connection. Both drop together at the end
-/// of the enclosing block; nothing leaks.
-///
-/// `conn` is declared FIRST so it drops before `_db`. Rust drops struct
-/// fields in declaration order; if `_db` dropped first, `conn`'s
-/// destructor would access freed memory.
-pub struct Session {
-    // SAFETY: this Connection borrows from `_db` below. The `'static`
-    // marker is a lie — the real lifetime is bounded by `&self`. The
-    // Session struct enforces the invariant: anything holding a
-    // `Session` cannot observe `conn` outliving `_db` because field
-    // drop order is declaration order (conn first, _db second). We
-    // extend the lifetime via `std::mem::transmute` so the public API
-    // can hand out `&Connection<'_>` without HRTB gymnastics.
-    pub conn: Connection<'static>,
-    _db: Database,
-}
-
-/// Open (or create) the LadybugDB file and return a scope-bounded session.
-///
-/// Field declaration order is `conn` FIRST, `_db` SECOND — Rust drops
-/// struct fields in declaration order, so `conn`'s destructor runs while
-/// `_db` is still alive. The `'static` lifetime on `Connection` is a lie
-/// bounded by the `_db` field's drop; see `Session` for the safety
-/// argument.
-///
-/// Used by both `Session` (public, port-aware) and `LbugSession`
-/// (private, std-fs) wrappers to avoid duplicating the transmute logic.
-///
-/// **Caller responsibility**: the caller MUST ensure the parent directory
-/// of `path` exists. Both [`open_session`] (via `Filesystem::create_dir_all`)
-/// and [`crate::store::open_lbug_session`] (via the lockfile path's
-/// `std::fs::create_dir_all` in `LbugStore::open`) handle their own
-/// directory creation at their respective layers. The helper used to do
-/// `std::fs::create_dir_all` itself, which defeated `MemoryFilesystem`
-/// test isolation (CP-W1 in the prior cycle's debt report).
-pub(crate) fn create_db_session(path: &Path) -> Result<(Connection<'static>, Database)> {
-    let db = Database::new(
-        path,
-        SystemConfig::default()
-            .buffer_pool_size(BUFFER_POOL_SIZE)
-            .max_db_size(BUFFER_POOL_SIZE),
-    )
-    .with_context(|| format!("open database at {}", path.display()))?;
-    let conn = Connection::new(&db).context("create connection")?;
-    let conn: Connection<'static> = unsafe { std::mem::transmute(conn) };
-    Ok((conn, db))
-}
-
-pub fn open_session(project_dir: &Path, fs: &dyn Filesystem) -> Result<Session> {
-    let path = database_path(project_dir);
-    if let Some(parent) = path.parent() {
-        fs.create_dir_all(parent)
-            .with_context(|| format!("mkdir {}", parent.display()))?;
-    }
-    let (conn, db) = create_db_session(&path)?;
-    Ok(Session { conn, _db: db })
-}
-
 pub fn init(project_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
     let path = database_path(project_dir);
     fs.create_dir_all(project_dir)
         .with_context(|| format!("mkdir {}", project_dir.display()))?;
-    let session = open_session(path.parent().unwrap_or(project_dir), fs)?;
+    // Open a session directly without acquiring the LbugStore flock
+    // (graph.rs is the admin boundary — see ADR-010). Multiple parallel
+    // `archctl graph *` admin commands may run; they don't need to be
+    // serialized against each other or against regular writes.
+    let session = open_admin_session(&path)?;
     let marker = project_dir.join(SCHEMA_MARKER_FILENAME);
     let applied = migrations::apply_pending(&session, fs, &marker)?;
     if applied.is_empty() {
@@ -170,92 +114,30 @@ pub fn init(project_dir: &Path, fs: &dyn Filesystem) -> Result<PathBuf> {
 }
 
 pub fn stat(project_dir: &Path, fs: &dyn Filesystem) -> Result<GraphStat> {
-    let session = open_session(project_dir, fs)?;
+    let _ = fs;
+    let session = open_admin_session(&database_path(project_dir))?;
     let conn = &session.conn;
     Ok(GraphStat {
-        elements: count_match(conn, "MATCH (:Element) RETURN count(*)")?,
-        // See F2 (m9-relations-decision) — relations live on the
-        // SEMANTIC_EDGE REL TABLE; the reified SemanticRelation node
-        // table is reserved for future use (ADR-009 deferral).
-        relations: count_match(conn, "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)")?,
-        evidence: count_match(conn, "MATCH (:Evidence) RETURN count(*)")?,
-        metatypes: count_match(conn, "MATCH (:MetaType) RETURN count(*)")?,
-        predicates: count_match(conn, "MATCH (:Predicate) RETURN count(*)")?,
+        elements: admin_count(conn, "MATCH (:Element) RETURN count(*)")?,
+        relations: admin_count(conn, "MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r)")?,
+        evidence: admin_count(conn, "MATCH (:Evidence) RETURN count(*)")?,
+        metatypes: admin_count(conn, "MATCH (:MetaType) RETURN count(*)")?,
+        predicates: admin_count(conn, "MATCH (:Predicate) RETURN count(*)")?,
     })
 }
 
-fn count_match(conn: &Connection<'_>, cypher: &str) -> Result<i64> {
+fn admin_count(conn: &lbug::Connection<'_>, cypher: &str) -> Result<i64> {
     let mut result = conn.query(cypher).context("count query")?;
-    Ok(result
+    let v = result
         .next()
         .and_then(|r| r.first().cloned())
-        .map(|v| value_to_i64(&v))
-        .unwrap_or(0))
-}
-
-fn value_to_i64(v: &Value) -> i64 {
-    match v {
-        Value::Int64(n) => *n,
-        Value::Int32(n) => *n as i64,
-        Value::UInt64(n) => *n as i64,
+        .unwrap_or(lbug::Value::Int64(0));
+    Ok(match v {
+        lbug::Value::Int64(n) => n,
+        lbug::Value::Int32(n) => n as i64,
+        lbug::Value::UInt64(n) => n as i64,
         _ => 0,
-    }
-}
-
-fn value_to_json(v: &Value) -> Json {
-    match v {
-        Value::Null(_) => Json::Null,
-        Value::Bool(b) => Json::Bool(*b),
-        Value::Int8(n) => Json::from(*n),
-        Value::Int16(n) => Json::from(*n),
-        Value::Int32(n) => Json::from(*n),
-        Value::Int64(n) => Json::from(*n),
-        Value::UInt8(n) => Json::from(*n),
-        Value::UInt16(n) => Json::from(*n),
-        Value::UInt32(n) => Json::from(*n),
-        Value::UInt64(n) => Json::from(*n),
-        Value::Int128(n) => Json::from(n.to_string()),
-        Value::Float(n) => serde_json::Number::from_f64(*n as f64)
-            .map(Json::Number)
-            .unwrap_or(Json::Null),
-        Value::Double(n) => serde_json::Number::from_f64(*n)
-            .map(Json::Number)
-            .unwrap_or(Json::Null),
-        Value::Date(d) => Json::from(d.to_string()),
-        Value::Interval(d) => Json::from(d.to_string()),
-        Value::Timestamp(t)
-        | Value::TimestampTz(t)
-        | Value::TimestampNs(t)
-        | Value::TimestampMs(t)
-        | Value::TimestampSec(t) => Json::from(t.to_string()),
-        Value::String(s) => Json::from(s.as_str()),
-        Value::Json(j) => j.clone(),
-        Value::Blob(b) => Json::from(format!("<blob {} bytes>", b.len())),
-        Value::List(_, list) | Value::Array(_, list) => {
-            Json::Array(list.iter().map(value_to_json).collect())
-        }
-        Value::Struct(fields) => {
-            let mut obj = serde_json::Map::new();
-            for (k, vv) in fields {
-                obj.insert(k.clone(), value_to_json(vv));
-            }
-            Json::Object(obj)
-        }
-        Value::Map(_, entries) => {
-            let mut obj = serde_json::Map::new();
-            for (k, vv) in entries {
-                obj.insert(value_to_json(k).to_string(), value_to_json(vv));
-            }
-            Json::Object(obj)
-        }
-        Value::RecursiveRel { .. } => Json::from("<recursive_rel>"),
-        Value::Union { value, .. } => value_to_json(value),
-        Value::UUID(u) => Json::from(u.to_string()),
-        Value::Decimal(d) => Json::from(d.to_string()),
-        Value::Node(n) => Json::from(format!("<node {}>", n)),
-        Value::Rel(r) => Json::from(format!("<rel {}>", r)),
-        Value::InternalID(id) => Json::from(id.to_string()),
-    }
+    })
 }
 
 /// Allowlist for ids that are interpolated into Cypher queries.
@@ -294,25 +176,15 @@ pub fn validate_identifier(id: &str) -> Result<&str> {
     Ok(id)
 }
 
-pub fn query(project_dir: &Path, cypher: &str, fs: &dyn Filesystem) -> Result<Vec<Json>> {
-    let session = open_session(project_dir, fs)?;
+pub fn query(
+    project_dir: &Path,
+    cypher: &str,
+    fs: &dyn Filesystem,
+) -> Result<Vec<serde_json::Value>> {
+    let _ = fs;
+    let session = open_admin_session(&database_path(project_dir))?;
     debug!(%cypher, "graph query");
-    run_query(&session.conn, cypher)
-}
-
-fn run_query(conn: &Connection<'_>, cypher: &str) -> Result<Vec<Json>> {
-    let result = conn.query(cypher).context("execute query")?;
-    let columns = result.get_column_names();
-    let mut rows = Vec::new();
-    for row in result {
-        let mut obj = serde_json::Map::new();
-        for (i, col) in columns.iter().enumerate() {
-            let value = row.get(i).map(value_to_json).unwrap_or(Json::Null);
-            obj.insert(col.clone(), value);
-        }
-        rows.push(Json::Object(obj));
-    }
-    Ok(rows)
+    admin_run_query(&session.conn, cypher)
 }
 
 pub fn neighbours(
@@ -320,7 +192,8 @@ pub fn neighbours(
     element_id: &str,
     depth: u8,
     fs: &dyn Filesystem,
-) -> Result<Vec<Json>> {
+) -> Result<Vec<serde_json::Value>> {
+    let _ = fs;
     let id = validate_identifier(element_id)?;
     let depth = depth.clamp(1, 4) as i64;
     let cypher = format!(
@@ -332,9 +205,83 @@ pub fn neighbours(
             "graph traversal depth > 2 may be slow on large graphs"
         );
     }
-    let session = open_session(project_dir, fs)?;
+    let session = open_admin_session(&database_path(project_dir))?;
     debug!(%cypher, "graph neighbours");
-    run_query(&session.conn, &cypher)
+    admin_run_query(&session.conn, &cypher)
+}
+
+fn admin_run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<serde_json::Value>> {
+    let result = conn.query(cypher).context("execute query")?;
+    let columns = result.get_column_names();
+    let mut rows = Vec::new();
+    for row in result {
+        let mut obj = serde_json::Map::new();
+        for (i, col) in columns.iter().enumerate() {
+            let value = row
+                .get(i)
+                .map(admin_value_to_json)
+                .unwrap_or(serde_json::Value::Null);
+            obj.insert(col.clone(), value);
+        }
+        rows.push(serde_json::Value::Object(obj));
+    }
+    Ok(rows)
+}
+
+fn admin_value_to_json(v: &lbug::Value) -> serde_json::Value {
+    match v {
+        lbug::Value::Null(_) => serde_json::Value::Null,
+        lbug::Value::Bool(b) => serde_json::Value::Bool(*b),
+        lbug::Value::Int8(n) => serde_json::Value::from(*n),
+        lbug::Value::Int16(n) => serde_json::Value::from(*n),
+        lbug::Value::Int32(n) => serde_json::Value::from(*n),
+        lbug::Value::Int64(n) => serde_json::Value::from(*n),
+        lbug::Value::UInt8(n) => serde_json::Value::from(*n),
+        lbug::Value::UInt16(n) => serde_json::Value::from(*n),
+        lbug::Value::UInt32(n) => serde_json::Value::from(*n),
+        lbug::Value::UInt64(n) => serde_json::Value::from(*n),
+        lbug::Value::Int128(n) => serde_json::Value::from(n.to_string()),
+        lbug::Value::Float(n) => serde_json::Number::from_f64(*n as f64)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        lbug::Value::Double(n) => serde_json::Number::from_f64(*n)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        lbug::Value::Date(d) => serde_json::Value::from(d.to_string()),
+        lbug::Value::Interval(d) => serde_json::Value::from(d.to_string()),
+        lbug::Value::Timestamp(t)
+        | lbug::Value::TimestampTz(t)
+        | lbug::Value::TimestampNs(t)
+        | lbug::Value::TimestampMs(t)
+        | lbug::Value::TimestampSec(t) => serde_json::Value::from(t.to_string()),
+        lbug::Value::String(s) => serde_json::Value::from(s.as_str()),
+        lbug::Value::Json(j) => j.clone(),
+        lbug::Value::Blob(b) => serde_json::Value::from(format!("<blob {} bytes>", b.len())),
+        lbug::Value::List(_, list) | lbug::Value::Array(_, list) => {
+            serde_json::Value::Array(list.iter().map(admin_value_to_json).collect())
+        }
+        lbug::Value::Struct(fields) => {
+            let mut obj = serde_json::Map::new();
+            for (k, vv) in fields {
+                obj.insert(k.clone(), admin_value_to_json(vv));
+            }
+            serde_json::Value::Object(obj)
+        }
+        lbug::Value::Map(_, entries) => {
+            let mut obj = serde_json::Map::new();
+            for (k, vv) in entries {
+                obj.insert(admin_value_to_json(k).to_string(), admin_value_to_json(vv));
+            }
+            serde_json::Value::Object(obj)
+        }
+        lbug::Value::RecursiveRel { .. } => serde_json::Value::from("<recursive_rel>"),
+        lbug::Value::Union { value, .. } => admin_value_to_json(value),
+        lbug::Value::UUID(u) => serde_json::Value::from(u.to_string()),
+        lbug::Value::Decimal(d) => serde_json::Value::from(d.to_string()),
+        lbug::Value::Node(n) => serde_json::Value::from(format!("<node {}>", n)),
+        lbug::Value::Rel(r) => serde_json::Value::from(format!("<rel {}>", r)),
+        lbug::Value::InternalID(id) => serde_json::Value::from(id.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -351,7 +298,7 @@ mod tests {
         let project = tmp.path().join("proj");
         let fs = system_fs();
         init(&project, &fs).unwrap();
-        let session = open_session(&project, &fs).unwrap();
+        let session = open_admin_session(&database_path(&project)).unwrap();
         session
             .conn
             .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
@@ -436,7 +383,7 @@ mod tests {
         let project = tmp.path().join("proj");
         let fs = system_fs();
         init(&project, &fs).unwrap();
-        let session = open_session(&project, &fs).unwrap();
+        let session = open_admin_session(&database_path(&project)).unwrap();
         session
             .conn
             .query("CREATE (:MetaType {id: 'mt.system', namespace: 'c4', name: 'system'});")
