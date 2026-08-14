@@ -34,6 +34,13 @@ jobs:
       - name: Resolve pinned toolchain
         run: rustup show active-toolchain
 
+      # Bootstrap rust-embed assets (ADR-033). archctl/assets-stack/ is
+      # gitignored; without this step the build fails with E0599 on
+      # RustEmbed (same gap M33 fixed for the pre-push hook).
+      - name: Bootstrap assets-stack
+        working-directory: ${{ github.workspace }}
+        run: scripts/embed-stack.sh
+
       - name: Build
         run: cargo build --quiet
 
@@ -105,6 +112,12 @@ jobs:
       - name: Resolve pinned toolchain
         run: rustup show active-toolchain
 
+      # Bootstrap rust-embed assets (ADR-033) — gitignored, required to
+      # compile the crate before benchmarking (M33 gap in CI).
+      - name: Bootstrap assets-stack
+        working-directory: ${{ github.workspace }}
+        run: scripts/embed-stack.sh
+
       # ADR-019: benchmark smoke gate (deterministic, quick mode).
       - name: Benchmark smoke (export pipeline)
         run: cargo bench --bench export_pipeline -- --quick
@@ -132,6 +145,12 @@ jobs:
 
       - name: Resolve pinned toolchain
         run: rustup show active-toolchain
+
+      # Bootstrap rust-embed assets (ADR-033) — gitignored, required to
+      # compile the crate before benchmarking (M33 gap in CI).
+      - name: Bootstrap assets-stack
+        working-directory: ${{ github.workspace }}
+        run: scripts/embed-stack.sh
 
       # ADR-019 enforcement post-merge: fail when any benchmark degrades
       # >10% vs the previous main commit.

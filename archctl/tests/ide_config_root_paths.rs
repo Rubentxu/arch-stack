@@ -17,6 +17,7 @@
 //! (OpenCode + ZCode respect XDG; Claude Code + Codex do not).
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use archctl::ide::IdeAdapter;
 use archctl::ide::claude_code::ClaudeCodeAdapter as CC;
@@ -24,18 +25,39 @@ use archctl::ide::codex::CodexAdapter as Codex;
 use archctl::ide::opencode::OpenCodeAdapter as OC;
 use archctl::ide::zcode::ZCodeAdapter as ZC;
 
-/// Run `body` with `$HOME` set to `home`, restoring the previous value
-/// afterwards. Uses `catch_unwind` so a panic in one test doesn't leave
-/// HOME corrupted for subsequent tests.
+// Tests in this file mutate process-global env vars (HOME,
+// XDG_CONFIG_HOME). `cargo test` runs tests within a binary in PARALLEL
+// by default, so they must be serialized against each other.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+/// Run `body` with `$HOME` set to `home` and `$XDG_CONFIG_HOME` set to
+/// `<home>/.config`, restoring the previous values afterwards. Pinning
+/// both vars makes the test deterministic: `xdg::xdg_config_home()`
+/// resolves `XDG_CONFIG_HOME` first, so a runner-provided value (GitHub
+/// Actions sets it) would otherwise break the "under $HOME" assertion.
+/// Uses `catch_unwind` so a panic in one test doesn't leave the env
+/// corrupted for subsequent tests.
 fn with_home<F: FnOnce()>(home: &Path, body: F) {
-    let prev = std::env::var_os("HOME");
-    // SAFETY: tests in this file run with --test-threads=1 via `cargo test`,
-    // so concurrent HOME mutations can't race.
-    unsafe { std::env::set_var("HOME", home) };
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let prev_home = std::env::var_os("HOME");
+    let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+    let xdg = home.join(".config");
+    // SAFETY: all tests in this file serialize on ENV_LOCK, so no
+    // concurrent env mutation can race with this one.
+    unsafe {
+        std::env::set_var("HOME", home);
+        std::env::set_var("XDG_CONFIG_HOME", &xdg);
+    }
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
-    match prev {
-        Some(p) => unsafe { std::env::set_var("HOME", p) },
-        None => unsafe { std::env::remove_var("HOME") },
+    unsafe {
+        match prev_home {
+            Some(p) => std::env::set_var("HOME", p),
+            None => std::env::remove_var("HOME"),
+        }
+        match prev_xdg {
+            Some(p) => std::env::set_var("XDG_CONFIG_HOME", p),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
     }
     if let Err(e) = result {
         std::panic::resume_unwind(e);

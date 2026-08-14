@@ -2,7 +2,7 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-12, post-release v1.41.0 (M80b — arrows export adapter).
+> Última actualización: 2026-08-14, post-release v1.42.0 (p0-ladybug-compatibility-doctor-v2).
 
 ## Estado del trunk
 
@@ -182,9 +182,19 @@ cargo run --bin archctl -- doctor --scopes $(ls manifests | sed 's/.toml//' | tr
 
 ## Próxima acción del usuario
 
-Tras el cierre de M55–M69, el código y la documentación están en estado estable:
+Plan vigente: **wave P0–P3** del estudio
+`docs/arch-stack-proposals-2026-08-13/` (ver
+`09-IMPLEMENTATION-PR-PLAN.md`). Los horizontes H0–H4 están cerrados
+(H0: M70 v1.31.0 · H1: M71 v1.32.0 · H2: M80/M81/M80b · H4: v1.36.0).
 
-1. **H0 code cycle** — Contrato bundle schema ↔ Rust DTO ↔ TS types + selector configurable.
-2. **Otra ronda de housekeeping** (revisar sddk framework, vault, etc.).
-3. **Otra tarea o feature** no listada.
-4. **Cerrar sesión** y volver con fresh energy.
+Estado de la wave:
+
+1. **Wave 0 (remediation)** — 6/7 DONE (PRs #168–#175):
+   plugin tests, plugin hardening, ADR integrity, license coherence,
+   Ladybug doctor (v1.42.0), PR CI fast gates. **Falta item 7**
+   (native release runners: `release.yml` compila targets darwin en
+   `ubuntu-22.04`).
+2. **Wave 1 (architecture scaffolding)** — items 8–16: dependency
+   fitness baseline, composition root, migrar doctor/diagram a ports,
+   RawGraphQuery boundary, filesystem contracts, CapabilityRegistry.
+3. **Wave 2 (intelligence)** / **Wave 3 (platform)** — pendientes.
