@@ -38,7 +38,7 @@ impl CliContext {
         Self {
             env: environment::system_environment(),
             fs: filesystem::system_filesystem(),
-            clock: Arc::new(crate::clock::SystemClock),
+            clock: crate::clock::system_clock(),
             store_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
@@ -50,7 +50,7 @@ impl CliContext {
         Self {
             env,
             fs: filesystem::memory_filesystem(),
-            clock: Arc::new(crate::clock::FixedClock::new("2024-01-01T00:00:00Z")),
+            clock: crate::clock::fixed_clock("2024-01-01T00:00:00Z"),
             store_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
@@ -64,7 +64,7 @@ impl CliContext {
         Self {
             env,
             fs,
-            clock: Arc::new(crate::clock::FixedClock::new("2024-01-01T00:00:00Z")),
+            clock: crate::clock::fixed_clock("2024-01-01T00:00:00Z"),
             store_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
