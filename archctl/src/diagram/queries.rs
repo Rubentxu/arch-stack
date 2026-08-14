@@ -8,8 +8,53 @@
 //! canonical read API for column-typed result rows.
 
 use crate::diagram::export_types::EvidenceEntry;
-use crate::graph::{ElementRow, SemanticEdgeRow, VersionPropsRow};
-use crate::store::DiagramRepository;
+use crate::graph::validate_identifier;
+use crate::store::GraphStore;
+use anyhow::Context;
+
+/// An element row from Query 1.
+#[derive(Debug, Clone)]
+pub struct ElementRow {
+    pub id: String,
+    pub kind_id: String,
+    pub category: String,
+    pub canonical_key: String,
+    pub current_name: String,
+    pub current_status: String,
+    pub current_confidence: f64,
+    pub current_version_id: String,
+}
+
+/// A semantic edge row from Query 2.
+#[derive(Debug, Clone)]
+pub struct SemanticEdgeRow {
+    pub relation_id: String,
+    pub predicate_id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub order_key: String,
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A version props row from Query 4.
+#[derive(Debug)]
+pub struct VersionPropsRow {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Convert a Cell to a serde_json::Map (for Object variants).
+fn cell_to_json_map(cell: &crate::row::Cell) -> serde_json::Map<String, serde_json::Value> {
+    let json = cell.to_json();
+    json.as_object().cloned().unwrap_or_default()
+}
+
+/// Extract a f64 from a Cell (via JSON conversion).
+fn cell_as_f64(cell: &crate::row::Cell) -> Option<f64> {
+    cell.to_json().as_f64()
+}
 
 /// Query 1: elements filtered by category and scope.
 ///
@@ -18,36 +63,305 @@ use crate::store::DiagramRepository;
 ///         Per ADR-024: kind_id stores the projection-specific identifier
 ///         (e.g., "mt.container"), not the bare C4Kind string.
 pub fn query_elements(
-    store: &dyn DiagramRepository,
+    store: &dyn GraphStore,
     category: &str,
     scope_ident: Option<&str>,
     kind: Option<&str>,
 ) -> anyhow::Result<Vec<ElementRow>> {
-    DiagramRepository::list_elements(store, category, scope_ident, kind)
+    let safe_category = validate_identifier(category)?;
+
+    let cypher = match (scope_ident, kind) {
+        (Some(key), Some(k)) => {
+            let safe_key = validate_identifier(key)?;
+            let safe_kind = validate_identifier(k)?;
+            format!(
+                "MATCH (e:Element) \
+                 WHERE e.category = '{safe_category}' \
+                   AND e.canonical_key STARTS WITH '{safe_key}' \
+                   AND e.kind_id CONTAINS '{safe_kind}' \
+                 RETURN e.id, e.kind_id, e.category, e.canonical_key, \
+                        e.current_name, e.current_status, e.current_confidence, \
+                        e.current_version_id;"
+            )
+        }
+        (Some(key), None) => {
+            let safe_key = validate_identifier(key)?;
+            format!(
+                "MATCH (e:Element) \
+                 WHERE e.category = '{safe_category}' \
+                   AND e.canonical_key STARTS WITH '{safe_key}' \
+                 RETURN e.id, e.kind_id, e.category, e.canonical_key, \
+                        e.current_name, e.current_status, e.current_confidence, \
+                        e.current_version_id;"
+            )
+        }
+        (None, Some(k)) => {
+            let safe_kind = validate_identifier(k)?;
+            format!(
+                "MATCH (e:Element) \
+                 WHERE e.category = '{safe_category}' \
+                   AND e.kind_id CONTAINS '{safe_kind}' \
+                 RETURN e.id, e.kind_id, e.category, e.canonical_key, \
+                        e.current_name, e.current_status, e.current_confidence, \
+                        e.current_version_id;"
+            )
+        }
+        (None, None) => format!(
+            "MATCH (e:Element) \
+             WHERE e.category = '{safe_category}' \
+             RETURN e.id, e.kind_id, e.category, e.canonical_key, \
+                    e.current_name, e.current_status, e.current_confidence, \
+                    e.current_version_id;"
+        ),
+    };
+
+    let rows = store.query(&cypher).context("query_elements")?;
+    rows.into_iter()
+        .map(|r| {
+            Ok(ElementRow {
+                id: r
+                    .get("e.id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                kind_id: r
+                    .get("e.kind_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                category: r
+                    .get("e.category")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                canonical_key: r
+                    .get("e.canonical_key")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                current_name: r
+                    .get("e.current_name")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                current_status: r
+                    .get("e.current_status")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                current_confidence: r
+                    .get("e.current_confidence")
+                    .and_then(cell_as_f64)
+                    .unwrap_or(0.0),
+                current_version_id: r
+                    .get("e.current_version_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 /// Query 2: semantic relations within the given category.
 pub fn query_semantic_edges(
-    store: &dyn DiagramRepository,
+    store: &dyn GraphStore,
     category: &str,
 ) -> anyhow::Result<Vec<SemanticEdgeRow>> {
-    DiagramRepository::list_semantic_edges(store, category)
+    let safe_category = validate_identifier(category)?;
+
+    let cypher = format!(
+        "MATCH (src:Element)-[edge:SEMANTIC_EDGE]->(tgt:Element) \
+         WHERE src.category = '{safe_category}' \
+           AND tgt.category = '{safe_category}' \
+           AND edge.active = true \
+         RETURN edge.relation_id, edge.predicate_id, src.id AS source_id, tgt.id AS target_id, \
+                edge.order_key, edge.props;"
+    );
+
+    let rows = store.query(&cypher).context("query_semantic_edges")?;
+    rows.into_iter()
+        .map(|r| {
+            let props = r
+                .get("edge.props")
+                .map(cell_to_json_map)
+                .unwrap_or_default();
+
+            Ok(SemanticEdgeRow {
+                relation_id: r
+                    .get("edge.relation_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                predicate_id: r
+                    .get("edge.predicate_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                source_id: r
+                    .get("source_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                target_id: r
+                    .get("target_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                order_key: r
+                    .get("edge.order_key")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                props,
+            })
+        })
+        .collect()
 }
 
 /// Query 3: evidence for given version IDs (status filtering happens in Rust).
 pub fn query_evidence_for_versions(
-    store: &dyn DiagramRepository,
+    store: &dyn GraphStore,
     version_ids: &[String],
 ) -> anyhow::Result<Vec<EvidenceEntry>> {
-    DiagramRepository::list_evidence_for_versions(store, version_ids)
+    if version_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let safe_ids: Result<Vec<_>, _> = version_ids
+        .iter()
+        .map(|id| validate_identifier(id).map(|s| s.to_string()))
+        .collect();
+    let safe_ids = safe_ids.context("version id validation failed")?;
+    let id_list = safe_ids
+        .iter()
+        .map(|id| format!("'{}'", id))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let cypher = format!(
+        "MATCH (ev:ElementVersion)-[r:SUPPORTED_BY]->(e:Evidence) \
+         WHERE ev.id IN [{id_list}] \
+         RETURN e.id, e.kind, e.claim, e.path, e.start_line, e.end_line, \
+                e.tool_name, e.tool_version, e.rule_id, e.props, \
+                e.content_hash, e.observed_at;"
+    );
+
+    let rows = store
+        .query(&cypher)
+        .context("query_evidence_for_versions")?;
+
+    rows.into_iter()
+        .filter_map(|r| {
+            let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
+            let status = props.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if status != "accepted" {
+                return None;
+            }
+            Some(Ok(EvidenceEntry {
+                id: r
+                    .get("e.id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                kind: r
+                    .get("e.kind")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                claim: r
+                    .get("e.claim")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                path: r
+                    .get("e.path")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                start_line: r.get("e.start_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
+                end_line: r.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
+                tool_name: r
+                    .get("e.tool_name")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                tool_version: r
+                    .get("e.tool_version")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                rule_id: r
+                    .get("e.rule_id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                content_hash: r
+                    .get("e.content_hash")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                observed_at: r
+                    .get("e.observed_at")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+            }))
+        })
+        .collect()
 }
 
 /// Query 4: element version properties.
 pub fn query_version_props(
-    store: &dyn DiagramRepository,
+    store: &dyn GraphStore,
     version_ids: &[String],
 ) -> anyhow::Result<Vec<VersionPropsRow>> {
-    DiagramRepository::list_version_props(store, version_ids)
+    if version_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let safe_ids: Result<Vec<_>, _> = version_ids
+        .iter()
+        .map(|id| validate_identifier(id).map(|s| s.to_string()))
+        .collect();
+    let safe_ids = safe_ids.context("version id validation failed")?;
+    let id_list = safe_ids
+        .iter()
+        .map(|id| format!("'{}'", id))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let cypher = format!(
+        "MATCH (v:ElementVersion) \
+         WHERE v.id IN [{id_list}] \
+         RETURN v.id, v.name, v.description, v.props;"
+    );
+
+    let rows = store.query(&cypher).context("query_version_props")?;
+    rows.into_iter()
+        .map(|r| {
+            let props = r.get("v.props").map(cell_to_json_map).unwrap_or_default();
+
+            Ok(VersionPropsRow {
+                id: r
+                    .get("v.id")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                name: r
+                    .get("v.name")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                description: r
+                    .get("v.description")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                props,
+            })
+        })
+        .collect()
 }
 
 /// Check that a query string contains no write keywords.

@@ -14,8 +14,8 @@ use crate::diagram::export_types::{
 use crate::diagram::hash::base_revision;
 use crate::diagram::queries::{
     query_elements, query_evidence_for_versions, query_semantic_edges, query_version_props,
+    ElementRow,
 };
-use crate::graph::{ElementRow, VersionPropsRow};
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
 use crate::filesystem::Filesystem;
 use crate::store::GraphStore;
@@ -107,7 +107,7 @@ pub fn build_bundle(
         query_version_props(store, &version_ids).context("query_version_props failed")?;
 
     // 3. Build projection (nodes + edges)
-    let version_map: std::collections::HashMap<String, &VersionPropsRow> =
+    let version_map: std::collections::HashMap<String, &crate::diagram::queries::VersionPropsRow> =
         version_props.iter().map(|v| (v.id.clone(), v)).collect();
 
     // M81 D2: fetch ViewMembers and index by element_id for LEFT JOIN.
@@ -352,6 +352,40 @@ mod tests {
         evidence: Vec<Row>,
         version_props: Vec<Row>,
         view_members: Vec<crate::diagram::view_types::ViewMember>,
+    }
+
+    impl crate::store::DiagramRepository for MockGraphStore {
+        fn list_elements(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
+            // run_export → query_elements → DiagramRepository::list_elements
+            // path; the run_export tests use `&dyn GraphStore` and the
+            // MockGraphStore's `query()` impl handles `MATCH (E:ELEMENT)`.
+            // This list_elements exists only to satisfy the super-trait
+            // bound.
+            Ok(Vec::new())
+        }
+        fn list_semantic_edges(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
+            Ok(Vec::new())
+        }
+        fn list_evidence_for_versions(
+            &self,
+            _: &[String],
+        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
+            Ok(Vec::new())
+        }
+        fn list_version_props(
+            &self,
+            _: &[String],
+        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
+            Ok(Vec::new())
+        }
     }
 
     impl MockGraphStore {
@@ -663,40 +697,6 @@ mod tests {
         }
         fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
             unimplemented!()
-        }
-    }
-
-    impl crate::store::DiagramRepository for MockGraphStore {
-        fn list_elements(
-            &self,
-            _: &str,
-            _: Option<&str>,
-            _: Option<&str>,
-        ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
-            // The test fixture's run_export path goes through
-            // `diagram::queries` which still uses `GraphStore::query`
-            // (substring-matched). This `list_elements` impl exists to
-            // satisfy the trait bound; the run_export path doesn't
-            // actually call it.
-            Ok(Vec::new())
-        }
-        fn list_semantic_edges(
-            &self,
-            _: &str,
-        ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
-            Ok(Vec::new())
-        }
-        fn list_evidence_for_versions(
-            &self,
-            _: &[String],
-        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
-            Ok(Vec::new())
-        }
-        fn list_version_props(
-            &self,
-            _: &[String],
-        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            Ok(Vec::new())
         }
     }
 

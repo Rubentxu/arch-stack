@@ -781,15 +781,9 @@ mod tests {
         let n2 = put_with_clock(&project, &evidence, clock).unwrap();
         assert_eq!(n1, 1);
         assert_eq!(n2, 1, "MERGE must not duplicate rows");
-        let mut store = crate::store::open_default(&project).unwrap();
-        store.init().unwrap();
-        let rows = store.query("MATCH (e:Evidence) RETURN count(e) AS n;").unwrap();
-        assert_eq!(rows.len(), 1);
-        let count = rows[0]
-            .get("n")
-            .and_then(|c| c.as_i64())
-            .unwrap_or(0);
-        assert_eq!(count, 1);
+        let count =
+            crate::graph::query(&project, "MATCH (e:Evidence) RETURN count(e) AS n;", &fs).unwrap();
+        assert_eq!(count[0]["n"], 1);
     }
 
     /// Regression test for D4: source_origin is persisted in Evidence.props
@@ -824,9 +818,12 @@ mod tests {
         put_with_clock(&project, &evidence, clock).unwrap();
 
         // Verify the evidence was written
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let count = __store.query(r#"MATCH (e:Evidence {id: 'ev:test:source_origin'}) RETURN count(e) AS n;"#).unwrap();
+        let count = crate::graph::query(
+            &project,
+            "MATCH (e:Evidence {id: 'ev:test:source_origin'}) RETURN count(e) AS n;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(
             count[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
             1,
@@ -880,9 +877,12 @@ mod tests {
         put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
 
         // Verify source node exists
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let sources = __store.query(r#"MATCH (s:SourceArtifact) RETURN s.id AS id, s.relative_path AS rp;"#).unwrap();
+        let sources = crate::graph::query(
+            &project,
+            "MATCH (s:SourceArtifact) RETURN s.id AS id, s.relative_path AS rp;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(sources.len(), 1);
         assert_eq!(
             sources[0].get("rp").and_then(|c| c.as_str()),
@@ -890,10 +890,13 @@ mod tests {
         );
 
         // Verify edge exists
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let edges = __store.query(r#"MATCH (e:Evidence {id: 'ev:test:pws1'})-[:EXTRACTED_FROM]->(s:SourceArtifact) \
-             RETURN s.id AS sid;"#).unwrap();
+        let edges = crate::graph::query(
+            &project,
+            "MATCH (e:Evidence {id: 'ev:test:pws1'})-[:EXTRACTED_FROM]->(s:SourceArtifact) \
+             RETURN s.id AS sid;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(edges.len(), 1, "EXTRACTED_FROM edge must be created");
     }
 
@@ -929,9 +932,12 @@ mod tests {
         put_with_source(&project, &ev, None, None, clock).unwrap();
 
         // Verify evidence was written but no source node was created
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let evidence_count = __store.query(r#"MATCH (e:Evidence {id: 'ev:test:pws2'}) RETURN count(e) AS n;"#).unwrap();
+        let evidence_count = crate::graph::query(
+            &project,
+            "MATCH (e:Evidence {id: 'ev:test:pws2'}) RETURN count(e) AS n;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(
             evidence_count[0]
                 .get("n")
@@ -940,9 +946,12 @@ mod tests {
             1
         );
 
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let source_count = __store.query(r#"MATCH (s:SourceArtifact) RETURN count(s) AS n;"#).unwrap();
+        let source_count = crate::graph::query(
+            &project,
+            "MATCH (s:SourceArtifact) RETURN count(s) AS n;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(
             source_count[0]
                 .get("n")
@@ -997,9 +1006,12 @@ mod tests {
         // Run again with same source
         put_with_source(&project, &ev, Some(&[sa]), None, clock).unwrap();
 
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let source_count = __store.query(r#"MATCH (s:SourceArtifact) RETURN count(s) AS n;"#).unwrap();
+        let source_count = crate::graph::query(
+            &project,
+            "MATCH (s:SourceArtifact) RETURN count(s) AS n;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(
             source_count[0]
                 .get("n")
@@ -1009,10 +1021,13 @@ mod tests {
             "MERGE on SourceArtifact must be idempotent — exactly 1 node"
         );
 
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let edge_count = __store.query(r#"MATCH (e:Evidence {id: 'ev:test:pws3'})-[:EXTRACTED_FROM]->(s:SourceArtifact) \
-             RETURN count(*) AS n;"#).unwrap();
+        let edge_count = crate::graph::query(
+            &project,
+            "MATCH (e:Evidence {id: 'ev:test:pws3'})-[:EXTRACTED_FROM]->(s:SourceArtifact) \
+             RETURN count(*) AS n;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(
             edge_count[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
             1,
@@ -1060,9 +1075,12 @@ mod tests {
         put_with_source(&project, &ev, None, Some(&eval), fixed).unwrap();
 
         // Verify Evaluation node was created
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let eval_rows = __store.query(r#"MATCH (ev:Evaluation) RETURN ev.id AS id, ev.criterion AS c;"#).unwrap();
+        let eval_rows = crate::graph::query(
+            &project,
+            "MATCH (ev:Evaluation) RETURN ev.id AS id, ev.criterion AS c;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(eval_rows.len(), 1);
         assert_eq!(
             eval_rows[0].get("c").and_then(|c| c.as_str()),
@@ -1070,10 +1088,13 @@ mod tests {
         );
 
         // Verify EVALUATES edge exists
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let edge_rows = __store.query(r#"MATCH (ev:Evaluation)-[:EVALUATES]->(e:Evidence {id: 'ev:test:pws_eval'}) \
-             RETURN ev.id AS evid;"#).unwrap();
+        let edge_rows = crate::graph::query(
+            &project,
+            "MATCH (ev:Evaluation)-[:EVALUATES]->(e:Evidence {id: 'ev:test:pws_eval'}) \
+             RETURN ev.id AS evid;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(edge_rows.len(), 1, "EVALUATES edge must be created");
     }
 
@@ -1109,9 +1130,12 @@ mod tests {
         put_with_source(&project, &ev, None, None, clock).unwrap();
 
         // Verify no Evaluation node was created
-        let mut __store = crate::store::open_default(&project).unwrap();
-        __store.init().unwrap();
-        let eval_rows = __store.query(r#"MATCH (ev:Evaluation) RETURN count(ev) AS n;"#).unwrap();
+        let eval_rows = crate::graph::query(
+            &project,
+            "MATCH (ev:Evaluation) RETURN count(ev) AS n;",
+            &fs,
+        )
+        .unwrap();
         assert_eq!(
             eval_rows[0].get("n").and_then(|c| c.as_i64()).unwrap_or(0),
             0,

@@ -3,7 +3,7 @@
 //! Projects C4 elements and edges to Structurizr DSL format.
 
 use crate::diagram::project_selector::{ProjectSelector, ViewKind};
-use crate::graph::{ElementRow, SemanticEdgeRow};
+use crate::diagram::queries::{ElementRow, SemanticEdgeRow};
 
 /// Project elements + edges to Structurizr DSL.
 pub fn project(

@@ -9,7 +9,7 @@ pub mod plantuml;
 pub mod structurizr;
 
 use crate::diagram::project_selector::ProjectSelector;
-use crate::graph::{ElementRow, SemanticEdgeRow};
+use crate::diagram::queries::{ElementRow, SemanticEdgeRow};
 
 /// Output format for diagram project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P1-03** — Architecture repositories: introduce `ElementRepository`,
+  `EvidenceRepository`, `SourceRepository`, `EvaluationRepository`,
+  `DiagramRepository` as siblings of `GraphStore` in `store.rs`.
+  `LbugStore` implements all five; the four `code/*` apply pipelines
+  (`call_graph`, `class_diagram`, `state_machine`, `c4_discover`) plus
+  the four `diagram::queries` reads plus the 12 `evidence::tests`
+  raw queries now consume the typed port. `archctl/src/graph.rs` no
+  longer imports `lbug` (domain→lbug paydown of dep-fitness baseline
+  finding #1; baseline ratchet 4→3). The `Session`/`create_db_session`
+  lifetime-transmute trick and the `escape_cypher_string` helper moved
+  to the `LbugStore` adapter. `manifests/graph.toml` now requires
+  `use lbug` absence and the five repository types in `must_hold`;
+  `manifests/store.toml` exposes the new traits in `public_symbols`.
+
+### Removed
+- **P1-03** — Public `graph::Session` struct and `graph::open_session`
+  function removed; the lbug session lifetime is now private to
+  `LbugStore::LbugSession`. `GraphStore::query` retained on the trait
+  (admin boundary per `02-TARGET-ARCHITECTURE.md`) but no longer
+  reachable from apply paths.
+
+### Changed
+- **P1-03** — `LbugStore::open` + `init` replaces `crate::store::open_and_init`
+  in `code/call_graph.rs::apply`, `code/c4_discover.rs::apply`,
+  `code/class_diagram.rs::apply`, and `code/state_machine.rs::apply`.
+  `Box<dyn GraphStore>` no longer threads through these handlers — they
+  hold `LbugStore` directly so the repository traits (which `Box<dyn
+  GraphStore>` cannot expose via dynamic dispatch) are reachable.
 - **P1-01** — `GraphStoreFactory` trait + `LbugStoreFactory` adapter as the
   composition root for store initialisation (ADR-010 single-writer flock).
   `CliContext` extended with `clock: Arc<dyn Clock>` and

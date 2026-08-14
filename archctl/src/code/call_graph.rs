@@ -1433,7 +1433,7 @@ fn write_call_edge(
             file: edge.file.clone(),
             line: u64::from(edge.line),
             confidence: edge.confidence,
-            rule_id: format!("call_graph_edge"),
+            rule_id: "call_graph_edge".to_string(),
             props: ev_props,
         },
     )
@@ -1463,7 +1463,7 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::{existing_canonical_keys, write_source_artifact};
+    use crate::code::apply_common::write_source_artifact;
     use crate::store::{GraphStore, LbugStore};
 
     let mut store = LbugStore::open(project_dir).map_err(|e| {
@@ -1516,7 +1516,6 @@ pub fn apply(
     // ≈ 100KB per query) vs N/BATCH_SIZE query roundtrips. For echo
     // 1307 elements: ~3 queries instead of ~6535. Expected additional
     // 2-10× speedup over PR1's transaction wrap.
-    const BATCH_SIZE: usize = 500;
 
 // Scope the mutable borrow of `store` so we can re-borrow for
         // commit/rollback after.

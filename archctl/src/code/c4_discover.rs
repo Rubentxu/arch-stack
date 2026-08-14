@@ -7,7 +7,6 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::code::apply_common::escape_cypher_string;
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
 use crate::store::{
@@ -370,7 +369,7 @@ pub fn apply(
     fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::write_source_artifact;
-    use crate::store::{ElementRepository, EvidenceRepository, GraphStore, LbugStore};
+    use crate::store::{ElementRepository, LbugStore};
 
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
