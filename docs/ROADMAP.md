@@ -927,7 +927,11 @@ Incluye:
 | `m58-specs-index` | `docs/m58-specs-index` (merged to main via PR #138) | `e16e249` | **Cerrado** ✅ · tag none · adds docs/specs/index.md (85 lines) with 13 specs grouped by audience (diagram views, code extraction, rendering, benchmarks, E2E); each row carries audience + one-line summary; pure docs cycle (M62 precedent, no tag bump) |
 | `m61-cognitive-policy-tests` | `test/m61-cognitive-policy-tests` (merged to main via PR #140) | `78c1e0d` | **Cerrado** ✅ · tag `v1.29.0` · adds 22 unit tests for cognitive/policy/{context,decision} (the 0-test gap in M55 study M61 audit); side-fix: `PolicyResult` derives PartialEq; cognitive test count 111 → 133 |
 | `p0-ladybug-compatibility-doctor-v2` | `feat/p0-ladybug-doctor-v2` (merged to main via PR #174) | `31b17e1` | **Cerrado** ✅ · tag `v1.42.0` · `archctl doctor --scope storage [--json]`: LadybugDB availability + crate/native alignment + schema init + CRUD smoke probe (ADR-048 5-axis envelope); debt-verify PASS_WITH_WARNINGS |
-| `p1-04-raw-graph-query-boundary` | `feat/p1-04-raw-graph-query-boundary` (pending PR) | `44df981` | **En curso** 🔄 · verify PASS · trait split: RawGraphQuery guard (P1-04 T1.1+T1.2), SemanticEdgeRepository wiring (T2), DiagramRepository reads (T5), bench fix (T4.1 `44df981`); ADR-059 |
+| `p0-03-native-release-runners` | `fix/p0-03-native-release-runners` (merged to main via PR #177) | `6680401` | **Cerrado** ✅ · tag `v1.43.0` · `release.yml` native runners per target (darwin on `macos-13`/`macos-14`, linux aarch64 on `ubuntu-24.04-arm`) — Wave 0 item 7/7 |
+| `p1-09-dep-fitness-baseline` | `feat/p1-09-dep-fitness-baseline` (merged to main via PR #178) | `687ce4e` | **Cerrado** ✅ · tag `v1.43.0` · `scripts/check-dep-fitness.sh` report-only + baseline ratchet (`dep-fitness-baseline.txt`); wired into `verify-local.sh` cheap tier + `test-ci-gates.sh` |
+| `p1-01-composition-root` | `feat/p1-01-composition-root` (merged to main via PR #179) | `f046247` | **Cerrado** ✅ · tag `v1.43.0` · `GraphStoreFactory`/`LbugStoreFactory` composition root; `CliContext` gains `clock` + `store_factory`; 9 store call sites + 8 clock literals rewired |
+| `p1-03-architecture-repositories` | `feat/p1-03-architecture-repositories` (merged to main via PR #180, merge `9a1fb17`) | `95a2e5c` | **Cerrado** ✅ · tag `v1.43.0` (peels `95a2e5c`, ancestor of main via PR #180 — push directo bloqueado por GH006, 4º precedente) · 5 repository traits (Element/Evidence/Source/Evaluation/Diagram) implemented by `LbugStore`; `graph.rs` no longer imports `lbug` (dep-fitness 4→3) |
+| `p1-04-raw-graph-query-boundary` | `feat/p1-04-raw-graph-query-boundary` (merged to main via PR #181) + patch `fix/p1-04-admin-query-guard` (PR #182) | `b039dee` | **Cerrado** ✅ · tags `v1.44.0`+`v1.44.1` · RawGraphQuery admin-only boundary (tokenized `is_read_only_query` guard), SemanticEdgeRepository, `ensure_metatype`, `diagram::queries`→`DiagramRepository`, ~300 LOC dead code out; ADR-059 (+amendment); verify PW→remediated · debt-verify PW (0 criticals) · UAT READY 3/3 |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -1401,16 +1405,28 @@ Razones:
 - **Output**: `archctl doctor --scope storage [--json]` — probe de compatibilidad LadybugDB (lbug): disponibilidad de crate, alineación crate/native, inicialización de schema y smoke CRUD. Módulo `archctl/src/doctor/` nuevo con `DoctorScope`, `LbugStorageProbe`, `NativeProbe`, smoke gate runner. JSON envelope de 5 ejes per ADR-048 (`archctlVersion`, `lbugCrateVersion`, `native`, `targetCompilerStdlib`, `findings[]`). Tier-1 CI smoke gate en `pr.yml` + release gate en `release.yml`.
 - **Bugfix crítico**: `target_triple()` devolvía `"unknown"` porque `option_env!("TARGET")` requiere propagación desde `build.rs` (Cargo no la expone sin build script). Fix: `archctl/build.rs` con `println!("cargo:rustc-env=TARGET={}", ...)` — documentado como jurisprudencia.
 - **Notas de proceso**: main es rama protegida → feature branch + PR obligatorio. El ciclo v1 (`p0-ladybug-compatibility-doctor`) quedó bloqueado permanentemente por receipt collision (UNIQUE constraint en `gate_receipts`); v2 reutilizó spec/design verbatim tras validar que seguían vigentes.
-- **Wave 0 status**: este ciclo cierra el item 5 del plan de remediation (docs/arch-stack-proposals-2026-08-13). Items 1–6 DONE (PRs #168–#174). Falta item 7 (native release runners: `release.yml` compila targets darwin en ubuntu-22.04).
+- **Wave 0 status**: este ciclo cierra el item 5 del plan de remediation (docs/arch-stack-proposals-2026-08-13). Wave 0 COMPLETA 7/7 — item 7 cerrado por `p0-03` (PR #177, native release runners).
 
-## Cycle cerrado — `p1-04-raw-graph-query-boundary` (v1.43.0)
+## Cycle cerrado — batch `v1.43.0`: `p0-03` + `p1-09` + `p1-01` + `p1-03`
+
+- **Fecha**: 2026-08-15 (tag `v1.43.0`); PRs merged 2026-08-14/15
+- **Branches**: `fix/p0-03-native-release-runners` (PR #177, `6680401`), `feat/p1-09-dep-fitness-baseline` (PR #178, `687ce4e`), `feat/p1-01-composition-root` (PR #179, `f046247`), `feat/p1-03-architecture-repositories` (PR #180, merge `9a1fb17`)
+- **Tag**: `v1.43.0` (peels `95a2e5c`, ancestro de main vía PR #180 — release cerrado por ruta PR tras GH006 en push directo)
+- **Output**:
+  - `p0-03`: `release.yml` native runners per target — darwin en `macos-13`/`macos-14`, linux aarch64 en `ubuntu-24.04-arm`; assets-stack bootstrap pre-release build. Cierra Wave 0 7/7.
+  - `p1-09`: `scripts/check-dep-fitness.sh` report-only con baseline ratchet (4 findings legados con paydown paths); `--strict` para el futuro gate CI-blocking; wired a `verify-local.sh` (cheap) y `test-ci-gates.sh` (6 aserciones).
+  - `p1-01`: composition root — `GraphStoreFactory`/`LbugStoreFactory`; `CliContext` con `clock: Arc<dyn Clock>` + `store_factory: Arc<dyn GraphStoreFactory>`; 9 store call sites y 8 clock literals rewired.
+  - `p1-03`: 5 repository traits (`ElementRepository`, `EvidenceRepository`, `SourceRepository`, `EvaluationRepository`, `DiagramRepository`) implementados por `LbugStore`; `graph.rs` ya no importa `lbug` (dep-fitness baseline 4→3); `graph::Session` público eliminado; `LbugStore::open`+`init` reemplaza `open_and_init` en los 4 apply paths.
+- **Notas de proceso**: 4º precedente GH006 — push directo a main bloqueado; release cerrado vía PR #180 --no-ff con tag en el ancestro. Ledger P1-03 con drift git-after-archive documentado y reparado.
+
+## Cycle cerrado — `p1-04-raw-graph-query-boundary` (v1.44.0 + patch v1.44.1)
 
 - **Fecha**: 2026-08-15
-- **Branch**: `feat/p1-04-raw-graph-query-boundary` (merged to main via PR — TBD)
-- **Tag**: `v1.43.0` (TBD)
-- **Verdict**: verify PASS · debt-verify TBD · archive TBD
+- **Branch**: `feat/p1-04-raw-graph-query-boundary` (merged to main via PR #181, `eea645e`) + patch `fix/p1-04-admin-query-guard` (PR #182, `b039dee`)
+- **Tag**: `v1.44.0` (`eea645e`) + `v1.44.1` (`b039dee`), ambos verificados en remoto
+- **Verdict**: verify PASS_WITH_WARNINGS → remediado in-branch · debt-verify PASS_WITH_WARNINGS (0 criticals) · UAT READY 3/3 · archive DONE (ledger CLOSED, 135 eventos)
 - **Commits**: 13 (T1.1+T1.2 trait split, T2.2–T2.6 wiring, T3.1 golden test, T4.1 bench retarget `44df981`, T5.1 manifests+docs)
-- **Tests**: 831 passing, 1 regression fixed (state_machine atomic-abort test rewired to repository writes)
+- **Tests**: 841+ passing final (suite verde tras remediations); 1 regression fixed during apply (state_machine atomic-abort test rewired to repository writes); UAT cazó 2 regresiones invisibles a unit tests → patch v1.44.1 (`open_raw` sin init en reads raw; guard substring dejaba pasar `MERGE` al inicio de token — fix: tokenización)
 - **Output**:
   - `RawGraphQuery` trait: admin-only raw Cypher entry point in `store.rs` with `is_read_only_query` guard (rejects MERGE/CREATE/DELETE/SET/REMOVE). `execute_raw_cypher_for_test` escape hatch for test utilities.
   - `SemanticEdgeRepository` trait: `link_semantic_edge`, `link_call_edge_with_resolution` — replaces raw Cypher in `call_graph`, `class_diagram`, `state_machine` apply pipelines.
@@ -1424,4 +1440,4 @@ Razones:
 - **T4.1 focused fix** (`44df981`): `common/mod.rs` seed writes were using `store.query(MERGE...)` which the `is_read_only_query` guard now rejects at runtime. Fixed by replacing with `execute_raw_cypher_for_test` (test escape hatch). Also corrected relation seed CREATE syntax to match `link_semantic_edge` pattern (MERGE on relation_id keyed by `relation_id` property, then SET for additional props — avoids Kùzu REL TABLE inline-property restriction).
 - **Apply deviations from prior tasks**: test fix for `state_machine_apply_atomic_abort_on_write_error` required same pattern as prior class_diagram fix (upsert_element + execute_raw_cypher_for_test); no other deviations.
 - **Notas**: ADR-059 documents the trait-split decision; the 22 application call sites that were using `GraphStore::query` for writes are now using typed repository methods.
-- **Próximo candidato**: Wave 0 item 7 (native release runners) o Wave 1 — architecture scaffolding (items 8–16 del plan 2026-08-13).
+- **Próximo candidato**: P1-02 (CLI commands → handlers) o P1-05 (UnitOfWork — absorbería el follow-up de separación estática del supertrait `RawGraphQuery` y el cfg(test)-gate de `execute_raw_cypher_for_test`, W-2/W-3 del debt-verify).
