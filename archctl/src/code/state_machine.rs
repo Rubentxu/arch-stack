@@ -1098,6 +1098,7 @@ pub fn apply(
     report: &StateMachineReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
+    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version};
     use crate::store::{
         ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork,
     };
@@ -1111,12 +1112,9 @@ pub fn apply(
     let mut relations_written = 0usize;
     let mut relations_skipped = 0usize;
 
+    // M32 D2: Hoist existing_canonical_keys OUT of per-machine/state/transition loops.
+    // Skip-before-batch: only include elements NOT already in store in UNWIND batches.
     let existing_keys = ElementRepository::existing_canonical_keys(&store)?;
-
-    let version_id = format!(
-        "blake3:{}",
-        blake3::hash(report.schema_version.as_bytes()).to_hex()
-    );
 
     // D5: wrap writes in single transaction via UnitOfWork.
     let mut tx = UnitOfWork::begin_transaction(&mut store).context("begin_transaction")?;
@@ -1124,14 +1122,23 @@ pub fn apply(
     // Reborrow through Transaction to call LbugStore repository methods.
     let s: &mut LbugStore = tx.as_mut();
 
+    // ── Phase 1: Collect candidates across all machines ─────────────────────────
+    let mut machine_elements: Vec<crate::graph::Element> = Vec::new();
+    let mut machine_versions: Vec<crate::graph::ElementVersion> = Vec::new();
+    let mut state_elements: Vec<crate::graph::Element> = Vec::new();
+    let mut state_versions: Vec<crate::graph::ElementVersion> = Vec::new();
+    let mut transition_elements: Vec<crate::graph::Element> = Vec::new();
+
     for machine in &report.machines {
-        // Write state machine element
         let machine_id = format!("sm:{}", machine.canonical_key);
-        if existing_keys.contains(&machine.canonical_key) {
-            elements_skipped += 1;
-        } else {
-            s.upsert_element(&crate::graph::Element {
-                id: machine_id,
+
+        if !existing_keys.contains(&machine.canonical_key) {
+            let version_id = format!(
+                "sm:version:machine:{}",
+                blake3::hash(machine_id.as_bytes()).to_hex()
+            );
+            machine_elements.push(crate::graph::Element {
+                id: machine_id.clone(),
                 kind_id: "uml.state_machine".to_string(),
                 category: "uml".to_string(),
                 canonical_key: machine.canonical_key.clone(),
@@ -1139,8 +1146,18 @@ pub fn apply(
                 current_status: "active".to_string(),
                 current_confidence: machine.confidence,
                 current_version_id: version_id.clone(),
-            })?;
-            elements_written += 1;
+            });
+            machine_versions.push(crate::graph::ElementVersion {
+                id: version_id,
+                element_id: machine_id,
+                name: machine.name.clone(),
+                status: "active".to_string(),
+                origin: "state_machine::apply".to_string(),
+                confidence: machine.confidence,
+                props: serde_json::Map::new(),
+            });
+        } else {
+            elements_skipped += 1;
         }
 
         // Build a prefix for state keys: <lang>:<file>
@@ -1151,15 +1168,17 @@ pub fn apply(
             .map(|(prefix, _)| prefix)
             .unwrap_or(&machine.canonical_key);
 
-        // Write state elements
         for state in &machine.states {
-            // State canonical key: <lang>:<file>:state:<name>:<line> (per SCN-424)
             let state_key = format!("{}:state:{}:{}", lang_file_prefix, state.name, state.line);
             let state_id = format!("sm:state:{}", state_key);
 
             if !existing_keys.contains(&state_key) {
-                s.upsert_element(&crate::graph::Element {
-                    id: state_id,
+                let version_id = format!(
+                    "sm:version:state:{}",
+                    blake3::hash(state_id.as_bytes()).to_hex()
+                );
+                state_elements.push(crate::graph::Element {
+                    id: state_id.clone(),
                     kind_id: "uml.state".to_string(),
                     category: "uml".to_string(),
                     canonical_key: state_key.clone(),
@@ -1167,66 +1186,93 @@ pub fn apply(
                     current_status: "active".to_string(),
                     current_confidence: machine.confidence,
                     current_version_id: version_id.clone(),
-                })?;
-                elements_written += 1;
+                });
+                state_versions.push(crate::graph::ElementVersion {
+                    id: version_id,
+                    element_id: state_id,
+                    name: state.name.clone(),
+                    status: "active".to_string(),
+                    origin: "state_machine::apply".to_string(),
+                    confidence: machine.confidence,
+                    props: serde_json::Map::new(),
+                });
             } else {
                 elements_skipped += 1;
             }
         }
 
-        // Write transitions as Elements with proper keys, then link to states
         for transition in &machine.transitions {
-            // Find source and target state line numbers by matching state names
-            let src_state = machine.states.iter().find(|s| s.name == transition.from);
-            let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
-
-            // Transition canonical key: <lang>:<file>:transition:<from>_<to>:<line>
             let transition_key = format!(
                 "{}:transition:{}_{}:{}",
                 lang_file_prefix, transition.from, transition.to, transition.line
             );
-            let trans_id = format!("sm:transition:{}", transition_key);
 
-            // Write transition element if not exists
             if !existing_keys.contains(&transition_key) {
-                let trigger_str = transition.trigger.as_deref().unwrap_or("");
-                let guard_str = transition.guard.as_deref().unwrap_or("");
+                let version_id = format!(
+                    "sm:version:transition:{}",
+                    blake3::hash(transition_key.as_bytes()).to_hex()
+                );
                 let transition_name = format!("{}_to_{}", transition.from, transition.to);
-
-                let mut props = serde_json::Map::new();
-                props.insert(
-                    "source_state".to_string(),
-                    serde_json::Value::String(transition.from.clone()),
-                );
-                props.insert(
-                    "target_state".to_string(),
-                    serde_json::Value::String(transition.to.clone()),
-                );
-                props.insert(
-                    "trigger".to_string(),
-                    serde_json::Value::String(trigger_str.to_string()),
-                );
-                props.insert(
-                    "guard".to_string(),
-                    serde_json::Value::String(guard_str.to_string()),
-                );
-
-                s.upsert_element(&crate::graph::Element {
-                    id: trans_id.clone(),
+                transition_elements.push(crate::graph::Element {
+                    id: format!("sm:transition:{}", transition_key),
                     kind_id: "uml.transition".to_string(),
                     category: "uml".to_string(),
                     canonical_key: transition_key.clone(),
                     current_name: transition_name,
                     current_status: "active".to_string(),
                     current_confidence: machine.confidence,
-                    current_version_id: version_id.clone(),
-                })?;
-                elements_written += 1;
+                    current_version_id: version_id,
+                });
             } else {
                 elements_skipped += 1;
             }
+        }
+    }
 
-            // Create transition→source_state edge (if we found the source state)
+    // ── Phase 2: Batch-insert via UNWIND helpers ─────────────────────────────
+    // M32 D2: machines (Element + ElementVersion)
+    if !machine_elements.is_empty() {
+        let count = batch_upsert_element(s, &machine_elements)?;
+        elements_written += count;
+        batch_upsert_element_version(s, &machine_versions)?;
+    }
+
+    // M32 D2: states (Element + ElementVersion)
+    if !state_elements.is_empty() {
+        let count = batch_upsert_element(s, &state_elements)?;
+        elements_written += count;
+        batch_upsert_element_version(s, &state_versions)?;
+    }
+
+    // M32 D2: transitions (Element only, no ElementVersion)
+    if !transition_elements.is_empty() {
+        let count = batch_upsert_element(s, &transition_elements)?;
+        elements_written += count;
+    }
+
+    // ── Phase 3: Re-collect for edge linking (needed because we consumed the loop) ─
+    // Note: we re-iterate to build the edge linking data, since we no longer have
+    // the per-transition state lookups inside the same loop as the element writes.
+    // This is acceptable because the elements are already written — the edge links
+    // are just relationship assertions that succeed or skip independently.
+    for machine in &report.machines {
+        let lang_file_prefix = machine
+            .canonical_key
+            .split_once(":state_machine:")
+            .map(|(prefix, _)| prefix)
+            .unwrap_or(&machine.canonical_key);
+
+        for transition in &machine.transitions {
+            let transition_key = format!(
+                "{}:transition:{}_{}:{}",
+                lang_file_prefix, transition.from, transition.to, transition.line
+            );
+            let trans_id = format!("sm:transition:{}", transition_key);
+
+            let src_state = machine.states.iter().find(|s| s.name == transition.from);
+            let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
+
+            // Create transition→source_state edge
             if let Some(src) = src_state {
                 let src_key = format!("{}:state:{}:{}", lang_file_prefix, src.name, src.line);
                 let src_id = format!("sm:state:{}", src_key);
@@ -1259,7 +1305,7 @@ pub fn apply(
                 }
             }
 
-            // Create transition→target_state edge (if we found the target state)
+            // Create transition→target_state edge
             if let Some(tgt) = tgt_state {
                 let tgt_key = format!("{}:state:{}:{}", lang_file_prefix, tgt.name, tgt.line);
                 let tgt_id = format!("sm:state:{}", tgt_key);
