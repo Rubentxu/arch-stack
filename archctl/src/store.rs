@@ -254,6 +254,13 @@ pub trait ElementRepository: Send + Sync {
     fn link_current_version(&mut self, element_id: &str, version_id: &str) -> Result<()>;
     fn link_version_of(&mut self, element_id: &str, version_id: &str) -> Result<()>;
     fn link_of_type(&mut self, element_id: &str, metatype_id: &str) -> Result<()>;
+    fn ensure_metatype(
+        &mut self,
+        id: &str,
+        namespace: &str,
+        name: &str,
+        category: &str,
+    ) -> Result<()>;
     fn existing_canonical_keys(&self) -> Result<HashSet<String>>;
 }
 
@@ -1547,6 +1554,32 @@ impl ElementRepository for LbugStore {
              MERGE (e)-[:OF_TYPE]->(mt);"
         );
         let _ = session.conn.query(&cypher); // ignore MetaType-missing
+        Ok(())
+    }
+
+    fn ensure_metatype(
+        &mut self,
+        id: &str,
+        namespace: &str,
+        name: &str,
+        category: &str,
+    ) -> Result<()> {
+        let session = self.session_mut()?;
+        let mid = crate::graph::validate_identifier(id)
+            .context("ensure_metatype: id failed validation")?;
+        let safe_ns = namespace.replace('\'', "\\'");
+        let safe_name = name.replace('\'', "\\'");
+        let safe_cat = category.replace('\'', "\\'");
+        let cypher = format!(
+            "MERGE (mt:MetaType {{id: '{mid}'}}) SET \
+             mt.namespace = '{safe_ns}', \
+             mt.name = '{safe_name}', \
+             mt.category = '{safe_cat}';"
+        );
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("ensure_metatype {id}"))?;
         Ok(())
     }
 

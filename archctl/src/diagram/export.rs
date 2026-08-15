@@ -886,6 +886,9 @@ mod tests {
         fn link_of_type(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
             unimplemented!()
         }
+        fn ensure_metatype(&mut self, _: &str, _: &str, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
         fn existing_canonical_keys(&self) -> anyhow::Result<std::collections::HashSet<String>> {
             let mut out = std::collections::HashSet::new();
             for row in &self.elements {
