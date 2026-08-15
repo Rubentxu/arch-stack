@@ -815,7 +815,7 @@ fn test_class_diagram_perf_budget() {
 /// directly is the strongest contract assertion we can make.
 #[test]
 fn class_diagram_apply_atomic_abort_on_write_error() {
-    use archctl::store::{GraphStore, LbugStore};
+    use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();

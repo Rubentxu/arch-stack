@@ -201,6 +201,7 @@ pub trait GraphStore:
     + SourceRepository
     + EvaluationRepository
     + DiagramRepository
+    + RawGraphQuery
 {
     /// Open or create a store rooted at `project_dir`. Each adapter
     /// decides what file (or set of files) lives there.

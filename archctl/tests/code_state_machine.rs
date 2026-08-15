@@ -14,7 +14,7 @@ use tempfile::TempDir;
 /// prevents re-opening the same project within one test process).
 #[test]
 fn state_machine_apply_atomic_abort_on_write_error() {
-    use archctl::store::{GraphStore, LbugStore};
+    use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();

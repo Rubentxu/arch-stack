@@ -7,7 +7,7 @@
 use tempfile::TempDir;
 
 use archctl::Row;
-use archctl::store::{GraphStore, LbugStore};
+use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
 
 fn open_store(project: &std::path::Path) -> LbugStore {
     let mut store = LbugStore::open(project).expect("store must open");

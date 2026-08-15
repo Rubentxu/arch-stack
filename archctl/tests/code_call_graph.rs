@@ -11,7 +11,7 @@ use tempfile::TempDir;
 use archctl::Row;
 use archctl::code::call_graph::{self, Language};
 use archctl::filesystem::SystemFilesystem;
-use archctl::store::{GraphStore, LbugStore};
+use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

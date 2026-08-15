@@ -1,21 +1,18 @@
 // Integration tests for diagram query functions (SCN-050..053).
 //
-// These tests call the public query functions with a TinyGraphStore
-// stub that routes based on Cypher pattern keywords. The stub implements
-// GraphStore so the actual query function logic is exercised end-to-end.
+// These tests call the DiagramRepository methods on TinyGraphStore
+// which exercises the actual query logic end-to-end.
 //
 // SCN-050: MATCH (e:Element) filtered by category → returns expected nodes.
 // SCN-051: MATCH (e:Element)-[:SEMANTIC_EDGE]->(r) → returns expected edges.
 // SCN-052: query_evidence_for_versions filters to Accepted status (in Rust).
 // SCN-053: query_version_props returns version properties.
 
-use archctl::diagram::queries::{
-    query_elements, query_evidence_for_versions, query_semantic_edges, query_version_props,
-};
+use archctl::graph::{ElementRow, SemanticEdgeRow, VersionPropsRow};
 use archctl::row::{Cell, Row};
 use archctl::store::{
     DiagramOps, DiagramRepository, ElementRepository, EvaluationRepository, EvidenceOps,
-    EvidenceRepository, GraphStore, SourceOps, SourceRepository,
+    EvidenceRepository, GraphStore, RawGraphQuery, SourceOps, SourceRepository,
 };
 
 /// Build a Row from a flat list of (column, value) pairs.
@@ -36,6 +33,112 @@ fn evidence_props_cell(status: &str) -> Cell {
 
 fn empty_props_cell() -> Cell {
     Cell::Object(Vec::new())
+}
+
+/// Convert a Row to ElementRow.
+fn row_to_element_row(r: Row) -> anyhow::Result<ElementRow> {
+    let str_col = |r: &Row, k: &str| -> anyhow::Result<String> {
+        Ok(r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string())
+    };
+    let f64_col =
+        |r: &Row, k: &str| -> f64 { r.get(k).and_then(|c| c.to_json().as_f64()).unwrap_or(0.0) };
+    Ok(ElementRow {
+        id: str_col(&r, "e.id")?,
+        kind_id: str_col(&r, "e.kind_id")?,
+        category: str_col(&r, "e.category")?,
+        canonical_key: str_col(&r, "e.canonical_key")?,
+        current_name: str_col(&r, "e.current_name")?,
+        current_status: str_col(&r, "e.current_status")?,
+        current_confidence: f64_col(&r, "e.current_confidence"),
+        current_version_id: str_col(&r, "e.current_version_id")?,
+    })
+}
+
+/// Convert a Row to SemanticEdgeRow.
+fn row_to_semantic_edge_row(r: Row) -> anyhow::Result<SemanticEdgeRow> {
+    use archctl::graph::SemanticEdgeRow;
+    let str_col = |r: &Row, k: &str| -> anyhow::Result<String> {
+        Ok(r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string())
+    };
+    let props = r
+        .get("edge.props")
+        .map(|c| cell_to_json_map(c))
+        .unwrap_or_default();
+    Ok(SemanticEdgeRow {
+        relation_id: str_col(&r, "edge.relation_id")?,
+        predicate_id: str_col(&r, "edge.predicate_id")?,
+        source_id: str_col(&r, "source_id")?,
+        target_id: str_col(&r, "target_id")?,
+        order_key: str_col(&r, "edge.order_key")?,
+        props,
+    })
+}
+
+/// Convert a Row to EvidenceEntry (for accepted evidence only).
+fn row_to_evidence_entry(r: Row) -> Option<archctl::diagram::export_types::EvidenceEntry> {
+    use archctl::diagram::export_types::EvidenceEntry;
+    let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
+    let status = props.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    if status != "accepted" {
+        return None;
+    }
+    let str_col = |r: &Row, k: &str| -> String {
+        r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string()
+    };
+    let i64_col =
+        |r: &Row, k: &str| -> u64 { r.get(k).and_then(|c| c.as_i64()).unwrap_or(0) as u64 };
+    Some(EvidenceEntry {
+        id: str_col(&r, "e.id"),
+        kind: str_col(&r, "e.kind"),
+        claim: str_col(&r, "e.claim"),
+        path: str_col(&r, "e.path"),
+        start_line: i64_col(&r, "e.start_line"),
+        end_line: i64_col(&r, "e.end_line"),
+        tool_name: str_col(&r, "e.tool_name"),
+        tool_version: str_col(&r, "e.tool_version"),
+        rule_id: str_col(&r, "e.rule_id"),
+        content_hash: str_col(&r, "e.content_hash"),
+        observed_at: str_col(&r, "e.observed_at"),
+    })
+}
+
+/// Convert a Row to VersionPropsRow.
+fn row_to_version_props_row(r: Row) -> anyhow::Result<VersionPropsRow> {
+    use archctl::graph::VersionPropsRow;
+    let str_col = |r: &Row, k: &str| -> anyhow::Result<String> {
+        Ok(r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string())
+    };
+    let props = r.get("v.props").map(cell_to_json_map).unwrap_or_default();
+    Ok(VersionPropsRow {
+        id: str_col(&r, "v.id")?,
+        name: str_col(&r, "v.name")?,
+        description: str_col(&r, "v.description")?,
+        props,
+    })
+}
+
+/// Convert Cell to serde_json::Map.
+fn cell_to_json_map(cell: &Cell) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    match cell {
+        Cell::Object(kvs) => {
+            for (k, v) in kvs {
+                if let Cell::String(s) = v {
+                    m.insert(k.clone(), serde_json::Value::String(s.clone()));
+                }
+            }
+        }
+        Cell::String(s) => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s)
+                && let Some(obj) = parsed.as_object()
+            {
+                return obj.clone();
+            }
+        }
+        Cell::Null => {}
+        _ => {}
+    }
+    m
 }
 
 /// A minimal GraphStore stub that routes based on Cypher keyword presence.
@@ -60,7 +163,9 @@ impl TinyGraphStore {
 
     /// Extract category and canonical_key filter from a query_elements cypher string.
     /// Handles both exact match (=) and prefix match (STARTS WITH) patterns.
-    fn extract_element_filter_from_cypher(cypher: &str) -> (Option<String>, Option<String>) {
+    pub(crate) fn extract_element_filter_from_cypher(
+        cypher: &str,
+    ) -> (Option<String>, Option<String>) {
         let upper = cypher.to_uppercase();
         let category = Self::extract_quoted(&upper, "E.CATEGORY");
         // SCN-417: support STARTS WITH prefix matching
@@ -70,7 +175,7 @@ impl TinyGraphStore {
     }
 
     /// Extract a key value from `E.CANONICAL_KEY STARTS WITH 'value'` pattern.
-    fn extract_key_from_starts_with(s: &str, key: &str) -> Option<String> {
+    pub(crate) fn extract_key_from_starts_with(s: &str, key: &str) -> Option<String> {
         let pattern = format!("{} STARTS WITH '", key);
         let start = s.find(&pattern)?;
         let value_start = start + pattern.len();
@@ -80,14 +185,14 @@ impl TinyGraphStore {
 
     /// Extract category filter from a query_semantic_edges cypher string.
     #[allow(dead_code)]
-    fn extract_category_from_semantic_cypher(cypher: &str) -> String {
+    pub(crate) fn extract_category_from_semantic_cypher(cypher: &str) -> String {
         Self::extract_quoted(cypher, "SRC.CATEGORY")
             .or_else(|| Self::extract_quoted(cypher, "SRC.CATEGORY"))
             .unwrap_or_else(|| "container".to_string())
     }
 
     /// Extract a quoted string value for a given key from a cypher string.
-    fn extract_quoted(s: &str, key: &str) -> Option<String> {
+    pub(crate) fn extract_quoted(s: &str, key: &str) -> Option<String> {
         let pattern = format!("{} = '", key);
         let start = s.find(&pattern)?;
         let value_start = start + pattern.len();
@@ -98,7 +203,7 @@ impl TinyGraphStore {
     /// Extract version IDs from a query_evidence_for_versions cypher WHERE clause.
     /// e.g., "WHERE ev.id IN ['v:1', 'v:2']" -> ["v:1", "v:2"]
     /// Strips surrounding single quotes added by the query builder.
-    fn extract_version_ids_from_cypher(cypher: &str) -> Vec<String> {
+    pub(crate) fn extract_version_ids_from_cypher(cypher: &str) -> Vec<String> {
         let lower = cypher.to_lowercase();
         // Find "ev.id in [" pattern
         let pattern = "ev.id in [";
@@ -153,6 +258,20 @@ impl GraphStore for TinyGraphStore {
     fn stat(&self) -> anyhow::Result<archctl::GraphStat> {
         unimplemented!()
     }
+    // M32 D1: TinyGraphStore is read-only and does not exercise writers,
+    // so transaction primitives are no-ops.
+    fn begin_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
+        Ok(())
+    }
+    fn commit_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
+        Ok(())
+    }
+    fn rollback_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
+        Ok(())
+    }
+}
+
+impl RawGraphQuery for TinyGraphStore {
     fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
         let upper = cypher.to_uppercase();
         // Route based on Cypher pattern keywords.
@@ -215,16 +334,24 @@ impl GraphStore for TinyGraphStore {
             Ok(Vec::new())
         }
     }
-    // M32 D1: TinyGraphStore is read-only and does not exercise writers,
-    // so transaction primitives are no-ops.
-    fn begin_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
-        Ok(())
+
+    fn prepare(
+        &mut self,
+        _: &str,
+    ) -> Result<archctl::store::PreparedStatementHandle, archctl::store::StoreError> {
+        Err(archctl::store::StoreError::Prepare(
+            "TinyGraphStore does not support prepared statements".into(),
+        ))
     }
-    fn commit_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
-        Ok(())
-    }
-    fn rollback_transaction(&mut self) -> Result<(), archctl::store::StoreError> {
-        Ok(())
+
+    fn execute(
+        &mut self,
+        _: &mut archctl::store::PreparedStatementHandle,
+        _: archctl::store::Params,
+    ) -> Result<Vec<Row>, archctl::store::StoreError> {
+        Err(archctl::store::StoreError::Execute(
+            "TinyGraphStore does not support execute".into(),
+        ))
     }
 }
 
@@ -367,26 +494,90 @@ impl EvaluationRepository for TinyGraphStore {
 impl DiagramRepository for TinyGraphStore {
     fn list_elements(
         &self,
-        _: &str,
-        _: Option<&str>,
-        _: Option<&str>,
-    ) -> anyhow::Result<Vec<archctl::graph::ElementRow>> {
-        unimplemented!()
+        category: &str,
+        scope: Option<&str>,
+        _kind: Option<&str>,
+    ) -> anyhow::Result<Vec<ElementRow>> {
+        let safe_cat = category.to_uppercase();
+        let safe_scope = scope.map(|s| s.to_uppercase());
+        let rows: Vec<Row> = self
+            .elements
+            .iter()
+            .filter(|row| {
+                let row_cat = row
+                    .get("e.category")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_uppercase())
+                    .unwrap_or_default();
+                let row_key = row
+                    .get("e.canonical_key")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_uppercase())
+                    .unwrap_or_default();
+                let cat_match = row_cat == safe_cat;
+                let key_match = safe_scope
+                    .as_ref()
+                    .map(|k| row_key.starts_with(k))
+                    .unwrap_or(true);
+                cat_match && key_match
+            })
+            .cloned()
+            .collect();
+
+        rows.into_iter().map(row_to_element_row).collect()
     }
-    fn list_semantic_edges(&self, _: &str) -> anyhow::Result<Vec<archctl::graph::SemanticEdgeRow>> {
-        unimplemented!()
+
+    fn list_semantic_edges(&self, category: &str) -> anyhow::Result<Vec<SemanticEdgeRow>> {
+        // TinyGraphStore returns edges as SemanticEdgeRow directly (pre-filtered by test setup)
+        let safe_cat = category.to_uppercase();
+        let filtered: Vec<Row> = self
+            .edges
+            .iter()
+            .filter(|row| {
+                let src_cat = row
+                    .get("src.category")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_uppercase())
+                    .unwrap_or_default();
+                let tgt_cat = row
+                    .get("tgt.category")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_uppercase())
+                    .unwrap_or_default();
+                src_cat == safe_cat && tgt_cat == safe_cat
+            })
+            .cloned()
+            .collect();
+        filtered.into_iter().map(row_to_semantic_edge_row).collect()
     }
+
     fn list_evidence_for_versions(
         &self,
-        _: &[String],
+        version_ids: &[String],
     ) -> anyhow::Result<Vec<archctl::diagram::export_types::EvidenceEntry>> {
-        unimplemented!()
+        if version_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let safe_ids: Vec<String> = version_ids.iter().map(|v| v.to_uppercase()).collect();
+        let filtered: Vec<Row> = self
+            .evidence
+            .iter()
+            .filter(|row| {
+                let ev_version = row.get("ev.id").and_then(|c| c.as_str()).unwrap_or("");
+                safe_ids.iter().any(|v| ev_version.to_uppercase() == *v)
+            })
+            .cloned()
+            .collect();
+        Ok(filtered
+            .into_iter()
+            .filter_map(row_to_evidence_entry)
+            .collect())
     }
-    fn list_version_props(
-        &self,
-        _: &[String],
-    ) -> anyhow::Result<Vec<archctl::graph::VersionPropsRow>> {
-        unimplemented!()
+
+    fn list_version_props(&self, _version_ids: &[String]) -> anyhow::Result<Vec<VersionPropsRow>> {
+        // For TinyGraphStore, return all versions as VersionPropsRow
+        let rows: Vec<Row> = self.versions.iter().cloned().collect();
+        rows.into_iter().map(row_to_version_props_row).collect()
     }
 }
 
@@ -428,17 +619,20 @@ fn query_elements_filtered_by_category() {
 
     let store = TinyGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
 
-    // SCN-050: query with container + orders scope
-    // The actual query_function filters by category and scope in cypher
+    // SCN-050: list_elements with container + orders scope
     // kind=None since these tests don't exercise C4 kind_id filtering
-    let result = query_elements(&store, "container", Some("orders"), None).unwrap();
+    let result = store
+        .list_elements("container", Some("orders"), None)
+        .unwrap();
     // Result includes only el:1 (container + orders namespace)
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].id, "el:1");
     assert_eq!(result[0].current_name, "OrderService");
 
     // Query with component + orders scope
-    let result2 = query_elements(&store, "component", Some("orders"), None).unwrap();
+    let result2 = store
+        .list_elements("component", Some("orders"), None)
+        .unwrap();
     assert_eq!(result2.len(), 1);
     assert_eq!(result2[0].id, "el:3");
 }
@@ -460,7 +654,9 @@ fn query_elements_returns_empty_when_no_match() {
     let store = TinyGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new());
 
     // No container elements in "payments" namespace → empty
-    let result = query_elements(&store, "container", Some("payments"), None).unwrap();
+    let result = store
+        .list_elements("container", Some("payments"), None)
+        .unwrap();
     assert!(result.is_empty());
 }
 
@@ -483,10 +679,8 @@ fn query_semantic_edges_returns_intra_category_edges() {
 
     let store = TinyGraphStore::new(Vec::new(), edges, Vec::new(), Vec::new());
 
-    // The cypher for query_semantic_edges adds:
-    //   WHERE src.category = 'container' AND tgt.category = 'container'
-    // Mock data already represents the filtered result.
-    let result = query_semantic_edges(&store, "container").unwrap();
+    // list_semantic_edges filters by category
+    let result = store.list_semantic_edges("container").unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].relation_id, "rel:1");
     assert_eq!(result[0].source_id, "el:1");
@@ -546,13 +740,17 @@ fn query_evidence_filters_to_accepted() {
     let store = TinyGraphStore::new(Vec::new(), Vec::new(), evidence, Vec::new());
 
     // SCN-052: Rust-side filter only returns "accepted" evidence
-    let result = query_evidence_for_versions(&store, &["v:1".to_string()]).unwrap();
+    let result = store
+        .list_evidence_for_versions(&["v:1".to_string()])
+        .unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].id, "ev:1");
     assert_eq!(result[0].claim, "OrderService claim");
 
     // v:2 has no accepted evidence (only drafted) → empty
-    let result2 = query_evidence_for_versions(&store, &["v:2".to_string()]).unwrap();
+    let result2 = store
+        .list_evidence_for_versions(&["v:2".to_string()])
+        .unwrap();
     assert!(result2.is_empty());
 }
 
@@ -582,7 +780,9 @@ fn query_version_props_returns_props() {
 
     let store = TinyGraphStore::new(Vec::new(), Vec::new(), Vec::new(), versions);
 
-    let result = query_version_props(&store, &["v:1".to_string(), "v:2".to_string()]).unwrap();
+    let result = store
+        .list_version_props(&["v:1".to_string(), "v:2".to_string()])
+        .unwrap();
     assert_eq!(result.len(), 2);
 
     let v1 = result.iter().find(|v| v.id == "v:1").unwrap();

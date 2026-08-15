@@ -1390,8 +1390,8 @@ pub fn apply(
             });
 
             // Use existing_canonical_keys check for idempotency
-            let existing_keys = ElementRepository::existing_canonical_keys(s)
-                .context("fetch existing keys")?;
+            let existing_keys =
+                ElementRepository::existing_canonical_keys(s).context("fetch existing keys")?;
             if existing_keys.contains(&node.canonical_key) {
                 elements_skipped += 1;
             } else {
@@ -1439,10 +1439,21 @@ pub fn apply(
             let rel_id = format!("cd:{}→{}", edge.source, edge.target);
 
             let mut rel_props = serde_json::Map::new();
-            rel_props.insert("predicate_id".to_string(), serde_json::Value::String(pred_tag.to_string()));
-            rel_props.insert("confidence".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(edge.confidence).unwrap_or(serde_json::Number::from(0))));
+            rel_props.insert(
+                "predicate_id".to_string(),
+                serde_json::Value::String(pred_tag.to_string()),
+            );
+            rel_props.insert(
+                "confidence".to_string(),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(edge.confidence)
+                        .unwrap_or(serde_json::Number::from(0)),
+                ),
+            );
 
-            if s.link_semantic_edge(&source_id, &target_id, &rel_id, pred_tag, &rel_props, true).is_ok() {
+            if s.link_semantic_edge(&source_id, &target_id, &rel_id, pred_tag, &rel_props, true)
+                .is_ok()
+            {
                 relations_written += 1;
             } else {
                 relations_skipped += 1;

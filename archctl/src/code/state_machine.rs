@@ -1195,10 +1195,22 @@ pub fn apply(
                     let transition_name = format!("{}_to_{}", transition.from, transition.to);
 
                     let mut props = serde_json::Map::new();
-                    props.insert("source_state".to_string(), serde_json::Value::String(transition.from.clone()));
-                    props.insert("target_state".to_string(), serde_json::Value::String(transition.to.clone()));
-                    props.insert("trigger".to_string(), serde_json::Value::String(trigger_str.to_string()));
-                    props.insert("guard".to_string(), serde_json::Value::String(guard_str.to_string()));
+                    props.insert(
+                        "source_state".to_string(),
+                        serde_json::Value::String(transition.from.clone()),
+                    );
+                    props.insert(
+                        "target_state".to_string(),
+                        serde_json::Value::String(transition.to.clone()),
+                    );
+                    props.insert(
+                        "trigger".to_string(),
+                        serde_json::Value::String(trigger_str.to_string()),
+                    );
+                    props.insert(
+                        "guard".to_string(),
+                        serde_json::Value::String(guard_str.to_string()),
+                    );
 
                     s.upsert_element(&crate::graph::Element {
                         id: trans_id.clone(),
@@ -1223,10 +1235,25 @@ pub fn apply(
                     let edge_rel_id =
                         format!("sm:edge:transition:{}:source:{}", transition_key, src.name);
                     let mut props = serde_json::Map::new();
-                    props.insert("source_state".to_string(), serde_json::Value::String(transition.from.clone()));
-                    props.insert("predicate_id".to_string(), serde_json::Value::String("behavior.source_state".to_string()));
+                    props.insert(
+                        "source_state".to_string(),
+                        serde_json::Value::String(transition.from.clone()),
+                    );
+                    props.insert(
+                        "predicate_id".to_string(),
+                        serde_json::Value::String("behavior.source_state".to_string()),
+                    );
 
-                    if s.link_semantic_edge(&trans_id, &src_id, &edge_rel_id, "behavior.source_state", &props, true).is_ok() {
+                    if s.link_semantic_edge(
+                        &trans_id,
+                        &src_id,
+                        &edge_rel_id,
+                        "behavior.source_state",
+                        &props,
+                        true,
+                    )
+                    .is_ok()
+                    {
                         relations_written += 1;
                     } else {
                         relations_skipped += 1;
@@ -1241,10 +1268,25 @@ pub fn apply(
                     let edge_rel_id =
                         format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name);
                     let mut props = serde_json::Map::new();
-                    props.insert("target_state".to_string(), serde_json::Value::String(transition.to.clone()));
-                    props.insert("predicate_id".to_string(), serde_json::Value::String("behavior.target_state".to_string()));
+                    props.insert(
+                        "target_state".to_string(),
+                        serde_json::Value::String(transition.to.clone()),
+                    );
+                    props.insert(
+                        "predicate_id".to_string(),
+                        serde_json::Value::String("behavior.target_state".to_string()),
+                    );
 
-                    if s.link_semantic_edge(&trans_id, &tgt_id, &edge_rel_id, "behavior.target_state", &props, true).is_ok() {
+                    if s.link_semantic_edge(
+                        &trans_id,
+                        &tgt_id,
+                        &edge_rel_id,
+                        "behavior.target_state",
+                        &props,
+                        true,
+                    )
+                    .is_ok()
+                    {
                         relations_written += 1;
                     } else {
                         relations_skipped += 1;

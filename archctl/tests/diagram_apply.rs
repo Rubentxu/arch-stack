@@ -14,7 +14,7 @@ use archctl::diagram::changeset_schema::CHANGESET_SCHEMA;
 use archctl::diagram::changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet};
 use archctl::diagram::export::build_bundle;
 use archctl::diagram::view_types::{Diagram, ViewMember};
-use archctl::store::{DiagramOps, GraphStore, LbugStore};
+use archctl::store::{DiagramOps, GraphStore, LbugStore, RawGraphQuery};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Schema consistency (pure unit test — no DB needed)
