@@ -653,6 +653,8 @@ mod tests {
         }
     }
 
+    // Query-parsing helpers (dead code after RawGraphQuery removal in P1-05 2.5).
+    #[allow(dead_code)]
     impl MockGraphStore {
         /// Extract category, canonical_key prefix, and kind_id prefix from a query_elements cypher.
         fn extract_query_filters(cypher: &str) -> (Option<String>, Option<String>, Option<String>) {

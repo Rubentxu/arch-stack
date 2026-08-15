@@ -340,10 +340,10 @@ cd archctl && cargo build --quiet 2>&1 | tail -5
 
 ```bash
 # Suite completa (lib + integration + doctest)
-cd archctl && cargo test
+cd archctl && cargo test --features test-fixtures
 
 # Modo silencioso (sólo summary)
-cd archctl && cargo test --quiet
+cd archctl && cargo test --features test-fixtures --quiet
 
 # Solo tests de librería
 cd archctl && cargo test --lib
@@ -355,7 +355,7 @@ cd archctl && cargo test --test <name>
 cd archctl && cargo test --lib <module>::<test_name>
 
 # Filtrar tests con substring
-cd archctl && cargo test <substring>
+cd archctl && cargo test --features test-fixtures <substring>
 
 # Doctests
 cd archctl && cargo test --doc
@@ -364,18 +364,18 @@ cd archctl && cargo test --doc
 cd archctl && cargo run --bin archctl -- doctor --scopes <id> --cwd <repo_root>
 
 # Validación mínima durante desarrollo
-cd archctl && cargo test --quiet && \
+cd archctl && cargo test --features test-fixtures --quiet && \
   cargo run --bin archctl -- doctor --scopes <scope> --cwd <repo_root>
 
 # Validación completa antes de PR (sin CI)
-cd archctl && cargo test --quiet && \
-  cargo clippy --quiet -- -D warnings && \
+cd archctl && cargo test --features test-fixtures --quiet && \
+  cargo clippy --quiet --features test-fixtures -- -D warnings && \
   cargo fmt --check && \
   cargo run --bin archctl -- doctor --scopes <id>,<id2> --cwd <repo_root>
 
 # Validación de CI (los mismos comandos que corren en la nube)
-cd archctl && cargo test --all-features && \
-  cargo clippy --all-targets -- -D warnings
+cd archctl && cargo test --features test-fixtures && \
+  cargo clippy --features test-fixtures --all-targets -- -D warnings
 ```
 
 ## CI Policy — local-first, cloud async

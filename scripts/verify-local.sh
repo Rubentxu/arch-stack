@@ -99,8 +99,8 @@ fi
 # ---- Rust gates (cheap + full) ---------------------------------------------
 (
     cd "$REPO_ROOT/archctl"
-    run_gate cargo test --quiet
-    run_gate cargo clippy --quiet --all-targets -- -D warnings
+    run_gate cargo test --features test-fixtures --quiet
+    run_gate cargo clippy --quiet --all-targets --features test-fixtures -- -D warnings
     run_gate cargo fmt --check
     # Doctor mirrors the CI step: build release, then run from repo root.
     run_gate cargo build --quiet --release
