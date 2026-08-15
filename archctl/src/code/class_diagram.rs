@@ -1345,7 +1345,8 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::store::{GraphStore, LbugStore, RawGraphQuery};
+    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository};
+    use anyhow::Context;
 
     let start = Instant::now();
     let mut store = LbugStore::open(project_dir)
@@ -1357,29 +1358,6 @@ pub fn apply(
     let mut relations_written = 0;
     let mut relations_skipped = 0;
     let evidences_written = 0;
-
-    // Seed uml MetaTypes and Predicates — split into individual MERGEs
-    // (one per query() call) to avoid lbug's multi-statement binder
-    // exception inside an active transaction.
-    let meta_types = [
-        "uml.class",
-        "uml.interface",
-        "uml.trait",
-        "uml.enum",
-        "uml.record",
-        "uml.operation",
-        "uml.attribute",
-        "uml.parameter",
-        "uml.type_parameter",
-    ];
-    let predicates = [
-        "uml.extends",
-        "uml.implements",
-        "uml.association",
-        "uml.aggregation",
-        "uml.composition",
-        "uml.depends_on",
-    ];
 
     let version_id = uuid::Uuid::new_v4().to_string();
 
@@ -1393,15 +1371,6 @@ pub fn apply(
     let inner_result: Result<(), ClassDiagramError> = {
         let s: &mut LbugStore = &mut store;
 
-        for mt in &meta_types {
-            let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
-            let _ = s.query(&q).ok();
-        }
-        for pred in &predicates {
-            let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
-            let _ = s.query(&q).ok();
-        }
-
         for node in &report.nodes {
             let kind_id = match node.kind {
                 TypeKind::Class => "uml.class",
@@ -1411,8 +1380,6 @@ pub fn apply(
                 TypeKind::Record => "uml.record",
             };
 
-            let canonical_key_escaped = crate::store::escape_cypher_string(&node.canonical_key);
-            let name_escaped = crate::store::escape_cypher_string(&node.name);
             let id = format!("cd:{}", node.canonical_key);
 
             let version_props = serde_json::json!({
@@ -1421,40 +1388,42 @@ pub fn apply(
                 "confidence": node.confidence,
                 "members": node.members.len(),
             });
-            let version_props_str = version_props.to_string();
-            let version_props_escaped = crate::store::escape_cypher_string(&version_props_str);
 
-            let cypher = format!(
-                "MERGE (e:Element {{id: '{id}'}}) SET \
-                 e.kind_id = '{kind_id}', \
-                 e.category = 'uml', \
-                 e.canonical_key = '{canonical_key_escaped}', \
-                 e.current_name = '{name_escaped}', \
-                 e.current_status = 'active', \
-                 e.current_confidence = {confidence}, \
-                 e.current_version_id = '{version_id}';",
-                id = id,
-                kind_id = kind_id,
-                canonical_key_escaped = canonical_key_escaped,
-                name_escaped = name_escaped,
-                confidence = node.confidence,
-                version_id = version_id,
-            );
-
-            match s.query(&cypher) {
-                Ok(_) => elements_written += 1,
-                Err(_) => elements_skipped += 1,
+            // Use existing_canonical_keys check for idempotency
+            let existing_keys = ElementRepository::existing_canonical_keys(s)
+                .context("fetch existing keys")?;
+            if existing_keys.contains(&node.canonical_key) {
+                elements_skipped += 1;
+            } else {
+                s.upsert_element(&crate::graph::Element {
+                    id: id.clone(),
+                    kind_id: kind_id.to_string(),
+                    category: "uml".to_string(),
+                    canonical_key: node.canonical_key.clone(),
+                    current_name: node.name.clone(),
+                    current_status: "active".to_string(),
+                    current_confidence: node.confidence,
+                    current_version_id: version_id.clone(),
+                })?;
+                elements_written += 1;
             }
 
             // ElementVersion
-            let ev_cypher = format!(
-                "MATCH (e:Element {{id: '{id}'}}) \
-                 MERGE (v:ElementVersion {{id: '{version_id}', element_id: '{id}'}}) \
-                 SET v.props = '{version_props_escaped}';",
-                id = id,
-                version_id = version_id,
-            );
-            let _ = s.query(&ev_cypher).ok();
+            let mut props_map = serde_json::Map::new();
+            if let Some(obj) = version_props.as_object() {
+                for (k, v) in obj {
+                    props_map.insert(k.clone(), v.clone());
+                }
+            }
+            s.upsert_element_version(&crate::graph::ElementVersion {
+                id: version_id.clone(),
+                element_id: id,
+                name: node.name.clone(),
+                status: "active".to_string(),
+                origin: "class-diagram".to_string(),
+                confidence: node.confidence,
+                props: props_map,
+            })?;
         }
 
         // Write edges
@@ -1465,34 +1434,18 @@ pub fn apply(
                 ClassEdgeKind::Composes => "uml.composition",
             };
 
-            let _canonical_key_escaped = crate::store::escape_cypher_string(&edge.canonical_key);
             let source_id = format!("cd:{}", edge.source);
             let target_id = format!("cd:{}", edge.target);
             let rel_id = format!("cd:{}→{}", edge.source, edge.target);
 
-            let rel_props = serde_json::json!({
-                "predicate_id": pred_tag,
-                "confidence": edge.confidence,
-            });
-            let rel_props_str = rel_props.to_string();
-            let rel_props_escaped = crate::store::escape_cypher_string(&rel_props_str);
+            let mut rel_props = serde_json::Map::new();
+            rel_props.insert("predicate_id".to_string(), serde_json::Value::String(pred_tag.to_string()));
+            rel_props.insert("confidence".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(edge.confidence).unwrap_or(serde_json::Number::from(0))));
 
-            let cypher = format!(
-                "MATCH (s:Element {{id: '{source_id}'}}), (t:Element {{id: '{target_id}'}}) \
-                 MERGE (s)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}'}}]->(t) \
-                 SET r.predicate_id = '{pred_tag}', \
-                 r.props = '{rel_props_escaped}', \
-                 r.active = true;",
-                source_id = source_id,
-                target_id = target_id,
-                rel_id = rel_id,
-                pred_tag = pred_tag,
-                rel_props_escaped = rel_props_escaped,
-            );
-
-            match s.query(&cypher) {
-                Ok(_) => relations_written += 1,
-                Err(_) => relations_skipped += 1,
+            if s.link_semantic_edge(&source_id, &target_id, &rel_id, pred_tag, &rel_props, true).is_ok() {
+                relations_written += 1;
+            } else {
+                relations_skipped += 1;
             }
         }
 
