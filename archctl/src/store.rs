@@ -282,11 +282,16 @@ pub struct Transaction<'a> {
 }
 
 impl<'a> Transaction<'a> {
-    /// Re-borrow the wrapped store so callers can call any
+    /// Reborrow the wrapped store so callers can call any LbugStore
     /// repository method on it within the active transaction.
-    pub fn as_mut(&mut self) -> &mut dyn UnitOfWork {
+    /// Returns `&mut LbugStore` so callers can invoke `ElementRepository`,
+    /// `SemanticEdgeRepository`, etc. without UFCS or trait-object calls.
+    pub fn as_mut(&mut self) -> &mut LbugStore {
         // Safety: store pointer is valid for the lifetime 'a by construction
         // (it came from &mut LbugStore with lifetime 'a in begin_transaction).
+        // The raw pointer is wrapped in a new reborrow each call; callers
+        // get an independent `&mut LbugStore` that follows normal Rust borrow
+        // rules (no aliasing while in scope).
         unsafe { &mut *self.store }
     }
 

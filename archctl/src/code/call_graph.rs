@@ -1313,7 +1313,7 @@ pub fn apply(
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
     use crate::code::apply_common::write_source_artifact;
-    use crate::store::{GraphStore, LbugStore};
+    use crate::store::{GraphStore, LbugStore, UnitOfWork};
 
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| CallGraphError::GraphWrite(anyhow::anyhow!("failed to open store: {e}")))?;
@@ -1329,9 +1329,9 @@ pub fn apply(
         .context("fetch existing keys")
         .map_err(CallGraphError::GraphWrite)?;
 
-    // D1: wrap all writes in a single Kùzu transaction. Rationale and
-    // contract: see ADR-036 §D1 and `GraphStore::begin_transaction`.
-    store.begin_transaction().map_err(|se| {
+    // D1: wrap all writes in a single Kùzu transaction via UnitOfWork.
+    // Rationale and contract: see ADR-036 §D1 and `Transaction`.
+    let mut tx = UnitOfWork::begin_transaction(&mut store).map_err(|se| {
         CallGraphError::GraphWrite(anyhow::anyhow!("begin_transaction failed: {se}"))
     })?;
 
@@ -1365,10 +1365,8 @@ pub fn apply(
     // 1307 elements: ~3 queries instead of ~6535. Expected additional
     // 2-10× speedup over PR1's transaction wrap.
 
-    // Scope the mutable borrow of `store` so we can re-borrow for
-    // commit/rollback after.
-    let inner_result: Result<(), CallGraphError> = {
-        let s: &mut LbugStore = &mut store;
+    // Reborrow through Transaction to call LbugStore repository methods.
+    let s: &mut LbugStore = tx.as_mut();
 
         // Pre-compute SourceArtifact IDs for all unique files (in memory).
         // Same per-file dedup as PR1; just hoisted out of the per-node loop
@@ -1494,17 +1492,10 @@ pub fn apply(
             }
         }
 
-        Ok(())
-    };
-
-    if let Err(e) = inner_result {
-        // Best-effort rollback — do not mask the original error.
-        let _ = store.rollback_transaction();
-        return Err(e);
-    }
-
-    store.commit_transaction().map_err(|se| {
-        CallGraphError::GraphWrite(anyhow::anyhow!("commit_transaction failed: {se}"))
+    // On error: return propagates, Transaction drops → implicit rollback (tracing::warn! on failure).
+    // On success: explicit commit.
+    tx.commit().map_err(|se| {
+        CallGraphError::GraphWrite(anyhow::anyhow!("commit failed: {se}"))
     })?;
 
     Ok(ApplyReport {
