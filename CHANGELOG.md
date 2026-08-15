@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.45.0] — 2026-08-15
+
+### Added
+- **P1-05** — `pub trait UnitOfWork: Send + Sync` + `pub struct Transaction<'a>`
+  session newtype (Option γ, primitive-borrower pattern) in `store.rs`. Five apply
+  pipelines (call_graph, state_machine, class_diagram, c4_discover, diagram::apply_to_store)
+  now use `Transaction::commit()` / `Transaction::rollback()` with implicit Drop-rollback.
+  `begin` internalised — only `commit`/`rollback` exposed to callers.
+- **P1-05** — `test-fixtures` Cargo feature (`test-fixtures = []`) enabling the
+  `execute_raw_cypher_for_test` escape hatch in bench fixtures and integration tests.
+
+### Changed
+- **P1-05 (A-W1)** — `+ RawGraphQuery` supertrait removed from `GraphStore`
+  (`store.rs:204`); `RawGraphQuery::query` remains reachable only via
+  `impl RawGraphQuery for LbugStore` on concrete `&self` (no `dyn` dispatch).
+- **P1-05 (C-W1)** — `pub fn session_mut` and `pub fn execute_raw_cypher_for_test`
+  in `store.rs` now compiled only under `#[cfg(any(test, feature = "test-fixtures"))]`;
+  production builds do not expose these symbols.
+
+### Fixed
+- **P1-05** — `link_with_merge_fallback` (`store.rs`) is now transaction-safe:
+  replaced two-query MERGE+fallback pattern with a single idempotent
+  `OPTIONAL MATCH ... WHERE r IS NULL ... CREATE` query. Fixes Kùzu 0.18.3
+  jurisprudence: any query error inside a Kùzu transaction causes auto-revert of
+  the entire transaction. The fallback now never throws a duplicate-PK error,
+  avoiding spurious auto-reverts that left no active transaction for COMMIT.
+
 ## [1.44.1] — 2026-08-15
 
 ### Fixed

@@ -1439,5 +1439,33 @@ Razones:
   - Benches retargeted: `export_pipeline.rs` uses `DiagramRepository`; `query_pipeline.rs` reads via `RawGraphQuery::query` (MATCH-only, passes guard); `common/mod.rs` uses `execute_raw_cypher_for_test` for all writes (MERGE/CREATE seeds).
 - **T4.1 focused fix** (`44df981`): `common/mod.rs` seed writes were using `store.query(MERGE...)` which the `is_read_only_query` guard now rejects at runtime. Fixed by replacing with `execute_raw_cypher_for_test` (test escape hatch). Also corrected relation seed CREATE syntax to match `link_semantic_edge` pattern (MERGE on relation_id keyed by `relation_id` property, then SET for additional props — avoids Kùzu REL TABLE inline-property restriction).
 - **Apply deviations from prior tasks**: test fix for `state_machine_apply_atomic_abort_on_write_error` required same pattern as prior class_diagram fix (upsert_element + execute_raw_cypher_for_test); no other deviations.
+
+## Cycle cerrado — `p1-05-unit-of-work` (v1.45.0)
+
+- **Fecha**: 2026-08-15
+- **Branch**: `feat/p1-05-unit-of-work` (merged to main via chained PRs PR1 + PR2)
+- **Tag**: `v1.45.0` (pending release)
+- **Verdict**: verify PASS · debt-verify pending · apply DONE (3 commits: 48201d8, 4f79812, pending)
+- **Output**:
+  - PR1 (`feat(store): UnitOfWork + Transaction`):
+    - `pub trait UnitOfWork` + `pub struct Transaction<'a>` (Option γ, primitive-borrower newtype) in `store.rs`
+    - `impl UnitOfWork for LbugStore` wrapping `GraphStore::begin/commit/rollback_transaction`
+    - 5 apply pipelines collapsed/wrapped on `Transaction`: call_graph, state_machine, class_diagram, c4_discover, diagram::apply_to_store
+    - `impl Drop for Transaction`: best-effort rollback on drop without commit (`tracing::warn!`, never panics)
+    - 4 new atomic-abort integration tests (store_transaction, call_graph, c4_discover, diagram_apply)
+    - `manifests/store.toml`: UnitOfWork + Transaction gates added
+    - Version bump 1.44.1 → 1.45.0
+  - PR2 (`chore(store): close A-W1 + C-W1`):
+    - A-W1: `+ RawGraphQuery` supertrait dropped from `GraphStore` (`store.rs:204`); sole impl `impl RawGraphQuery for LbugStore` on concrete `&self`
+    - C-W1: `session_mut` + `execute_raw_cypher_for_test` cfg-gated under `#[cfg(any(test, feature = "test-fixtures"))]`
+    - `test-fixtures = []` feature declared in `Cargo.toml`; `archctl/benches/common/mod.rs` gated with `#![cfg(feature = "test-fixtures")]`
+    - MockGraphStore + TinyGraphStore supertrait impls removed; `impl UnitOfWork` (stub) added
+    - ADR-059 amended: P1-05 closure documented (amendment block + §Implementación L46.5)
+    - CHANGELOG v1.45.0 entry added
+  - P1-05 2.5b (`chore(ci): test-fixtures surface propagation`):
+    - `scripts/verify-local.sh`, `.github/workflows/ci.yml`, `.github/workflows/pr.yml`: `--features test-fixtures` added to test/clippy commands
+    - `AGENTS.md` Test Commands section updated; `CONTRIBUTING.md` verify-local description updated
+    - Pre-existing clippy dead-code warnings cleaned up (unused imports + dead helpers)
+- **Kùzu jurisprudence documented**: Kùzu 0.18.3 auto-reverts entire transaction on any query error. `link_with_merge_fallback` fixed to use idempotent `OPTIONAL MATCH ... WHERE r IS NULL ... CREATE` pattern — single query, no conditional error-throwing, no spurious auto-reverts.
 - **Notas**: ADR-059 documents the trait-split decision; the 22 application call sites that were using `GraphStore::query` for writes are now using typed repository methods.
 - **Próximo candidato**: P1-02 (CLI commands → handlers) o P1-05 (UnitOfWork — absorbería el follow-up de separación estática del supertrait `RawGraphQuery` y el cfg(test)-gate de `execute_raw_cypher_for_test`, W-2/W-3 del debt-verify).
