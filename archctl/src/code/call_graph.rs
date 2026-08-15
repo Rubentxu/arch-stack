@@ -1312,7 +1312,7 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::write_source_artifact;
+    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version, write_source_artifact};
     use crate::store::{GraphStore, LbugStore, UnitOfWork};
 
     let mut store = LbugStore::open(project_dir)
@@ -1360,6 +1360,8 @@ pub fn apply(
     // happens in-memory BEFORE the batch, so the batch is always
     // "new rows only".
     //
+    // D2: UNWIND re-shipped 2026-08-16 (was regressed by P1-04 T3 commit 599c863).
+    //
     // Trade-off: bigger Cypher strings (BATCH_SIZE × ~200 chars per row
     // ≈ 100KB per query) vs N/BATCH_SIZE query roundtrips. For echo
     // 1307 elements: ~3 queries instead of ~6535. Expected additional
@@ -1398,8 +1400,41 @@ pub fn apply(
         .collect();
 
     // Per-node repository writes (P1-03: no inline Cypher in apply paths).
-    // M32 batched UNWIND is preserved as an internal optimisation path
-    // (`_legacy_*`); new code goes through `ElementRepository::*`.
+    // M32 D2: batch UNWIND via apply_common helpers.
+    // Build Element + ElementVersion batches, then call batch helpers once.
+    let elements: Vec<crate::graph::Element> = candidate_nodes
+        .iter()
+        .map(|n| {
+            let kind_id = match n.kind {
+                FunctionKind::Function => "code.function",
+                FunctionKind::Method => "code.method",
+                FunctionKind::Closure => "code.closure",
+            };
+            let version_props = serde_json::json!({
+                "kind": format!("{:?}", n.kind).to_lowercase(),
+                "language": lang_label(&n.language),
+                "confidence": n.confidence,
+                "call_graph_schema_version": "1.0",
+            });
+            let version_props_str =
+                serde_json::to_string(&version_props).unwrap_or_default();
+            let version_id =
+                format!("cgv:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+            crate::graph::Element {
+                id: format!("cg:{}", n.canonical_key),
+                kind_id: kind_id.to_string(),
+                category: "code".to_string(),
+                canonical_key: n.canonical_key.clone(),
+                current_name: n.name.clone(),
+                current_status: "active".to_string(),
+                current_confidence: n.confidence,
+                current_version_id: version_id.clone(),
+            }
+        })
+        .collect();
+
+    let mut element_versions: Vec<crate::graph::ElementVersion> =
+        Vec::with_capacity(candidate_nodes.len());
     for n in &candidate_nodes {
         let version_props = serde_json::json!({
             "kind": format!("{:?}", n.kind).to_lowercase(),
@@ -1407,56 +1442,41 @@ pub fn apply(
             "confidence": n.confidence,
             "call_graph_schema_version": "1.0",
         });
-        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-        let version_id = format!(
-            "cgv:{}",
-            blake3::hash(version_props_str.as_bytes()).to_hex()
-        );
-        let kind_id = match n.kind {
-            FunctionKind::Function => "code.function",
-            FunctionKind::Method => "code.method",
-            FunctionKind::Closure => "code.closure",
-        };
-
-        s.upsert_element(&crate::graph::Element {
-            id: format!("cg:{}", n.canonical_key),
-            kind_id: kind_id.to_string(),
-            category: "code".to_string(),
-            canonical_key: n.canonical_key.clone(),
-            current_name: n.name.clone(),
-            current_status: "active".to_string(),
-            current_confidence: n.confidence,
-            current_version_id: version_id.clone(),
-        })
-        .context("upsert_element")
-        .map_err(CallGraphError::GraphWrite)?;
-
+        let version_props_str =
+            serde_json::to_string(&version_props).unwrap_or_default();
+        let version_id =
+            format!("cgv:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
         let mut props_map = serde_json::Map::new();
         for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
             props_map.insert(k, v);
         }
-        s.upsert_element_version(&crate::graph::ElementVersion {
-            id: version_id.clone(),
+        element_versions.push(crate::graph::ElementVersion {
+            id: version_id,
             element_id: format!("cg:{}", n.canonical_key),
             name: n.name.clone(),
             status: "drafted".to_string(),
             origin: "call-graph".to_string(),
             confidence: n.confidence,
             props: props_map,
-        })
-        .context("upsert_element_version")
+        });
+    }
+
+    batch_upsert_element(s, &elements).context("batch_upsert_element")?;
+    elements_written += elements.len();
+    batch_upsert_element_version(s, &element_versions)
+        .context("batch_upsert_element_version")
         .map_err(CallGraphError::GraphWrite)?;
 
-        s.link_current_version(&format!("cg:{}", n.canonical_key), &version_id)
-            .context("link_current_version")
-            .map_err(CallGraphError::GraphWrite)?;
-        s.link_version_of(&format!("cg:{}", n.canonical_key), &version_id)
-            .context("link_version_of")
-            .map_err(CallGraphError::GraphWrite)?;
+    // OF_TYPE edges still need per-element calls (no UNWIND helper yet).
+    for n in &candidate_nodes {
+        let kind_id = match n.kind {
+            FunctionKind::Function => "code.function",
+            FunctionKind::Method => "code.method",
+            FunctionKind::Closure => "code.closure",
+        };
         s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
             .context("link_of_type")
             .map_err(CallGraphError::GraphWrite)?;
-        elements_written += 1;
     }
 
     // Write call edges (per-edge, since the OPTIONAL MATCH semantics

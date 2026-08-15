@@ -634,3 +634,115 @@ edition = "2021"
          Evidence count: {final_evidences}"
     );
 }
+
+// ─── D2 UNWIND bulk correctness regression test ────────────────────────────────
+
+/// Regression guard for M32 D2: the UNWIND bulk-import path in call_graph::apply
+/// must produce the same element and edge counts as the pre-UNWIND per-element path.
+///
+/// Strategy: build a synthetic CallGraphReport with 50 nodes and 49 call edges,
+/// apply it, then verify exact counts via LbugStore queries.
+///
+/// This test would have caught the P1-04 T3 regression (commit 599c863) where
+/// the UNWIND implementation was lost and the per-element loop was restored.
+#[test]
+fn call_graph_apply_unwind_bulk_correctness() {
+    use archctl::code::call_graph::{
+        CallEdge, CallKind, CallGraphReport, FunctionKind, FunctionNode, MessageKind, ProjectMeta,
+    };
+
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+
+    // Create a synthetic report with 50 nodes (all in one file).
+    const NODE_COUNT: usize = 50;
+    let mut nodes = Vec::with_capacity(NODE_COUNT);
+    for i in 0..NODE_COUNT {
+        nodes.push(FunctionNode {
+            canonical_key: format!("rust:src/lib.rs:fn_{}:{}", i, i),
+            kind: FunctionKind::Function,
+            language: Language::Rust,
+            file: "src/lib.rs".to_string(),
+            content_hash: format!("sha256:{:064x}", i),
+            line: (i as u32) + 1,
+            name: format!("fn_{}", i),
+            fq_name: format!("fn_{}", i),
+            confidence: 0.90,
+            parent: None,
+        });
+    }
+
+    // Create call edges: fn_i calls fn_{i+1} for i in 0..NODE_COUNT-1
+    let mut edges = Vec::with_capacity(NODE_COUNT - 1);
+    for i in 0..(NODE_COUNT - 1) {
+        edges.push(CallEdge {
+            canonical_key: format!("rust:src/lib.rs:fn_{}→fn_{}:{}", i, i + 1, i + 1),
+            caller: format!("rust:src/lib.rs:fn_{}:{}", i, i),
+            callee: format!("fn_{}", i + 1),
+            file: "src/lib.rs".to_string(),
+            content_hash: format!("sha256:{:064x}", i),
+            line: (i as u32) + 1,
+            kind: CallKind::DirectCall,
+            message_kind: MessageKind::SyncCall,
+            confidence: 0.90,
+        });
+    }
+
+    let report = CallGraphReport {
+        schema_version: "1.0".to_string(),
+        project: ProjectMeta {
+            root: project.to_string_lossy().to_string(),
+            files_scanned: 1,
+            languages: [("rust".to_string(), NODE_COUNT as u64)].into(),
+            duration_ms: 0,
+        },
+        nodes,
+        edges,
+        errors: vec![],
+    };
+
+    // Apply and verify counts
+    let r = call_graph::apply(project, &report, &SystemFilesystem)
+        .expect("apply must succeed");
+    assert_eq!(
+        r.elements_written, NODE_COUNT,
+        "UNWIND bulk path: expected {} elements written", NODE_COUNT
+    );
+    assert_eq!(
+        r.relations_written,
+        NODE_COUNT - 1,
+        "UNWIND bulk path: expected {} edges written",
+        NODE_COUNT - 1
+    );
+
+    // Verify persisted counts via LbugStore query
+    let mut store = LbugStore::open(project).expect("store must open");
+    store.init().expect("store must init");
+
+    let element_count: i64 = store
+        .query("MATCH (e:Element) WHERE e.kind_id = 'code.function' RETURN count(e) AS cnt;")
+        .expect("element count query must succeed")
+        .pop()
+        .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+        .expect("count must be i64");
+    assert_eq!(
+        element_count, NODE_COUNT as i64,
+        "UNWIND bulk: expected {} Element nodes, got {}",
+        NODE_COUNT, element_count
+    );
+
+    // Verify edges: SEMANTIC_EDGE edges from call_graph (predicate_id = 'code.calls')
+    let edge_count: i64 = store
+        .query("MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r) AS cnt;")
+        .expect("edge count query must succeed")
+        .pop()
+        .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+        .expect("count must be i64");
+    assert_eq!(
+        edge_count,
+        (NODE_COUNT - 1) as i64,
+        "UNWIND bulk: expected {} CALLS edges, got {}",
+        NODE_COUNT - 1,
+        edge_count
+    );
+}
