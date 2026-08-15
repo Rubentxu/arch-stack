@@ -9,12 +9,10 @@
 //! `escape_cypher_string`, 2 of `existing_canonical_keys`, 2 of
 //! `write_source_artifact` + 2 local `Pipe` traits).
 
-use std::collections::HashSet;
-
 use anyhow::Result;
 
 use crate::source::SourceArtifact;
-use crate::store::{GraphStore, LbugStore, RawGraphQuery};
+use crate::store::GraphStore;
 
 /// Escape a string for use inside a Cypher single-quoted string.
 ///
@@ -24,20 +22,6 @@ use crate::store::{GraphStore, LbugStore, RawGraphQuery};
 /// `crate::store`.
 pub fn escape_cypher_string(s: &str) -> String {
     crate::store::escape_cypher_string(s)
-}
-
-/// Fetch the set of `canonical_key`s already present in the graph.
-/// Used for idempotency: skip elements whose keys already exist.
-pub fn existing_canonical_keys(store: &LbugStore) -> Result<HashSet<String>> {
-    Ok(store
-        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
-        .into_iter()
-        .filter_map(|row| {
-            row.get("e.canonical_key")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect::<HashSet<_>>())
 }
 
 /// Write a `SourceArtifact` node for a file and return its canonical id.
@@ -72,6 +56,7 @@ pub fn write_source_artifact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::LbugStore;
 
     #[test]
     fn test_escape_cypher_string_basic() {
@@ -136,20 +121,22 @@ mod tests {
 
     #[test]
     fn existing_canonical_keys_empty_on_fresh_store() {
+        use crate::store::ElementRepository;
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
         let fs = crate::filesystem::SystemFilesystem;
         crate::graph::init(&project, &fs).unwrap();
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
-        let keys = existing_canonical_keys(&store).unwrap();
+        let keys = ElementRepository::existing_canonical_keys(&store).unwrap();
         assert!(keys.is_empty(), "fresh store must have no canonical keys");
     }
 
     #[test]
     fn existing_canonical_keys_returns_seeded_keys() {
+        use crate::store::ElementRepository;
         let store = seeded_store_with_canonical_keys(&["a:one", "b:two", "c:three"]);
-        let keys = existing_canonical_keys(&store).unwrap();
+        let keys = ElementRepository::existing_canonical_keys(&store).unwrap();
         assert_eq!(keys.len(), 3, "all seeded keys must be returned");
         assert!(keys.contains("a:one"));
         assert!(keys.contains("b:two"));
@@ -184,7 +171,7 @@ mod tests {
             .conn
             .query("MERGE (e:Element {id: 'el:2'});")
             .unwrap();
-        let keys = existing_canonical_keys(&store).unwrap();
+        let keys = ElementRepository::existing_canonical_keys(&store).unwrap();
         assert_eq!(keys.len(), 1, "only the keyed element counts");
         assert!(keys.contains("k:1"));
     }
