@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::filesystem::Filesystem;
-use crate::graph::Session;
+use crate::store::LbugSession;
 
 /// A single named schema migration.
 pub struct Migration {
@@ -64,8 +64,8 @@ pub fn current_version(marker_path: &Path, fs: &dyn Filesystem) -> Result<Option
 ///
 /// Returns the list of version strings that were applied (empty if
 /// already up-to-date).
-pub fn apply_pending(
-    session: &Session,
+pub(crate) fn apply_pending(
+    session: &LbugSession,
     fs: &dyn Filesystem,
     marker_path: &Path,
 ) -> Result<Vec<String>> {
@@ -143,7 +143,8 @@ fn schema_statements(script: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::filesystem::SystemFilesystem;
-    use crate::graph::{init as graph_init, open_session};
+    use crate::graph::init as graph_init;
+    use crate::store::LbugStore;
 
     fn system_fs() -> SystemFilesystem {
         SystemFilesystem
@@ -191,8 +192,8 @@ mod tests {
         // This is the Q3 partial-apply failure mode — the runner
         // does NOT silently skip; manual recovery is required.
         // We verify the marker stayed at v1 (no partial bump).
-        let session = open_session(&project, &fs).unwrap();
-        let result = apply_pending(&session, &fs, &marker);
+        let mut store = LbugStore::open(&project).unwrap();
+        let result = apply_pending(store.session_for_migrations(), &fs, &marker);
         // apply_pending returns Err because 002 replays on existing tables
         assert!(
             result.is_err(),
@@ -212,11 +213,11 @@ mod tests {
         let project = tmp.path().join("proj");
         let fs = system_fs();
         graph_init(&project, &fs).unwrap();
-        let session = open_session(&project, &fs).unwrap();
+        let mut store = LbugStore::open(&project).unwrap();
 
         // Call apply_pending on an already-v2 graph
         let marker = project.join(SCHEMA_MARKER_FILENAME);
-        let result = apply_pending(&session, &fs, &marker).unwrap();
+        let result = apply_pending(store.session_for_migrations(), &fs, &marker).unwrap();
         assert!(
             result.is_empty(),
             "expected no migrations applied, got {result:?}"

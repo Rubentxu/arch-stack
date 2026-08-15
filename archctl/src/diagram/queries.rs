@@ -74,8 +74,6 @@ pub fn query_elements(
         (Some(key), Some(k)) => {
             let safe_key = validate_identifier(key)?;
             let safe_kind = validate_identifier(k)?;
-            // SCN-417: prefix matching — scope `src/auth` matches `src/auth/user.rs`
-            // ADR-024: kind_id CONTAINS handles both 'container' and 'mt.container' formats
             format!(
                 "MATCH (e:Element) \
                  WHERE e.category = '{safe_category}' \
@@ -222,9 +220,6 @@ pub fn query_semantic_edges(
 }
 
 /// Query 3: evidence for given version IDs (status filtering happens in Rust).
-///
-/// Note: lbug 0.18.3 has no JSON WHERE. Evidence status lives in
-/// `e.props["status"]`, so we fetch all and filter in Rust.
 pub fn query_evidence_for_versions(
     store: &dyn GraphStore,
     version_ids: &[String],
@@ -258,15 +253,11 @@ pub fn query_evidence_for_versions(
 
     rows.into_iter()
         .filter_map(|r| {
-            // Filter to only Accepted evidence (status in props["status"])
             let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
-
             let status = props.get("status").and_then(|v| v.as_str()).unwrap_or("");
-
             if status != "accepted" {
                 return None;
             }
-
             Some(Ok(EvidenceEntry {
                 id: r
                     .get("e.id")

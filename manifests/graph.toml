@@ -1,13 +1,20 @@
 # scope: graph
 #
-# LadybugDB session lifecycle. Bounded buffer pool (256 MiB per
-# database) keeps the per-fixture footprint bounded — lbug 0.18.3's
-# `SystemConfig::default()` resolves to UINT64_MAX which exhausts the
-# kernel under parallel test fixtures. Refs: fix-parallel-lbug-test-races.
+# Domain types (Element, ElementVersion, StructuralEvidence, GraphStat,
+# ElementRow, SemanticEdgeRow, VersionPropsRow) plus the admin boundary
+# (init / stat / query / neighbours). The lbug session lifetime trick
+# and the Cypher generation helpers (create_db_session, value_to_json,
+# escape_cypher_string, count_match, run_query, link_with_merge_fallback)
+# have moved into the LbugStore adapter in store.rs (P1-03).
+#
+# Bounded buffer pool (256 MiB per database) keeps the per-fixture
+# footprint bounded — lbug 0.18.3's `SystemConfig::default()` resolves
+# to UINT64_MAX which exhausts the kernel under parallel test fixtures.
+# Refs: fix-parallel-lbug-test-races.
 
 id = "graph"
 version = "0.1.0"
-description = "LadybugDB session lifecycle + bounded buffer pool (256 MiB)"
+description = "Domain types + admin boundary; lbug adapter lives in store.rs"
 
 cargo_dir = "archctl"
 
@@ -15,10 +22,14 @@ editable = ["archctl/src/graph.rs"]
 
 public_symbols = [
   "BUFFER_POOL_SIZE",
-  "Session",
   "GraphStat",
+  "Element",
+  "ElementVersion",
+  "StructuralEvidence",
+  "ElementRow",
+  "SemanticEdgeRow",
+  "VersionPropsRow",
   "database_path",
-  "open_session",
   "init",
   "stat",
   "query",
@@ -28,18 +39,16 @@ public_symbols = [
 
 must_hold = [
   "pub const BUFFER_POOL_SIZE",
-  "pub struct Session",
   "pub struct GraphStat",
+  "pub struct Element",
+  "pub struct ElementVersion",
+  "pub struct StructuralEvidence",
   "pub fn database_path(",
-  "pub fn open_session(",
   "pub fn init(",
   "pub fn stat(",
   "buffer_pool_size",
-  "max_db_size",
-  "Database::new",
-  "Connection::new",
 ]
 
 minimum_tests = 8
 
-must_not_contain = ["use std::fs::"]
+must_not_contain = ["use std::fs::", "use lbug"]

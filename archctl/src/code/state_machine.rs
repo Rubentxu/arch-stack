@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
 use serde::{Deserialize, Serialize};
@@ -1099,10 +1099,11 @@ pub fn apply(
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::escape_cypher_string;
-    use crate::store::{GraphStore, open_and_init};
+    use crate::store::{GraphStore, LbugStore};
 
     let start = Instant::now();
-    let mut store = open_and_init(project_dir)?;
+    let mut store = LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("open: {e}"))?;
+    store.init().context("state_machine apply: init")?;
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
@@ -1150,7 +1151,7 @@ pub fn apply(
     // Scope the mutable borrow of `store` so we can re-borrow for
     // commit/rollback after.
     let inner_result: Result<(), anyhow::Error> = {
-        let s: &mut dyn GraphStore = store.as_mut();
+        let s: &mut LbugStore = &mut store;
 
         for mt in &meta_types {
             let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);

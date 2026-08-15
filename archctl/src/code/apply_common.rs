@@ -17,8 +17,13 @@ use crate::source::SourceArtifact;
 use crate::store::GraphStore;
 
 /// Escape a string for use inside a Cypher single-quoted string.
+///
+/// P1-03: re-exported from `crate::store::escape_cypher_string` (the
+/// function moved to the adapter). Kept here for backwards compat with
+/// any in-flight callers; new code should import directly from
+/// `crate::store`.
 pub fn escape_cypher_string(s: &str) -> String {
-    s.replace('\'', "\\'")
+    crate::store::escape_cypher_string(s)
 }
 
 /// Fetch the set of `canonical_key`s already present in the graph.
@@ -60,7 +65,7 @@ pub fn write_source_artifact(
         "",
         env!("CARGO_PKG_VERSION"),
     );
-    store.put_source(&artifact)?;
+    crate::store::SourceOps::put_source(store, &artifact)?;
     Ok(artifact.id)
 }
 

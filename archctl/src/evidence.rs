@@ -31,6 +31,7 @@ use crate::astgrep::{Lang, compile_pattern, find_all, parse};
 use crate::evaluation::Evaluation;
 use crate::inventory::supported_files;
 use crate::source::SourceArtifact;
+use crate::store::SourceOps;
 
 /// `kind` for evidence records. Maps loosely to the audit categories
 /// in the v2 data model. The agent that requests the evidence assigns
@@ -525,7 +526,7 @@ pub fn put_with_source(
         let mut seen = std::collections::HashSet::new();
         for src in srcs {
             if seen.insert(&src.id) {
-                store.put_source(src)?;
+                SourceOps::put_source(&mut *store, src)?;
             }
         }
     }
@@ -537,7 +538,7 @@ pub fn put_with_source(
     if let Some(srcs) = sources {
         for ev in evidence {
             for src in srcs {
-                store.link_extracted_from(&ev.id, &src.id)?;
+                SourceOps::link_extracted_from(&mut *store, &ev.id, &src.id)?;
             }
         }
     }
@@ -546,8 +547,8 @@ pub fn put_with_source(
     if let Some(eval) = evaluation {
         // The evaluation targets the first evidence row in the batch.
         let target_ev = evidence.first().context("evidence is empty")?;
-        store.put_evaluation(eval)?;
-        store.link_evaluates(&eval.id, &target_ev.id)?;
+        SourceOps::put_evaluation(&mut *store, eval)?;
+        SourceOps::link_evaluates(&mut *store, &eval.id, &target_ev.id)?;
     }
 
     Ok(written)
