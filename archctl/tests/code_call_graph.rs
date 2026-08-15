@@ -648,7 +648,7 @@ edition = "2021"
 #[test]
 fn call_graph_apply_unwind_bulk_correctness() {
     use archctl::code::call_graph::{
-        CallEdge, CallKind, CallGraphReport, FunctionKind, FunctionNode, MessageKind, ProjectMeta,
+        CallEdge, CallGraphReport, CallKind, FunctionKind, FunctionNode, MessageKind, ProjectMeta,
     };
 
     let tmp = TempDir::new().unwrap();
@@ -702,11 +702,11 @@ fn call_graph_apply_unwind_bulk_correctness() {
     };
 
     // Apply and verify counts
-    let r = call_graph::apply(project, &report, &SystemFilesystem)
-        .expect("apply must succeed");
+    let r = call_graph::apply(project, &report, &SystemFilesystem).expect("apply must succeed");
     assert_eq!(
         r.elements_written, NODE_COUNT,
-        "UNWIND bulk path: expected {} elements written", NODE_COUNT
+        "UNWIND bulk path: expected {} elements written",
+        NODE_COUNT
     );
     assert_eq!(
         r.relations_written,

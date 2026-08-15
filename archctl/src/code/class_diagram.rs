@@ -1345,6 +1345,7 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
+    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version};
     use crate::store::{
         ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork,
     };
@@ -1361,8 +1362,6 @@ pub fn apply(
     let mut relations_skipped = 0;
     let evidences_written = 0;
 
-    let version_id = uuid::Uuid::new_v4().to_string();
-
     // D5: wrap writes in single transaction via UnitOfWork.
     // On error: return propagates, Transaction drops → implicit rollback
     // (tracing::warn! on failure). On success: explicit commit.
@@ -1372,60 +1371,79 @@ pub fn apply(
     // Reborrow through Transaction to call LbugStore repository methods.
     let s: &mut LbugStore = tx.as_mut();
 
-    for node in &report.nodes {
-        let kind_id = match node.kind {
-            TypeKind::Class => "uml.class",
-            TypeKind::Interface => "uml.interface",
-            TypeKind::Trait => "uml.trait",
-            TypeKind::Enum => "uml.enum",
-            TypeKind::Record => "uml.record",
-        };
+    // M32 D2 + D5: Hoist existing_canonical_keys OUT of the per-node loop
+    // (fixes N+1 bug: one query per node was hitting the DB inside the loop).
+    // Also fix version_id: previously all nodes shared ONE version_id (created once
+    // before the loop). Each node needs its own unique ElementVersion id.
+    let existing_keys = ElementRepository::existing_canonical_keys(s)
+        .context("class_diagram apply: fetch existing keys")
+        .map_err(ClassDiagramError::GraphWrite)?;
 
-        let id = format!("cd:{}", node.canonical_key);
+    // Filter to candidate nodes (not yet in store).
+    let candidate_nodes: Vec<_> = report
+        .nodes
+        .iter()
+        .filter(|n| !existing_keys.contains(&n.canonical_key))
+        .collect();
 
-        let version_props = serde_json::json!({
-            "kind": format!("{:?}", node.kind).to_lowercase(),
-            "language": node.language.lang_label(),
-            "confidence": node.confidence,
-            "members": node.members.len(),
-        });
-
-        // Use existing_canonical_keys check for idempotency
-        let existing_keys =
-            ElementRepository::existing_canonical_keys(s).context("fetch existing keys")?;
-        if existing_keys.contains(&node.canonical_key) {
-            elements_skipped += 1;
-        } else {
-            s.upsert_element(&crate::graph::Element {
-                id: id.clone(),
+    // M32 D2 UNWIND bulk: build Element + ElementVersion batches, call helpers once.
+    let elements: Vec<crate::graph::Element> = candidate_nodes
+        .iter()
+        .map(|n| {
+            let kind_id = match n.kind {
+                TypeKind::Class => "uml.class",
+                TypeKind::Interface => "uml.interface",
+                TypeKind::Trait => "uml.trait",
+                TypeKind::Enum => "uml.enum",
+                TypeKind::Record => "uml.record",
+            };
+            crate::graph::Element {
+                id: format!("cd:{}", n.canonical_key),
                 kind_id: kind_id.to_string(),
                 category: "uml".to_string(),
-                canonical_key: node.canonical_key.clone(),
-                current_name: node.name.clone(),
+                canonical_key: n.canonical_key.clone(),
+                current_name: n.name.clone(),
                 current_status: "active".to_string(),
-                current_confidence: node.confidence,
-                current_version_id: version_id.clone(),
-            })?;
-            elements_written += 1;
-        }
+                current_confidence: n.confidence,
+                current_version_id: format!("cdv:{}:{}", n.canonical_key, uuid::Uuid::new_v4()),
+            }
+        })
+        .collect();
 
-        // ElementVersion
+    let mut element_versions: Vec<crate::graph::ElementVersion> =
+        Vec::with_capacity(candidate_nodes.len());
+    for n in &candidate_nodes {
+        let version_props = serde_json::json!({
+            "kind": format!("{:?}", n.kind).to_lowercase(),
+            "language": n.language.lang_label(),
+            "confidence": n.confidence,
+            "members": n.members.len(),
+        });
         let mut props_map = serde_json::Map::new();
         if let Some(obj) = version_props.as_object() {
             for (k, v) in obj {
                 props_map.insert(k.clone(), v.clone());
             }
         }
-        s.upsert_element_version(&crate::graph::ElementVersion {
-            id: version_id.clone(),
-            element_id: id,
-            name: node.name.clone(),
+        element_versions.push(crate::graph::ElementVersion {
+            id: format!("cdv:{}:{}", n.canonical_key, uuid::Uuid::new_v4()),
+            element_id: format!("cd:{}", n.canonical_key),
+            name: n.name.clone(),
             status: "active".to_string(),
             origin: "class-diagram".to_string(),
-            confidence: node.confidence,
+            confidence: n.confidence,
             props: props_map,
-        })?;
+        });
     }
+
+    batch_upsert_element(s, &elements).context("class_diagram batch_upsert_element")?;
+    elements_written += elements.len();
+
+    batch_upsert_element_version(s, &element_versions)
+        .context("class_diagram batch_upsert_element_version")
+        .map_err(ClassDiagramError::GraphWrite)?;
+
+    elements_skipped += report.nodes.len() - candidate_nodes.len();
 
     // Write edges
     for edge in &report.edges {

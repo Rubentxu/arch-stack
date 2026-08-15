@@ -1312,7 +1312,9 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version, write_source_artifact};
+    use crate::code::apply_common::{
+        batch_upsert_element, batch_upsert_element_version, write_source_artifact,
+    };
     use crate::store::{GraphStore, LbugStore, UnitOfWork};
 
     let mut store = LbugStore::open(project_dir)
@@ -1416,10 +1418,11 @@ pub fn apply(
                 "confidence": n.confidence,
                 "call_graph_schema_version": "1.0",
             });
-            let version_props_str =
-                serde_json::to_string(&version_props).unwrap_or_default();
-            let version_id =
-                format!("cgv:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+            let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+            let version_id = format!(
+                "cgv:{}",
+                blake3::hash(version_props_str.as_bytes()).to_hex()
+            );
             crate::graph::Element {
                 id: format!("cg:{}", n.canonical_key),
                 kind_id: kind_id.to_string(),
@@ -1442,10 +1445,11 @@ pub fn apply(
             "confidence": n.confidence,
             "call_graph_schema_version": "1.0",
         });
-        let version_props_str =
-            serde_json::to_string(&version_props).unwrap_or_default();
-        let version_id =
-            format!("cgv:{}", blake3::hash(version_props_str.as_bytes()).to_hex());
+        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+        let version_id = format!(
+            "cgv:{}",
+            blake3::hash(version_props_str.as_bytes()).to_hex()
+        );
         let mut props_map = serde_json::Map::new();
         for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
             props_map.insert(k, v);
