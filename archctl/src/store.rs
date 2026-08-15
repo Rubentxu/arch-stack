@@ -44,8 +44,10 @@
 use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde_json::Value as Json;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing::warn;
 
 use crate::clock::Clock;
 use crate::evaluation::Evaluation;
@@ -244,6 +246,98 @@ pub trait GraphStore:
     /// since `begin_transaction`. Best-effort: errors here are logged
     /// but do not mask the originating error from the caller.
     fn rollback_transaction(&mut self) -> Result<(), StoreError>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UnitOfWork — atomic write boundary port (P1-05)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Atomic write boundary. Internalises `begin`; exposes only
+/// `commit`/`rollback` through the session newtype. Avoids the
+/// "remember begin" footgun and preserves `Box<dyn GraphStore>
+/// dyn-compat (see store.rs:225-228).
+pub trait UnitOfWork: Send + Sync {
+    /// Begin a transaction. Pairs with `Transaction::commit` or
+    /// `Transaction::rollback` (or Drop). Returns a session tied
+    /// to the lifetime of `&mut self`.
+    fn begin_transaction<'a>(&'a mut self) -> Result<Transaction<'a>, StoreError>;
+}
+
+/// RAII session handle. Holds a raw pointer to the underlying store.
+/// On `Drop` if `!committed`, best-effort `rollback_transaction` with
+/// `tracing::warn!` on failure (does not panic).
+///
+/// The raw pointer avoids the self-referential struct problem: storing
+/// `&'a mut LbugStore` inside `Transaction<'a>` where `'a` is the
+/// lifetime of the borrow would create a struct that must outlive its
+/// own field — impossible in Rust's lifetime system.
+pub struct Transaction<'a> {
+    // Pointer to LbugStore so we can call GraphStore primitives
+    // (commit_transaction/rollback_transaction) that are not part of
+    // the UnitOfWork trait.
+    store: *mut LbugStore,
+    /// Ties the Transaction handle to the store borrow's lifetime.
+    _marker: PhantomData<&'a mut LbugStore>,
+    committed: bool,
+}
+
+impl<'a> Transaction<'a> {
+    /// Reborrow the wrapped store so callers can call any LbugStore
+    /// repository method on it within the active transaction.
+    /// Returns `&mut LbugStore` so callers can invoke `ElementRepository`,
+    /// `SemanticEdgeRepository`, etc. without UFCS or trait-object calls.
+    #[allow(clippy::should_implement_trait)]
+    pub fn as_mut(&mut self) -> &mut LbugStore {
+        // Safety: store pointer is valid for the lifetime 'a by construction
+        // (it came from &mut LbugStore with lifetime 'a in begin_transaction).
+        // The raw pointer is wrapped in a new reborrow each call; callers
+        // get an independent `&mut LbugStore` that follows normal Rust borrow
+        // rules (no aliasing while in scope).
+        unsafe { &mut *self.store }
+    }
+
+    /// Commit. Consumes the session and sets `committed=true`.
+    /// Returns `StoreError::Transaction` if called twice.
+    pub fn commit(mut self) -> Result<(), StoreError> {
+        if self.committed {
+            return Err(StoreError::Transaction(
+                "transaction already committed".to_string(),
+            ));
+        }
+        self.committed = true;
+        // consume self to make store inaccessible after commit
+        let store = self.store;
+        // Safety: we just set committed=true and no longer use self after
+        // this line. The store pointer is valid for 'a and we pass ownership
+        // of the commit call through the raw pointer.
+        unsafe { (*store).commit_transaction() }
+    }
+
+    /// Rollback. Consumes the session. Failure is logged but does
+    /// not overwrite the original error (best-effort, mirrors
+    /// `store.rs:1502`).
+    pub fn rollback(mut self) -> Result<(), StoreError> {
+        if self.committed {
+            return Err(StoreError::Transaction(
+                "transaction already committed".to_string(),
+            ));
+        }
+        self.committed = true;
+        let store = self.store;
+        unsafe { (*store).rollback_transaction() }
+    }
+}
+
+impl<'a> Drop for Transaction<'a> {
+    fn drop(&mut self) {
+        if !self.committed {
+            // Safety: store pointer is valid for 'a; Drop is called while
+            // the Transaction is still in scope, so 'a is still valid.
+            if let Err(e) = unsafe { (*self.store).rollback_transaction() } {
+                warn!("Transaction dropped without commit; rollback failed: {e}");
+            }
+        }
+    }
 }
 
 /// Element write/read port (P1-03). Idempotent MERGE on canonical ids;
@@ -771,6 +865,18 @@ impl GraphStore for LbugStore {
             .query("ROLLBACK")
             .map_err(|e| StoreError::Rollback(format!("ROLLBACK failed: {e}")))?;
         Ok(())
+    }
+}
+
+impl UnitOfWork for LbugStore {
+    fn begin_transaction<'a>(&'a mut self) -> Result<Transaction<'a>, StoreError> {
+        // Delegate to the existing GraphStore primitive.
+        GraphStore::begin_transaction(self)?;
+        Ok(Transaction {
+            store: self as *mut LbugStore,
+            _marker: PhantomData,
+            committed: false,
+        })
     }
 }
 
@@ -2037,17 +2143,17 @@ fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
     Ok(LbugSession { conn, _db: db })
 }
 
-/// Create a relationship edge between two existing nodes, with MERGE-then-CREATE fallback.
+/// Create a relationship edge between two existing nodes, idempotent and transaction-safe.
 ///
-/// lbug 0.18.3 rejects MERGE on a REL TABLE (ADR-017 §"Nota técnica").
-/// When that happens we fall back to MATCH + CREATE — the CREATE is
-/// idempotent in lbug's single-graph mode (a second CREATE on an existing
-/// edge is a no-op).
+/// Uses OPTIONAL MATCH to check for an existing relationship before creating.
+/// This is idempotent (calling twice is a no-op) and never throws a duplicate-PK
+/// error inside a transaction, making it safe for Kùzu 0.18.3's auto-revert
+/// behaviour on query failures inside transactions.
 ///
-/// All four arguments (`from_label`, `from_id`, `rel_type`, `to_label`,
-/// `to_id`) are caller-validated identifiers. Errors from the fallback
-/// path are wrapped with a label-rich context so the caller's intent is
-/// visible at the error site.
+/// If either node does not exist, the relationship is simply not created
+/// (no error, matching the prior fallback behaviour).
+///
+/// All four arguments are caller-validated identifiers.
 fn link_with_merge_fallback(
     conn: &lbug::Connection,
     from_label: &str,
@@ -2056,18 +2162,21 @@ fn link_with_merge_fallback(
     to_label: &str,
     to_id: &str,
 ) -> Result<()> {
-    let primary = format!(
-        "MERGE (a:{from_label} {{id: '{from_id}'}})-[:{rel_type}]->(b:{to_label} {{id: '{to_id}'}});"
+    // Single, idempotent, transaction-safe query.
+    // OPTIONAL MATCH returns null for the relationship if it doesn't exist;
+    // WHERE r IS NULL ensures we only CREATE when the edge is absent.
+    // If either endpoint node is missing the MATCH finds nothing and the
+    // CREATE is never reached — no error, matching prior fallback semantics.
+    let cypher = format!(
+        "MATCH (a:{from_label} {{id: '{from_id}'}}), (b:{to_label} {{id: '{to_id}'}}) \
+         WITH a, b \
+         OPTIONAL MATCH (a)-[r:{rel_type}]->(b) \
+         WITH a, b, r \
+         WHERE r IS NULL \
+         CREATE (a)-[:{rel_type}]->(b);"
     );
-    if conn.query(&primary).is_err() {
-        let fallback = format!(
-            "MATCH (a:{from_label} {{id: '{from_id}'}}), (b:{to_label} {{id: '{to_id}'}}) \
-             CREATE (a)-[:{rel_type}]->(b);"
-        );
-        conn.query(&fallback).with_context(|| {
-            format!("link {rel_type} fallback for ({from_label}:{from_id}, {to_label}:{to_id})")
-        })?;
-    }
+    conn.query(&cypher)
+        .with_context(|| format!("link {rel_type} ({from_label}:{from_id}, {to_label}:{to_id})"))?;
     Ok(())
 }
 

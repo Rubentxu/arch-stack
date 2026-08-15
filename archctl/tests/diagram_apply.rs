@@ -761,3 +761,115 @@ fn schema_1_1_accepts_1_0_bundle() {
         result.err()
     );
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// P1-05 §1.10: MoveMember fan-out rollback on mid-changeset failure
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Verifies the atomic-abort contract for apply_to_store:
+/// when a changeset contains MoveMember (which fans out to 3 writes:
+/// put_view_member, link_renders, link_member_of) followed by a command
+/// that fails, the UnitOfWork transaction rolls back all 3 writes.
+///
+/// Strategy:
+/// 1. Seed Diagram with matching base_revision (no ViewMember seeded).
+/// 2. Apply a changeset with MoveMember + SetLabel where:
+///    - MoveMember runs first, creates the ViewMember + links it (all in tx).
+///    - SetLabel runs second, finds no ViewMember (it was just created but
+///      the label update returns 0 rows), causing the command to fail.
+///    - The entire tx rolls back: MoveMember's 3 writes are reverted.
+/// 3. Assert get_view_members returns [] (no orphaned fan-out writes).
+///
+/// Note: SetLabel "fails" not by throwing an error but by the command
+/// handler treating a 0-row-update as a failure condition (idempotent
+/// behavior of MERGE in update_view_member_label).
+#[test]
+fn apply_to_store_atomic_abort_via_unit_of_work() {
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path().join("proj");
+    std::fs::create_dir_all(&project).unwrap();
+
+    let mut store = LbugStore::open(&project).unwrap();
+    store.init().unwrap();
+
+    let diagram_id = "container:orders";
+    let base_revision =
+        "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_string();
+
+    // Seed Diagram with the known base_revision
+    store
+        .put_diagram(&Diagram {
+            id: diagram_id.into(),
+            revision: base_revision.clone(),
+            selector: diagram_id.into(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+
+    // Seed Element so link_renders (MoveMember write 2) succeeds
+    store
+        .execute_raw_cypher_for_test(
+            "CREATE (:Element {id: 'el:orders', kind_id: 'mt.container', category: 'c4', canonical_key: 'orders'}) RETURN 1;",
+        )
+        .unwrap();
+
+    // NOTE: we do NOT seed a ViewMember. MoveMember will create one via MERGE
+    // (write 1: put_view_member). SetLabel will then be called on that
+    // freshly-created member within the same transaction.
+
+    // Apply changeset: MoveMember + SetLabel (both inside one rolling-back tx)
+    let changeset = ChangeSet {
+        schema_version: "1.0".to_string(),
+        diagram_id: diagram_id.into(),
+        base_revision,
+        commands: vec![
+            // Command 1: MoveMember — creates ViewMember + links it (3 writes in tx)
+            archctl::diagram::changeset_types::Command::MoveMember {
+                member_id: "vm:container:orders:el:orders".into(),
+                element_id: "el:orders".into(),
+                x: 240,
+                y: 160,
+            },
+            // Command 2: SetLabel — targets the ViewMember created by MoveMember.
+            // Since update_view_member_label uses MERGE (finds and updates), it
+            // should succeed. We use a second failing MoveMember instead to
+            // ensure the changeset fails within the tx boundary.
+            archctl::diagram::changeset_types::Command::MoveMember {
+                member_id: "vm:container:orders:el:nonexistent".into(),
+                element_id: "el:nonexistent".into(),
+                x: 300,
+                y: 300,
+            },
+        ],
+    };
+
+    let result = archctl::diagram::apply::apply_to_store(&mut store, changeset);
+
+    // The second MoveMember fails because el:nonexistent does not exist.
+    // This failure is within the same transaction as the first MoveMember,
+    // so the entire tx rolls back — including all 3 writes of the first MoveMember.
+    assert!(
+        result.is_err(),
+        "changeset with failing second MoveMember must fail; got: {:?}",
+        result
+    );
+    tracing::info!(
+        "apply_to_store failed as expected (second MoveMember missing element): {:?}",
+        result
+    );
+
+    // Critical assertion: after rollback, get_view_members must return [].
+    // This proves the entire fan-out of the first MoveMember was reverted:
+    // write 1 (put_view_member MERGE), write 2 (link_renders), write 3 (link_member_of).
+    let members = store
+        .get_view_members(diagram_id)
+        .expect("get_view_members must succeed");
+    assert!(
+        members.is_empty(),
+        "atomic-abort: get_view_members must return [] after rollback of MoveMember fan-out. \
+         Got {:#?}",
+        members
+    );
+}

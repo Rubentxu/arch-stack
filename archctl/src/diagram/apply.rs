@@ -79,7 +79,7 @@ pub fn run_apply(
 /// not the full super-trait. Concrete `LbugStore` implements DiagramOps
 /// via GraphStore, so the lock-aware `LbugStore::open` factory is the
 /// caller's concern; the apply core only touches DiagramOps methods.
-pub fn apply_to_store(store: &mut dyn DiagramOps, changeset: ChangeSet) -> Result<ApplyReport> {
+pub fn apply_to_store(store: &mut LbugStore, changeset: ChangeSet) -> Result<ApplyReport> {
     // Schema-validation of the changeset structure
     let changeset_json = serde_json::to_string(&changeset).context("re-serialize changeset")?;
     validate_changeset_schema(&changeset_json)?;
@@ -132,22 +132,43 @@ pub fn apply_to_store(store: &mut dyn DiagramOps, changeset: ChangeSet) -> Resul
     let old_revision = current_revision.clone();
     let commands_applied = changeset.commands.len();
 
-    for cmd in &changeset.commands {
-        cmd.apply(store, &changeset.diagram_id)?;
+    // P1-05 1.6: wrap the full fan-out (commands + reexport + diagram bump) in
+    // a single Transaction so that if any command fails, the entire changeset
+    // rolls back atomically. MoveMember makes 3 writes (ViewMember MERGE,
+    // MEMBER_OF, RENDERS); without this wrap, a mid-sequence failure would
+    // leave partial state in the graph.
+    GraphStore::begin_transaction(store).context("apply_to_store: begin_transaction")?;
+
+    let result = (|| {
+        for cmd in &changeset.commands {
+            cmd.apply(store, &changeset.diagram_id)?;
+        }
+
+        let projection = reexport_view(store, &changeset.diagram_id)
+            .context("re-export view for revision bump")?;
+        let new_revision = base_revision(&projection);
+
+        store.put_diagram(&Diagram {
+            id: changeset.diagram_id.clone(),
+            revision: new_revision.clone(),
+            selector: changeset.diagram_id.clone(),
+            props: serde_json::json!({}),
+            created_at: None,
+            updated_at: None,
+        })?;
+
+        GraphStore::commit_transaction(store).context("apply_to_store: commit_transaction")?;
+        Ok(new_revision)
+    })();
+
+    if let Err(e) = result {
+        if let Err(rollback_err) = GraphStore::rollback_transaction(store) {
+            tracing::warn!("apply_to_store: rollback failed: {rollback_err}");
+        }
+        return Err(e);
     }
 
-    let projection =
-        reexport_view(store, &changeset.diagram_id).context("re-export view for revision bump")?;
-    let new_revision = base_revision(&projection);
-
-    store.put_diagram(&Diagram {
-        id: changeset.diagram_id.clone(),
-        revision: new_revision.clone(),
-        selector: changeset.diagram_id.clone(),
-        props: serde_json::json!({}),
-        created_at: None,
-        updated_at: None,
-    })?;
+    let new_revision = result.expect("just checked Ok above");
 
     Ok(ApplyReport {
         diagram_id: changeset.diagram_id,

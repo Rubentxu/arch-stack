@@ -1313,7 +1313,7 @@ pub fn apply(
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
     use crate::code::apply_common::write_source_artifact;
-    use crate::store::{GraphStore, LbugStore};
+    use crate::store::{GraphStore, LbugStore, UnitOfWork};
 
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| CallGraphError::GraphWrite(anyhow::anyhow!("failed to open store: {e}")))?;
@@ -1329,9 +1329,9 @@ pub fn apply(
         .context("fetch existing keys")
         .map_err(CallGraphError::GraphWrite)?;
 
-    // D1: wrap all writes in a single Kùzu transaction. Rationale and
-    // contract: see ADR-036 §D1 and `GraphStore::begin_transaction`.
-    store.begin_transaction().map_err(|se| {
+    // D1: wrap all writes in a single Kùzu transaction via UnitOfWork.
+    // Rationale and contract: see ADR-036 §D1 and `Transaction`.
+    let mut tx = UnitOfWork::begin_transaction(&mut store).map_err(|se| {
         CallGraphError::GraphWrite(anyhow::anyhow!("begin_transaction failed: {se}"))
     })?;
 
@@ -1365,147 +1365,136 @@ pub fn apply(
     // 1307 elements: ~3 queries instead of ~6535. Expected additional
     // 2-10× speedup over PR1's transaction wrap.
 
-    // Scope the mutable borrow of `store` so we can re-borrow for
-    // commit/rollback after.
-    let inner_result: Result<(), CallGraphError> = {
-        let s: &mut LbugStore = &mut store;
+    // Reborrow through Transaction to call LbugStore repository methods.
+    let s: &mut LbugStore = tx.as_mut();
 
-        // Pre-compute SourceArtifact IDs for all unique files (in memory).
-        // Same per-file dedup as PR1; just hoisted out of the per-node loop
-        // because we now build batches and can't call write_source_artifact
-        // (which itself does a query) inside the batch UNWIND.
-        for node in &report.nodes {
-            if existing_keys.contains(&node.canonical_key) {
-                continue;
-            }
-            if !source_artifact_ids.contains_key(&node.file) {
-                let id = write_source_artifact(
-                    s,
-                    &node.file,
-                    &node.content_hash,
-                    lang_label(&node.language),
-                )
-                .context("write_source_artifact")
-                .map_err(CallGraphError::GraphWrite)?;
-                source_artifact_ids.insert(node.file.clone(), id);
-                source_artifacts_written += 1;
-            }
+    // Pre-compute SourceArtifact IDs for all unique files (in memory).
+    // Same per-file dedup as PR1; just hoisted out of the per-node loop
+    // because we now build batches and can't call write_source_artifact
+    // (which itself does a query) inside the batch UNWIND.
+    for node in &report.nodes {
+        if existing_keys.contains(&node.canonical_key) {
+            continue;
         }
-
-        // Build the candidate node batch (skipping existing canonical_keys).
-        let candidate_nodes: Vec<&FunctionNode> = report
-            .nodes
-            .iter()
-            .filter(|n| !existing_keys.contains(&n.canonical_key))
-            .collect();
-
-        // Per-node repository writes (P1-03: no inline Cypher in apply paths).
-        // M32 batched UNWIND is preserved as an internal optimisation path
-        // (`_legacy_*`); new code goes through `ElementRepository::*`.
-        for n in &candidate_nodes {
-            let version_props = serde_json::json!({
-                "kind": format!("{:?}", n.kind).to_lowercase(),
-                "language": lang_label(&n.language),
-                "confidence": n.confidence,
-                "call_graph_schema_version": "1.0",
-            });
-            let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-            let version_id = format!(
-                "cgv:{}",
-                blake3::hash(version_props_str.as_bytes()).to_hex()
-            );
-            let kind_id = match n.kind {
-                FunctionKind::Function => "code.function",
-                FunctionKind::Method => "code.method",
-                FunctionKind::Closure => "code.closure",
-            };
-
-            s.upsert_element(&crate::graph::Element {
-                id: format!("cg:{}", n.canonical_key),
-                kind_id: kind_id.to_string(),
-                category: "code".to_string(),
-                canonical_key: n.canonical_key.clone(),
-                current_name: n.name.clone(),
-                current_status: "active".to_string(),
-                current_confidence: n.confidence,
-                current_version_id: version_id.clone(),
-            })
-            .context("upsert_element")
+        if !source_artifact_ids.contains_key(&node.file) {
+            let id = write_source_artifact(
+                s,
+                &node.file,
+                &node.content_hash,
+                lang_label(&node.language),
+            )
+            .context("write_source_artifact")
             .map_err(CallGraphError::GraphWrite)?;
-
-            let mut props_map = serde_json::Map::new();
-            for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
-                props_map.insert(k, v);
-            }
-            s.upsert_element_version(&crate::graph::ElementVersion {
-                id: version_id.clone(),
-                element_id: format!("cg:{}", n.canonical_key),
-                name: n.name.clone(),
-                status: "drafted".to_string(),
-                origin: "call-graph".to_string(),
-                confidence: n.confidence,
-                props: props_map,
-            })
-            .context("upsert_element_version")
-            .map_err(CallGraphError::GraphWrite)?;
-
-            s.link_current_version(&format!("cg:{}", n.canonical_key), &version_id)
-                .context("link_current_version")
-                .map_err(CallGraphError::GraphWrite)?;
-            s.link_version_of(&format!("cg:{}", n.canonical_key), &version_id)
-                .context("link_version_of")
-                .map_err(CallGraphError::GraphWrite)?;
-            s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
-                .context("link_of_type")
-                .map_err(CallGraphError::GraphWrite)?;
-            elements_written += 1;
+            source_artifact_ids.insert(node.file.clone(), id);
+            source_artifacts_written += 1;
         }
-
-        // Write call edges (per-edge, since the OPTIONAL MATCH semantics
-        // don't batch cleanly with UNWIND — callee resolution is per-row).
-        for edge in &report.edges {
-            let src_element_id = format!("cg:{}", edge.caller);
-            if !existing_keys.contains(&edge.caller) {
-                let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
-                    id.clone()
-                } else {
-                    let lang_label_edge = edge
-                        .canonical_key
-                        .split(':')
-                        .next()
-                        .unwrap_or("")
-                        .to_string();
-                    let id =
-                        write_source_artifact(s, &edge.file, &edge.content_hash, &lang_label_edge)
-                            .context("write_source_artifact")
-                            .map_err(CallGraphError::GraphWrite)?;
-                    source_artifact_ids.insert(edge.file.clone(), id.clone());
-                    source_artifacts_written += 1;
-                    id
-                };
-                let version_id = format!("cgv:{}", blake3::hash(edge.caller.as_bytes()).to_hex());
-                write_call_edge(s, edge, &src_element_id, &sa_id, &version_id)
-                    .context("write_call_edge")
-                    .map_err(CallGraphError::GraphWrite)?;
-                relations_written += 1;
-                evidences_written += 1;
-            } else {
-                relations_skipped += 1;
-            }
-        }
-
-        Ok(())
-    };
-
-    if let Err(e) = inner_result {
-        // Best-effort rollback — do not mask the original error.
-        let _ = store.rollback_transaction();
-        return Err(e);
     }
 
-    store.commit_transaction().map_err(|se| {
-        CallGraphError::GraphWrite(anyhow::anyhow!("commit_transaction failed: {se}"))
-    })?;
+    // Build the candidate node batch (skipping existing canonical_keys).
+    let candidate_nodes: Vec<&FunctionNode> = report
+        .nodes
+        .iter()
+        .filter(|n| !existing_keys.contains(&n.canonical_key))
+        .collect();
+
+    // Per-node repository writes (P1-03: no inline Cypher in apply paths).
+    // M32 batched UNWIND is preserved as an internal optimisation path
+    // (`_legacy_*`); new code goes through `ElementRepository::*`.
+    for n in &candidate_nodes {
+        let version_props = serde_json::json!({
+            "kind": format!("{:?}", n.kind).to_lowercase(),
+            "language": lang_label(&n.language),
+            "confidence": n.confidence,
+            "call_graph_schema_version": "1.0",
+        });
+        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+        let version_id = format!(
+            "cgv:{}",
+            blake3::hash(version_props_str.as_bytes()).to_hex()
+        );
+        let kind_id = match n.kind {
+            FunctionKind::Function => "code.function",
+            FunctionKind::Method => "code.method",
+            FunctionKind::Closure => "code.closure",
+        };
+
+        s.upsert_element(&crate::graph::Element {
+            id: format!("cg:{}", n.canonical_key),
+            kind_id: kind_id.to_string(),
+            category: "code".to_string(),
+            canonical_key: n.canonical_key.clone(),
+            current_name: n.name.clone(),
+            current_status: "active".to_string(),
+            current_confidence: n.confidence,
+            current_version_id: version_id.clone(),
+        })
+        .context("upsert_element")
+        .map_err(CallGraphError::GraphWrite)?;
+
+        let mut props_map = serde_json::Map::new();
+        for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
+            props_map.insert(k, v);
+        }
+        s.upsert_element_version(&crate::graph::ElementVersion {
+            id: version_id.clone(),
+            element_id: format!("cg:{}", n.canonical_key),
+            name: n.name.clone(),
+            status: "drafted".to_string(),
+            origin: "call-graph".to_string(),
+            confidence: n.confidence,
+            props: props_map,
+        })
+        .context("upsert_element_version")
+        .map_err(CallGraphError::GraphWrite)?;
+
+        s.link_current_version(&format!("cg:{}", n.canonical_key), &version_id)
+            .context("link_current_version")
+            .map_err(CallGraphError::GraphWrite)?;
+        s.link_version_of(&format!("cg:{}", n.canonical_key), &version_id)
+            .context("link_version_of")
+            .map_err(CallGraphError::GraphWrite)?;
+        s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
+            .context("link_of_type")
+            .map_err(CallGraphError::GraphWrite)?;
+        elements_written += 1;
+    }
+
+    // Write call edges (per-edge, since the OPTIONAL MATCH semantics
+    // don't batch cleanly with UNWIND — callee resolution is per-row).
+    for edge in &report.edges {
+        let src_element_id = format!("cg:{}", edge.caller);
+        if !existing_keys.contains(&edge.caller) {
+            let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
+                id.clone()
+            } else {
+                let lang_label_edge = edge
+                    .canonical_key
+                    .split(':')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                let id = write_source_artifact(s, &edge.file, &edge.content_hash, &lang_label_edge)
+                    .context("write_source_artifact")
+                    .map_err(CallGraphError::GraphWrite)?;
+                source_artifact_ids.insert(edge.file.clone(), id.clone());
+                source_artifacts_written += 1;
+                id
+            };
+            let version_id = format!("cgv:{}", blake3::hash(edge.caller.as_bytes()).to_hex());
+            write_call_edge(s, edge, &src_element_id, &sa_id, &version_id)
+                .context("write_call_edge")
+                .map_err(CallGraphError::GraphWrite)?;
+            relations_written += 1;
+            evidences_written += 1;
+        } else {
+            relations_skipped += 1;
+        }
+    }
+
+    // On error: return propagates, Transaction drops → implicit rollback (tracing::warn! on failure).
+    // On success: explicit commit.
+    tx.commit()
+        .map_err(|se| CallGraphError::GraphWrite(anyhow::anyhow!("commit failed: {se}")))?;
 
     Ok(ApplyReport {
         elements_written,
