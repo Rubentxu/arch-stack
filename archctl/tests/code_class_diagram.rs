@@ -881,3 +881,189 @@ fn class_diagram_apply_atomic_abort_on_write_error() {
         "atomic-abort: no partial state should survive an implicit rollback"
     );
 }
+
+// ─── M32 D2 + D5 class_diagram tests ─────────────────────────────────────────────
+
+/// Verifies UNWIND bulk path produces correct element + edge counts.
+/// Regression guard for the N+1 bug fix + UNWIND restore.
+#[test]
+fn class_diagram_apply_unwind_bulk_correctness() {
+    use archctl::code::class_diagram;
+    use archctl::code::class_diagram::{
+        ClassDiagramReport, ClassEdge, ClassEdgeKind, ClassNode, Language, ProjectMeta, TypeKind,
+    };
+    use archctl::filesystem::SystemFilesystem;
+    use archctl::store::{GraphStore, RawGraphQuery};
+
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+
+    // Build a synthetic ClassDiagramReport with 50 classes and 5 edges.
+    const NODE_COUNT: usize = 50;
+    let mut nodes = Vec::with_capacity(NODE_COUNT);
+    for i in 0..NODE_COUNT {
+        nodes.push(ClassNode {
+            canonical_key: format!("rust:src/lib.rs:class:Class_{}:{}", i, i),
+            kind: TypeKind::Class,
+            language: Language::Rust,
+            file: "src/lib.rs".to_string(),
+            line: (i as u32) + 1,
+            name: format!("Class_{}", i),
+            members: vec![],
+            confidence: 0.90,
+        });
+    }
+
+    // Edges: Class_i extends Class_{i+1}
+    let mut edges = Vec::with_capacity(5);
+    for i in 0..5 {
+        edges.push(ClassEdge {
+            canonical_key: format!(
+                "rust:src/lib.rs:Class_{}→extends→Class_{}:{}",
+                i,
+                i + 1,
+                i + 10
+            ),
+            source: format!("rust:src/lib.rs:class:Class_{}:{}", i, i),
+            target: format!("rust:src/lib.rs:class:Class_{}:{}", i + 1, i + 1),
+            predicate: ClassEdgeKind::Extends,
+            file: "src/lib.rs".to_string(),
+            line: (i as u32) + 10,
+            confidence: 0.90,
+        });
+    }
+
+    let report = ClassDiagramReport {
+        schema_version: "1.0".to_string(),
+        project: ProjectMeta {
+            root: project.to_string_lossy().to_string(),
+            files_scanned: 1,
+            languages: [("rust".to_string(), NODE_COUNT as u64)].into(),
+        },
+        nodes,
+        edges,
+        errors: vec![],
+    };
+
+    let fs = SystemFilesystem;
+    let r = class_diagram::apply(project, &report, &fs).expect("apply must succeed");
+    assert_eq!(
+        r.elements_written, NODE_COUNT,
+        "UNWIND bulk: expected {} elements_written",
+        NODE_COUNT
+    );
+    assert_eq!(
+        r.relations_written, 5,
+        "UNWIND bulk: expected 5 relations_written"
+    );
+
+    // Verify via direct store query.
+    let mut store = archctl::store::LbugStore::open(project).expect("store must open");
+    store.init().expect("store must init");
+
+    let element_count: i64 = store
+        .query("MATCH (e:Element) WHERE e.kind_id STARTS WITH 'uml.' RETURN count(e) AS cnt;")
+        .expect("element count query must succeed")
+        .pop()
+        .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+        .expect("count must be i64");
+    assert_eq!(
+        element_count, NODE_COUNT as i64,
+        "UNWIND bulk: expected {} Element nodes, got {}",
+        NODE_COUNT, element_count
+    );
+
+    let edge_count: i64 = store
+        .query("MATCH ()-[r:SEMANTIC_EDGE]->() RETURN count(r) AS cnt;")
+        .expect("edge count query must succeed")
+        .pop()
+        .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+        .expect("count must be i64");
+    assert_eq!(
+        edge_count, 5,
+        "UNWIND bulk: expected 5 SEMANTIC_EDGE edges, got {}",
+        edge_count
+    );
+}
+
+/// Verifies applying twice with the same data produces the same final state
+/// (no duplicates, idempotent skip). This indirectly verifies the
+/// existing_canonical_keys pre-check is done ONCE before the batch, not inside
+/// the per-node loop (which was the N+1 bug at class_diagram.rs L1394-1395).
+#[test]
+fn class_diagram_existing_keys_not_n_plus_one() {
+    use archctl::code::class_diagram;
+    use archctl::code::class_diagram::{
+        ClassDiagramReport, ClassNode, Language, ProjectMeta, TypeKind,
+    };
+    use archctl::store::{GraphStore, RawGraphQuery};
+
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+
+    let make_report = |offset: usize| ClassDiagramReport {
+        schema_version: "1.0".to_string(),
+        project: ProjectMeta {
+            root: project.to_string_lossy().to_string(),
+            files_scanned: 1,
+            languages: [("rust".to_string(), 3u64)].into(),
+        },
+        nodes: vec![
+            ClassNode {
+                canonical_key: format!("rust:src/lib.rs:class:C{}:{}", offset, offset),
+                kind: TypeKind::Class,
+                language: Language::Rust,
+                file: "src/lib.rs".to_string(),
+                line: 1,
+                name: format!("C{}", offset),
+                members: vec![],
+                confidence: 0.90,
+            },
+            ClassNode {
+                canonical_key: format!("rust:src/lib.rs:class:C{}:{}", offset + 1, offset + 1),
+                kind: TypeKind::Class,
+                language: Language::Rust,
+                file: "src/lib.rs".to_string(),
+                line: 2,
+                name: format!("C{}", offset + 1),
+                members: vec![],
+                confidence: 0.90,
+            },
+        ],
+        edges: vec![],
+        errors: vec![],
+    };
+
+    let fs = archctl::filesystem::SystemFilesystem;
+
+    // First apply: both nodes written.
+    let r1 = class_diagram::apply(project, &make_report(0), &fs).expect("first apply must succeed");
+    assert_eq!(r1.elements_written, 2, "first apply: 2 elements");
+    assert_eq!(r1.elements_skipped, 0, "first apply: 0 skipped");
+
+    // Second apply with same data: both skipped.
+    let r2 =
+        class_diagram::apply(project, &make_report(0), &fs).expect("second apply must succeed");
+    assert_eq!(
+        r2.elements_written, 0,
+        "second apply: 0 written (idempotent skip)"
+    );
+    assert_eq!(r2.elements_skipped, 2, "second apply: 2 skipped");
+
+    // Third apply with NEW data: 2 more written.
+    let r3 =
+        class_diagram::apply(project, &make_report(10), &fs).expect("third apply must succeed");
+    assert_eq!(r3.elements_written, 2, "third apply: 2 new elements");
+    assert_eq!(r3.elements_skipped, 0, "third apply: 0 skipped");
+
+    // Verify total count: 4 unique nodes.
+    let mut store = archctl::store::LbugStore::open(project).expect("store must open");
+    store.init().expect("store must init");
+    let element_count: i64 = store
+        .query("MATCH (e:Element) WHERE e.kind_id STARTS WITH 'uml.' RETURN count(e) AS cnt;")
+        .expect("query must succeed")
+        .pop()
+        .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+        .expect("count must be i64");
+    assert_eq!(element_count, 4, "total: 4 unique uml.* Element nodes");
+}

@@ -12,16 +12,16 @@
 //! Benchmarks measure the full `call_graph::apply()` call (store open + init +
 //! graph writes). Criterion's timer is the measurement instrument.
 //!
-//! Thresholds (documented, not enforced at runtime):
+//! ADR-036 §D4 regression thresholds:
 //!   echo  D1 only:  < 10s  (10,500 per-element commits → 1)
 //!   echo  D1 + D2: < 3s   (10,500 per-element queries → ~6)
 //!   zustand D1+D2:  < 5s
-//!   go_fixture:      < 5s
+//!   go_fixture: < 5s AND ≤ 30 ms/element (post-D2 target: ~20 ms/element)
 //!
 //! Datasets (pre-cached at ~/.cache/archctl-smoke/):
 //!   labstack-echo-1307.json   — 1,307 nodes + edges, Go
 //!   pmndrs-zustand-212.json  —   212 nodes + edges, TypeScript
-//! The Go fixture uses committed source under tests/fixtures/go_callgraph/.
+//!   Go fixture uses committed source under tests/fixtures/go_callgraph/.
 
 use std::path::PathBuf;
 
@@ -137,28 +137,57 @@ fn bench_call_graph_apply_zustand(c: &mut Criterion) {
 }
 
 /// Go fixture — 6 elements + 2 edges, committed under tests/fixtures/go_callgraph/.
-/// Deterministic, no cache dependency. Threshold: < 5s.
+/// Deterministic, no cache dependency. Thresholds:
+///   - < 5s wall-clock (criterion measured)
+///   - ≤ 30 ms/element (ADR-036 §D4 post-D2 target)
 /// This bench extracts from the committed .go file (mimicking real CLI usage).
+///
+/// T4.1: per-element throughput assertion added.
 #[ignore]
 fn bench_call_graph_apply_go_fixture(c: &mut Criterion) {
+    // Go fixture has 6 elements. ADR-036 §D4 target: ≤ 30 ms/element post-D2.
+    const ELEMENT_COUNT: usize = 6;
+    const MAX_MS_PER_ELEMENT: f64 = 30.0;
+
     c.bench_function("call_graph_apply_go_fixture", |b| {
-        b.iter_with_setup(
-            || {
+        b.iter_custom(|iters| {
+            let mut total_ms: f64 = 0.0;
+            for _ in 0..iters {
                 let tmp = tempfile::tempdir().expect("tempdir");
                 let project = tmp.path().join("proj");
                 let src_dir = prepare_go_fixture(tmp.path());
-                (tmp, project, src_dir)
-            },
-            |(_tmp, project, src_dir)| {
-                // Extract from the committed Go fixture (simulates archctl code call-graph --lang go)
+
+                // Extract (not part of the apply timing, just for report construction)
                 let report: CallGraphReport =
                     call_graph::extract(&src_dir, &[Language::Go], None, &SystemFilesystem)
                         .expect("extract go fixture");
+
+                // Time only the apply call (store open + init + graph writes)
+                let start = std::time::Instant::now();
                 let result: Result<ApplyReport, _> =
                     call_graph::apply(&project, &report, &SystemFilesystem);
-                result
-            },
-        );
+                let elapsed = start.elapsed();
+                total_ms += elapsed.as_secs_f64() * 1000.0;
+
+                // Assert result is ok (panics if apply fails)
+                result.expect("apply should succeed");
+            }
+            let avg_ms = total_ms / iters as f64;
+            let ms_per_element = avg_ms / ELEMENT_COUNT as f64;
+
+            // ADR-036 §D4 throughput gate: ≤ 30 ms/element post-D2
+            assert!(
+                ms_per_element <= MAX_MS_PER_ELEMENT,
+                "throughput assertion failed: {} ms/element (expected ≤ {} ms/element). \
+                 avg={:.2}ms for {} elements",
+                ms_per_element,
+                MAX_MS_PER_ELEMENT,
+                avg_ms,
+                ELEMENT_COUNT
+            );
+
+            std::time::Duration::from_secs_f64(avg_ms / 1000.0)
+        });
     });
 }
 

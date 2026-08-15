@@ -158,7 +158,7 @@ Milestones roadmap H4: **M73** (multi-version + self-update + uninstall), **M75*
 Antes de cerrar M9, `archctl` necesita emitir bundles que `archview`
 pueda consumir.
 
-**Pivot v2.4 (2026-07-31):** M9 ya no es "renderers como librerías (PlantUML, Mermaid, Structurizr propio)". Es **Code Knowledge Graph Workbench** — un workbench con 5 vistas coordinadas (C4 contextual, call graph, sequence, class, package) renderizado con stack performance-first (ver [ADR-019](adr/ADR-019-performance-budget.md) y [ADR-020](adr/ADR-020-renderer-stack.md)). El target es developers/arquitectos, no BI. M9 incluye también el setup inicial del workbench (M17.0–M17.1) y la primera validación con `archctl code c4 discover` + `archctl code call-graph`.
+**Pivot v2.4 (2026-07-31) + M69 convergence (2026-08-09):** M9 ya no es "renderers como librerías (PlantUML, Mermaid, Structurizr propio)". Es **Code Knowledge Graph Workbench** — un workbench con 5 vistas coordinadas (C4 contextual, call graph, sequence, class, package) renderizado con el stack shipped (ver [ADR-019](adr/ADR-019-performance-budget.md) para el budget contractual y [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad para el stack realmente implementado: **G6 5.x canvas** — sin WebGPU, sin WASM, sin cosmos.gl; ADR-020 superseded). El target es developers/arquitectos, no BI. M9 incluye también el setup inicial del workbench (M17.0–M17.1) y la primera validación con `archctl code c4 discover` + `archctl code call-graph`. El workbench se distribuye como **un solo producto** ([ADR-038](adr/ADR-038-one-product-five-invariants.md), [ADR-033](adr/ADR-033-archctl-view-embedded-workbench.md)) vía `archctl view` — `archview` embebido en el binario `archctl` vía `rust-embed`.
 
 ## M10 — Casos de uso y escenarios (era M9)
 
@@ -197,26 +197,29 @@ Output: tres comandos CLI que se renderizan en `archview` como proyecciones del 
 - audit `manifests/code.toml` (F2.3)
 - `refactor/extract-code-apply-helpers` (~150 LOC deuda) — **Cerrado v0.13.2 ✅**
 
-## M17 — `archview` workbench (sustituye a Av0–Av6) — **→ superseded by H0–H3**
+## M17 — Workbench entregado vía `archctl view` (sustituye a Av0–Av6) — **→ superseded by H0–H3**
 
 > La sustancia de M17 (bundle contract, 5 vistas, G6 canvas) se reenmarca en H0–H3. El milestone anchor se preserva como ancla histórica.
+> **Criterio rector:** [ADR-038](adr/ADR-038-one-product-five-invariants.md) (arch-stack = un producto, cinco invariantes) + [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) (renderer realidad + anti-roadmap con reopen triggers medibles). ADR-013 sección "repositorio separado" queda **superseded** por ADR-038.
 
-**Pivot v2.4:** Reframe del plan original de `archview` (Av0–Av6) en milestones explícitos:
+**Pivot v2.4 + M69 convergence (2026-08-09):** arch-stack es **un producto** ([ADR-038](adr/ADR-038-one-product-five-invariants.md)) — `archctl` (CLI sidecar, Rust) + `archview` (workbench SolidJS) **embebido vía `rust-embed`** en el binario `archctl`. El comando de entrada es `archctl view`; **no hay repositorio separado**. El renderer shipped es **G6 5.x canvas** ([ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad) — sin WebGPU, sin WASM, sin cosmos.gl. Las decisiones aspiracionales (WASM compute, Arrow, cosmos.gl, SceneGraph, WIT) viven en el **anti-roadmap** de ADR-039 con reopen triggers medibles.
 
-> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **`fix-m17-package-view-onselect` cerrado ✅ (v0.14.5)** — PackageView onSelect `pkg.name`→node agora povoa o sidebar via synthetic `GraphNode` (Option D, `buildPackageNode`). **`m26-c4-contract-integrity` cerrado ✅ (v0.14.9)** — fixture exporter-derived ARREGLADO: `export.rs` ahora usa `category='c4'` y `kind_id CONTAINS` para matchear `c4_discover` que escribe `category='c4', kind_id='mt.container'`. ADR-024 formaliza la semántica. **`m26-c4-vertical-validation` cerrado ✅ (v0.14.10)** — 6 bugs adicionales descubiertos al ejecutar la pipeline contra `tokio-rs/axum` (workspace real): (B1) `apply()` usaba `cwd` directo en lugar de `info.project_dir`; (B2) Cypher inválido por IDs sin comillas en `IN [...]`; (B3) `write_evidence` silenciaba errores con `.ok()`; (B4) `version_id` colisionaba porque el hash no incluía el `element_id`; (B5) inconsistencia `"Drafted"` vs `"drafted"` rompía `evidence accept`; (B6) bundle schema mismatch (`type="c4"`, `status="active"`). ADR-031 documenta cada bug + fix. Vertical C4 ahora produce bundles válidos contra `tokio-rs/axum` (4 containers detectados, 4 evidences aceptadas, `diagram validate` OK). **Pendiente**: WebGPU/ADR-019 (0% implementado), benchmarks M27 sobre 10+ proyectos reales multi-lenguaje antes de v1.0.
+> **Avance 2026-08-03 (explore + m17-contract-alignment, v0.14.3):** el explore `m17-workbench-state` reveló que M17.0 está hecho y M17.1–M17.7 tienen MVPs de lista-texto (7 vistas en `archview/src/views/`), pero el loader consumía un formato C4 custom incompatible con el `viewer-bundle` real de `archctl diagram export`. `m17-contract-alignment` (v0.14.3) alineó el loader con el schema canónico (`manifest`/`projection`/`evidence`/`styles`), cerró 2 deudas HIGH (time-mutation, boundary g6→types) y añadió el contrato compartido `types.ts` + tests E2E con fixture validado por `archctl diagram validate`. **`m17-routing-fix` cerrado ✅ (v0.14.4)** — CallGraphView/PackageView ahora alcanzables via `routing.ts` resolveView total discriminant. **`fix-m17-package-view-onselect` cerrado ✅ (v0.14.5)** — PackageView onSelect `pkg.name`→node agora povoa o sidebar via synthetic `GraphNode` (Option D, `buildPackageNode`). **`m26-c4-contract-integrity` cerrado ✅ (v0.14.9)** — fixture exporter-derived ARREGLADO: `export.rs` ahora usa `category='c4'` y `kind_id CONTAINS` para matchear `c4_discover` que escribe `category='c4', kind_id='mt.container'`. ADR-024 formaliza la semántica. **`m26-c4-vertical-validation` cerrado ✅ (v0.14.10)** — 6 bugs adicionales descubiertos al ejecutar la pipeline contra `tokio-rs/axum` (workspace real): (B1) `apply()` usaba `cwd` directo en lugar de `info.project_dir`; (B2) Cypher inválido por IDs sin comillas en `IN [...]`; (B3) `write_evidence` silenciaba errores con `.ok()`; (B4) `version_id` colisionaba porque el hash no incluía el `element_id`; (B5) inconsistencia `"Drafted"` vs `"drafted"` rompía `evidence accept`; (B6) bundle schema mismatch (`type="c4"`, `status="active"`). ADR-031 documenta cada bug + fix. Vertical C4 ahora produce bundles válidos contra `tokio-rs/axum` (4 containers detectados, 4 evidences aceptadas, `diagram validate` OK). **Pendiente (per ADR-039 anti-roadmap, no bloqueante)**: WGPU renderer — reopen trigger = benchmark p99 render >16ms AND JS Worker profiling muestra hot path no cabe en budget. Benchmarks M27 sobre 10+ proyectos reales multi-lenguaje antes de v1.0.
 
-- **M17.0**: SolidJS + G6 5.x WebGPU (ver ADR-020). Setup inicial del workbench, scaffold, build pipeline. **Single PR → tag v0.14.0 en repo separado `archview`**. Scope MVP: bundle loader + pan/zoom + sidebar de evidencias. Mínimo para que los bundles de M11/M12 sean visualizables.
-- **M17.1**: Semantic zoom para C4 (Context → Container → Component → Code).
-- **M17.2**: Call graph view (1-N niveles, blast radius, async flow).
-- **M17.3**: Sequence diagram view (call chains, async flows).
-- **M17.4**: Class diagram view (UML).
-- **M17.5**: Package diagram view (dependencias, ciclos, cohesión).
-- **M17.6**: Drift detection (C4 declarado vs actual; cross-validation). Requiere M13 si se reactiva, sino implement in-situ.
-- **M17.7**: Impact analysis (blast radius de un cambio propuesto). Requiere M14 si se reactiva, sino implement in-situ.
+- **M17.0** ✅ **CERRADO v0.14.0**: SolidJS + G6 5.x **canvas** ([ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad; ADR-020 superseded). Setup inicial del workbench, scaffold, build pipeline. Scope MVP: bundle loader + pan/zoom + sidebar de evidencias. **Embebido en el binario `archctl` vía `rust-embed`** ([ADR-038](adr/ADR-038-one-product-five-invariants.md), [ADR-033](adr/ADR-033-archctl-view-embedded-workbench.md)) — un solo producto, sin repo separado.
+- **M17.1**: Semantic zoom para C4 (Context → Container → Component → Code). — **MVP lista-texto shipped** en `archview/src/views/`. El semantic zoom interactivo continuo **difiere per ADR-039 anti-roadmap**: reopen trigger = G6 canvas FPS <30 en drill-down de >500 nodos, medido en `bench/`.
+- **M17.2**: Call graph view (1-N niveles, blast radius, async flow). — **MVP lista-texto shipped**. Generación de call graph via `archctl code call-graph` (v0.8.0). El blast radius computacional (subgrafo N-hop) **difiere per ADR-039**: reopen cuando ≥1 usuario real solicita la métrica con un dataset concreto.
+- **M17.3**: Sequence diagram view (call chains, async flows). — **MVP lista-texto shipped**; generación via `archctl code sequence` (v0.9.0).
+- **M17.4**: Class diagram view (UML). — **MVP lista-texto shipped**; extracción via `archctl code class-diagram` (v0.13.0).
+- **M17.5**: Package diagram view (dependencias, ciclos, cohesión). — **MVP lista-texto shipped**.
+- **M17.6**: Drift detection (C4 declarado vs actual; cross-validation). — **Won't Do v1.x** ([M13](#m13--workbench-actions--wont-do-en-v1x-decisión-2026-08-02)). [ADR-038](adr/ADR-038-one-product-five-invariants.md) Invariante 4 (apply cosmético) limita el scope de "drift" sin reintroducir el grafo canónico en el write path.
+- **M17.7**: Impact analysis (blast radius de un cambio propuesto). — **Won't Do v1.x** ([M14](#m14--versionado-recuperación-y-rollback--wont-do-en-v1x)). Reactivación solo con un workflow HITL real ([ADR-040](adr/ADR-040-cognitive-conditional-activation.md)).
 
-Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos.
+Performance budget ([ADR-019](adr/ADR-019-performance-budget.md)):
+- **Productor** (`archctl diagram export` + `apply`): bench medible en `archctl/benches/` (M20, v0.10.0). Producer side budget cumplido para el rango objetivo.
+- **Consumidor** (`archctl view` workbench): canvas cubre **5k–50k nodos** sin fricción ([ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad). Los números nominales del budget original (TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB) **siguen siendo el techo contractual**; el camino para alcanzarlos a 100k nodos es canvas + optimizaciones JS hasta que el benchmark (per ADR-039 trigger: node count >100k AND FPS <30 durante >500ms) demuestre insuficiencia y abra el reopen de cosmos.gl.
 
-**Repositorio**: `archview` (separado de `archctl`). Primer release tag `v0.14.0` cuando M17.0 cierre. Co-evoluciona con `archctl` v0.14.x (consume bundles vía CLI).
+**Distribución**: `archctl view` (un solo comando, un solo binario, [ADR-038](adr/ADR-038-one-product-five-invariants.md)). El workbench se distribuye con el binario de `archctl` ([ADR-033](adr/ADR-033-archctl-view-embedded-workbench.md)) bajo `archctl v<semver>`. **No hay repositorio separado.**
 
 ## M18 — Reactive runtime (event log + behaviors + planners) — **→ superseded by anti-roadmap (ADR-039)**
 
@@ -224,13 +227,13 @@ Performance budget (ver ADR-019): TTFP <1s, pan/zoom 60 FPS, filter <50ms, memor
 
 **Pivot v2.4 + v2.5:** Reactive runtime inspirado en ActiveGraph pero implementado en Rust puro. Defer a 1.x (después del workbench estable). Features: event log, subscriptions, behaviors como WASM plugins, planners, capabilities. Ver sección del doc sobre Reactive Runtime.
 
-> **Pivot v2.5 (2026-07-31, post-capa-cognitiva):** M18 se reposiciona como el substrate sobre el cual corre la Cognitive Layer (ver M21-M23). El reactive runtime añade la capacidad de que comportamientos (algoritmos deterministas) Y agentes (LLM) reaccionen al estado del grafo. Ver [ADR-021](adr/ADR-021-cognitive-layer.md).
+> **Pivot v2.5 (2026-07-31, post-capa-cognitiva) + M69 (2026-08-09):** M18 se reposiciona como el substrate sobre el cual corre la Cognitive Layer (ver M21-M23). El reactive runtime añade la capacidad de que comportamientos (algoritmos deterministas) Y agentes (LLM) reaccionen al estado del grafo. Ver [ADR-021](adr/ADR-021-cognitive-layer.md) — **estado actual per [ADR-040](adr/ADR-040-cognitive-conditional-activation.md): Aceptado (conditional)**, reactivación solo con workflow HITL real.
 
 ## M19 — Custom wgpu renderer (solo si cosmos.gl no alcanza) — **→ superseded by anti-roadmap (ADR-039)**
 
 > M19 WGPU renderer deferred indefinitely. Ver [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap para reopen triggers (benchmark p99 fails ADR-019 budget AND JS/Worker insufficient).
 
-**Pivot v2.4:** Si cosmos.gl + G6 WebGPU no cubren el caso de grafos de millones de elementos con latencia sub-16ms, construir un renderer custom en Rust + wgpu + WGSL. 2.0. Defer a menos que el benchmark suite (M17) muestre insuficiencia.
+**Pivot v2.4 + M69 convergence (2026-08-09):** Si el canvas shipped ([ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad — G6 5.x canvas cubre 5k–50k nodos sin fricción) demuestra insuficiencia en el rango objetivo (per ADR-039 trigger: node count >100k AND FPS <30 durante >500ms consecutivos, con el bottleneck en el render y no en el layout), construir un renderer custom en Rust + wgpu + WGSL. 2.0. **Deferred per ADR-039 anti-roadmap** — el reopen trigger debe ser medido en `bench/` antes de iniciar M19.
 
 ## M20 — Performance validation cycle — **→ H0 (ejecutable)**
 
@@ -281,7 +284,7 @@ Para v1.0 (M16) solo Architecture + Projection (heurística pura). Para 1.x, los
 
 Output: el sistema puede ejecutar acciones gobernadas (no solo leer). Por ejemplo: `archctl code c4 discover --auto-apply` (corre agentes, valida confidence > 0.9, ejecuta propuesta vía MCP).
 
-> **Pipeline de v1.x**: M18 (reactive runtime) → M20 (benchmark) → M21 (cognitive foundation) → M22 (agent catalog) → M23 (action proposal + policy). Cada cycle valida el anterior.
+> **Pipeline de v1.x (gated per [ADR-040](adr/ADR-040-cognitive-conditional-activation.md))**: M18 (reactive runtime) → M20 (benchmark) → M21 (cognitive foundation) → M22 (agent catalog) → M23 (action proposal + policy). Cada cycle valida el anterior. **Toda esta cadena está condicionada a un workflow HITL real** — la reactivación no es por fecha ni por versión, sino por la existencia de un usuario real que necesite agent-driven actions más allá de heurísticas ([ADR-040](adr/ADR-040-cognitive-conditional-activation.md) §Trigger de reactivación). Sin ese workflow, la cadena permanece en estado conditional/parcial/diferido (ADR-021/022/023 headers actualizados por ADR-040).
 
 **Pivot v2.4:** Cycle dedicado a implementar el benchmark suite de ADR-019. Datasets canónicos (`benchmarks/datasets/{small,medium,large}.json`), CI gate, profiling setup. Sin esto, el performance budget es teoría.
 
@@ -432,8 +435,8 @@ strategy dockerfile detectaba su propio source (`dockerfile.rs`) → FP
 
 **Out of scope:**
 - Benchmarks de stress (10k+ nodes) → M20 ya cubierto
-- Performance budget ADR-019 (TTFP <1s, 60 FPS) → M17 archview, separado
-- Tests de WebGPU/archview → M17 archview, separado
+- Performance budget ADR-019 (TTFP <1s, 60 FPS) → workbench consumer-side ([ADR-038](adr/ADR-038-one-product-five-invariants.md), [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad)
+- Tests de renderer → workbench consumer-side; canvas cubre 5k–50k; reopen de WGPU/cosmos.gl gated por ADR-039 anti-roadmap triggers medibles
 - CI integration → cuadrar con `bench-compare.sh` existente
 
 **Entregables:**
@@ -508,8 +511,8 @@ integración sobreviven) se aplica al producto completo.
 
 ### M29.1 — E2E de instalación — `e2e/install_e2e.sh`
 Flujo de usuario final contra HOME limpio (temp dir):
-1. `archctl stack install` → skills/agents/plugin en paths OpenCode/ZCode
-2. `stack status` → drift none
+1. `archctl ide install <ide>` (default `opencode`) → skills/agents/plugin en paths del IDE adapter. `archctl stack install` queda como alias deprecated de `archctl ide install opencode` ([ADR-042](adr/ADR-042-ide-adapter-abstraction.md)) hasta M77.
+2. `archctl ide doctor <ide>` (o `archctl ide list --installed`) → drift none
 3. Idempotencia (re-install = 0 cambios)
 4. `doctor` OK
 5. Frontmatter SKILL.md válido
@@ -748,28 +751,27 @@ y alinearla entre CLI, server del workbench, tests y documentación.
 
 ---
 
-# `archview` — proyecto ortogonal (NO parte de `archctl`)
+# `archview` — workbench embebido (componente de `archctl`)
 
-> **ADR-013**: `archview` es un proyecto separado, no un sub-crate de
-> `archctl`. El renderizado interactivo (drill-down, pan/zoom, hover,
-> comparación temporal, edición visual) vive en su propio repositorio.
+> [ADR-038](adr/ADR-038-one-product-five-invariants.md): archview es el workbench interactivo de arch-stack, **embebido en el binario `archctl` vía `rust-embed`** ([ADR-033](adr/ADR-033-archctl-view-embedded-workbench.md)). El comando de entrada es `archctl view` — no hay repositorio separado, no hay proceso servidor de larga vida (cumple ADR-010, sin daemon). ADR-013 sección "repositorio separado" queda **superseded**.
 
-## Stack de `archview`
+## Stack del workbench (shipped)
 
-| Pieza | Librería |
+| Pieza | Librería shipped (per [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad) |
 |---|---|
-| Framework de diagramación | Sprotty |
-| Layout | ELK.js (en Web Worker) |
+| Framework UI | SolidJS |
+| Renderizador de grafos | G6 5.x **canvas** (drag-canvas / zoom-canvas / drag-element) |
+| Layout | G6 built-in (dagre, d3-force) |
 | Lenguaje | TypeScript |
 | Build | Vite |
-| UI shell | Svelte o Lit (sin framework pesado) |
-| Explorador libre del grafo | Cytoscape.js (opcional) |
-| Secuencias | Layout propio en TS |
+| Estado de workspace | XDG-only ([ADR-041](adr/ADR-041-workspace-state-persistence.md)) — `~/.local/share/archctl/projects/<hash>/workspace.json`. **NO localStorage** (ADR-038 Invariante 3) |
+| Transporte | HTTP one-shot: `archctl view` levanta un servidor local efímero y sirve el workbench desde el binario |
 
-## Contrato con `archctl`
+Las decisiones aspiracionales (WASM compute, Apache Arrow, cosmos.gl para >100k, WIT Plugin SDK, SceneGraph abstraction) viven en el **anti-roadmap** de [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) con reopen triggers medibles.
 
-`archview` consume bundles `DiagramProjection` JSON generados por
-`archctl`:
+## Contrato bundle ↔ workbench
+
+`archctl diagram export` produce un bundle `DiagramProjection` JSON. `archctl view` lo sirve al workbench embebido:
 
 ```bash
 archctl diagram export \
@@ -778,7 +780,7 @@ archctl diagram export \
   --output ~/.local/share/archctl/exports/orders-container/
 ```
 
-Estructura del bundle:
+Estructura del bundle (canónica):
 
 ```text
 diagram-bundle/
@@ -789,44 +791,50 @@ diagram-bundle/
 └── assets/
 ```
 
-Cambios visuales vuelven como ChangeSet:
+Schema versionado en `schemas/diagram-projection.schema.json` (única fuente de verdad). Rust DTOs (`archctl/src/diagram/export_types.rs`) y TypeScript types (`archview/src/loader/types.ts`) alineados campo a campo (M71 contract alignment, v0.14.3).
+
+## ChangeSet cosmético (apply path)
+
+Cambios visuales del workbench vuelven como ChangeSet ([ADR-038](adr/ADR-038-one-product-five-invariants.md) Invariante 4 — apply **cosmético**, nunca muta el grafo semántico):
 
 ```bash
-archview → exporta viewer-changes.json
-   ↓
+archctl view → workbench exporta viewer-changes.json
+    ↓
 archctl diagram apply --changes viewer-changes.json
 ```
 
-## Mini-roadmap de `archview`
+`baseRevision` (blake3) asegura integridad: apply rechaza revisiones stale con mensaje claro. Undo/redo vía inverse ChangeSets.
 
-| Hito | Descripción |
-|---|---|
-| Av0 | Scaffold Vite + TypeScript + Sprotty + ELK.js |
-| Av1 | Bundle loader (file system) + projection render con Sprotty |
-| Av2 | Pan/zoom + sidebar de evidencias |
-| Av3 | Drill-down C4 (Context → Container → Component) |
-| Av4 | Edición visual con export de ChangeSet |
-| Av5 | Comparación temporal entre dos snapshots |
-| Av6 | Explorador libre con Cytoscape.js |
+## Mini-roadmap del workbench (M17 + H0–H3)
 
-Los milestones Av0–Av6 son **del proyecto `archview`**, no de
-`archctl`. Se documentan aquí solo para referencia cruzada; cada
-proyecto tiene su propio repositorio y roadmap.
+El workbench shipped cubre el bundle loader, pan/zoom y el sidebar de evidencias (M17.0, v0.14.0). Las vistas siguientes son **MVPs de lista-texto shipped** en `archview/src/views/`:
+
+| Vista | Comando generador | Estado shipped |
+|---|---|---|
+| C4 (Context / Container / Component) | `archctl code c4 discover` + `archctl diagram export` | Lista-texto shipped; semantic zoom interactivo continuo **difiere per ADR-039** (reopen = G6 canvas FPS <30 en drill-down de >500 nodos) |
+| Call graph | `archctl code call-graph` (v0.8.0) | Lista-texto shipped; blast radius N-hop **difiere per ADR-039** (reopen = ≥1 usuario real con dataset concreto) |
+| Sequence | `archctl code sequence` (v0.9.0) | Lista-texto shipped |
+| Class (UML) | `archctl code class-diagram` (v0.13.0) | Lista-texto shipped |
+| Package | `archctl inventory depends` + extractors | Lista-texto shipped |
+
+Las features avanzadas (semantic zoom continuo, blast radius computacional, drift detection, impact analysis) requieren triggers medibles per ADR-039/ADR-040 antes de reactivar. **Won't Do v1.x** las que reintroducirían el grafo canónico en el write path (M13/M14, [ADR-038](adr/ADR-038-one-product-five-invariants.md) Invariante 4).
 
 ---
 
-# Comparación de proyectos
+# `archctl` — comparación de entry points (CLI vs workbench)
 
-| Aspecto | `archctl` | `archview` |
+| Aspecto | `archctl <subcommand>` (CLI) | `archctl view` (workbench) |
 |---|---|---|
-| Lenguaje | Rust | TypeScript |
-| Tipo | CLI sidecar one-shot | Aplicación web local interactiva |
-| Persistencia | Lee/escribe LadybugDB | Solo lee bundles del disco |
-| Red | Bloqueada (ADR-011) | Bloqueada por construcción (CSP) |
-| Output | `.svg`, `.dsl`, `.puml`, bundle JSON | HTML+SVG interactivo |
-| Distribución | Binario único + assets | Proyecto web estático + opcionalmente Tauri shell |
-| Lifecycle | Cada comando es una transacción corta | Una sesión de revisión con file watcher |
-| Concurrencia | Lock por proyecto (ADR-010) | N/A (no accede al grafo) |
+| Lenguaje | Rust | TypeScript (SolidJS + G6 5.x canvas) |
+| Tipo | CLI sidecar one-shot | Aplicación web local servida por el mismo binario |
+| Persistencia | Lee/escribe LadybugDB (XDG, ADR-004) | Solo lee bundles + estado cosmético (XDG, ADR-041) |
+| Red | Bloqueada (ADR-011) | Bloqueada por construcción (sin CDN, CSP local) |
+| Output | `.svg`, `.dsl`, `.puml`, bundle JSON | HTML+SVG interactivo servido desde el binario |
+| Distribución | Binario único (rust-embed, ADR-033) | Mismo binario — no hay artefacto separado |
+| Lifecycle | Cada comando es una transacción corta | Una sesión de revisión; servidor efímero por invocación |
+| Concurrencia | Lock por proyecto (ADR-010, fs2 flock) | N/A (no accede al grafo directamente) |
+
+> **Regla mental:** `archctl view` es el único comando que abre el workbench. No hay `archview` standalone, no hay `archview serve`, no hay segundo binario.
 
 ---
 
@@ -847,7 +855,7 @@ Incluye:
 - Renderers `plantuml-little` + `merman` + Structurizr propio en pure Rust.
 - `archctl diagram export` para producir bundles `DiagramProjection`.
 - Sin servidor, sin daemon, sin WebSocket.
-- `archview` (proyecto paralelo) consume los bundles cuando se necesita interactividad.
+- `archview` (workbench embebido en `archctl` vía `rust-embed` per [ADR-038](adr/ADR-038-one-product-five-invariants.md) / [ADR-033](adr/ADR-033-archctl-view-embedded-workbench.md)) consume los bundles vía `archctl view` cuando se necesita interactividad.
 - Salida: diagramas C4 + UML como proyecciones del grafo, en SVG estático o en HTML interactivo.
 
 **Estado actual (post-v2.3)**: M0–M4 cerrados. M5–M9 pendientes de implementación, aunque la mayoría del código de M4 ya cubre la integración de evidence::extract y graph::put que serán reutilizados.
@@ -884,9 +892,9 @@ Incluye:
 | `fix-m17-package-view-onselect` | `fix/m17-package-view-onselect` (merged to main via PR #21) | `cd661e6` (merge commit) | **Cerrado** ✅ · tag `v0.14.5` |
 | `diagram-authoring-toolchain` | `feat/diagram-authoring-toolchain` (merged to main via PR #23) | `e8c1146` (merge commit) | **Cerrado** ✅ · tag `v0.14.6` |
 | `m18-reactive-runtime` (PR1+PR2+PR3) | `feat/m18-reactive-runtime` (3 stacked PRs merged to main) | `b50dbfa` | **Cerrado** ✅ · tag `v0.14.0` |
-| `m21-cognitive-layer` | direct commits on `main` (no SDDK cycle — cognitive foundation) | `e0224b8` | **Cerrado** ✅ · tag `v0.15.0` |
-| `m22-agent-catalog` | `feat/m22-agent-catalog` (merged to main via PR #30) | `8b76ef5` | **Cerrado** ✅ · tag `v0.15.0` |
-| `m23-action-proposal-policy` | direct commits on `main` (M23 phases 1–6) | `ae83e61` | **Cerrado** ✅ · tag `v0.18.0` |
+| `m21-cognitive-layer` | direct commits on `main` (no SDDK cycle — cognitive foundation) | `e0224b8` | **Cerrado** ✅ · tag `v0.15.0` · ADR-021 header actualizado por ADR-040 a **Aceptado (conditional)** |
+| `m22-agent-catalog` | `feat/m22-agent-catalog` (merged to main via PR #30) | `8b76ef5` | **Cerrado** ✅ · tag `v0.15.0` · ADR-022 header actualizado por ADR-040 a **Aceptado (parcial)** (2/9 agentes shipped; 7 deferred) |
+| `m23-action-proposal-policy` | direct commits on `main` (M23 phases 1–6) | `ae83e61` | **Cerrado** ✅ · tag `v0.18.0` · ADR-023 header actualizado por ADR-040 a **Aceptado (diferido)** (phase 1 PR #32 closed stale; reactivación solo con workflow HITL real per ADR-040) |
 | `m27-sandbox-benchmarks` | `feat/m27-pr4-cleanup` (merged to main) | `b87a902` | **Cerrado** ✅ · tag `v0.22.0` |
 | `m30-call-graph-go-support` | `feat/m30-call-graph-go-support` (merged to main via PR #72) | `f3a00a7` | **Cerrado** ✅ · tag `v1.1.0` |
 | `m32-apply-writer-performance` (PR1) | `feat/m32-apply-writer-performance` (merged to main via PR #76) | `7bdcc5f` | **Cerrado** ✅ · tag `v1.2.0-m32` · D4+D1 shipped |
@@ -933,6 +941,7 @@ Incluye:
 | `p1-03-architecture-repositories` | `feat/p1-03-architecture-repositories` (merged to main via PR #180, merge `9a1fb17`) | `95a2e5c` | **Cerrado** ✅ · tag `v1.43.0` (peels `95a2e5c`, ancestor of main via PR #180 — push directo bloqueado por GH006, 4º precedente) · 5 repository traits (Element/Evidence/Source/Evaluation/Diagram) implemented by `LbugStore`; `graph.rs` no longer imports `lbug` (dep-fitness 4→3) |
 | `p1-04-raw-graph-query-boundary` | `feat/p1-04-raw-graph-query-boundary` (merged to main via PR #181) + patch `fix/p1-04-admin-query-guard` (PR #182) | `b039dee` | **Cerrado** ✅ · tags `v1.44.0`+`v1.44.1` · RawGraphQuery admin-only boundary (tokenized `is_read_only_query` guard), SemanticEdgeRepository, `ensure_metatype`, `diagram::queries`→`DiagramRepository`, ~300 LOC dead code out; ADR-059 (+amendment); verify PW→remediated · debt-verify PW (0 criticals) · UAT READY 3/3 |
 | `p1-05-unit-of-work` | `feat/p1-05-unit-of-work-pr1` (merged to main via PR #184, merge `cf8de64`) + `feat/p1-05-unit-of-work` (merged to main via PR #185, merge `189f029`) | `189f029` | **Cerrado** ✅ · tag `v1.45.0` (peels `189f029`, annotated, pushed + verified remote) · `UnitOfWork` port + `Transaction<'a>` session newtype; 5 apply pipelines wrapped (call_graph, state_machine, class_diagram, c4_discover, diagram::apply_to_store); A-W1 (`+ RawGraphQuery` supertrait dropped) + C-W1 (`session_mut`/`execute_raw_cypher_for_test` cfg-gated under `test-fixtures` feature, `nm` escape-hatch gate = 0) closure; ADR-059 amendment L46.5; verify PASS · debt-verify PASS (0/0/6, DQS 5.7→7.1) · 838/838 tests · chained `--no-ff` PRs (GH006 5º precedente) |
+| `p-38e02210a9f14317/m32-apply-writer-performance` | `feat/m32-apply-writer-performance` (Phase 4-9 in progress; PR1 + PR2 chained) | `f03dc6d` | **En progreso** · M32 D2 re-ship: UNWIND bulk import was regressed by P1-04 T3 commit `599c863`; Phase 1-3 done (apply_common helpers + call_graph UNWIND + class_diagram N+1 hoist + UNWIND + correctness tests); Phase 4 (bench regression gate) done; Phase 5 PR1 close-out, Phase 6 state_machine UNWIND, Phase 7 c4_discover UNWIND, Phase 8 ADR-036 amendment + CHANGELOG, Phase 9 PR2 close-out remaining · see ADR-036 amendment (T8.1) and CHANGELOG v1.46.0 |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -1106,9 +1115,9 @@ Incluye:
 - **Output**: Pivot del roadmap de BI dashboard a Code Knowledge Graph Workbench. Performance-first stack.
   - **ADR-007** revisado: reframe del viewer como "workbench de 5 vistas coordinadas" (C4 / call graph / sequence / class / package).
   - **ADR-011** revisado: nota de performance para `archview` (COOP/COEP, CSP, OffscreenCanvas).
-  - **ADR-013** revisado: stack de `archview` reemplazado completamente. Sprotty y Cytoscape.js descartados. G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM. 5 vistas coordinadas explícitas.
-  - **ADR-019** nuevo: Performance budget (hard contract). TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos. 14 anti-patterns explícitos. Benchmark suite canónico + CI gate.
-  - **ADR-020** nuevo: Renderer stack. G6 5.x WebGPU primary, cosmos.gl adapter para >100k, ELK.js fallback jerárquico. SolidJS UI (no React). Rust → WASM compute. Apache Arrow + TypedArrays. Web Workers + SharedArrayBuffer. RoaringBitmap selections.
+  - **ADR-013** revisado: stack de `archview` reemplazado completamente. Sprotty y Cytoscape.js descartados. G6 5.x WebGPU + cosmos.gl + SolidJS + Rust/WASM. 5 vistas coordinadas explícitas. *(Historia: ADR-013 sección "repositorio separado" superseded por [ADR-038](adr/ADR-038-one-product-five-invariants.md); stack WebGPU+WASM+cosmos.gl superseded por [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) — el shipped es G6 5.x canvas).*
+  - **ADR-019** nuevo: Performance budget (hard contract). TTFP <1s, pan/zoom 60 FPS, filter <50ms, memory <500MB para 100k nodos. 14 anti-patterns explícitos. Benchmark suite canónico + CI gate. *(Historia: techo contractual preservado en [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md); canvas cubre 5k–50k; reopen de cosmos.gl gated por ADR-039 anti-roadmap trigger medible).*
+  - **ADR-020** nuevo: Renderer stack. G6 5.x WebGPU primary, cosmos.gl adapter para >100k, ELK.js fallback jerárquico. SolidJS UI (no React). Rust → WASM compute. Apache Arrow + TypedArrays. Web Workers + SharedArrayBuffer. RoaringBitmap selections. *(Historia: ADR-020 superseded por [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md) §Renderer realidad + §Anti-roadmap; el shipped es G6 5.x canvas sin WASM/Arrow/cosmos.gl. Las 10 decisiones del anti-roadmap de ADR-039 tienen reopen triggers medibles).*
   - **ROADMAP v2.4**: M9 redefinido como workbench. M8 (C4 boundary inference) y M11 (call graph + sequence) promovidos a prioridad 1. M17 (archview) promovido a prioridad 1. M10 (use cases) y M14 (versioning) deferred a 1.x. M18 (reactive runtime) y M19 (custom wgpu) nuevos. M20 (performance validation) nuevo.
 - **Próximo candidato**: M9-PR2 (apply surface) → v0.6.0, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench.
 
@@ -1135,9 +1144,9 @@ Incluye:
 - **Commits**: 1 chore(adr) = 3 ADRs nuevos
 - **Tests**: N/A (0 cambios de código)
 - **Output**: Adopción de la **capa cognitiva** sobre el grafo de conocimiento (ver `docs/Librerías-visualización-grafos-BI.md` sección "Code Knowledge Graph Workbench"). Tres ADRs nuevos formalizan el patrón:
-  - **ADR-021 (cognitive layer)**: posición en 7 planos (Developer Experience / Cognitive / Projection / Reactive Runtime / Graph / Deterministic / Sensors); contrato uniforme `ReactiveObserver + AgentContext + AgentOutput`; escalera de resolución (heurística → local → potente → humana); coordinación vía estado (eventos), no conversación; MCP como capability boundary; v1.0 ship 2 agentes (heurística pura).
-  - **ADR-022 (agent catalog)**: 9 agentes especializados (Semantic Curator, Architecture, Projection, Investigation, Impact, Planning, Documentation, Presenter, Review/Critic) con suscripciones, view, output schema, budget, capability. v1.0 (M16) ship Architecture + Projection; 1.x (M22) ship los otros 7 con LLM local Phi-3 / potente Claude.
-  - **ADR-023 (action proposal + policy engine)**: ActionProposal estructurado (goal + command + capabilities + approval + evidence esperada + rollback); Policy Engine con reglas TOML editables; MCP gateway como única frontera de ejecución; audit log inmutable en el grafo; HITL UI en `archview`.
+  - **ADR-021 (cognitive layer)**: posición en 7 planos (Developer Experience / Cognitive / Projection / Reactive Runtime / Graph / Deterministic / Sensors); contrato uniforme `ReactiveObserver + AgentContext + AgentOutput`; escalera de resolución (heurística → local → potente → humana); coordinación vía estado (eventos), no conversación; MCP como capability boundary; v1.0 ship 2 agentes (heurística pura). *(Historia: ADR-021 header actualizado por [ADR-040](adr/ADR-040-cognitive-conditional-activation.md) a **Aceptado (conditional)** — fundación shipped; full scope reactivación solo con workflow HITL real).*
+  - **ADR-022 (agent catalog)**: 9 agentes especializados (Semantic Curator, Architecture, Projection, Investigation, Impact, Planning, Documentation, Presenter, Review/Critic) con suscripciones, view, output schema, budget, capability. v1.0 (M16) ship Architecture + Projection; 1.x (M22) ship los otros 7 con LLM local Phi-3 / potente Claude. *(Historia: ADR-022 header actualizado por [ADR-040](adr/ADR-040-cognitive-conditional-activation.md) a **Aceptado (parcial)** — 2/9 shipped, 7 deferred hasta trigger HITL real).*
+  - **ADR-023 (action proposal + policy engine)**: ActionProposal estructurado (goal + command + capabilities + approval + evidence esperada + rollback); Policy Engine con reglas TOML editables; MCP gateway como única frontera de ejecución; audit log inmutable en el grafo; HITL UI en `archview`. *(Historia: ADR-023 header actualizado por [ADR-040](adr/ADR-040-cognitive-conditional-activation.md) a **Aceptado (diferido)** — phase 1 PR #32 closed stale; reactivación solo con workflow HITL real).*
   - **ROADMAP v2.5**: M18 (reactive runtime) reposicionado como substrate de la cognitive layer. M21 (cognitive foundation) + M22 (agent catalog v1) + M23 (action proposal + policy) añadidos al roadmap 1.x.
 - **Próximo candidato**: PR2 (m9-archctl-export-apply v0.6.0) → commit pendiente, luego M8 (C4 boundary inference) y M11 (call graph + sequence) como foundation del workbench → M17 (archview workbench scaffold) → M20 (performance validation) → M21-M23 (cognitive layer 1.x).
 
@@ -1292,7 +1301,7 @@ Razones:
   - **M2 (ADR-015/018)**: documented in `docs/ROADMAP.md` as historical artifacts.
   - **M5 (bench seed)**: `iter_with_setup` applied to all bench functions (semantically correct; full amortization requires `BatchSize::PerBatch(N)` follow-up).
 - **Files changed**: 14 (8 in `profile/`, 5 in `docs/adr/`, 1 CHANGELOG, 1 ROADMAP, 1 `archctl/benches/`).
-- **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (archview scaffold, prioridad 1, repo separado) o cleanup del bench seed-decomposition (true amortization via `BatchSize::PerBatch(N)`).
+- **Próximo candidato**: M12 (class-diagram UML, prioridad 2) o M17.0 (workbench embebido vía `rust-embed`, prioridad 1 — *pre-ADR-038: "repo separado" era la planificación original, hoy superseded; el shipped es un solo binario `archctl`*) o cleanup del bench seed-decomposition (true amortization via `BatchSize::PerBatch(N)`).
 
 > `m9-relations-decision`: closes 7 of 9 audit findings (F2, F3, F4, F5, F6, F7, M1, M2, M3, M5). F1 (security, kroki POST) was closed in v0.11.0. Combined with v0.11.0, all 9 audit findings + 5 doc drifts from the 2026-08-01 audit are resolved. Patch tag `v0.12.0` (no new feature surface; docs + 1-line stat fix + bench harness).
 

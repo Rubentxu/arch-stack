@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.46.0] — 2026-08-16
+
+### Changed
+- **M32 PR1** — Re-introduce UNWIND bulk import on `call_graph` and `class_diagram`
+  apply writers (ADR-036 §D2); `BATCH_SIZE=500` constant lives in `apply_common`.
+  D2 was regressed by P1-04 T3 commit `599c863`. Sequence writer N/A per M53
+  audit (SCN-217 read-only).
+- **M32 PR1** — `class_diagram::apply` N+1 query bug fixed: `existing_canonical_keys`
+  was called inside the per-node loop; hoisted out as a prerequisite for D2 batching.
+  Also fixes version_id: each node now gets its own unique `ElementVersion` id
+  (previously all nodes shared ONE version_id).
+- **M32 PR1** — Manifest drift fixed: `archctl/src/code/state_machine.rs` added to
+  `editable` array in `manifests/code.toml`.
+
+### Fixed
+- **M32 PR1** — `class_diagram::apply` N+1 query regression (ADR-036 §D2 trade-off:
+  pre-D2 batching, the hoist is a prerequisite for any batching to work correctly).
+
 ## [1.45.0] — 2026-08-15
 
 ### Added

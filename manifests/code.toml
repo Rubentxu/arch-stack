@@ -23,6 +23,7 @@ editable = [
   "archctl/src/code/call_graph.rs",
   "archctl/src/code/sequence.rs",
   "archctl/src/code/class_diagram.rs",
+  "archctl/src/code/state_machine.rs",
 ]
 
 public_symbols = [
