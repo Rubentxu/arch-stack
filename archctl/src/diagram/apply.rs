@@ -34,7 +34,7 @@ use crate::diagram::view_types::Diagram;
 use crate::diagram::view_types::ViewMember;
 use crate::filesystem::Filesystem;
 use crate::project::resolve_project;
-use crate::store::{DiagramOps, GraphStore, LbugStore};
+use crate::store::{DiagramOps, GraphStore, LbugStore, UnitOfWork};
 
 /// Report from a successful apply operation.
 #[derive(Debug)]
@@ -132,43 +132,36 @@ pub fn apply_to_store(store: &mut LbugStore, changeset: ChangeSet) -> Result<App
     let old_revision = current_revision.clone();
     let commands_applied = changeset.commands.len();
 
-    // P1-05 1.6: wrap the full fan-out (commands + reexport + diagram bump) in
-    // a single Transaction so that if any command fails, the entire changeset
-    // rolls back atomically. MoveMember makes 3 writes (ViewMember MERGE,
+    // P1-05 1.6 (W1 remediation): wrap the full fan-out in a single
+    // Transaction so that if any command fails, the entire changeset rolls
+    // back atomically. MoveMember makes 3 writes (ViewMember MERGE,
     // MEMBER_OF, RENDERS); without this wrap, a mid-sequence failure would
-    // leave partial state in the graph.
-    GraphStore::begin_transaction(store).context("apply_to_store: begin_transaction")?;
+    // leave partial state in the graph.  Uses the same UnitOfWork pattern
+    // as the other 4 pipelines (call_graph, state_machine, class_diagram,
+    // c4_discover).  On error: return propagates, Transaction drops without
+    // commit → Drop impl calls rollback_transaction() with warn! on failure.
+    // On success: explicit tx.commit().
+    let mut tx =
+        UnitOfWork::begin_transaction(store).context("apply_to_store: begin_transaction")?;
 
-    let result = (|| {
-        for cmd in &changeset.commands {
-            cmd.apply(store, &changeset.diagram_id)?;
-        }
-
-        let projection = reexport_view(store, &changeset.diagram_id)
-            .context("re-export view for revision bump")?;
-        let new_revision = base_revision(&projection);
-
-        store.put_diagram(&Diagram {
-            id: changeset.diagram_id.clone(),
-            revision: new_revision.clone(),
-            selector: changeset.diagram_id.clone(),
-            props: serde_json::json!({}),
-            created_at: None,
-            updated_at: None,
-        })?;
-
-        GraphStore::commit_transaction(store).context("apply_to_store: commit_transaction")?;
-        Ok(new_revision)
-    })();
-
-    if let Err(e) = result {
-        if let Err(rollback_err) = GraphStore::rollback_transaction(store) {
-            tracing::warn!("apply_to_store: rollback failed: {rollback_err}");
-        }
-        return Err(e);
+    for cmd in &changeset.commands {
+        cmd.apply(tx.as_mut(), &changeset.diagram_id)?;
     }
 
-    let new_revision = result.expect("just checked Ok above");
+    let projection = reexport_view(tx.as_mut(), &changeset.diagram_id)
+        .context("re-export view for revision bump")?;
+    let new_revision = base_revision(&projection);
+
+    tx.as_mut().put_diagram(&Diagram {
+        id: changeset.diagram_id.clone(),
+        revision: new_revision.clone(),
+        selector: changeset.diagram_id.clone(),
+        props: serde_json::json!({}),
+        created_at: None,
+        updated_at: None,
+    })?;
+
+    tx.commit().context("apply_to_store: tx.commit")?;
 
     Ok(ApplyReport {
         diagram_id: changeset.diagram_id,
