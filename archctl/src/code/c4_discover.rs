@@ -367,24 +367,34 @@ pub fn apply(
     fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::write_source_artifact;
-    use crate::store::{ElementRepository, LbugStore};
+    use crate::store::{ElementRepository, LbugStore, UnitOfWork};
 
     let mut store =
         LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
     store.init().context("c4_discover apply: init")?;
-
-    // Seed required C4 MetaTypes before link_of_type runs (P1-04 regression fix).
-    // The link_of_type call is best-effort; if the MetaType node doesn't exist,
-    // OPTIONAL MATCH makes MERGE a silent no-op. These seeds ensure the nodes exist.
-    ElementRepository::ensure_metatype(&mut store, "mt.container", "c4", "container", "structure")?;
-    ElementRepository::ensure_metatype(&mut store, "mt.component", "c4", "component", "structure")?;
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
     let mut evidences_written = 0usize;
     let mut source_artifacts_written = 0usize;
 
-    let existing_keys = ElementRepository::existing_canonical_keys(&store)?;
+    // D5: wrap writes in single transaction via UnitOfWork.
+    // On error: return propagates, Transaction drops → implicit rollback
+    // (tracing::warn! on failure). On success: explicit commit.
+    let mut tx = UnitOfWork::begin_transaction(&mut store)
+        .context("c4_discover apply: begin_transaction")?;
+
+    // Reborrow through Transaction to call LbugStore repository methods.
+    let s: &mut LbugStore = tx.as_mut();
+
+    // Seed required C4 MetaTypes before link_of_type runs (P1-04 regression fix).
+    // The link_of_type call is best-effort; if the MetaType node doesn't exist,
+    // OPTIONAL MATCH makes MERGE a silent no-op. These seeds ensure the nodes exist.
+    // Moved inside tx so they are part of the atomic write boundary.
+    ElementRepository::ensure_metatype(s, "mt.container", "c4", "container", "structure")?;
+    ElementRepository::ensure_metatype(s, "mt.component", "c4", "component", "structure")?;
+
+    let existing_keys = ElementRepository::existing_canonical_keys(s)?;
 
     for container in &report.discovered {
         if existing_keys.contains(&container.canonical_key) {
@@ -399,11 +409,11 @@ pub fn apply(
         };
         let element_id = format!("c4:{}:{}", element_prefix, container.canonical_key);
 
-        let version_id = write_element_version(&mut store, &element_id, container)?;
-        write_element(&mut store, &element_id, container, &version_id, metatype)?;
+        let version_id = write_element_version(s, &element_id, container)?;
+        write_element(s, &element_id, container, &version_id, metatype)?;
         elements_written += 1;
 
-        link_element_edges(&mut store, &element_id, &version_id, metatype)?;
+        link_element_edges(s, &element_id, &version_id, metatype)?;
 
         // SourceArtifact deduplication map (keyed by file path)
         let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
@@ -417,14 +427,14 @@ pub fn apply(
                     .unwrap_or_default();
                 let lang_label = c4_language_label(&evidence.file);
                 let id =
-                    write_source_artifact(&mut store, &evidence.file, &content_hash, lang_label)?;
+                    write_source_artifact(s, &evidence.file, &content_hash, lang_label)?;
                 source_artifact_ids.insert(evidence.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id
             };
 
             write_evidence(
-                &mut store,
+                s,
                 &element_id,
                 &version_id,
                 &sa_id,
@@ -434,6 +444,8 @@ pub fn apply(
             evidences_written += 1;
         }
     }
+
+    tx.commit().context("c4_discover apply: tx.commit")?;
 
     Ok(ApplyReport {
         elements_written,
