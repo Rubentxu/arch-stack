@@ -24,6 +24,8 @@ editable = ["archctl/src/store.rs"]
 public_symbols = [
   "GraphStore",
   "LbugStore",
+  "UnitOfWork",
+  "Transaction",
   "ElementRepository",
   "EvidenceRepository",
   "SourceRepository",
@@ -40,6 +42,8 @@ public_symbols = [
 must_hold = [
   "pub trait GraphStore",
   "pub struct LbugStore",
+  "pub trait UnitOfWork",
+  "pub struct Transaction",
   "pub trait ElementRepository",
   "pub trait EvidenceRepository",
   "pub trait SourceRepository",
@@ -70,6 +74,9 @@ must_hold = [
   "fn begin_transaction",
   "fn commit_transaction",
   "fn rollback_transaction",
+  "pub fn commit",
+  "pub fn rollback",
+  "impl<'a> Drop for Transaction<'a>",
   "pub enum StoreError",
 ]
 
