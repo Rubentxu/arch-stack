@@ -18,7 +18,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 mod common;
 use common::{seed_medium, seed_small};
 
-use archctl::store::GraphStore;
+use archctl::store::RawGraphQuery;
 
 fn bench_query_count_small(c: &mut Criterion) {
     c.bench_function("query_count_elements_small", |b| {

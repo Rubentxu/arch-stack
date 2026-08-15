@@ -373,21 +373,11 @@ pub fn apply(
         LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
     store.init().context("c4_discover apply: init")?;
 
-    // Seed mt.container MetaType if it doesn't exist
-    let seed_metatype_container = r#"
-        MERGE (mt:MetaType {id: 'mt.container'})
-        SET mt.namespace = 'c4', mt.name = 'container', mt.category = 'structure'
-        RETURN mt.id;
-    "#;
-    store.query(seed_metatype_container).ok(); // best-effort; non-fatal if it fails
-
-    // Seed mt.component MetaType if it doesn't exist
-    let seed_metatype_component = r#"
-        MERGE (mt:MetaType {id: 'mt.component'})
-        SET mt.namespace = 'c4', mt.name = 'component', mt.category = 'structure'
-        RETURN mt.id;
-    "#;
-    store.query(seed_metatype_component).ok(); // best-effort; non-fatal if it fails
+    // Seed required C4 MetaTypes before link_of_type runs (P1-04 regression fix).
+    // The link_of_type call is best-effort; if the MetaType node doesn't exist,
+    // OPTIONAL MATCH makes MERGE a silent no-op. These seeds ensure the nodes exist.
+    ElementRepository::ensure_metatype(&mut store, "mt.container", "c4", "container", "structure")?;
+    ElementRepository::ensure_metatype(&mut store, "mt.component", "c4", "component", "structure")?;
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;

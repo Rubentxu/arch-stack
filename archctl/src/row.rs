@@ -80,6 +80,29 @@ impl Cell {
         }
     }
 
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            Cell::Float(f) => Some(*f),
+            Cell::Int(n) => Some(*n as f64),
+            _ => None,
+        }
+    }
+
+    /// Convert Cell::Object to serde_json::Map<String, Json> by building it.
+    /// Returns None for non-Object variants.
+    pub fn to_map(&self) -> Option<serde_json::Map<String, Json>> {
+        match self {
+            Cell::Object(kvs) => {
+                let mut map = serde_json::Map::new();
+                for (k, v) in kvs {
+                    map.insert(k.clone(), v.to_json());
+                }
+                Some(map)
+            }
+            _ => None,
+        }
+    }
+
     /// Convert to `serde_json::Value`. Lives here (not in the
     /// adapter) because every Cell variant has an unambiguous JSON
     /// representation; the adapter only needs to call this when

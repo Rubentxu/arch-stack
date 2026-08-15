@@ -12,12 +12,9 @@ use crate::diagram::export_types::{
     Projection, Styles,
 };
 use crate::diagram::hash::base_revision;
-use crate::diagram::queries::{
-    ElementRow, query_elements, query_evidence_for_versions, query_semantic_edges,
-    query_version_props,
-};
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
 use crate::filesystem::Filesystem;
+use crate::graph::ElementRow;
 use crate::store::GraphStore;
 
 /// Report from a successful export operation.
@@ -87,11 +84,14 @@ pub fn build_bundle(
         ScopeFilter::Exact(s) => Some(s.as_str()),
     };
 
-    // 2. Run queries
-    let element_rows = query_elements(store, category, scope_ident, Some(&kind))
-        .context("query_elements failed")?;
+    // 2. Run queries via DiagramRepository
+    let element_rows = store
+        .list_elements(category, scope_ident, Some(&kind))
+        .context("list_elements failed")?;
 
-    let edge_rows = query_semantic_edges(store, category).context("query_semantic_edges failed")?;
+    let edge_rows = store
+        .list_semantic_edges(category)
+        .context("list_semantic_edges failed")?;
 
     // Collect version IDs for evidence + version props queries
     let version_ids: Vec<String> = element_rows
@@ -100,14 +100,16 @@ pub fn build_bundle(
         .map(|e| e.current_version_id.clone())
         .collect();
 
-    let evidence_entries = query_evidence_for_versions(store, &version_ids)
-        .context("query_evidence_for_versions failed")?;
+    let evidence_entries = store
+        .list_evidence_for_versions(&version_ids)
+        .context("list_evidence_for_versions failed")?;
 
-    let version_props =
-        query_version_props(store, &version_ids).context("query_version_props failed")?;
+    let version_props = store
+        .list_version_props(&version_ids)
+        .context("list_version_props failed")?;
 
     // 3. Build projection (nodes + edges)
-    let version_map: std::collections::HashMap<String, &crate::diagram::queries::VersionPropsRow> =
+    let version_map: std::collections::HashMap<String, &crate::graph::VersionPropsRow> =
         version_props.iter().map(|v| (v.id.clone(), v)).collect();
 
     // M81 D2: fetch ViewMembers and index by element_id for LEFT JOIN.
@@ -357,34 +359,240 @@ mod tests {
     impl crate::store::DiagramRepository for MockGraphStore {
         fn list_elements(
             &self,
-            _: &str,
-            _: Option<&str>,
-            _: Option<&str>,
+            category: &str,
+            scope: Option<&str>,
+            kind: Option<&str>,
         ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
-            // run_export → query_elements → DiagramRepository::list_elements
-            // path; the run_export tests use `&dyn GraphStore` and the
-            // MockGraphStore's `query()` impl handles `MATCH (E:ELEMENT)`.
-            // This list_elements exists only to satisfy the super-trait
-            // bound.
-            Ok(Vec::new())
+            // Filter self.elements the same way LbugStore::list_elements filters via Cypher.
+            let cat_upper = category.to_uppercase();
+            let key_upper = scope.map(|s| s.to_uppercase());
+            let kind_upper = kind.map(|k| k.to_uppercase());
+            let filtered: Vec<crate::graph::ElementRow> = self
+                .elements
+                .iter()
+                .filter(|row| {
+                    let row_cat = row
+                        .get("e.category")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_uppercase())
+                        .unwrap_or_default();
+                    let row_key = row
+                        .get("e.canonical_key")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_uppercase())
+                        .unwrap_or_default();
+                    let row_kind = row
+                        .get("e.kind_id")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_uppercase())
+                        .unwrap_or_default();
+                    let cat_match = row_cat == cat_upper;
+                    let key_match = key_upper
+                        .as_ref()
+                        .filter(|k| !k.is_empty() && *k != "*")
+                        .map(|k| row_key.starts_with(k))
+                        .unwrap_or(true);
+                    let kind_match = kind_upper
+                        .as_ref()
+                        .map(|k| row_kind.contains(k))
+                        .unwrap_or(true);
+                    cat_match && key_match && kind_match
+                })
+                .map(|row| crate::graph::ElementRow {
+                    id: row
+                        .get("e.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    kind_id: row
+                        .get("e.kind_id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    category: row
+                        .get("e.category")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    canonical_key: row
+                        .get("e.canonical_key")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    current_name: row
+                        .get("e.current_name")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    current_status: row
+                        .get("e.current_status")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    current_confidence: row
+                        .get("e.current_confidence")
+                        .and_then(|c| c.as_f64())
+                        .unwrap_or(0.0),
+                    current_version_id: row
+                        .get("e.current_version_id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                })
+                .collect();
+            Ok(filtered)
         }
         fn list_semantic_edges(
             &self,
-            _: &str,
+            _category: &str,
         ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
-            Ok(Vec::new())
+            // Return all edges for now (category filtering happens at the Cypher level in the real impl)
+            Ok(self
+                .edges
+                .iter()
+                .map(|row| crate::graph::SemanticEdgeRow {
+                    relation_id: row
+                        .get("edge.relation_id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    predicate_id: row
+                        .get("edge.predicate_id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    source_id: row
+                        .get("src.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    target_id: row
+                        .get("tgt.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    order_key: row
+                        .get("edge.order_key")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    props: row
+                        .get("edge.props")
+                        .and_then(|c| c.to_map())
+                        .unwrap_or_default(),
+                })
+                .collect())
         }
         fn list_evidence_for_versions(
             &self,
-            _: &[String],
+            version_ids: &[String],
         ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
-            Ok(Vec::new())
+            let ids_upper: std::collections::HashSet<String> =
+                version_ids.iter().map(|s| s.to_uppercase()).collect();
+            Ok(self
+                .evidence
+                .iter()
+                .filter(|row| {
+                    let vid = row
+                        .get("v.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_uppercase();
+                    ids_upper.contains(&vid)
+                })
+                .map(|row| crate::diagram::export_types::EvidenceEntry {
+                    id: row
+                        .get("e.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    kind: row
+                        .get("e.kind")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    claim: row
+                        .get("e.claim")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    path: row
+                        .get("e.path")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    start_line: row
+                        .get("e.start_line")
+                        .and_then(|c| c.as_i64())
+                        .unwrap_or(0) as u64,
+                    end_line: row.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
+                    tool_name: row
+                        .get("e.tool_name")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    tool_version: row
+                        .get("e.tool_version")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    rule_id: row
+                        .get("e.rule_id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    content_hash: row
+                        .get("e.content_hash")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    observed_at: row
+                        .get("e.observed_at")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                })
+                .collect())
         }
         fn list_version_props(
             &self,
-            _: &[String],
+            version_ids: &[String],
         ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            Ok(Vec::new())
+            let ids_upper: std::collections::HashSet<String> =
+                version_ids.iter().map(|s| s.to_uppercase()).collect();
+            Ok(self
+                .version_props
+                .iter()
+                .filter(|row| {
+                    let vid = row
+                        .get("v.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_uppercase();
+                    ids_upper.contains(&vid)
+                })
+                .map(|row| crate::graph::VersionPropsRow {
+                    id: row
+                        .get("v.id")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    name: row
+                        .get("v.name")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    description: row
+                        .get("v.description")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    props: row
+                        .get("v.props")
+                        .and_then(|c| c.to_map())
+                        .unwrap_or_default(),
+                })
+                .collect())
         }
     }
 
@@ -419,6 +627,21 @@ mod tests {
         fn stat(&self) -> anyhow::Result<crate::GraphStat> {
             unimplemented!()
         }
+        // M32 D1: MockGraphStore does not persist, so transaction primitives
+        // are no-ops. Tests that exercise writers (call_graph, etc.) use the
+        // real `LbugStore` via `open_and_init` and do not touch the mock.
+        fn begin_transaction(&mut self) -> Result<(), crate::store::StoreError> {
+            Ok(())
+        }
+        fn commit_transaction(&mut self) -> Result<(), crate::store::StoreError> {
+            Ok(())
+        }
+        fn rollback_transaction(&mut self) -> Result<(), crate::store::StoreError> {
+            Ok(())
+        }
+    }
+
+    impl crate::store::RawGraphQuery for MockGraphStore {
         fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
             let upper = cypher.to_uppercase();
             // Route based on Cypher pattern
@@ -488,17 +711,23 @@ mod tests {
                 Ok(Vec::new())
             }
         }
-        // M32 D1: MockGraphStore does not persist, so transaction primitives
-        // are no-ops. Tests that exercise writers (call_graph, etc.) use the
-        // real `LbugStore` via `open_and_init` and do not touch the mock.
-        fn begin_transaction(&mut self) -> Result<(), crate::store::StoreError> {
-            Ok(())
+        fn prepare(
+            &mut self,
+            _: &str,
+        ) -> std::result::Result<crate::store::PreparedStatementHandle, crate::store::StoreError>
+        {
+            Err(crate::store::StoreError::Prepare(
+                "MockGraphStore does not support prepare".to_string(),
+            ))
         }
-        fn commit_transaction(&mut self) -> Result<(), crate::store::StoreError> {
-            Ok(())
-        }
-        fn rollback_transaction(&mut self) -> Result<(), crate::store::StoreError> {
-            Ok(())
+        fn execute(
+            &mut self,
+            _: &mut crate::store::PreparedStatementHandle,
+            _: crate::store::Params,
+        ) -> std::result::Result<Vec<Row>, crate::store::StoreError> {
+            Err(crate::store::StoreError::Execute(
+                "MockGraphStore does not support execute".to_string(),
+            ))
         }
     }
 
@@ -654,6 +883,9 @@ mod tests {
             unimplemented!()
         }
         fn link_of_type(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn ensure_metatype(&mut self, _: &str, _: &str, _: &str, _: &str) -> anyhow::Result<()> {
             unimplemented!()
         }
         fn existing_canonical_keys(&self) -> anyhow::Result<std::collections::HashSet<String>> {

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P1-04** — `RawGraphQuery` admin-only trait: the **only** entry point for raw
+  Cypher execution in `store.rs`. The `LbugStore` implementation enforces
+  `is_read_only_query` guard (rejecting MERGE/CREATE/DELETE/SET/REMOVE) on
+  every call. Application code must use typed repository traits instead.
+  `execute_raw_cypher_for_test` provided as a test-only escape hatch.
+- **P1-04** — `SemanticEdgeRepository` trait (`link_semantic_edge`,
+  `link_call_edge_with_resolution`) as the write port for semantic edge
+  creation, replacing raw Cypher in `call_graph`, `class_diagram`,
+  `state_machine` apply pipelines.
+- **P1-04** — `ElementRepository::ensure_metatype` for metatype pre-seeded
+  existence guarantees in `c4_discover` and `call_graph` apply paths.
+- **P1-04** — `SemanticEdgeRepository::link_call_edge_with_resolution` handles
+  the full call-edge creation including name-resolution and `CALL_EDGE` label
+  population in `call_graph::apply`.
+
+### Changed
+- **P1-04** — `diagram::queries` reads wired to `DiagramRepository` directly
+  (the four `query_*` free functions removed); call sites updated in
+  `diagram/export.rs`, `diagram/project/*`. Deprecation re-exports of
+  `ElementRow`, `SemanticEdgeRow`, `VersionPropsRow` added with
+  `#[deprecated(since = "1.43.0")]` guidance.
+- **P1-04** — `call_graph`, `class_diagram`, `state_machine` apply pipelines
+  rewired from raw Cypher writes to `ElementRepository::upsert_element`,
+  `upsert_element_version`, and `SemanticEdgeRepository` methods.
+- **P1-04** — `c4_discover` apply pipeline rewired to repository methods
+  (`ensure_metatype`, `upsert_element`).
+
+### Removed
+- **P1-04** — ~140 lines of dead `call_graph` apply scaffolding: the old
+  `apply` function body replaced by direct repository calls via
+  `SemanticEdgeRepository::link_call_edge_with_resolution`.
+- **P1-04** — `diagram::queries::query_elements`,
+  `diagram::queries::query_semantic_edges`,
+  `diagram::queries::query_evidence_for_versions`,
+  `diagram::queries::query_version_props` free functions removed;
+  callers now use `DiagramRepository` typed reads.
 - **P1-03** — Architecture repositories: introduce `ElementRepository`,
   `EvidenceRepository`, `SourceRepository`, `EvaluationRepository`,
   `DiagramRepository` as siblings of `GraphStore` in `store.rs`.

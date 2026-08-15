@@ -927,6 +927,7 @@ Incluye:
 | `m58-specs-index` | `docs/m58-specs-index` (merged to main via PR #138) | `e16e249` | **Cerrado** ✅ · tag none · adds docs/specs/index.md (85 lines) with 13 specs grouped by audience (diagram views, code extraction, rendering, benchmarks, E2E); each row carries audience + one-line summary; pure docs cycle (M62 precedent, no tag bump) |
 | `m61-cognitive-policy-tests` | `test/m61-cognitive-policy-tests` (merged to main via PR #140) | `78c1e0d` | **Cerrado** ✅ · tag `v1.29.0` · adds 22 unit tests for cognitive/policy/{context,decision} (the 0-test gap in M55 study M61 audit); side-fix: `PolicyResult` derives PartialEq; cognitive test count 111 → 133 |
 | `p0-ladybug-compatibility-doctor-v2` | `feat/p0-ladybug-doctor-v2` (merged to main via PR #174) | `31b17e1` | **Cerrado** ✅ · tag `v1.42.0` · `archctl doctor --scope storage [--json]`: LadybugDB availability + crate/native alignment + schema init + CRUD smoke probe (ADR-048 5-axis envelope); debt-verify PASS_WITH_WARNINGS |
+| `p1-04-raw-graph-query-boundary` | `feat/p1-04-raw-graph-query-boundary` (pending PR) | `44df981` | **En curso** 🔄 · verify PASS · trait split: RawGraphQuery guard (P1-04 T1.1+T1.2), SemanticEdgeRepository wiring (T2), DiagramRepository reads (T5), bench fix (T4.1 `44df981`); ADR-059 |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -1401,4 +1402,26 @@ Razones:
 - **Bugfix crítico**: `target_triple()` devolvía `"unknown"` porque `option_env!("TARGET")` requiere propagación desde `build.rs` (Cargo no la expone sin build script). Fix: `archctl/build.rs` con `println!("cargo:rustc-env=TARGET={}", ...)` — documentado como jurisprudencia.
 - **Notas de proceso**: main es rama protegida → feature branch + PR obligatorio. El ciclo v1 (`p0-ladybug-compatibility-doctor`) quedó bloqueado permanentemente por receipt collision (UNIQUE constraint en `gate_receipts`); v2 reutilizó spec/design verbatim tras validar que seguían vigentes.
 - **Wave 0 status**: este ciclo cierra el item 5 del plan de remediation (docs/arch-stack-proposals-2026-08-13). Items 1–6 DONE (PRs #168–#174). Falta item 7 (native release runners: `release.yml` compila targets darwin en ubuntu-22.04).
+
+## Cycle cerrado — `p1-04-raw-graph-query-boundary` (v1.43.0)
+
+- **Fecha**: 2026-08-15
+- **Branch**: `feat/p1-04-raw-graph-query-boundary` (merged to main via PR — TBD)
+- **Tag**: `v1.43.0` (TBD)
+- **Verdict**: verify PASS · debt-verify TBD · archive TBD
+- **Commits**: 13 (T1.1+T1.2 trait split, T2.2–T2.6 wiring, T3.1 golden test, T4.1 bench retarget `44df981`, T5.1 manifests+docs)
+- **Tests**: 831 passing, 1 regression fixed (state_machine atomic-abort test rewired to repository writes)
+- **Output**:
+  - `RawGraphQuery` trait: admin-only raw Cypher entry point in `store.rs` with `is_read_only_query` guard (rejects MERGE/CREATE/DELETE/SET/REMOVE). `execute_raw_cypher_for_test` escape hatch for test utilities.
+  - `SemanticEdgeRepository` trait: `link_semantic_edge`, `link_call_edge_with_resolution` — replaces raw Cypher in `call_graph`, `class_diagram`, `state_machine` apply pipelines.
+  - `ElementRepository::ensure_metatype`: metatype pre-seeded existence guarantee for `c4_discover` and `call_graph`.
+  - `diagram::queries` rewired to `DiagramRepository::list_elements` / `list_semantic_edges` — 4 free functions removed.
+  - `call_graph` dead code removed (~140 LOC): old apply scaffolding replaced by `SemanticEdgeRepository::link_call_edge_with_resolution`.
+  - Deprecation re-exports in `diagram::queries` (`ElementRow`, `SemanticEdgeRow`, `VersionPropsRow`) with `#[deprecated(since = "1.43.0")]`.
+  - `manifests/store.toml`: `RawGraphQuery` + `execute_raw_cypher_for_test` + `is_read_only_query` added to gates.
+  - `manifests/diagram.toml`: P1-04 invariant documented; `.list_elements` / `.list_semantic_edges` in `must_hold`.
+  - Benches retargeted: `export_pipeline.rs` uses `DiagramRepository`; `query_pipeline.rs` reads via `RawGraphQuery::query` (MATCH-only, passes guard); `common/mod.rs` uses `execute_raw_cypher_for_test` for all writes (MERGE/CREATE seeds).
+- **T4.1 focused fix** (`44df981`): `common/mod.rs` seed writes were using `store.query(MERGE...)` which the `is_read_only_query` guard now rejects at runtime. Fixed by replacing with `execute_raw_cypher_for_test` (test escape hatch). Also corrected relation seed CREATE syntax to match `link_semantic_edge` pattern (MERGE on relation_id keyed by `relation_id` property, then SET for additional props — avoids Kùzu REL TABLE inline-property restriction).
+- **Apply deviations from prior tasks**: test fix for `state_machine_apply_atomic_abort_on_write_error` required same pattern as prior class_diagram fix (upsert_element + execute_raw_cypher_for_test); no other deviations.
+- **Notas**: ADR-059 documents the trait-split decision; the 22 application call sites that were using `GraphStore::query` for writes are now using typed repository methods.
 - **Próximo candidato**: Wave 0 item 7 (native release runners) o Wave 1 — architecture scaffolding (items 8–16 del plan 2026-08-13).

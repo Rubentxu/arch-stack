@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::code::apply_common::escape_cypher_string;
 use crate::code::call_graph::MessageKind;
-use crate::store::{GraphStore, LbugStore};
+use crate::store::{GraphStore, LbugStore, RawGraphQuery};
 
 /// JSON Schema for SequenceReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -111,7 +111,7 @@ pub fn project_sequence(
 
     // Delegate to the store-based implementation
     let report = project_sequence_with_store(
-        &store as &dyn GraphStore,
+        &store as &dyn RawGraphQuery,
         from,
         depth_limit,
         max_interactions,
@@ -130,7 +130,7 @@ pub fn project_sequence(
 
 /// Internal: BFS projection with a provided store (for testability).
 pub fn project_sequence_with_store(
-    store: &dyn GraphStore,
+    store: &dyn RawGraphQuery,
     from: FromSelector,
     depth_limit: u32,
     max_interactions: Option<u32>,
@@ -243,7 +243,10 @@ pub fn project_sequence_with_store(
 }
 
 /// Resolve a FromSelector to a canonical_key.
-fn resolve_selector(store: &dyn GraphStore, from: &FromSelector) -> Result<String, SequenceError> {
+fn resolve_selector(
+    store: &dyn RawGraphQuery,
+    from: &FromSelector,
+) -> Result<String, SequenceError> {
     let cypher = match from {
         FromSelector::ByName { name } => format!(
             "MATCH (e:Element) WHERE e.current_name = '{}' AND e.kind_id IN ['code.function', 'code.method', 'code.closure'] RETURN e.canonical_key AS ck ORDER BY e.canonical_key LIMIT 2",
@@ -334,43 +337,54 @@ mod tests {
     use super::*;
 
     /// Seed helper: insert a function node into the graph.
-    fn seed_function_node(store: &dyn GraphStore, ck: &str, name: &str) {
-        let cypher = format!(
-            "MERGE (e:Element {{id: 'cg:{ck}'}}) SET \
-             e.kind_id = 'code.function', e.category = 'code', \
-             e.canonical_key = '{ck}', e.current_name = '{name}', \
-             e.current_status = 'active', e.current_confidence = 0.9, \
-             e.current_version_id = 'v1';",
-            ck = ck,
-            name = name
-        );
-        let _ = store.query(&cypher);
+    fn seed_function_node(store: &mut LbugStore, ck: &str, name: &str) {
+        use crate::store::ElementRepository;
+        let element = crate::graph::Element {
+            id: format!("cg:{ck}"),
+            kind_id: "code.function".to_string(),
+            category: "code".to_string(),
+            canonical_key: ck.to_string(),
+            current_name: name.to_string(),
+            current_status: "active".to_string(),
+            current_confidence: 0.9,
+            current_version_id: "v1".to_string(),
+        };
+        let _ = store.upsert_element(&element);
     }
 
     /// Seed helper: insert a call edge into the graph.
     /// Creates: Element -[SEMANTIC_EDGE]-> Element (matching call_graph.rs apply)
-    fn seed_call_edge(store: &dyn GraphStore, caller: &str, callee: &str, _line: u32) {
+    fn seed_call_edge(store: &mut LbugStore, caller: &str, callee: &str, _line: u32) {
+        use crate::store::SemanticEdgeRepository;
         let rel_id = format!("rel:{}->{}:{}", caller, callee, _line);
-        let rel_props = serde_json::json!({
-            "predicate": "code.calls",
-            "call_kind": "directcall",
-            "message_kind": "sync_call",
-            "rel_id": rel_id,
-        });
-        let rel_props_str = serde_json::to_string(&rel_props).unwrap_or_default();
-        // Escape single quotes for Cypher (same as escape_cypher_string but inline)
-        let rel_props_escaped = rel_props_str.replace('\'', "\\'");
-        let cypher = format!(
-            "MATCH (src:Element {{canonical_key: '{caller}'}}), \
-             (tgt:Element {{canonical_key: '{callee}'}}) \
-             MERGE (src)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}'}}]->(tgt) \
-             SET r.predicate_id = 'code.calls', r.props = '{props}', r.active = true;",
-            caller = caller,
-            callee = callee,
-            rel_id = rel_id,
-            props = rel_props_escaped,
+        let mut rel_props = serde_json::Map::new();
+        rel_props.insert(
+            "predicate".to_string(),
+            serde_json::Value::String("code.calls".to_string()),
         );
-        let _ = store.query(&cypher);
+        rel_props.insert(
+            "call_kind".to_string(),
+            serde_json::Value::String("directcall".to_string()),
+        );
+        rel_props.insert(
+            "message_kind".to_string(),
+            serde_json::Value::String("sync_call".to_string()),
+        );
+        rel_props.insert(
+            "rel_id".to_string(),
+            serde_json::Value::String(rel_id.clone()),
+        );
+        // Use link_semantic_edge directly since we have element ids, not callee names.
+        // This bypasses the name-resolution logic of link_call_edge_with_resolution.
+        let _ = SemanticEdgeRepository::link_semantic_edge(
+            store,
+            &format!("cg:{caller}"), // src element id
+            &format!("cg:{callee}"), // tgt element id
+            &rel_id,
+            "code.calls",
+            &rel_props,
+            true, // active
+        );
     }
 
     #[test]
@@ -384,12 +398,12 @@ mod tests {
         store.init().unwrap();
 
         // Seed nodes: A, B
-        seed_function_node(&store, "rust:test.rs:A:10", "A");
-        seed_function_node(&store, "rust:test.rs:B:20", "B");
+        seed_function_node(&mut store, "rust:test.rs:A:10", "A");
+        seed_function_node(&mut store, "rust:test.rs:B:20", "B");
 
         // Seed edges: A → B, B → A (cycle)
-        seed_call_edge(&store, "rust:test.rs:A:10", "rust:test.rs:B:20", 11);
-        seed_call_edge(&store, "rust:test.rs:B:20", "rust:test.rs:A:10", 21);
+        seed_call_edge(&mut store, "rust:test.rs:A:10", "rust:test.rs:B:20", 11);
+        seed_call_edge(&mut store, "rust:test.rs:B:20", "rust:test.rs:A:10", 21);
 
         // Run sequence from A with depth_limit=5
         let report = project_sequence_with_store(
@@ -423,7 +437,7 @@ mod tests {
         let nodes = ["A", "B", "C", "D", "E"];
         for (i, node) in nodes.iter().enumerate() {
             seed_function_node(
-                &store,
+                &mut store,
                 &format!("rust:test.rs:{}:{}", node, (i + 1) * 10),
                 node,
             );
@@ -432,7 +446,7 @@ mod tests {
         // Seed edges: A → B, A → C, A → D, A → E (4 edges from A)
         for (i, node) in nodes[1..].iter().enumerate() {
             seed_call_edge(
-                &store,
+                &mut store,
                 "rust:test.rs:A:10",
                 &format!("rust:test.rs:{}:{}", node, (i + 2) * 10),
                 11 + i as u32,
@@ -467,13 +481,13 @@ mod tests {
         store.init().unwrap();
 
         // Seed nodes: A, B, C
-        seed_function_node(&store, "rust:test.rs:A:10", "A");
-        seed_function_node(&store, "rust:test.rs:B:20", "B");
-        seed_function_node(&store, "rust:test.rs:C:30", "C");
+        seed_function_node(&mut store, "rust:test.rs:A:10", "A");
+        seed_function_node(&mut store, "rust:test.rs:B:20", "B");
+        seed_function_node(&mut store, "rust:test.rs:C:30", "C");
 
         // Seed edges: A → B, B → C
-        seed_call_edge(&store, "rust:test.rs:A:10", "rust:test.rs:B:20", 11);
-        seed_call_edge(&store, "rust:test.rs:B:20", "rust:test.rs:C:30", 21);
+        seed_call_edge(&mut store, "rust:test.rs:A:10", "rust:test.rs:B:20", 11);
+        seed_call_edge(&mut store, "rust:test.rs:B:20", "rust:test.rs:C:30", 21);
 
         // Run sequence from A with depth_limit=1 (should only get A → B, not B → C)
         let report = project_sequence_with_store(
@@ -526,13 +540,13 @@ mod tests {
         store.init().unwrap();
 
         // Seed nodes
-        seed_function_node(&store, "rust:test.rs:A:10", "A");
-        seed_function_node(&store, "rust:test.rs:B:20", "B");
-        seed_function_node(&store, "rust:test.rs:C:30", "C");
+        seed_function_node(&mut store, "rust:test.rs:A:10", "A");
+        seed_function_node(&mut store, "rust:test.rs:B:20", "B");
+        seed_function_node(&mut store, "rust:test.rs:C:30", "C");
 
         // Seed edges
-        seed_call_edge(&store, "rust:test.rs:A:10", "rust:test.rs:B:20", 11);
-        seed_call_edge(&store, "rust:test.rs:A:10", "rust:test.rs:C:30", 12);
+        seed_call_edge(&mut store, "rust:test.rs:A:10", "rust:test.rs:B:20", 11);
+        seed_call_edge(&mut store, "rust:test.rs:A:10", "rust:test.rs:C:30", 12);
 
         let report = project_sequence_with_store(
             &store,

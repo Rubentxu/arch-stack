@@ -90,13 +90,18 @@ fn seed(dataset_path: &str) -> (LbugStore, TempDir) {
              e.current_status = '{status_safe}', e.current_confidence = {conf}, \
              e.current_version_id = '{vid}';"
         );
-        // Drain the result set so the connection is free for the next
-        // query. lbug's QueryResult is lazy; consuming rows avoids
-        // accidental pending state.
-        let _ = store.query(&cypher);
+        // Use execute_raw_cypher_for_test — the test escape hatch bypasses
+        // the RawGraphQuery is_read_only_query guard so writes (MERGE /
+        // CREATE) are allowed in bench fixtures.
+        store
+            .execute_raw_cypher_for_test(&cypher)
+            .expect("seed element write");
     }
 
     // Bulk insert relations.
+    // Mirrors the `link_semantic_edge` pattern: MERGE on (src)-[r:SEMANTIC_EDGE]->(tgt)
+    // keyed by relation_id, then SET additional properties. This avoids the
+    // Kùzu restriction on inline REL-TABLE properties in CREATE.
     for rel in &dataset.relations {
         let rid = rel.edge_relation_id.as_str();
         let pid = rel.edge_predicate_id.as_str();
@@ -111,14 +116,12 @@ fn seed(dataset_path: &str) -> (LbugStore, TempDir) {
 
         let cypher = format!(
             "MATCH (a:Element {{id: '{src}'}}), (b:Element {{id: '{tgt}'}}) \
-             CREATE (a)-[r:SEMANTIC_EDGE {{id: '{rid}', predicate_id: '{pid}', \
-                                        order_key: {order}, props: '{props_safe}'}}]->(b);"
+             MERGE (a)-[r:SEMANTIC_EDGE {{relation_id: '{rid}'}}]->(b) \
+             SET r.predicate_id = '{pid}', r.order_key = {order}, r.props = '{props_safe}', r.active = true;"
         );
-        // CREATE on a REL TABLE requires explicit MATCH — lbug 0.18.3
-        // rejects MERGE on REL TABLE (same caveat as link_* helpers in
-        // store.rs). This raw cypher is fine because we just MERGEd the
-        // elements above; existence is guaranteed.
-        let _ = store.query(&cypher);
+        store
+            .execute_raw_cypher_for_test(&cypher)
+            .expect("seed relation write");
     }
 
     (store, tmp)
@@ -139,7 +142,9 @@ fn seed_meta_predicate(store: &mut LbugStore) {
     ];
     for mt in meta_types {
         let mt = archctl::graph::validate_identifier(mt).expect("mt");
-        let _ = store.query(&format!("MERGE (:MetaType {{id: '{mt}'}});"));
+        store
+            .execute_raw_cypher_for_test(&format!("MERGE (:MetaType {{id: '{mt}'}});"))
+            .expect("seed metatype write");
     }
     let predicates = [
         "p.calls",
@@ -151,7 +156,9 @@ fn seed_meta_predicate(store: &mut LbugStore) {
     ];
     for p in predicates {
         let p = archctl::graph::validate_identifier(p).expect("p");
-        let _ = store.query(&format!("MERGE (:Predicate {{id: '{p}'}});"));
+        store
+            .execute_raw_cypher_for_test(&format!("MERGE (:Predicate {{id: '{p}'}});"))
+            .expect("seed predicate write");
     }
 }
 

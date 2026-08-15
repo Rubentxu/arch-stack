@@ -11,12 +11,11 @@ use anyhow::{Context, Result};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::SupportLang;
 
-use crate::code::apply_common::escape_cypher_string;
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Parser, Tree};
 
 use crate::filesystem::Filesystem;
-use crate::store::{ElementRepository, GraphStore, LbugStore};
+use crate::store::{ElementRepository, LbugStore, SemanticEdgeRepository};
 
 /// JSON Schema for CallGraphReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -1222,186 +1221,44 @@ fn lang_label(lang: &Language) -> &'static str {
 
 // ─── Apply ──────────────────────────────────────────────────────────────────
 
-/// Per-element write helpers (PR1 path) — REPLACED by the inline
-/// UNWIND batches in `apply()` below (M32 D2). Kept as `#[allow]`
-/// reference for the future `--legacy` fallback flag (proposal §D2.S4).
-/// Remove if no caller materializes by v1.4.
-#[allow(dead_code)]
-fn write_function_element(
-    store: &mut dyn GraphStore,
-    node: &FunctionNode,
-    version_id: &str,
-) -> Result<()> {
-    let kind_id = match node.kind {
-        FunctionKind::Function => "code.function",
-        FunctionKind::Method => "code.method",
-        FunctionKind::Closure => "code.closure",
-    };
-    let canonical_key_escaped = escape_cypher_string(&node.canonical_key);
-    let name_escaped = escape_cypher_string(&node.name);
-    let id = format!("cg:{}", node.canonical_key);
-    let cypher = format!(
-        "MERGE (e:Element {{id: '{id}'}}) SET \
-         e.kind_id = '{kind_id}', \
-         e.category = 'code', \
-         e.canonical_key = '{canonical_key_escaped}', \
-         e.current_name = '{name_escaped}', \
-         e.current_status = 'active', \
-         e.current_confidence = {confidence}, \
-         e.current_version_id = '{version_id}';",
-        id = id,
-        kind_id = kind_id,
-        canonical_key_escaped = canonical_key_escaped,
-        name_escaped = name_escaped,
-        confidence = node.confidence,
-        version_id = version_id,
-    );
-    store
-        .query(&cypher)
-        .with_context(|| format!("write_function_element {}", node.canonical_key))?;
-    Ok(())
-}
-
-/// Write the ElementVersion node for a FunctionNode.
-#[allow(dead_code)]
-fn write_function_version(store: &mut dyn GraphStore, node: &FunctionNode) -> Result<String> {
-    let version_props = serde_json::json!({
-        "kind": format!("{:?}", node.kind).to_lowercase(),
-        "language": lang_label(&node.language),
-        "confidence": node.confidence,
-        "call_graph_schema_version": "1.0",
-    });
-    let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-    let version_id = format!(
-        "cgv:{}",
-        blake3::hash(version_props_str.as_bytes()).to_hex()
-    );
-    let version_props_escaped = escape_cypher_string(&version_props_str);
-    let element_id = format!("cg:{}", node.canonical_key);
-
-    let cypher = format!(
-        "MERGE (v:ElementVersion {{id: '{version_id}'}}) SET \
-         v.element_id = '{element_id}', \
-         v.name = '{name}', \
-         v.status = 'drafted', \
-         v.origin = 'call-graph', \
-         v.confidence = {confidence}, \
-         v.props = '{props}';",
-        version_id = version_id,
-        element_id = element_id,
-        name = escape_cypher_string(&node.name),
-        confidence = node.confidence,
-        props = version_props_escaped,
-    );
-    store
-        .query(&cypher)
-        .with_context(|| format!("write_function_version {}", node.canonical_key))?;
-    Ok(version_id)
-}
-
-/// Link Element to ElementVersion via CURRENT_VERSION and VERSION_OF edges.
-#[allow(dead_code)]
-fn link_function_edges(
-    store: &mut dyn GraphStore,
-    node: &FunctionNode,
-    version_id: &str,
-) -> Result<()> {
-    let element_id = format!("cg:{}", node.canonical_key);
-    // CURRENT_VERSION: Element → ElementVersion
-    let cypher1 = format!(
-        "MATCH (e:Element {{id: '{element_id}'}}) \
-         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
-         MERGE (e)-[r:CURRENT_VERSION]->(v);",
-        element_id = element_id,
-        version_id = version_id,
-    );
-    store
-        .query(&cypher1)
-        .with_context(|| "link current_version")?;
-
-    // VERSION_OF: ElementVersion → Element
-    let cypher2 = format!(
-        "MATCH (e:Element {{id: '{element_id}'}}) \
-         MATCH (v:ElementVersion {{id: '{version_id}'}}) \
-         MERGE (v)-[r:VERSION_OF]->(e);",
-        element_id = element_id,
-        version_id = version_id,
-    );
-    store.query(&cypher2).with_context(|| "link version_of")?;
-
-    // OF_TYPE: Element → MetaType
-    let kind_id = match node.kind {
-        FunctionKind::Function => "code.function",
-        FunctionKind::Method => "code.method",
-        FunctionKind::Closure => "code.closure",
-    };
-    let cypher3 = format!(
-        "MATCH (e:Element {{id: '{element_id}'}}) \
-         MATCH (mt:MetaType {{id: '{kind_id}'}}) \
-         MERGE (e)-[r:OF_TYPE]->(mt);",
-        element_id = element_id,
-        kind_id = kind_id,
-    );
-    store.query(&cypher3).with_context(|| "link of_type")?;
-
-    Ok(())
-}
-
 /// Write a call edge as a `SEMANTIC_EDGE` (Element→Element) row.
 ///
-/// Design note (m9-relations-decision): archctl uses the **direct
-/// edge model** rather than the reified `SemanticRelation` +
-/// `REL_SOURCE` → `SemanticRelation` ← `REL_TARGET` pattern. The
-/// reified model is reserved in the schema for future use (ADR-009
-/// deferral) but the call-graph and sequence-projection pipelines
-/// read/write `SEMANTIC_EDGE` directly because:
-/// - sequence projection needs `r.props` (e.g. call_kind, line) on
-///   the edge itself, which the reified model would require a
-///   separate `RelationVersion` hop to access.
-/// - the call-graph writer is a single MERGE … CREATE round-trip;
-///   the reified model would require 3 round-trips per edge.
-#[allow(dead_code)]
+/// Uses SemanticEdgeRepository::link_call_edge_with_resolution which handles
+/// the OPTIONAL MATCH + WITH/WHERE + MERGE pattern internally.
 fn write_call_edge(
     store: &mut LbugStore,
     edge: &CallEdge,
     src_element_id: &str,
     sa_id: &str,
-    _version_id: &str, // version_id is captured on the Evidence node
-                       // (see put_evidence) and on the Element's
-                       // current_version_id pointer, not on the
-                       // SEMANTIC_EDGE itself. The reified model with
-                       // RelationVersion is reserved in the schema
-                       // for future use.
+    _version_id: &str,
 ) -> Result<()> {
     let rel_id = format!("rel:{}", edge.canonical_key);
-    let rel_props = serde_json::json!({
-        "predicate": "code.calls",
-        "call_kind": format!("{:?}", edge.kind).to_lowercase(),
-        "message_kind": format!("{:?}", edge.message_kind).to_lowercase(),
-        "rel_id": rel_id,
-    });
-    let rel_props_str = serde_json::to_string(&rel_props).unwrap_or_default();
-
-    // Try to find the callee Element by matching canonical_key pattern
-    // MVP: we don't do symbol resolution, so callee may not exist.
-    let callee_escaped = escape_cypher_string(&edge.callee);
-    let safe_props = rel_props_str.replace('\'', "\\'");
-    let cypher = format!(
-        "MATCH (src:Element {{id: '{src_id}'}}) \
-         OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
-         WITH src, tgt \
-         WHERE tgt IS NOT NULL \
-         MERGE (src)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}', predicate_id: 'code.calls', props: '{props}', active: true}}]->(tgt);",
-        src_id = src_element_id,
-        callee = callee_escaped,
-        rel_id = rel_id,
-        props = safe_props,
+    let mut rel_props = serde_json::Map::new();
+    rel_props.insert(
+        "predicate".to_string(),
+        serde_json::Value::String("code.calls".to_string()),
     );
+    rel_props.insert(
+        "call_kind".to_string(),
+        serde_json::Value::String(format!("{:?}", edge.kind).to_lowercase()),
+    );
+    rel_props.insert(
+        "message_kind".to_string(),
+        serde_json::Value::String(format!("{:?}", edge.message_kind).to_lowercase()),
+    );
+    rel_props.insert(
+        "rel_id".to_string(),
+        serde_json::Value::String(rel_id.clone()),
+    );
+
     // Note: errors are silently ignored (matches prior behavior for MVP).
-    // Inline cypher — the OPTIONAL MATCH + WITH/WHERE + MERGE pattern is
-    // hard to abstract into a repository without losing the callee-
-    // resolution semantics.
-    let _ = GraphStore::query(store, &cypher);
+    let _ = SemanticEdgeRepository::link_call_edge_with_resolution(
+        store,
+        src_element_id,
+        &edge.callee,
+        &rel_id,
+        &rel_props,
+    );
 
     // Evidence node via EvidenceRepository::put_structural_evidence
     let evidence_id = format!(

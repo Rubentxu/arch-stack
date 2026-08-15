@@ -287,6 +287,8 @@ pub fn assert_command_types_match_schema() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::Element;
+    use crate::store::{ElementRepository, RawGraphQuery};
 
     #[test]
     fn validate_accepts_valid_changeset() {
@@ -564,10 +566,19 @@ mod tests {
             .unwrap();
 
         // Create an Element node so link_renders finds it.
-        // Uses the pattern from graph.rs: CREATE with required fields.
-        store.query(
-            "CREATE (:Element {id: 'el:api', kind_id: 'mt.system', category: 'c4', canonical_key: 'el:api'}) RETURN 1;"
-        ).unwrap();
+        // Uses the pattern from graph.rs: upsert_element (replaces raw CREATE).
+        store
+            .upsert_element(&Element {
+                id: "el:api".to_string(),
+                kind_id: "mt.system".to_string(),
+                category: "c4".to_string(),
+                canonical_key: "el:api".to_string(),
+                current_name: "api".to_string(),
+                current_status: "active".to_string(),
+                current_confidence: 0.9,
+                current_version_id: "v1".to_string(),
+            })
+            .unwrap();
 
         let cmd = Command::MoveMember {
             member_id: "vm:container:be:el:api".into(),

@@ -53,6 +53,7 @@
 | [ADR-042](ADR-042-ide-adapter-abstraction.md) | IDE adapter abstraction — multi-IDE plugin target | Propuesto (2026-08-10) |
 | [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | Propuesto (2026-08-10) |
 | [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | Propuesto (2026-08-10) |
+| [ADR-059](ADR-059-rawgraphquery-trait-split.md) | RawGraphQuery trait split + SemanticEdgeRepository boundary (P1-04) | Aceptado (2026-08-15) |
 
 ## Cómo se relacionan
 

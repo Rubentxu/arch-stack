@@ -14,7 +14,7 @@ use tempfile::TempDir;
 /// prevents re-opening the same project within one test process).
 #[test]
 fn state_machine_apply_atomic_abort_on_write_error() {
-    use archctl::store::{GraphStore, LbugStore};
+    use archctl::store::{ElementRepository, GraphStore, LbugStore, RawGraphQuery};
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
@@ -22,14 +22,26 @@ fn state_machine_apply_atomic_abort_on_write_error() {
     store.init().expect("store must init");
 
     store.begin_transaction().expect("begin must succeed");
+    // Use typed repository method instead of raw MERGE to avoid RawGraphQuery guard.
     store
-        .query("MERGE (e:Element {id: 'state_mach:good'}) SET e.kind_id = 'k';")
+        .upsert_element(&archctl::graph::Element {
+            id: "state_mach:good".to_string(),
+            kind_id: "k".to_string(),
+            category: "test".to_string(),
+            canonical_key: "state_mach:good".to_string(),
+            current_name: "state_mach:good".to_string(),
+            current_status: "active".to_string(),
+            current_confidence: 1.0,
+            current_version_id: uuid::Uuid::new_v4().to_string(),
+        })
         .expect("good write inside tx must succeed");
 
     // Trigger a binder error: SUPPORTED_BY is declared FROM
     // ElementVersion TO Evidence — so (Element)-[SUPPORTED_BY]->(Evidence)
     // violates the direction constraint.
-    let bad = store.query(
+    // Use execute_raw_cypher_for_test to bypass RawGraphQuery guard and reach
+    // Kùzu directly so Kùzu can enforce the direction constraint.
+    let bad = store.execute_raw_cypher_for_test(
         "MATCH (e:Element {id: 'state_mach:good'}) MATCH (ev:Evidence {id: 'state_mach:ev'}) \
          MERGE (e)-[r:SUPPORTED_BY]->(ev);",
     );

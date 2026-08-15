@@ -45,6 +45,7 @@ use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::clock::Clock;
 use crate::evaluation::Evaluation;
@@ -183,13 +184,14 @@ pub trait DiagramOps: Send + Sync {
 /// - `open` — adapter factory (returns `Self`).
 /// - `init` — apply the canonical schema and create the bootstrap marker.
 /// - `stat` — return element/relation/evidence counts for `doctor`.
-/// - `query` — execute an arbitrary Cypher read query (used by
-///   `archctl graph query` and the neighbours traversal).
 ///
 /// Domain-specific methods live in the sub-traits `EvidenceOps`,
 /// `SourceOps`, and `DiagramOps`. Functions that need only a subset can
 /// take `&mut dyn EvidenceOps` (or whichever) instead of the full
 /// `&mut dyn GraphStore`. This is the ISP benefit of the split.
+///
+/// Raw Cypher access is available through [`RawGraphQuery`] — the admin-only
+/// escape hatch. Application code must use the typed repository traits.
 pub trait GraphStore:
     EvidenceOps
     + SourceOps
@@ -199,6 +201,7 @@ pub trait GraphStore:
     + SourceRepository
     + EvaluationRepository
     + DiagramRepository
+    + RawGraphQuery
 {
     /// Open or create a store rooted at `project_dir`. Each adapter
     /// decides what file (or set of files) lives there.
@@ -215,14 +218,6 @@ pub trait GraphStore:
     /// strings, so the caller does not need to know the underlying
     /// schema details.
     fn stat(&self) -> Result<GraphStat>;
-
-    /// Execute a Cypher read query and return rows as typed
-    /// [`Row`] values. Columns preserve the engine's RETURN order.
-    /// The adapter is responsible for translating driver-specific
-    /// value types into [`Cell`] — the domain never sees
-    /// `serde_json::Value` (use [`Cell::to_json`] at the formatter
-    /// edge if JSON output is needed).
-    fn query(&self, cypher: &str) -> Result<Vec<Row>>;
 
     // --- Transaction primitives (M32 D1) ---
     //
@@ -249,36 +244,6 @@ pub trait GraphStore:
     /// since `begin_transaction`. Best-effort: errors here are logged
     /// but do not mask the originating error from the caller.
     fn rollback_transaction(&mut self) -> Result<(), StoreError>;
-
-    // --- Prepared statements + parameter binding (M32 D3, M51) ---
-    //
-    // Adapter-default implementations interpolate params into the cypher
-    // string and call `query` — slow but correct. Adapters that support
-    // prepared statements (e.g. lbug 0.18.3 via `Connection::prepare`)
-    // override the defaults to skip re-parse + re-plan on every execute.
-
-    /// Compile a Cypher statement once. The returned handle can be
-    /// passed to `execute` any number of times with different
-    /// parameters. Default impl interpolates params into the cypher
-    /// string and is intentionally slower — adapters SHOULD override.
-    fn prepare(&mut self, _cypher: &str) -> Result<PreparedStatementHandle, StoreError> {
-        Err(StoreError::Prepare(
-            "prepare not supported by this adapter (default impl: use query with string interpolation)".into(),
-        ))
-    }
-
-    /// Execute a previously prepared statement with the given
-    /// parameters. Default impl is provided but adapters SHOULD override
-    /// for performance.
-    fn execute(
-        &mut self,
-        _prep: &mut PreparedStatementHandle,
-        _params: Params,
-    ) -> Result<Vec<Row>, StoreError> {
-        Err(StoreError::Execute(
-            "execute not supported by this adapter (default impl: use query with string interpolation)".into(),
-        ))
-    }
 }
 
 /// Element write/read port (P1-03). Idempotent MERGE on canonical ids;
@@ -289,6 +254,13 @@ pub trait ElementRepository: Send + Sync {
     fn link_current_version(&mut self, element_id: &str, version_id: &str) -> Result<()>;
     fn link_version_of(&mut self, element_id: &str, version_id: &str) -> Result<()>;
     fn link_of_type(&mut self, element_id: &str, metatype_id: &str) -> Result<()>;
+    fn ensure_metatype(
+        &mut self,
+        id: &str,
+        namespace: &str,
+        name: &str,
+        category: &str,
+    ) -> Result<()>;
     fn existing_canonical_keys(&self) -> Result<HashSet<String>>;
 }
 
@@ -329,12 +301,104 @@ pub trait DiagramRepository: Send + Sync {
     fn list_evidence_for_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>>;
     fn list_version_props(&self, version_ids: &[String]) -> Result<Vec<VersionPropsRow>>;
 }
+
+/// Admin-only raw Cypher escape hatch (P1-04).
+///
+/// This trait is the **only** entry point for raw Cypher execution.
+/// Application code MUST NOT call this directly — use typed repository
+/// traits instead.
+///
+/// The [`LbugStore`] implementation enforces `is_read_only_query` on every
+/// call, rejecting queries that contain write keywords
+/// (MERGE/CREATE/DELETE/SET/REMOVE).
+///
+/// See ADR-059.
+pub trait RawGraphQuery: Send + Sync {
+    /// Execute a Cypher read query and return rows as typed [`Row`] values.
+    /// Columns preserve the engine's RETURN order.
+    ///
+    /// The adapter is responsible for translating driver-specific value types
+    /// into [`Cell`] — the domain never sees `serde_json::Value`.
+    fn query(&self, cypher: &str) -> Result<Vec<Row>>;
+
+    /// Compile a Cypher statement once (admin only).
+    fn prepare(&mut self, cypher: &str) -> Result<PreparedStatementHandle, StoreError>;
+
+    /// Execute a previously prepared statement with the given parameters.
+    fn execute(
+        &mut self,
+        prep: &mut PreparedStatementHandle,
+        params: Params,
+    ) -> Result<Vec<Row>, StoreError>;
+}
+
+/// Factory for admin-only raw Cypher queries (P1-04).
+///
+/// Separate from `GraphStoreFactory` because raw queries don't need
+/// schema init (the store is opened without running migrations).
+pub trait RawGraphQueryFactory: Send + Sync {
+    fn open_raw(&self, project_dir: &Path) -> Result<Arc<dyn RawGraphQuery>>;
+}
+
+/// Canonical factory backed by `LbugStore`.
+pub struct LbugStoreFactory;
+
+impl RawGraphQueryFactory for LbugStoreFactory {
+    fn open_raw(&self, project_dir: &Path) -> Result<Arc<dyn RawGraphQuery>> {
+        open_raw(project_dir)
+    }
+}
+
+/// Semantic edge write port (P1-04). Used by `code/state_machine`,
+/// `code/class_diagram`, and `code/call_graph` apply pipelines.
+///
+/// `link_semantic_edge` creates a SEMANTIC_EDGE relationship between two
+/// elements. `link_call_edge_with_resolution` is specialised for call-graph
+/// edges that resolve the callee by name (used by `code/call_graph`).
+///
+/// See ADR-059.
+pub trait SemanticEdgeRepository: Send + Sync {
+    /// Create a SEMANTIC_EDGE from `src_id` to `tgt_id` with the given
+    /// `relation_id` and `predicate_id`. The edge is idempotent (MERGE).
+    fn link_semantic_edge(
+        &mut self,
+        src_id: &str,
+        tgt_id: &str,
+        relation_id: &str,
+        predicate_id: &str,
+        props: &serde_json::Map<String, serde_json::Value>,
+        active: bool,
+    ) -> Result<()>;
+
+    /// Create a SEMANTIC_EDGE for a call-graph edge, resolving the callee
+    /// element by its `callee_name` (canonical name). Uses OPTIONAL MATCH
+    /// so it succeeds even when the callee element does not exist yet.
+    ///
+    /// This is the specialised form used by `code/call_graph` where the callee
+    /// may not exist in the graph at apply time.
+    fn link_call_edge_with_resolution(
+        &mut self,
+        src_id: &str,
+        callee_name: &str,
+        relation_id: &str,
+        props: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<()>;
+}
+
 /// Factory: pick the concrete adapter the CLI requested. Today only
 /// `lbug` exists; tomorrow this is where the `--store sparrowdb`
 /// branch lives.
 pub fn open_default(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
     let store = LbugStore::open(project_dir)?;
     Ok(Box::new(store))
+}
+
+/// Open a `LbugStore` and return it as `Arc<dyn RawGraphQuery>`.
+/// Used by admin paths (`archctl graph query`, etc.) that need the
+/// raw Cypher escape hatch.
+pub fn open_raw(project_dir: &Path) -> Result<Arc<dyn RawGraphQuery>> {
+    let store = LbugStore::open(project_dir)?;
+    Ok(Arc::new(store))
 }
 
 /// Open the project's graph store and ensure the schema is initialized.
@@ -356,9 +420,6 @@ pub trait GraphStoreFactory: Send + Sync {
     /// Open the store at `project_dir` and run any pending schema migrations.
     fn open_and_init(&self, project_dir: &Path) -> Result<Box<dyn GraphStore>>;
 }
-
-/// Canonical factory backed by `LbugStore`.
-pub struct LbugStoreFactory;
 
 impl GraphStoreFactory for LbugStoreFactory {
     fn open_and_init(&self, project_dir: &Path) -> Result<Box<dyn GraphStore>> {
@@ -482,6 +543,32 @@ impl Params {
     }
 }
 
+/// Check that a query string contains no write keywords (P1-04).
+///
+/// Used by [`RawGraphQuery`] to defensively reject queries containing
+/// MERGE/CREATE/DELETE/SET/REMOVE. Admin callers are trusted but the
+/// guard provides a safety net for the future admin surface.
+///
+/// Uses word-boundary-aware matching to avoid false positives from
+/// substrings in identifiers (e.g. "CREATED_AT" contains "CREATE",
+/// "updated_at" contains no "SET" but "vm.updated_at" does).
+fn is_read_only_query(cypher: &str) -> bool {
+    let upper = cypher.to_uppercase();
+    // Use word-boundary-aware check: the keyword must be surrounded by
+    // non-identifier chars (start/end of string, space, paren, comma, etc.)
+    // to avoid flagging substrings like "CREATED_AT" or "vm.updated_at".
+    let check = |keyword: &str| {
+        let pat = keyword.to_string();
+        let kw_upper = format!(" {pat} ");
+        let kw_upper_start = format!("({pat} ");
+        let kw_upper_end = format!(" {pat});");
+        !upper.contains(&kw_upper)
+            && !upper.contains(&kw_upper_start)
+            && !upper.contains(&kw_upper_end)
+    };
+    check("MERGE") && check("CREATE") && check("DELETE") && check("SET") && check("REMOVE")
+}
+
 impl From<anyhow::Error> for StoreError {
     fn from(e: anyhow::Error) -> Self {
         StoreError::NotInitialized(e.to_string())
@@ -516,12 +603,12 @@ pub struct LbugStore {
 
 /// Internal scope-bounded handle. Mirrors the previous `Session` but
 /// stays private to the adapter.
-pub(crate) struct LbugSession {
+pub struct LbugSession {
     // SAFETY: see `crate::graph::Session` (the old comment explains the
     // 'static transmute trick). Kept identical so the original tests
     // that rely on it still pass.
-    pub(crate) conn: lbug::Connection<'static>,
-    pub(crate) _db: lbug::Database,
+    pub conn: lbug::Connection<'static>,
+    pub _db: lbug::Database,
 }
 
 impl LbugStore {
@@ -562,11 +649,27 @@ impl LbugStore {
         })
     }
 
-    fn session_mut(&mut self) -> Result<&mut LbugSession> {
+    /// Acquire a mutable reference to the inner lbug session.
+    ///
+    /// Used by typed repository methods (`ElementRepository`,
+    /// `SemanticEdgeRepository`, etc.) and in test helpers that need to bypass
+    /// `RawGraphQuery`'s write-keyword guard for seeding operations.
+    /// Also used by integration tests that need to bypass the guard.
+    pub fn session_mut(&mut self) -> Result<&mut LbugSession> {
         if self.session.is_none() {
             self.session = Some(open_lbug_session(&self.project_dir)?);
         }
         Ok(self.session.as_mut().expect("just initialised"))
+    }
+
+    /// Execute a raw Cypher query directly on the Kùzu connection, bypassing
+    /// the RawGraphQuery guard. For testing transaction abort scenarios where
+    /// we need to trigger Kùzu-level errors (e.g., direction constraint violations).
+    pub fn execute_raw_cypher_for_test(&mut self, cypher: &str) -> Result<(), lbug::Error> {
+        let session = self
+            .session_mut()
+            .map_err(|e| lbug::Error::FailedQuery(format!("{}", e)))?;
+        session.conn.query(cypher).map(|_| ())
     }
 
     /// Borrow the inner lbug session (test + migrations runner only).
@@ -636,69 +739,6 @@ impl GraphStore for LbugStore {
         })
     }
 
-    fn query(&self, cypher: &str) -> Result<Vec<Row>> {
-        let session = self
-            .session
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("LbugStore::query called before init"))?;
-        tracing::debug!(%cypher, "graph query");
-        run_query(&session.conn, cypher)
-    }
-
-    fn prepare(&mut self, cypher: &str) -> Result<PreparedStatementHandle, StoreError> {
-        let session = self
-            .session
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("LbugStore::prepare called before init"))?;
-        let stmt = session
-            .conn
-            .prepare(cypher)
-            .map_err(|e| StoreError::Prepare(format!("prepare failed for cypher={cypher}: {e}")))?;
-        tracing::debug!(%cypher, "graph prepare");
-        Ok(PreparedStatementHandle {
-            inner: PreparedStatementKind::Lbug(stmt),
-        })
-    }
-
-    fn execute(
-        &mut self,
-        prep: &mut PreparedStatementHandle,
-        params: Params,
-    ) -> Result<Vec<Row>, StoreError> {
-        let session = self
-            .session
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("LbugStore::execute called before init"))?;
-        let PreparedStatementKind::Lbug(stmt) = &mut prep.inner else {
-            return Err(StoreError::Execute(
-                "prepare/execute not supported by this adapter".into(),
-            ));
-        };
-        // Translate our `Params` (serde_json) to lbug's `Vec<(&str, Value)>`
-        // by going through `serde_json::Value -> lbug::Value`. lbug's
-        // `From<serde_json::Value>` wraps as `Value::Json(...)` which is
-        // acceptable for prepared statement parameter binding.
-        let mut lbug_params: Vec<(&str, lbug::Value)> = Vec::with_capacity(params.len());
-        for (name, value) in params.0 {
-            lbug_params.push((Box::leak(name.into_boxed_str()), lbug::Value::from(value)));
-        }
-        let query_result = session
-            .conn
-            .execute(stmt, lbug_params)
-            .map_err(|e| StoreError::Execute(format!("execute failed: {e}")))?;
-        // `QueryResult` is an iterator yielding `Vec<Value>` (positional,
-        // column order matches RETURN). Map each value to Cell. lbug does
-        // not expose column names through prepared statements — callers
-        // that need them should use `query` instead. M51 result rows are
-        // positional; their `column_names` is empty.
-        let mut rows = Vec::new();
-        for tuple in query_result {
-            let cells: Vec<Cell> = tuple.into_iter().map(lbug_value_to_cell).collect();
-            rows.push(Row::from_positional(cells));
-        }
-        Ok(rows)
-    }
-
     fn begin_transaction(&mut self) -> Result<(), StoreError> {
         let session = self
             .session
@@ -735,6 +775,69 @@ impl GraphStore for LbugStore {
             .query("ROLLBACK")
             .map_err(|e| StoreError::Rollback(format!("ROLLBACK failed: {e}")))?;
         Ok(())
+    }
+}
+
+impl RawGraphQuery for LbugStore {
+    fn query(&self, cypher: &str) -> Result<Vec<Row>> {
+        let session = self
+            .session
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::query called before init"))?;
+        tracing::debug!(%cypher, "graph query");
+        // Defensive keyword enforcement — rejects write keywords.
+        if !is_read_only_query(cypher) {
+            return Err(anyhow::anyhow!(
+                "raw GraphStore::query rejects write keywords (MERGE|CREATE|DELETE|SET|REMOVE)"
+            ))
+            .context("RawGraphQuery guard");
+        }
+        run_query(&session.conn, cypher)
+    }
+
+    fn prepare(&mut self, cypher: &str) -> Result<PreparedStatementHandle, StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::prepare called before init"))?;
+        let stmt = session
+            .conn
+            .prepare(cypher)
+            .map_err(|e| StoreError::Prepare(format!("prepare failed for cypher={cypher}: {e}")))?;
+        tracing::debug!(%cypher, "graph prepare");
+        Ok(PreparedStatementHandle {
+            inner: PreparedStatementKind::Lbug(stmt),
+        })
+    }
+
+    fn execute(
+        &mut self,
+        prep: &mut PreparedStatementHandle,
+        params: Params,
+    ) -> Result<Vec<Row>, StoreError> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("LbugStore::execute called before init"))?;
+        let PreparedStatementKind::Lbug(stmt) = &mut prep.inner else {
+            return Err(StoreError::Execute(
+                "prepare/execute not supported by this adapter".into(),
+            ));
+        };
+        let mut lbug_params: Vec<(&str, lbug::Value)> = Vec::with_capacity(params.len());
+        for (name, value) in params.0 {
+            lbug_params.push((Box::leak(name.into_boxed_str()), lbug::Value::from(value)));
+        }
+        let query_result = session
+            .conn
+            .execute(stmt, lbug_params)
+            .map_err(|e| StoreError::Execute(format!("execute failed: {e}")))?;
+        let mut rows = Vec::new();
+        for tuple in query_result {
+            let cells: Vec<Cell> = tuple.into_iter().map(lbug_value_to_cell).collect();
+            rows.push(Row::from_positional(cells));
+        }
+        Ok(rows)
     }
 }
 
@@ -1465,6 +1568,32 @@ impl ElementRepository for LbugStore {
         Ok(())
     }
 
+    fn ensure_metatype(
+        &mut self,
+        id: &str,
+        namespace: &str,
+        name: &str,
+        category: &str,
+    ) -> Result<()> {
+        let session = self.session_mut()?;
+        let mid = crate::graph::validate_identifier(id)
+            .context("ensure_metatype: id failed validation")?;
+        let safe_ns = namespace.replace('\'', "\\'");
+        let safe_name = name.replace('\'', "\\'");
+        let safe_cat = category.replace('\'', "\\'");
+        let cypher = format!(
+            "MERGE (mt:MetaType {{id: '{mid}'}}) SET \
+             mt.namespace = '{safe_ns}', \
+             mt.name = '{safe_name}', \
+             mt.category = '{safe_cat}';"
+        );
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("ensure_metatype {id}"))?;
+        Ok(())
+    }
+
     fn existing_canonical_keys(&self) -> Result<HashSet<String>> {
         let rows = self
             .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?;
@@ -1625,7 +1754,7 @@ impl DiagramRepository for LbugStore {
                         e.current_version_id;"
             ),
         };
-        let rows = self.query(&cypher).context("list_elements")?;
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher).context("list_elements")?;
         rows.into_iter().map(row_to_element_row).collect()
     }
 
@@ -1639,7 +1768,8 @@ impl DiagramRepository for LbugStore {
              RETURN edge.relation_id, edge.predicate_id, src.id AS source_id, tgt.id AS target_id, \
                     edge.order_key, edge.props;"
         );
-        let rows = self.query(&cypher).context("list_semantic_edges")?;
+        let rows =
+            <LbugStore as RawGraphQuery>::query(self, &cypher).context("list_semantic_edges")?;
         rows.into_iter().map(row_to_semantic_edge_row).collect()
     }
 
@@ -1664,7 +1794,8 @@ impl DiagramRepository for LbugStore {
                     e.tool_name, e.tool_version, e.rule_id, e.props, \
                     e.content_hash, e.observed_at;"
         );
-        let rows = self.query(&cypher).context("list_evidence_for_versions")?;
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
+            .context("list_evidence_for_versions")?;
         Ok(rows.into_iter().filter_map(row_to_evidence_entry).collect())
     }
 
@@ -1687,8 +1818,67 @@ impl DiagramRepository for LbugStore {
              WHERE v.id IN [{id_list}] \
              RETURN v.id, v.name, v.description, v.props;"
         );
-        let rows = self.query(&cypher).context("list_version_props")?;
+        let rows =
+            <LbugStore as RawGraphQuery>::query(self, &cypher).context("list_version_props")?;
         rows.into_iter().map(row_to_version_props_row).collect()
+    }
+}
+
+impl SemanticEdgeRepository for LbugStore {
+    fn link_semantic_edge(
+        &mut self,
+        src_id: &str,
+        tgt_id: &str,
+        relation_id: &str,
+        predicate_id: &str,
+        props: &serde_json::Map<String, serde_json::Value>,
+        active: bool,
+    ) -> Result<()> {
+        let session = self.session_mut()?;
+        // Escape single quotes — these are property VALUES embedded in the query string,
+        // NOT Cypher identifiers. validate_identifier rejects valid property chars like
+        // ':' and '>' that appear in canonical keys and relation IDs.
+        let safe_src = src_id.replace('\'', "\\'");
+        let safe_tgt = tgt_id.replace('\'', "\\'");
+        let safe_rel = relation_id.replace('\'', "\\'");
+        let safe_pred = predicate_id.replace('\'', "\\'");
+        let props_json = serde_json::to_string(props).context("serialize edge props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        let cypher = format!(
+            "MATCH (src:Element {{id: '{safe_src}'}}), (tgt:Element {{id: '{safe_tgt}'}}) \
+             MERGE (src)-[r:SEMANTIC_EDGE {{relation_id: '{safe_rel}'}}]->(tgt) \
+             SET r.predicate_id = '{safe_pred}', r.props = '{safe_props}', r.active = {active};",
+            active = active,
+        );
+        session.conn.query(&cypher).context("link_semantic_edge")?;
+        Ok(())
+    }
+
+    fn link_call_edge_with_resolution(
+        &mut self,
+        src_id: &str,
+        callee_name: &str,
+        relation_id: &str,
+        props: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<()> {
+        let session = self.session_mut()?;
+        // Escape single quotes — these are property VALUES, not Cypher identifiers.
+        let safe_src = src_id.replace('\'', "\\'");
+        let safe_rel = relation_id.replace('\'', "\\'");
+        let safe_callee = callee_name.replace('\'', "\\'");
+        let props_json = serde_json::to_string(props).context("serialize edge props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        // OPTIONAL MATCH so it succeeds even when callee element doesn't exist yet.
+        // This is the specialized semantics for call-graph edges.
+        let cypher = format!(
+            "MATCH (src:Element {{id: '{safe_src}'}}) \
+             OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{safe_callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
+             WITH src, tgt \
+             WHERE tgt IS NOT NULL \
+             MERGE (src)-[r:SEMANTIC_EDGE {{relation_id: '{safe_rel}', predicate_id: 'code.calls', props: '{safe_props}', active: true}}]->(tgt);",
+        );
+        let _ = session.conn.query(&cypher);
+        Ok(())
     }
 }
 
