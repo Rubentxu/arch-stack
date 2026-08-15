@@ -1,3 +1,5 @@
+#![cfg(feature = "test-fixtures")]
+
 //! Shared bench fixtures for the archctl criterion harness.
 //!
 //! Each `seed_*` function builds a fresh `LbugStore`, applies the schema
