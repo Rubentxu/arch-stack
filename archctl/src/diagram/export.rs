@@ -12,12 +12,9 @@ use crate::diagram::export_types::{
     Projection, Styles,
 };
 use crate::diagram::hash::base_revision;
-use crate::diagram::queries::{
-    ElementRow, query_elements, query_evidence_for_versions, query_semantic_edges,
-    query_version_props,
-};
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
 use crate::filesystem::Filesystem;
+use crate::graph::ElementRow;
 use crate::store::GraphStore;
 
 /// Report from a successful export operation.
@@ -87,11 +84,14 @@ pub fn build_bundle(
         ScopeFilter::Exact(s) => Some(s.as_str()),
     };
 
-    // 2. Run queries
-    let element_rows = query_elements(store, category, scope_ident, Some(&kind))
-        .context("query_elements failed")?;
+    // 2. Run queries via DiagramRepository
+    let element_rows = store
+        .list_elements(category, scope_ident, Some(&kind))
+        .context("list_elements failed")?;
 
-    let edge_rows = query_semantic_edges(store, category).context("query_semantic_edges failed")?;
+    let edge_rows = store
+        .list_semantic_edges(category)
+        .context("list_semantic_edges failed")?;
 
     // Collect version IDs for evidence + version props queries
     let version_ids: Vec<String> = element_rows
@@ -100,14 +100,16 @@ pub fn build_bundle(
         .map(|e| e.current_version_id.clone())
         .collect();
 
-    let evidence_entries = query_evidence_for_versions(store, &version_ids)
-        .context("query_evidence_for_versions failed")?;
+    let evidence_entries = store
+        .list_evidence_for_versions(&version_ids)
+        .context("list_evidence_for_versions failed")?;
 
-    let version_props =
-        query_version_props(store, &version_ids).context("query_version_props failed")?;
+    let version_props = store
+        .list_version_props(&version_ids)
+        .context("list_version_props failed")?;
 
     // 3. Build projection (nodes + edges)
-    let version_map: std::collections::HashMap<String, &crate::diagram::queries::VersionPropsRow> =
+    let version_map: std::collections::HashMap<String, &crate::graph::VersionPropsRow> =
         version_props.iter().map(|v| (v.id.clone(), v)).collect();
 
     // M81 D2: fetch ViewMembers and index by element_id for LEFT JOIN.

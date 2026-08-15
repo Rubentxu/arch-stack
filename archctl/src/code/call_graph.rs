@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tree_sitter::{Parser, Tree};
 
 use crate::filesystem::Filesystem;
-use crate::store::{ElementRepository, GraphStore, LbugStore};
+use crate::store::{ElementRepository, LbugStore, RawGraphQuery, SemanticEdgeRepository};
 
 /// JSON Schema for CallGraphReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -1228,7 +1228,7 @@ fn lang_label(lang: &Language) -> &'static str {
 /// Remove if no caller materializes by v1.4.
 #[allow(dead_code)]
 fn write_function_element(
-    store: &mut dyn GraphStore,
+    store: &mut LbugStore,
     node: &FunctionNode,
     version_id: &str,
 ) -> Result<()> {
@@ -1264,7 +1264,7 @@ fn write_function_element(
 
 /// Write the ElementVersion node for a FunctionNode.
 #[allow(dead_code)]
-fn write_function_version(store: &mut dyn GraphStore, node: &FunctionNode) -> Result<String> {
+fn write_function_version(store: &mut LbugStore, node: &FunctionNode) -> Result<String> {
     let version_props = serde_json::json!({
         "kind": format!("{:?}", node.kind).to_lowercase(),
         "language": lang_label(&node.language),
@@ -1301,11 +1301,7 @@ fn write_function_version(store: &mut dyn GraphStore, node: &FunctionNode) -> Re
 
 /// Link Element to ElementVersion via CURRENT_VERSION and VERSION_OF edges.
 #[allow(dead_code)]
-fn link_function_edges(
-    store: &mut dyn GraphStore,
-    node: &FunctionNode,
-    version_id: &str,
-) -> Result<()> {
+fn link_function_edges(store: &mut LbugStore, node: &FunctionNode, version_id: &str) -> Result<()> {
     let element_id = format!("cg:{}", node.canonical_key);
     // CURRENT_VERSION: Element → ElementVersion
     let cypher1 = format!(
@@ -1374,34 +1370,34 @@ fn write_call_edge(
                        // for future use.
 ) -> Result<()> {
     let rel_id = format!("rel:{}", edge.canonical_key);
-    let rel_props = serde_json::json!({
-        "predicate": "code.calls",
-        "call_kind": format!("{:?}", edge.kind).to_lowercase(),
-        "message_kind": format!("{:?}", edge.message_kind).to_lowercase(),
-        "rel_id": rel_id,
-    });
-    let rel_props_str = serde_json::to_string(&rel_props).unwrap_or_default();
-
-    // Try to find the callee Element by matching canonical_key pattern
-    // MVP: we don't do symbol resolution, so callee may not exist.
-    let callee_escaped = escape_cypher_string(&edge.callee);
-    let safe_props = rel_props_str.replace('\'', "\\'");
-    let cypher = format!(
-        "MATCH (src:Element {{id: '{src_id}'}}) \
-         OPTIONAL MATCH (tgt:Element) WHERE tgt.current_name = '{callee}' AND tgt.kind_id IN ['code.function', 'code.method', 'code.closure'] \
-         WITH src, tgt \
-         WHERE tgt IS NOT NULL \
-         MERGE (src)-[r:SEMANTIC_EDGE {{relation_id: '{rel_id}', predicate_id: 'code.calls', props: '{props}', active: true}}]->(tgt);",
-        src_id = src_element_id,
-        callee = callee_escaped,
-        rel_id = rel_id,
-        props = safe_props,
+    let mut rel_props = serde_json::Map::new();
+    rel_props.insert(
+        "predicate".to_string(),
+        serde_json::Value::String("code.calls".to_string()),
     );
+    rel_props.insert(
+        "call_kind".to_string(),
+        serde_json::Value::String(format!("{:?}", edge.kind).to_lowercase()),
+    );
+    rel_props.insert(
+        "message_kind".to_string(),
+        serde_json::Value::String(format!("{:?}", edge.message_kind).to_lowercase()),
+    );
+    rel_props.insert(
+        "rel_id".to_string(),
+        serde_json::Value::String(rel_id.clone()),
+    );
+
     // Note: errors are silently ignored (matches prior behavior for MVP).
-    // Inline cypher — the OPTIONAL MATCH + WITH/WHERE + MERGE pattern is
-    // hard to abstract into a repository without losing the callee-
-    // resolution semantics.
-    let _ = GraphStore::query(store, &cypher);
+    // Uses SemanticEdgeRepository::link_call_edge_with_resolution which
+    // handles the OPTIONAL MATCH + WITH/WHERE + MERGE pattern internally.
+    let _ = SemanticEdgeRepository::link_call_edge_with_resolution(
+        store,
+        src_element_id,
+        &edge.callee,
+        &rel_id,
+        &rel_props,
+    );
 
     // Evidence node via EvidenceRepository::put_structural_evidence
     let evidence_id = format!(

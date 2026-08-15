@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::code::apply_common::escape_cypher_string;
 use crate::code::call_graph::MessageKind;
-use crate::store::{GraphStore, LbugStore};
+use crate::store::{GraphStore, LbugStore, RawGraphQuery};
 
 /// JSON Schema for SequenceReport (JSON Schema 2020-12).
 /// NOTE: 3 levels up (archctl/src/code/ → repo root), matching c4_discover.rs:16.
@@ -111,7 +111,7 @@ pub fn project_sequence(
 
     // Delegate to the store-based implementation
     let report = project_sequence_with_store(
-        &store as &dyn GraphStore,
+        &store as &dyn RawGraphQuery,
         from,
         depth_limit,
         max_interactions,
@@ -130,7 +130,7 @@ pub fn project_sequence(
 
 /// Internal: BFS projection with a provided store (for testability).
 pub fn project_sequence_with_store(
-    store: &dyn GraphStore,
+    store: &dyn RawGraphQuery,
     from: FromSelector,
     depth_limit: u32,
     max_interactions: Option<u32>,
@@ -243,7 +243,10 @@ pub fn project_sequence_with_store(
 }
 
 /// Resolve a FromSelector to a canonical_key.
-fn resolve_selector(store: &dyn GraphStore, from: &FromSelector) -> Result<String, SequenceError> {
+fn resolve_selector(
+    store: &dyn RawGraphQuery,
+    from: &FromSelector,
+) -> Result<String, SequenceError> {
     let cypher = match from {
         FromSelector::ByName { name } => format!(
             "MATCH (e:Element) WHERE e.current_name = '{}' AND e.kind_id IN ['code.function', 'code.method', 'code.closure'] RETURN e.canonical_key AS ck ORDER BY e.canonical_key LIMIT 2",
@@ -334,7 +337,7 @@ mod tests {
     use super::*;
 
     /// Seed helper: insert a function node into the graph.
-    fn seed_function_node(store: &dyn GraphStore, ck: &str, name: &str) {
+    fn seed_function_node(store: &dyn RawGraphQuery, ck: &str, name: &str) {
         let cypher = format!(
             "MERGE (e:Element {{id: 'cg:{ck}'}}) SET \
              e.kind_id = 'code.function', e.category = 'code', \
@@ -349,7 +352,7 @@ mod tests {
 
     /// Seed helper: insert a call edge into the graph.
     /// Creates: Element -[SEMANTIC_EDGE]-> Element (matching call_graph.rs apply)
-    fn seed_call_edge(store: &dyn GraphStore, caller: &str, callee: &str, _line: u32) {
+    fn seed_call_edge(store: &dyn RawGraphQuery, caller: &str, callee: &str, _line: u32) {
         let rel_id = format!("rel:{}->{}:{}", caller, callee, _line);
         let rel_props = serde_json::json!({
             "predicate": "code.calls",

@@ -1099,7 +1099,7 @@ pub fn apply(
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::escape_cypher_string;
-    use crate::store::{GraphStore, LbugStore};
+    use crate::store::{GraphStore, LbugStore, RawGraphQuery};
 
     let start = Instant::now();
     let mut store = LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("open: {e}"))?;

@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use crate::source::SourceArtifact;
-use crate::store::GraphStore;
+use crate::store::{GraphStore, LbugStore, RawGraphQuery};
 
 /// Escape a string for use inside a Cypher single-quoted string.
 ///
@@ -28,7 +28,7 @@ pub fn escape_cypher_string(s: &str) -> String {
 
 /// Fetch the set of `canonical_key`s already present in the graph.
 /// Used for idempotency: skip elements whose keys already exist.
-pub fn existing_canonical_keys(store: &dyn GraphStore) -> Result<HashSet<String>> {
+pub fn existing_canonical_keys(store: &LbugStore) -> Result<HashSet<String>> {
     Ok(store
         .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
         .into_iter()
@@ -110,12 +110,13 @@ mod tests {
         assert_ne!(id1, id2, "different content_hash must produce different id");
     }
 
-    fn seeded_store_with_canonical_keys(keys: &[&str]) -> Box<dyn GraphStore> {
+    fn seeded_store_with_canonical_keys(keys: &[&str]) -> LbugStore {
+        use crate::store::RawGraphQuery;
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
         let fs = crate::filesystem::SystemFilesystem;
         crate::graph::init(&project, &fs).unwrap();
-        let mut store = crate::store::open_default(&project).unwrap();
+        let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
         for (i, key) in keys.iter().enumerate() {
             let cypher =

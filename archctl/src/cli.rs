@@ -29,6 +29,10 @@ pub struct CliContext {
     pub fs: Arc<dyn Filesystem>,
     pub clock: Arc<dyn crate::clock::Clock>,
     pub store_factory: Arc<dyn crate::store::GraphStoreFactory>,
+    /// Factory for admin-only raw Cypher queries (P1-04).
+    /// Produces `Arc<dyn RawGraphQuery>` so handlers can call
+    /// `ctx.raw_query_factory.open_raw(&path)?.query(cypher)`.
+    pub raw_query_factory: Arc<dyn crate::store::RawGraphQueryFactory>,
 }
 
 impl CliContext {
@@ -40,6 +44,7 @@ impl CliContext {
             fs: filesystem::system_filesystem(),
             clock: crate::clock::system_clock(),
             store_factory: Arc::new(crate::store::LbugStoreFactory),
+            raw_query_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
 
@@ -52,6 +57,7 @@ impl CliContext {
             fs: filesystem::memory_filesystem(),
             clock: crate::clock::fixed_clock("2024-01-01T00:00:00Z"),
             store_factory: Arc::new(crate::store::LbugStoreFactory),
+            raw_query_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
 
@@ -66,6 +72,7 @@ impl CliContext {
             fs,
             clock: crate::clock::fixed_clock("2024-01-01T00:00:00Z"),
             store_factory: Arc::new(crate::store::LbugStoreFactory),
+            raw_query_factory: Arc::new(crate::store::LbugStoreFactory),
         }
     }
 
@@ -1369,8 +1376,8 @@ fn graph_query_cmd(
 ) -> Result<i32> {
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
-    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
-    let rows = store.query(cypher).context("graph query")?;
+    let raw_query = ctx.raw_query_factory.open_raw(&info.project_dir)?;
+    let rows = raw_query.query(cypher).context("graph query")?;
     let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
     if json || json_rows.is_empty() {
         println!("{}", serde_json::to_string_pretty(&json_rows)?);
@@ -1407,8 +1414,8 @@ fn graph_neighbours_cmd(
         "MATCH (e:Element {{id: '{safe_id}'}})-[*1..{clamped_depth}]-(n) \
          RETURN DISTINCT n.id AS id, labels(n) AS kinds;"
     );
-    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
-    let rows = store.query(&cypher).context("graph neighbours")?;
+    let raw_query = ctx.raw_query_factory.open_raw(&info.project_dir)?;
+    let rows = raw_query.query(&cypher).context("graph neighbours")?;
     if json {
         let json_rows: Vec<serde_json::Value> = rows.iter().map(row_to_json).collect();
         println!("{}", serde_json::to_string_pretty(&json_rows)?);
@@ -2222,17 +2229,14 @@ fn diagram_project_cmd(
     let selector = crate::diagram::project_selector::ProjectSelector::parse(view)
         .with_context(|| format!("invalid view selector: {view}"))?;
 
-    // Run queries (reuse query_elements / query_semantic_edges — category-agnostic)
-    let elements = crate::diagram::queries::query_elements(
-        &*store,
-        selector.category(),
-        selector.scope_ident(),
-        None, // ProjectSelector doesn't use C4 kind_id filtering
-    )
-    .context("query_elements failed")?;
+    // Run queries via DiagramRepository
+    let elements = store
+        .list_elements(selector.category(), selector.scope_ident(), None)
+        .context("list_elements failed")?;
 
-    let edges = crate::diagram::queries::query_semantic_edges(&*store, selector.category())
-        .context("query_semantic_edges failed")?;
+    let edges = store
+        .list_semantic_edges(selector.category())
+        .context("list_semantic_edges failed")?;
 
     // Project to DSL
     let (dsl, report) = crate::diagram::project::project_dsl(&selector, &elements, &edges, fmt);
@@ -2308,15 +2312,14 @@ fn code_sequence_cmd(
     depth: u32,
     max_interactions: Option<u32>,
     json: bool,
-    ctx: &CliContext,
+    _ctx: &CliContext,
 ) -> Result<i32> {
     use crate::code::output::print_sequence_table;
-    use crate::code::sequence::project_sequence_with_store;
 
     let info = crate::project::resolve_project(&cwd.to_string_lossy());
-    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
-    let report = project_sequence_with_store(&*store, from, depth, max_interactions)
-        .map_err(|e| anyhow::anyhow!("sequence projection failed: {e}"))?;
+    let report =
+        crate::code::sequence::project_sequence(&info.project_dir, from, depth, max_interactions)
+            .map_err(|e| anyhow::anyhow!("sequence projection failed: {e}"))?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);

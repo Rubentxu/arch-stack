@@ -12,6 +12,7 @@
 //! - `storage.fresh_crud` — fresh TempDir CRUD smoke test
 //! - `storage.schema_marker` — .archctl-schema compatibility
 
+use crate::graph::query as graph_query;
 use crate::migrations::{self, SCHEMA_MARKER_FILENAME};
 use crate::store::open_default;
 use std::fmt;
@@ -261,7 +262,11 @@ impl StorageProbe for LbugStorageProbe {
 
         // Verify we can run a read query
         let count_query = "MATCH (e:Element) RETURN count(e) AS count;";
-        if let Err(e) = store.query(count_query) {
+        if let Err(e) = graph_query(
+            project_dir,
+            count_query,
+            &crate::filesystem::SystemFilesystem,
+        ) {
             return SmokeResult {
                 ok: false,
                 detail: format!("read query failed: {e}"),

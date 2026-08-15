@@ -1345,7 +1345,7 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::store::{GraphStore, LbugStore};
+    use crate::store::{GraphStore, LbugStore, RawGraphQuery};
 
     let start = Instant::now();
     let mut store = LbugStore::open(project_dir)

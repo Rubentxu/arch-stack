@@ -367,7 +367,7 @@ pub fn apply(
     fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::write_source_artifact;
-    use crate::store::{ElementRepository, LbugStore};
+    use crate::store::{ElementRepository, LbugStore, RawGraphQuery};
 
     let mut store =
         LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
