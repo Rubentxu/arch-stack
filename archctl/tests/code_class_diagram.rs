@@ -703,26 +703,34 @@ fn test_class_diagram_apply_idempotent() {
     let first = run_apply();
     let second = run_apply();
 
-    // Idempotent: the key counts (elements_written, relations_written) must be identical.
+    // Idempotent: the total element count (written + skipped) must be identical.
     // First run: migrations applied + 1 element written. Second run: migrations skipped,
-    // MERGE is idempotent so element count stays the same.
-    fn extract_count(stdout: &str, field: &str) -> usize {
+    // element is skipped so total stays the same.
+    fn extract_total_count(stdout: &str, field: &str) -> usize {
         for line in stdout.lines() {
-            if line.contains(field) {
-                // e.g. "Applied 1 elements (0 skipped), 0 relations ..."
-                if let Some(n) = line.split_whitespace().find(|w| w.parse::<usize>().is_ok()) {
-                    return n.parse().unwrap();
-                }
+            if let Some(pos) = line.find(field) {
+                // Extract written count: number immediately before field name
+                let before = &line[..pos];
+                let written = before.split_whitespace().last().and_then(|w| w.parse().ok()).unwrap_or(0);
+                // Extract skipped count: first number inside parentheses after field
+                let after = &line[pos..];
+                let skipped = after
+                    .split('(')
+                    .nth(1)
+                    .and_then(|s| s.split_whitespace().next())
+                    .and_then(|w| w.parse().ok())
+                    .unwrap_or(0);
+                return written + skipped;
             }
         }
         0
     }
 
-    let e1 = extract_count(&first, "element");
-    let e2 = extract_count(&second, "element");
+    let e1 = extract_total_count(&first, "elements");
+    let e2 = extract_total_count(&second, "elements");
     assert_eq!(
         e1, e2,
-        "elements_written must be identical on both apply runs: first={e1}, second={e2}"
+        "total elements (written + skipped) must be identical on both apply runs: first={e1}, second={e2}"
     );
 }
 
@@ -815,7 +823,7 @@ fn test_class_diagram_perf_budget() {
 /// directly is the strongest contract assertion we can make.
 #[test]
 fn class_diagram_apply_atomic_abort_on_write_error() {
-    use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
+    use archctl::store::{ElementRepository, GraphStore, LbugStore, RawGraphQuery};
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
@@ -823,14 +831,26 @@ fn class_diagram_apply_atomic_abort_on_write_error() {
     store.init().expect("store must init");
 
     store.begin_transaction().expect("begin must succeed");
+    // Use typed repository method instead of raw MERGE to avoid RawGraphQuery guard.
     store
-        .query("MERGE (e:Element {id: 'class_diag:good'}) SET e.kind_id = 'k';")
+        .upsert_element(&archctl::graph::Element {
+            id: "class_diag:good".to_string(),
+            kind_id: "k".to_string(),
+            category: "test".to_string(),
+            canonical_key: "class_diag:good".to_string(),
+            current_name: "class_diag:good".to_string(),
+            current_status: "active".to_string(),
+            current_confidence: 1.0,
+            current_version_id: uuid::Uuid::new_v4().to_string(),
+        })
         .expect("good write inside tx must succeed");
 
     // Trigger a binder error: SUPPORTED_BY is declared FROM
     // ElementVersion TO Evidence — so (Element)-[SUPPORTED_BY]->(Evidence)
     // violates the direction constraint.
-    let bad = store.query(
+    // Use execute_raw_cypher_for_test to bypass RawGraphQuery guard and reach
+    // Kùzu directly so Kùzu can enforce the direction constraint.
+    let bad = store.execute_raw_cypher_for_test(
         "MATCH (e:Element {id: 'class_diag:good'}) MATCH (ev:Evidence {id: 'class_diag:ev'}) \
          MERGE (e)-[r:SUPPORTED_BY]->(ev);",
     );

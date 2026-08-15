@@ -603,12 +603,12 @@ pub struct LbugStore {
 
 /// Internal scope-bounded handle. Mirrors the previous `Session` but
 /// stays private to the adapter.
-pub(crate) struct LbugSession {
+pub struct LbugSession {
     // SAFETY: see `crate::graph::Session` (the old comment explains the
     // 'static transmute trick). Kept identical so the original tests
     // that rely on it still pass.
-    pub(crate) conn: lbug::Connection<'static>,
-    pub(crate) _db: lbug::Database,
+    pub conn: lbug::Connection<'static>,
+    pub _db: lbug::Database,
 }
 
 impl LbugStore {
@@ -654,11 +654,20 @@ impl LbugStore {
     /// Used by typed repository methods (`ElementRepository`,
     /// `SemanticEdgeRepository`, etc.) and in test helpers that need to bypass
     /// `RawGraphQuery`'s write-keyword guard for seeding operations.
-    pub(crate) fn session_mut(&mut self) -> Result<&mut LbugSession> {
+    /// Also used by integration tests that need to bypass the guard.
+    pub fn session_mut(&mut self) -> Result<&mut LbugSession> {
         if self.session.is_none() {
             self.session = Some(open_lbug_session(&self.project_dir)?);
         }
         Ok(self.session.as_mut().expect("just initialised"))
+    }
+
+    /// Execute a raw Cypher query directly on the Kùzu connection, bypassing
+    /// the RawGraphQuery guard. For testing transaction abort scenarios where
+    /// we need to trigger Kùzu-level errors (e.g., direction constraint violations).
+    pub fn execute_raw_cypher_for_test(&mut self, cypher: &str) -> Result<(), lbug::Error> {
+        let session = self.session_mut().map_err(|e| lbug::Error::FailedQuery(format!("{}", e)))?;
+        session.conn.query(cypher).map(|_| ())
     }
 
     /// Borrow the inner lbug session (test + migrations runner only).
