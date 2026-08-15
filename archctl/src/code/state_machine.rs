@@ -1098,8 +1098,7 @@ pub fn apply(
     report: &StateMachineReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
-    use crate::code::apply_common::escape_cypher_string;
-    use crate::store::{GraphStore, LbugStore, RawGraphQuery};
+    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository};
 
     let start = Instant::now();
     let mut store = LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("open: {e}"))?;
@@ -1110,39 +1109,12 @@ pub fn apply(
     let mut relations_written = 0usize;
     let mut relations_skipped = 0usize;
 
-    let existing_keys: std::collections::HashSet<String> = store
-        .query("MATCH (e:Element) WHERE e.canonical_key IS NOT NULL RETURN e.canonical_key;")?
-        .into_iter()
-        .filter_map(|row| {
-            row.get("e.canonical_key")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
+    let existing_keys = ElementRepository::existing_canonical_keys(&store)?;
 
     let version_id = format!(
         "blake3:{}",
         blake3::hash(report.schema_version.as_bytes()).to_hex()
     );
-
-    // Seed MetaType + Predicate — split into individual MERGEs (one
-    // per query() call) to avoid lbug's multi-statement binder
-    // exception inside an active transaction.
-    let meta_types = [
-        "uml.state_machine",
-        "uml.state",
-        "uml.pseudostate",
-        "uml.transition",
-        "uml.guard",
-        "uml.event",
-    ];
-    let predicates = [
-        "behavior.source_state",
-        "behavior.target_state",
-        "behavior.has_transition",
-        "behavior.trigger",
-        "behavior.has_guard",
-    ];
 
     // D5: wrap writes in single transaction. Same begin/commit
     // pattern as M32 PR1's call_graph::apply.
@@ -1153,42 +1125,23 @@ pub fn apply(
     let inner_result: Result<(), anyhow::Error> = {
         let s: &mut LbugStore = &mut store;
 
-        for mt in &meta_types {
-            let q = format!("MERGE (:MetaType {{id: '{}'}});", mt);
-            let _ = s.query(&q).ok();
-        }
-        for pred in &predicates {
-            let q = format!("MERGE (:Predicate {{id: '{}'}});", pred);
-            let _ = s.query(&q).ok();
-        }
-
         for machine in &report.machines {
             // Write state machine element
             let machine_id = format!("sm:{}", machine.canonical_key);
             if existing_keys.contains(&machine.canonical_key) {
                 elements_skipped += 1;
             } else {
-                let canonical_key_escaped = escape_cypher_string(&machine.canonical_key);
-                let name_escaped = escape_cypher_string(&machine.name);
-
-                let cypher = format!(
-                    "MERGE (e:Element {{id: '{id}'}}) SET \
-                     e.kind_id = 'uml.state_machine', \
-                     e.category = 'uml', \
-                     e.canonical_key = '{key}', \
-                     e.current_name = '{name}', \
-                     e.current_status = 'active', \
-                     e.current_confidence = {conf}, \
-                     e.current_version_id = '{vid}';",
-                    id = machine_id,
-                    key = canonical_key_escaped,
-                    name = name_escaped,
-                    conf = machine.confidence,
-                    vid = version_id,
-                );
-                if s.query(&cypher).is_ok() {
-                    elements_written += 1;
-                }
+                s.upsert_element(&crate::graph::Element {
+                    id: machine_id,
+                    kind_id: "uml.state_machine".to_string(),
+                    category: "uml".to_string(),
+                    canonical_key: machine.canonical_key.clone(),
+                    current_name: machine.name.clone(),
+                    current_status: "active".to_string(),
+                    current_confidence: machine.confidence,
+                    current_version_id: version_id.clone(),
+                })?;
+                elements_written += 1;
             }
 
             // Build a prefix for state keys: <lang>:<file>
@@ -1206,27 +1159,17 @@ pub fn apply(
                 let state_id = format!("sm:state:{}", state_key);
 
                 if !existing_keys.contains(&state_key) {
-                    let key_escaped = escape_cypher_string(&state_key);
-                    let name_escaped = escape_cypher_string(&state.name);
-
-                    let cypher = format!(
-                        "MERGE (e:Element {{id: '{id}'}}) SET \
-                         e.kind_id = 'uml.state', \
-                         e.category = 'uml', \
-                         e.canonical_key = '{key}', \
-                         e.current_name = '{name}', \
-                         e.current_status = 'active', \
-                         e.current_confidence = {conf}, \
-                         e.current_version_id = '{vid}';",
-                        id = state_id,
-                        key = key_escaped,
-                        name = name_escaped,
-                        conf = machine.confidence,
-                        vid = version_id,
-                    );
-                    if s.query(&cypher).is_ok() {
-                        elements_written += 1;
-                    }
+                    s.upsert_element(&crate::graph::Element {
+                        id: state_id,
+                        kind_id: "uml.state".to_string(),
+                        category: "uml".to_string(),
+                        canonical_key: state_key.clone(),
+                        current_name: state.name.clone(),
+                        current_status: "active".to_string(),
+                        current_confidence: machine.confidence,
+                        current_version_id: version_id.clone(),
+                    })?;
+                    elements_written += 1;
                 } else {
                     elements_skipped += 1;
                 }
@@ -1247,37 +1190,27 @@ pub fn apply(
 
                 // Write transition element if not exists
                 if !existing_keys.contains(&transition_key) {
-                    let key_escaped = escape_cypher_string(&transition_key);
                     let trigger_str = transition.trigger.as_deref().unwrap_or("");
                     let guard_str = transition.guard.as_deref().unwrap_or("");
                     let transition_name = format!("{}_to_{}", transition.from, transition.to);
 
-                    let cypher = format!(
-                        "MERGE (e:Element {{id: '{id}'}}) SET \
-                         e.kind_id = 'uml.transition', \
-                         e.category = 'uml', \
-                         e.canonical_key = '{key}', \
-                         e.current_name = '{name}', \
-                         e.current_status = 'active', \
-                         e.current_confidence = {conf}, \
-                         e.current_version_id = '{vid}', \
-                         e.source_state = '{src}', \
-                         e.target_state = '{tgt}', \
-                         e.trigger = '{trigger}', \
-                         e.guard = '{guard}';",
-                        id = trans_id,
-                        key = key_escaped,
-                        name = transition_name,
-                        conf = machine.confidence,
-                        vid = version_id,
-                        src = transition.from,
-                        tgt = transition.to,
-                        trigger = escape_cypher_string(trigger_str),
-                        guard = escape_cypher_string(guard_str),
-                    );
-                    if s.query(&cypher).is_ok() {
-                        elements_written += 1;
-                    }
+                    let mut props = serde_json::Map::new();
+                    props.insert("source_state".to_string(), serde_json::Value::String(transition.from.clone()));
+                    props.insert("target_state".to_string(), serde_json::Value::String(transition.to.clone()));
+                    props.insert("trigger".to_string(), serde_json::Value::String(trigger_str.to_string()));
+                    props.insert("guard".to_string(), serde_json::Value::String(guard_str.to_string()));
+
+                    s.upsert_element(&crate::graph::Element {
+                        id: trans_id.clone(),
+                        kind_id: "uml.transition".to_string(),
+                        category: "uml".to_string(),
+                        canonical_key: transition_key.clone(),
+                        current_name: transition_name,
+                        current_status: "active".to_string(),
+                        current_confidence: machine.confidence,
+                        current_version_id: version_id.clone(),
+                    })?;
+                    elements_written += 1;
                 } else {
                     elements_skipped += 1;
                 }
@@ -1289,16 +1222,11 @@ pub fn apply(
 
                     let edge_rel_id =
                         format!("sm:edge:transition:{}:source:{}", transition_key, src.name);
-                    let cypher = format!(
-                        "MATCH (tr:Element {{id: '{tr}'}}), (s:Element {{id: '{src}'}}) \
-                         MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(s) \
-                         SET r.predicate_id = 'behavior.source_state', \
-                         r.active = true;",
-                        tr = trans_id,
-                        src = src_id,
-                        rel = edge_rel_id,
-                    );
-                    if s.query(&cypher).is_ok() {
+                    let mut props = serde_json::Map::new();
+                    props.insert("source_state".to_string(), serde_json::Value::String(transition.from.clone()));
+                    props.insert("predicate_id".to_string(), serde_json::Value::String("behavior.source_state".to_string()));
+
+                    if s.link_semantic_edge(&trans_id, &src_id, &edge_rel_id, "behavior.source_state", &props, true).is_ok() {
                         relations_written += 1;
                     } else {
                         relations_skipped += 1;
@@ -1312,16 +1240,11 @@ pub fn apply(
 
                     let edge_rel_id =
                         format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name);
-                    let cypher = format!(
-                        "MATCH (tr:Element {{id: '{tr}'}}), (t:Element {{id: '{tgt}'}}) \
-                         MERGE (tr)-[r:SEMANTIC_EDGE {{relation_id: '{rel}'}}]->(t) \
-                         SET r.predicate_id = 'behavior.target_state', \
-                         r.active = true;",
-                        tr = trans_id,
-                        tgt = tgt_id,
-                        rel = edge_rel_id,
-                    );
-                    if s.query(&cypher).is_ok() {
+                    let mut props = serde_json::Map::new();
+                    props.insert("target_state".to_string(), serde_json::Value::String(transition.to.clone()));
+                    props.insert("predicate_id".to_string(), serde_json::Value::String("behavior.target_state".to_string()));
+
+                    if s.link_semantic_edge(&trans_id, &tgt_id, &edge_rel_id, "behavior.target_state", &props, true).is_ok() {
                         relations_written += 1;
                     } else {
                         relations_skipped += 1;
