@@ -17,6 +17,8 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
+use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
+
 // ─── Fixture helpers ─────────────────────────────────────────────────────────────
 
 /// Write a file to a temp project directory, creating parent dirs as needed.
@@ -226,7 +228,6 @@ fn scn438_component_apply_persists_as_component_not_container() {
     use archctl::code::c4_discover::{
         Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
     };
-    use archctl::store::open_and_init;
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
@@ -274,7 +275,8 @@ fn scn438_component_apply_persists_as_component_not_container() {
     );
 
     // Verify the persisted element
-    let store = open_and_init(project).expect("store must open");
+    let mut store = LbugStore::open(project).expect("store must open");
+    store.init().expect("store must init");
     let element_id = "c4:component:rust:module:src.auth";
 
     // Query the element's kind_id
@@ -559,7 +561,6 @@ fn container_and_component_apply_produce_different_metatypes() {
     use archctl::code::c4_discover::{
         Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
     };
-    use archctl::store::open_and_init;
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
@@ -634,7 +635,8 @@ edition = "2021"
     );
 
     // Verify container has mt.container
-    let store = open_and_init(project).expect("store must open");
+    let mut store = LbugStore::open(project).expect("store must open");
+    store.init().expect("store must init");
 
     let container_kind: Result<String, _> = {
         let rows = store

@@ -203,7 +203,6 @@ pub trait GraphStore:
     + SourceRepository
     + EvaluationRepository
     + DiagramRepository
-    + RawGraphQuery
 {
     /// Open or create a store rooted at `project_dir`. Each adapter
     /// decides what file (or set of files) lives there.
@@ -739,25 +738,34 @@ impl LbugStore {
         })
     }
 
-    /// Acquire a mutable reference to the inner lbug session.
-    ///
-    /// Used by typed repository methods (`ElementRepository`,
-    /// `SemanticEdgeRepository`, etc.) and in test helpers that need to bypass
-    /// `RawGraphQuery`'s write-keyword guard for seeding operations.
-    /// Also used by integration tests that need to bypass the guard.
-    pub fn session_mut(&mut self) -> Result<&mut LbugSession> {
+    /// Internal helper: acquires a mutable reference to the inner lbug session.
+    /// Used by all repository methods and by test helpers; never gated — the
+    /// public `session_mut` (gated on test or test-fixtures) delegates to this.
+    pub(crate) fn session_mut_inner(&mut self) -> Result<&mut LbugSession> {
         if self.session.is_none() {
             self.session = Some(open_lbug_session(&self.project_dir)?);
         }
         Ok(self.session.as_mut().expect("just initialised"))
     }
 
+    /// Acquire a mutable reference to the inner lbug session.
+    ///
+    /// Used by typed repository methods (`ElementRepository`,
+    /// `SemanticEdgeRepository`, etc.) and in test helpers that need to bypass
+    /// `RawGraphQuery`'s write-keyword guard for seeding operations.
+    /// Also used by integration tests that need to bypass the guard.
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub fn session_mut(&mut self) -> Result<&mut LbugSession> {
+        self.session_mut_inner()
+    }
+
     /// Execute a raw Cypher query directly on the Kùzu connection, bypassing
     /// the RawGraphQuery guard. For testing transaction abort scenarios where
     /// we need to trigger Kùzu-level errors (e.g., direction constraint violations).
+    #[cfg(any(test, feature = "test-fixtures"))]
     pub fn execute_raw_cypher_for_test(&mut self, cypher: &str) -> Result<(), lbug::Error> {
         let session = self
-            .session_mut()
+            .session_mut_inner()
             .map_err(|e| lbug::Error::FailedQuery(format!("{}", e)))?;
         session.conn.query(cypher).map(|_| ())
     }
@@ -805,7 +813,7 @@ impl GraphStore for LbugStore {
         }
         // Also open the store's own session so subsequent operations
         // (stat, put_evidence, query) don't fail with "not initialized".
-        let _ = self.session_mut()?;
+        let _ = self.session_mut_inner()?;
         Ok(())
     }
 
@@ -950,7 +958,7 @@ impl EvidenceOps for LbugStore {
         if evidence.is_empty() {
             return Ok(0);
         }
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let mut written = 0usize;
         for ev in evidence {
             // The caller (evidence::put) is expected to validate
@@ -1041,7 +1049,7 @@ impl EvidenceOps for LbugStore {
     }
 
     fn accept_evidence(&mut self, evidence_id: &str, clock: &dyn Clock) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
 
         // Step 1: read current props
         let eid = crate::graph::validate_identifier(evidence_id)
@@ -1101,7 +1109,7 @@ impl EvidenceOps for LbugStore {
     }
 
     fn supersede_evidence(&mut self, old_evidence_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
 
         // Step 1: read current props
         let eid = crate::graph::validate_identifier(old_evidence_id)
@@ -1188,7 +1196,7 @@ impl EvidenceOps for LbugStore {
 
 impl SourceOps for LbugStore {
     fn put_source(&mut self, source: &SourceArtifact) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id =
             crate::graph::validate_identifier(&source.id).context("source id failed validation")?;
         let rel_path = crate::graph::validate_identifier(&source.relative_path)
@@ -1221,7 +1229,7 @@ impl SourceOps for LbugStore {
     }
 
     fn put_evaluation(&mut self, evaluation: &Evaluation) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&evaluation.id)
             .context("evaluation id failed validation")?;
         let target_eid = crate::graph::validate_identifier(&evaluation.target_evidence_id)
@@ -1258,7 +1266,7 @@ impl SourceOps for LbugStore {
     }
 
     fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let eid = crate::graph::validate_identifier(evidence_id)
             .context("link_extracted_from: evidence_id failed validation")?;
         let sid = crate::graph::validate_identifier(source_id)
@@ -1274,7 +1282,7 @@ impl SourceOps for LbugStore {
     }
 
     fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let evid = crate::graph::validate_identifier(evaluation_id)
             .context("link_evaluates: evaluation_id failed validation")?;
         let eid = crate::graph::validate_identifier(evidence_id)
@@ -1292,7 +1300,7 @@ impl SourceOps for LbugStore {
 
 impl DiagramOps for LbugStore {
     fn put_diagram(&mut self, diagram: &crate::diagram::view_types::Diagram) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&diagram.id)
             .context("put_diagram: diagram.id failed validation")?;
         let safe_revision = diagram.revision.replace('\'', "\\'");
@@ -1356,7 +1364,7 @@ impl DiagramOps for LbugStore {
     }
 
     fn put_view_member(&mut self, member: &crate::diagram::view_types::ViewMember) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&member.id)
             .context("put_view_member: member.id failed validation")?;
         let diagram_id = crate::graph::validate_identifier(&member.diagram_id)
@@ -1392,7 +1400,7 @@ impl DiagramOps for LbugStore {
     }
 
     fn link_member_of(&mut self, member_id: &str, diagram_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let mid = crate::graph::validate_identifier(member_id)
             .context("link_member_of: member_id failed validation")?;
         let did = crate::graph::validate_identifier(diagram_id)
@@ -1420,12 +1428,12 @@ impl DiagramOps for LbugStore {
             anyhow::bail!("element not found: {eid}");
         }
 
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         link_with_merge_fallback(&session.conn, "ViewMember", mid, "RENDERS", "Element", eid)
     }
 
     fn put_view_group(&mut self, group: &crate::diagram::view_types::ViewGroup) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&group.id)
             .context("put_view_group: group.id failed validation")?;
         let diagram_id = crate::graph::validate_identifier(&group.diagram_id)
@@ -1454,7 +1462,7 @@ impl DiagramOps for LbugStore {
     }
 
     fn link_group_contains(&mut self, group_id: &str, member_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let gid = crate::graph::validate_identifier(group_id)
             .context("link_group_contains: group_id failed validation")?;
         let mid = crate::graph::validate_identifier(member_id)
@@ -1470,7 +1478,7 @@ impl DiagramOps for LbugStore {
     }
 
     fn update_view_member_label(&mut self, member_id: &str, label: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let mid = crate::graph::validate_identifier(member_id)
             .context("update_view_member_label: member_id failed validation")?;
         let safe_label = label.replace('\'', "\\'");
@@ -1557,7 +1565,7 @@ impl DiagramOps for LbugStore {
 
 impl ElementRepository for LbugStore {
     fn upsert_element(&mut self, e: &Element) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&e.id)
             .context("upsert_element: id failed validation")?;
         let kind_id = crate::graph::validate_identifier(&e.kind_id)
@@ -1589,7 +1597,7 @@ impl ElementRepository for LbugStore {
     }
 
     fn upsert_element_version(&mut self, v: &ElementVersion) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&v.id)
             .context("upsert_element_version: id failed validation")?;
         let eid = crate::graph::validate_identifier(&v.element_id)
@@ -1621,7 +1629,7 @@ impl ElementRepository for LbugStore {
     }
 
     fn link_current_version(&mut self, element_id: &str, version_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let eid = crate::graph::validate_identifier(element_id)
             .context("link_current_version: element_id failed validation")?;
         let vid = crate::graph::validate_identifier(version_id)
@@ -1636,7 +1644,7 @@ impl ElementRepository for LbugStore {
     }
 
     fn link_version_of(&mut self, element_id: &str, version_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let eid = crate::graph::validate_identifier(element_id)
             .context("link_version_of: element_id failed validation")?;
         let vid = crate::graph::validate_identifier(version_id)
@@ -1649,7 +1657,7 @@ impl ElementRepository for LbugStore {
     }
 
     fn link_of_type(&mut self, element_id: &str, metatype_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let eid = crate::graph::validate_identifier(element_id)
             .context("link_of_type: element_id failed validation")?;
         let mid = crate::graph::validate_identifier(metatype_id)
@@ -1677,7 +1685,7 @@ impl ElementRepository for LbugStore {
         name: &str,
         category: &str,
     ) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let mid = crate::graph::validate_identifier(id)
             .context("ensure_metatype: id failed validation")?;
         let safe_ns = namespace.replace('\'', "\\'");
@@ -1712,7 +1720,7 @@ impl ElementRepository for LbugStore {
 
 impl EvidenceRepository for LbugStore {
     fn put_structural_evidence(&mut self, ev: &StructuralEvidence) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let id = crate::graph::validate_identifier(&ev.id)
             .context("put_structural_evidence: id failed validation")?;
         let kind = crate::graph::validate_identifier(&ev.kind)
@@ -1755,7 +1763,7 @@ impl EvidenceRepository for LbugStore {
     }
 
     fn link_supported_by(&mut self, version_id: &str, evidence_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let vid = crate::graph::validate_identifier(version_id)
             .context("link_supported_by: version_id failed validation")?;
         let eid = crate::graph::validate_identifier(evidence_id)
@@ -1771,7 +1779,7 @@ impl EvidenceRepository for LbugStore {
     }
 
     fn link_extracted_from(&mut self, evidence_id: &str, source_id: &str) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         let eid = crate::graph::validate_identifier(evidence_id)
             .context("link_extracted_from: evidence_id failed validation")?;
         let sid = crate::graph::validate_identifier(source_id)
@@ -1936,7 +1944,7 @@ impl SemanticEdgeRepository for LbugStore {
         props: &serde_json::Map<String, serde_json::Value>,
         active: bool,
     ) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         // Escape single quotes — these are property VALUES embedded in the query string,
         // NOT Cypher identifiers. validate_identifier rejects valid property chars like
         // ':' and '>' that appear in canonical keys and relation IDs.
@@ -1963,7 +1971,7 @@ impl SemanticEdgeRepository for LbugStore {
         relation_id: &str,
         props: &serde_json::Map<String, serde_json::Value>,
     ) -> Result<()> {
-        let session = self.session_mut()?;
+        let session = self.session_mut_inner()?;
         // Escape single quotes — these are property VALUES, not Cypher identifiers.
         let safe_src = src_id.replace('\'', "\\'");
         let safe_rel = relation_id.replace('\'', "\\'");

@@ -166,7 +166,7 @@ mod tests {
         store.upsert_element(&keyed).unwrap();
         // Element WITHOUT canonical_key (id only): bypass RawGraphQuery guard
         // using session.conn.query directly
-        let session = store.session_mut().unwrap();
+        let session = store.session_mut_inner().unwrap();
         session
             .conn
             .query("MERGE (e:Element {id: 'el:2'});")

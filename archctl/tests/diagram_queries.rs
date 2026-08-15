@@ -12,7 +12,7 @@ use archctl::graph::{ElementRow, SemanticEdgeRow, VersionPropsRow};
 use archctl::row::{Cell, Row};
 use archctl::store::{
     DiagramOps, DiagramRepository, ElementRepository, EvaluationRepository, EvidenceOps,
-    EvidenceRepository, GraphStore, RawGraphQuery, SourceOps, SourceRepository,
+    EvidenceRepository, GraphStore, SourceOps, SourceRepository,
 };
 
 /// Build a Row from a flat list of (column, value) pairs.
@@ -161,11 +161,10 @@ impl TinyGraphStore {
         }
     }
 
-    /// Extract category and canonical_key filter from a query_elements cypher string.
-    /// Handles both exact match (=) and prefix match (STARTS WITH) patterns.
-    pub(crate) fn extract_element_filter_from_cypher(
-        cypher: &str,
-    ) -> (Option<String>, Option<String>) {
+    // These helper functions are unused test infrastructure (dead code).
+    // They support query-building patterns that are no longer exercised.
+    #[allow(dead_code)]
+    fn extract_element_filter_from_cypher(cypher: &str) -> (Option<String>, Option<String>) {
         let upper = cypher.to_uppercase();
         let category = Self::extract_quoted(&upper, "E.CATEGORY");
         // SCN-417: support STARTS WITH prefix matching
@@ -175,6 +174,7 @@ impl TinyGraphStore {
     }
 
     /// Extract a key value from `E.CANONICAL_KEY STARTS WITH 'value'` pattern.
+    #[allow(dead_code)]
     pub(crate) fn extract_key_from_starts_with(s: &str, key: &str) -> Option<String> {
         let pattern = format!("{} STARTS WITH '", key);
         let start = s.find(&pattern)?;
@@ -203,6 +203,7 @@ impl TinyGraphStore {
     /// Extract version IDs from a query_evidence_for_versions cypher WHERE clause.
     /// e.g., "WHERE ev.id IN ['v:1', 'v:2']" -> ["v:1", "v:2"]
     /// Strips surrounding single quotes added by the query builder.
+    #[allow(dead_code)]
     pub(crate) fn extract_version_ids_from_cypher(cypher: &str) -> Vec<String> {
         let lower = cypher.to_lowercase();
         // Find "ev.id in [" pattern
@@ -271,86 +272,13 @@ impl GraphStore for TinyGraphStore {
     }
 }
 
-impl RawGraphQuery for TinyGraphStore {
-    fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
-        let upper = cypher.to_uppercase();
-        // Route based on Cypher pattern keywords.
-        // NOTE: The actual query functions handle WHERE clause filtering (category, version).
-        // The mock data should already be "correct" (pre-filtered) per test.
-        if upper.contains("SEMANTIC_EDGE") {
-            // query_semantic_edges: return edges as-is (WHERE filtering done by database)
-            Ok(self.edges.clone())
-        } else if upper.contains("SUPPORTED_BY") {
-            // query_evidence_for_versions: filter by version_id from WHERE clause
-            // then actual code filters by status in Rust
-            let version_ids = Self::extract_version_ids_from_cypher(cypher);
-            let filtered: Vec<Row> = self
-                .evidence
-                .iter()
-                .filter(|row| {
-                    // Each evidence row has an associated version_id stored in a column
-                    let ev_version = row.get("ev.id").and_then(|c| c.as_str()).unwrap_or("");
-                    version_ids
-                        .iter()
-                        .any(|v| ev_version.to_uppercase() == v.to_uppercase())
-                })
-                .cloned()
-                .collect();
-            Ok(filtered)
-        } else if upper.contains("ELEMENTVERSION") {
-            Ok(self.versions.clone())
-        } else if upper.contains("E.CATEGORY") && !upper.contains("SRC.CATEGORY") {
-            // query_elements: filter by category and canonical_key from cypher WHERE clause
-            let (category, canonical_key) = Self::extract_element_filter_from_cypher(cypher);
-            let filtered: Vec<Row> = self
-                .elements
-                .iter()
-                .filter(|row| {
-                    let row_cat = row
-                        .get("e.category")
-                        .and_then(|c| c.as_str())
-                        .map(|s| s.to_uppercase())
-                        .unwrap_or_default();
-                    let row_key = row
-                        .get("e.canonical_key")
-                        .and_then(|c| c.as_str())
-                        .map(|s| s.to_uppercase())
-                        .unwrap_or_default();
-                    let cat_match = category
-                        .as_ref()
-                        .map(|c| row_cat == c.to_uppercase())
-                        .unwrap_or(true);
-                    // SCN-417: prefix matching — scope `src/auth` matches `src/auth/user.rs`
-                    let key_match = canonical_key
-                        .as_ref()
-                        .map(|k| row_key.starts_with(&k.to_uppercase()))
-                        .unwrap_or(true);
-                    cat_match && key_match
-                })
-                .cloned()
-                .collect();
-            Ok(filtered)
-        } else {
-            Ok(Vec::new())
-        }
-    }
-
-    fn prepare(
-        &mut self,
-        _: &str,
-    ) -> Result<archctl::store::PreparedStatementHandle, archctl::store::StoreError> {
-        Err(archctl::store::StoreError::Prepare(
-            "TinyGraphStore does not support prepared statements".into(),
-        ))
-    }
-
-    fn execute(
-        &mut self,
-        _: &mut archctl::store::PreparedStatementHandle,
-        _: archctl::store::Params,
-    ) -> Result<Vec<Row>, archctl::store::StoreError> {
-        Err(archctl::store::StoreError::Execute(
-            "TinyGraphStore does not support execute".into(),
+impl archctl::store::UnitOfWork for TinyGraphStore {
+    fn begin_transaction<'a>(
+        &'a mut self,
+    ) -> std::result::Result<archctl::store::Transaction<'a>, archctl::store::StoreError> {
+        // TinyGraphStore is in-memory; transaction semantics are a no-op.
+        Err(archctl::store::StoreError::Transaction(
+            "TinyGraphStore does not support transactions".into(),
         ))
     }
 }

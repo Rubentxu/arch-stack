@@ -5,7 +5,9 @@
 > **Supersedes:** ADR-044 §Puertos (persistence ports section)
 > **Aplica a:** `archctl/src/store.rs`, `archctl/src/cli.rs`, `archctl/src/diagram/queries.rs`, `archctl/src/code/*.rs`
 >
-> **Amendment 2026-08-15 (W-2 remediation):** Decisión 2 ("GraphStore pierde query/prepare/execute") fue parcialmente revertida durante la implementación. `RawGraphQuery` fue añadido como **supertrait** de `GraphStore` en el commit `60940da` para mantener `Box<dyn GraphStore>::query()` accesible en paths de test/admin que no podían migrarse simultáneamente al nuevo seam. La guarda runtime `is_read_only_query` (`store.rs:789`) sigue siendo la defensa primaria contra writes. La separación estática completa (hard-port removal) es candidato para un ciclo futuro (e.g. P1-05 UnitOfWork).
+> **Amendment 2026-08-15 (W-2 remediation):** Decisión 2 ("GraphStore pierde query/prepare/execute") fue parcialmente revertida durante la implementación. `RawGraphQuery` fue añadido como **supertrait** de `GraphStore` en el commit `60940da` para mantener `Box<dyn GraphStore>::query()` accesible en paths de test/admin que no podían migrarse simultáneamente al nuevo seam.
+>
+> **Amendment 2026-08-15 (P1-05 closure):** Cycle `p-38e02210a9f14317/p1-05-unit-of-work` cierra ambos follow-ups diferidos. (a) A-W1: `+ RawGraphQuery` se elimina del supertrait de `GraphStore` en `store.rs:204`; el único consumidor de `RawGraphQuery::query` queda en `impl RawGraphQuery for LbugStore` (`store.rs:778-792`), sobre `&self`, sin dispatch por `dyn`. (b) C-W1: `pub fn session_mut` y `pub fn execute_raw_cypher_for_test` en `store.rs` se compilan ÚNICAMENTE bajo `#[cfg(any(test, feature = "test-fixtures"))]`; bench fixture (`archctl/benches/common/mod.rs`) gana `#![cfg(feature = "test-fixtures")]` y la feature se declara en `archctl/Cargo.toml` (`test-fixtures = []`). El nuevo puerto `pub trait UnitOfWork` + `Transaction<'a>` session newtype (Option γ, primitive-borrower) internaliza `begin` y mantiene `Box<dyn GraphStore>` dyn-compat. Cinco apply pipelines (call_graph, state_machine, class_diagram, c4_discover, diagram::apply_to_store) usan `Transaction::*` con Drop-rollback implícito. La separación estática queda cerrada; la guarda runtime `is_read_only_query` (`store.rs:778-792`) sigue como defense-in-depth.
 
 ## Contexto
 
@@ -82,6 +84,7 @@ Ver `archctl/src/store.rs` para el código. Las constantes clave:
 - `RawGraphQuery` se re-exporta en `lib.rs`
 - `SemanticEdgeRepository` se re-exporta en `lib.rs`
 - `is_read_only_query` se mueve a `store.rs` como helper interno del `impl RawGraphQuery for LbugStore`
+- P1-05 (2026-08-15) aplica: A-W1 + C-W1 cerrados; `pub trait UnitOfWork` + `Transaction<'a>` en `store.rs`; 5 apply pipelines usan `Transaction::*`; bench fixture bajo `test-fixtures` feature. Migration: `archctl/Cargo.toml` adds `test-fixtures = []`; `archctl/benches/common/mod.rs` adds `#![cfg(feature = "test-fixtures")]`. ADR-059 amendment cierra ambos follow-ups sin necesidad de ADR-060.
 
 ## Alternativas evaluadas
 

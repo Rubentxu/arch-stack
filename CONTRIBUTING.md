@@ -74,8 +74,9 @@ If available, mark the lock for your milestone before starting work.
    ```bash
    bash scripts/verify-local.sh
    ```
-   This runs `cargo build`, `cargo test`, `cargo clippy --all-targets
-   -D warnings`, `cargo fmt --check`, `cargo build --release`, and the
+   This runs `cargo build`, `cargo test --features test-fixtures`,
+   `cargo clippy --all-targets --features test-fixtures -D warnings`,
+   `cargo fmt --check`, `cargo build --release`, and the
    `code` scope of `archctl doctor`.
 
 ### 2.3 Verify
