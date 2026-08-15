@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.44.1] — 2026-08-15
+
+### Fixed
+- **P1-04 (patch)** — `LbugStore::open_raw` now initializes the schema before
+  first query: raw graph reads against a fresh project returned empty results
+  (regression caught by UAT, invisible to 831 unit tests).
+- **P1-04 (patch)** — `is_read_only_query` write-keyword guard tokenized:
+  substring matching let `MERGE` slip through when a token started with a
+  write keyword; the guard now splits on word boundaries before rejecting
+  MERGE/CREATE/DELETE/SET/REMOVE. (PR #182, UAT-driven)
+
+## [1.44.0] — 2026-08-15
+
 ### Added
 - **P1-04** — `RawGraphQuery` admin-only trait: the **only** entry point for raw
   Cypher execution in `store.rs`. The `LbugStore` implementation enforces
@@ -43,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `diagram::queries::query_evidence_for_versions`,
   `diagram::queries::query_version_props` free functions removed;
   callers now use `DiagramRepository` typed reads.
+
+## [1.43.0] — 2026-08-15
+
+### Added
 - **P1-03** — Architecture repositories: introduce `ElementRepository`,
   `EvidenceRepository`, `SourceRepository`, `EvaluationRepository`,
   `DiagramRepository` as siblings of `GraphStore` in `store.rs`.
@@ -57,20 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `use lbug` absence and the five repository types in `must_hold`;
   `manifests/store.toml` exposes the new traits in `public_symbols`.
 
-### Removed
-- **P1-03** — Public `graph::Session` struct and `graph::open_session`
-  function removed; the lbug session lifetime is now private to
-  `LbugStore::LbugSession`. `GraphStore::query` retained on the trait
-  (admin boundary per `02-TARGET-ARCHITECTURE.md`) but no longer
-  reachable from apply paths.
-
-### Changed
-- **P1-03** — `LbugStore::open` + `init` replaces `crate::store::open_and_init`
-  in `code/call_graph.rs::apply`, `code/c4_discover.rs::apply`,
-  `code/class_diagram.rs::apply`, and `code/state_machine.rs::apply`.
-  `Box<dyn GraphStore>` no longer threads through these handlers — they
-  hold `LbugStore` directly so the repository traits (which `Box<dyn
-  GraphStore>` cannot expose via dynamic dispatch) are reachable.
 - **P1-01** — `GraphStoreFactory` trait + `LbugStoreFactory` adapter as the
   composition root for store initialisation (ADR-010 single-writer flock).
   `CliContext` extended with `clock: Arc<dyn Clock>` and
@@ -88,6 +91,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **P0-03** — `release.yml` native runners per target: darwin binaries
   built on macOS (`macos-13`/`macos-14`), linux aarch64 on `ubuntu-24.04-arm`;
   plus assets-stack bootstrap before the release build.
+
+### Changed
+- **P1-03** — `LbugStore::open` + `init` replaces `crate::store::open_and_init`
+  in `code/call_graph.rs::apply`, `code/c4_discover.rs::apply`,
+  `code/class_diagram.rs::apply`, and `code/state_machine.rs::apply`.
+  `Box<dyn GraphStore>` no longer threads through these handlers — they
+  hold `LbugStore` directly so the repository traits (which `Box<dyn
+  GraphStore>` cannot expose via dynamic dispatch) are reachable.
+
+### Removed
+- **P1-03** — Public `graph::Session` struct and `graph::open_session`
+  function removed; the lbug session lifetime is now private to
+  `LbugStore::LbugSession`. `GraphStore::query` retained on the trait
+  (admin boundary per `02-TARGET-ARCHITECTURE.md`) but no longer
+  reachable from apply paths.
 
 ## [1.42.0] — 2026-08-14
 
