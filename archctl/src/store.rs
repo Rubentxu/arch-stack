@@ -286,6 +286,7 @@ impl<'a> Transaction<'a> {
     /// repository method on it within the active transaction.
     /// Returns `&mut LbugStore` so callers can invoke `ElementRepository`,
     /// `SemanticEdgeRepository`, etc. without UFCS or trait-object calls.
+    #[allow(clippy::should_implement_trait)]
     pub fn as_mut(&mut self) -> &mut LbugStore {
         // Safety: store pointer is valid for the lifetime 'a by construction
         // (it came from &mut LbugStore with lifetime 'a in begin_transaction).
@@ -333,9 +334,7 @@ impl<'a> Drop for Transaction<'a> {
             // Safety: store pointer is valid for 'a; Drop is called while
             // the Transaction is still in scope, so 'a is still valid.
             if let Err(e) = unsafe { (*self.store).rollback_transaction() } {
-                warn!(
-                    "Transaction dropped without commit; rollback failed: {e}"
-                );
+                warn!("Transaction dropped without commit; rollback failed: {e}");
             }
         }
     }
