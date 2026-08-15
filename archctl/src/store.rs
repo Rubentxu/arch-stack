@@ -44,8 +44,10 @@
 use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde_json::Value as Json;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing::warn;
 
 use crate::clock::Clock;
 use crate::evaluation::Evaluation;
@@ -244,6 +246,94 @@ pub trait GraphStore:
     /// since `begin_transaction`. Best-effort: errors here are logged
     /// but do not mask the originating error from the caller.
     fn rollback_transaction(&mut self) -> Result<(), StoreError>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UnitOfWork — atomic write boundary port (P1-05)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Atomic write boundary. Internalises `begin`; exposes only
+/// `commit`/`rollback` through the session newtype. Avoids the
+/// "remember begin" footgun and preserves `Box<dyn GraphStore>
+/// dyn-compat (see store.rs:225-228).
+pub trait UnitOfWork: Send + Sync {
+    /// Begin a transaction. Pairs with `Transaction::commit` or
+    /// `Transaction::rollback` (or Drop). Returns a session tied
+    /// to the lifetime of `&mut self`.
+    fn begin_transaction<'a>(&'a mut self) -> Result<Transaction<'a>, StoreError>;
+}
+
+/// RAII session handle. Holds a raw pointer to the underlying store.
+/// On `Drop` if `!committed`, best-effort `rollback_transaction` with
+/// `tracing::warn!` on failure (does not panic).
+///
+/// The raw pointer avoids the self-referential struct problem: storing
+/// `&'a mut LbugStore` inside `Transaction<'a>` where `'a` is the
+/// lifetime of the borrow would create a struct that must outlive its
+/// own field — impossible in Rust's lifetime system.
+pub struct Transaction<'a> {
+    // Pointer to LbugStore so we can call GraphStore primitives
+    // (commit_transaction/rollback_transaction) that are not part of
+    // the UnitOfWork trait.
+    store: *mut LbugStore,
+    /// Ties the Transaction handle to the store borrow's lifetime.
+    _marker: PhantomData<&'a mut LbugStore>,
+    committed: bool,
+}
+
+impl<'a> Transaction<'a> {
+    /// Re-borrow the wrapped store so callers can call any
+    /// repository method on it within the active transaction.
+    pub fn as_mut(&mut self) -> &mut dyn UnitOfWork {
+        // Safety: store pointer is valid for the lifetime 'a by construction
+        // (it came from &mut LbugStore with lifetime 'a in begin_transaction).
+        unsafe { &mut *self.store }
+    }
+
+    /// Commit. Consumes the session and sets `committed=true`.
+    /// Returns `StoreError::Transaction` if called twice.
+    pub fn commit(mut self) -> Result<(), StoreError> {
+        if self.committed {
+            return Err(StoreError::Transaction(
+                "transaction already committed".to_string(),
+            ));
+        }
+        self.committed = true;
+        // consume self to make store inaccessible after commit
+        let store = self.store;
+        // Safety: we just set committed=true and no longer use self after
+        // this line. The store pointer is valid for 'a and we pass ownership
+        // of the commit call through the raw pointer.
+        unsafe { (*store).commit_transaction() }
+    }
+
+    /// Rollback. Consumes the session. Failure is logged but does
+    /// not overwrite the original error (best-effort, mirrors
+    /// `store.rs:1502`).
+    pub fn rollback(mut self) -> Result<(), StoreError> {
+        if self.committed {
+            return Err(StoreError::Transaction(
+                "transaction already committed".to_string(),
+            ));
+        }
+        self.committed = true;
+        let store = self.store;
+        unsafe { (*store).rollback_transaction() }
+    }
+}
+
+impl<'a> Drop for Transaction<'a> {
+    fn drop(&mut self) {
+        if !self.committed {
+            // Safety: store pointer is valid for 'a; Drop is called while
+            // the Transaction is still in scope, so 'a is still valid.
+            if let Err(e) = unsafe { (*self.store).rollback_transaction() } {
+                warn!(
+                    "Transaction dropped without commit; rollback failed: {e}"
+                );
+            }
+        }
+    }
 }
 
 /// Element write/read port (P1-03). Idempotent MERGE on canonical ids;
@@ -771,6 +861,18 @@ impl GraphStore for LbugStore {
             .query("ROLLBACK")
             .map_err(|e| StoreError::Rollback(format!("ROLLBACK failed: {e}")))?;
         Ok(())
+    }
+}
+
+impl UnitOfWork for LbugStore {
+    fn begin_transaction<'a>(&'a mut self) -> Result<Transaction<'a>, StoreError> {
+        // Delegate to the existing GraphStore primitive.
+        GraphStore::begin_transaction(self)?;
+        Ok(Transaction {
+            store: self as *mut LbugStore,
+            _marker: PhantomData,
+            committed: false,
+        })
     }
 }
 
