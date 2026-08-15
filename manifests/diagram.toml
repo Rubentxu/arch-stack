@@ -4,6 +4,11 @@
 # archview bundle contract (ADR-013). The module reads from GraphStore,
 # Filesystem, and Clock ports. It never writes to the graph.
 #
+# P1-04 invariant: application-layer code in this module must NOT call
+# raw Cypher writes; raw reads are permitted ONLY via the DiagramRepository
+# typed interface (RawGraphQuery is reserved for test utilities and admin
+# CLI handlers in cli.rs).
+#
 # This manifest declares what MUST hold for the diagram scope to be
 # considered sane by `archctl doctor --scopes diagram`.
 
@@ -88,6 +93,9 @@ must_hold = [
   "get_view_members",
   # M80b: arrows export serializer
   "pub fn serialize(",
+  # P1-04: diagram reads through typed repository interface
+  ".list_elements",
+  ".list_semantic_edges",
 ]
 
 # Banned patterns: no HTTP client, no direct std::fs in the diagram module.

@@ -346,7 +346,6 @@ mod tests {
     use crate::diagram::export_types::{EvidenceBundle, Manifest, Projection, Styles};
     use crate::filesystem::MemoryFilesystem;
     use crate::row::{Cell, Row};
-    use crate::store::RawGraphQuery;
 
     /// A minimal GraphStore stub that returns pre-configured query results.
     struct MockGraphStore {

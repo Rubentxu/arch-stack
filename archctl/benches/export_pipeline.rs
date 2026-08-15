@@ -29,15 +29,15 @@ use common::{seed_medium, seed_small};
 
 use archctl::diagram::export_types::Projection;
 use archctl::diagram::hash::base_revision;
-use archctl::diagram::queries::{query_elements, query_semantic_edges};
+use archctl::store::DiagramRepository;
 
 fn bench_query_elements_small(c: &mut Criterion) {
     c.bench_function("export_query_elements_small", |b| {
         b.iter_batched(
             seed_small,
             |(store, _tmp)| {
-                let elements =
-                    query_elements(&store, "container", None, None).expect("query_elements");
+                let elements = DiagramRepository::list_elements(&store, "container", None, None)
+                    .expect("list_elements");
                 criterion::black_box(elements);
             },
             criterion::BatchSize::NumIterations(10),
@@ -50,8 +50,8 @@ fn bench_query_semantic_edges_medium(c: &mut Criterion) {
         b.iter_batched(
             seed_medium,
             |(store, _tmp)| {
-                let edges =
-                    query_semantic_edges(&store, "container").expect("query_semantic_edges");
+                let edges = DiagramRepository::list_semantic_edges(&store, "container")
+                    .expect("list_semantic_edges");
                 criterion::black_box(edges);
             },
             criterion::BatchSize::NumIterations(10),

@@ -9,6 +9,20 @@ use tempfile::TempDir;
 use archctl::Row;
 use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
 
+/// Extension trait to execute raw writes for testing transaction scenarios.
+/// The RawGraphQuery::query guard rejects write keywords (MERGE, SET, etc.);
+/// this method bypasses it for test scenarios that verify Kùzu transaction semantics.
+trait RawWrite {
+    fn write_cypher_for_test(&mut self, cypher: &str) -> anyhow::Result<()>;
+}
+
+impl RawWrite for LbugStore {
+    fn write_cypher_for_test(&mut self, cypher: &str) -> anyhow::Result<()> {
+        self.execute_raw_cypher_for_test(cypher)
+            .map_err(|e| anyhow::anyhow!("write failed: {}", e))
+    }
+}
+
 fn open_store(project: &std::path::Path) -> LbugStore {
     let mut store = LbugStore::open(project).expect("store must open");
     store.init().expect("store must init");
@@ -22,7 +36,7 @@ fn transaction_commit_persists_writes() {
 
     store.begin_transaction().expect("begin must succeed");
     store
-        .query("MERGE (e:Element {id: 'tx_commit:test'}) SET e.kind_id = 'k';")
+        .write_cypher_for_test("MERGE (e:Element {id: 'tx_commit:test'}) SET e.kind_id = 'k';")
         .expect("write inside tx must succeed");
     store.commit_transaction().expect("commit must succeed");
 
@@ -47,7 +61,7 @@ fn transaction_explicit_rollback_clears_writes() {
 
     store.begin_transaction().expect("begin must succeed");
     store
-        .query("MERGE (e:Element {id: 'tx_rollback:test'}) SET e.kind_id = 'k';")
+        .write_cypher_for_test("MERGE (e:Element {id: 'tx_rollback:test'}) SET e.kind_id = 'k';")
         .expect("write inside tx must succeed");
     store.rollback_transaction().expect("rollback must succeed");
 
@@ -76,13 +90,13 @@ fn transaction_atomic_abort_on_write_error() {
 
     store.begin_transaction().expect("begin must succeed");
     store
-        .query("MERGE (e:Element {id: 'tx_abort:good'}) SET e.kind_id = 'k';")
+        .write_cypher_for_test("MERGE (e:Element {id: 'tx_abort:good'}) SET e.kind_id = 'k';")
         .expect("good write inside tx must succeed");
 
     // Now trigger a binder error: SUPPORTED_BY is declared
     // FROM ElementVersion TO Evidence, so (Element)-[SUPPORTED_BY]
     // ->(Evidence) violates the direction constraint.
-    let bad = store.query(
+    let bad = store.write_cypher_for_test(
         "MATCH (e:Element {id: 'tx_abort:good'}) MATCH (ev:Evidence {id: 'tx_abort:ev'}) \
          MERGE (e)-[r:SUPPORTED_BY]->(ev);",
     );

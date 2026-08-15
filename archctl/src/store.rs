@@ -666,7 +666,9 @@ impl LbugStore {
     /// the RawGraphQuery guard. For testing transaction abort scenarios where
     /// we need to trigger Kùzu-level errors (e.g., direction constraint violations).
     pub fn execute_raw_cypher_for_test(&mut self, cypher: &str) -> Result<(), lbug::Error> {
-        let session = self.session_mut().map_err(|e| lbug::Error::FailedQuery(format!("{}", e)))?;
+        let session = self
+            .session_mut()
+            .map_err(|e| lbug::Error::FailedQuery(format!("{}", e)))?;
         session.conn.query(cypher).map(|_| ())
     }
 

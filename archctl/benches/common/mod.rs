@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use archctl::store::{GraphStore, LbugStore};
+use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
 use tempfile::TempDir;
 
 const DATASET_SMALL: &str = "../../benchmarks/datasets/small-100.json";

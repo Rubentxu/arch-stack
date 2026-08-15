@@ -711,7 +711,11 @@ fn test_class_diagram_apply_idempotent() {
             if let Some(pos) = line.find(field) {
                 // Extract written count: number immediately before field name
                 let before = &line[..pos];
-                let written = before.split_whitespace().last().and_then(|w| w.parse().ok()).unwrap_or(0);
+                let written = before
+                    .split_whitespace()
+                    .last()
+                    .and_then(|w| w.parse().ok())
+                    .unwrap_or(0);
                 // Extract skipped count: first number inside parentheses after field
                 let after = &line[pos..];
                 let skipped = after

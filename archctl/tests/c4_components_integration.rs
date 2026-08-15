@@ -226,7 +226,6 @@ fn scn438_component_apply_persists_as_component_not_container() {
     use archctl::code::c4_discover::{
         Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
     };
-    use archctl::store::RawGraphQuery;
     use archctl::store::open_and_init;
 
     let tmp = TempDir::new().unwrap();
@@ -560,7 +559,6 @@ fn container_and_component_apply_produce_different_metatypes() {
     use archctl::code::c4_discover::{
         Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
     };
-    use archctl::store::RawGraphQuery;
     use archctl::store::open_and_init;
 
     let tmp = TempDir::new().unwrap();

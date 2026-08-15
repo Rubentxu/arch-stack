@@ -62,7 +62,7 @@ fn row_to_semantic_edge_row(r: Row) -> anyhow::Result<SemanticEdgeRow> {
     };
     let props = r
         .get("edge.props")
-        .map(|c| cell_to_json_map(c))
+        .map(cell_to_json_map)
         .unwrap_or_default();
     Ok(SemanticEdgeRow {
         relation_id: str_col(&r, "edge.relation_id")?,
@@ -579,7 +579,7 @@ impl DiagramRepository for TinyGraphStore {
 
     fn list_version_props(&self, _version_ids: &[String]) -> anyhow::Result<Vec<VersionPropsRow>> {
         // For TinyGraphStore, return all versions as VersionPropsRow
-        let rows: Vec<Row> = self.versions.iter().cloned().collect();
+        let rows: Vec<Row> = self.versions.to_vec();
         rows.into_iter().map(row_to_version_props_row).collect()
     }
 }
@@ -663,18 +663,32 @@ fn query_elements_returns_empty_when_no_match() {
     assert!(result.is_empty());
 }
 
-// SCN-051: query_semantic_edges returns intra-category edges
+// SCN-051: list_semantic_edges returns intra-category edges
 #[test]
 fn query_semantic_edges_returns_intra_category_edges() {
-    // Mock data should be what database would return AFTER category filtering.
-    // Only the container→container edge (rel:1) is included.
+    // TinyGraphStore's list_semantic_edges filters by src.category and tgt.category
+    // in the edge rows (the real impl does this via Cypher MATCH on Element nodes).
+    // Provide src.category/tgt.category in the edge rows so the mock filter works.
     let edges = vec![
-        // Edge between two containers (the only one that matches WHERE category = 'container')
+        // Edge between two containers — el:1 and el:2 are both category='container'
         row_from_pairs(vec![
             ("edge.relation_id", Cell::String("rel:1".to_string())),
             ("edge.predicate_id", Cell::String("calls".to_string())),
             ("source_id", Cell::String("el:1".to_string())),
             ("target_id", Cell::String("el:2".to_string())),
+            ("src.category", Cell::String("container".to_string())),
+            ("tgt.category", Cell::String("container".to_string())),
+            ("edge.order_key", Cell::String("1".to_string())),
+            ("edge.props", empty_props_cell()),
+        ]),
+        // Edge involving a component — should be filtered out by category='container'
+        row_from_pairs(vec![
+            ("edge.relation_id", Cell::String("rel:2".to_string())),
+            ("edge.predicate_id", Cell::String("calls".to_string())),
+            ("source_id", Cell::String("el:3".to_string())),
+            ("target_id", Cell::String("el:4".to_string())),
+            ("src.category", Cell::String("component".to_string())),
+            ("tgt.category", Cell::String("container".to_string())),
             ("edge.order_key", Cell::String("1".to_string())),
             ("edge.props", empty_props_cell()),
         ]),
@@ -682,7 +696,7 @@ fn query_semantic_edges_returns_intra_category_edges() {
 
     let store = TinyGraphStore::new(Vec::new(), edges, Vec::new(), Vec::new());
 
-    // list_semantic_edges filters by category
+    // list_semantic_edges("container") returns only rel:1 (container→container)
     let result = store.list_semantic_edges("container").unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].relation_id, "rel:1");
