@@ -932,6 +932,7 @@ Incluye:
 | `p1-01-composition-root` | `feat/p1-01-composition-root` (merged to main via PR #179) | `f046247` | **Cerrado** ✅ · tag `v1.43.0` · `GraphStoreFactory`/`LbugStoreFactory` composition root; `CliContext` gains `clock` + `store_factory`; 9 store call sites + 8 clock literals rewired |
 | `p1-03-architecture-repositories` | `feat/p1-03-architecture-repositories` (merged to main via PR #180, merge `9a1fb17`) | `95a2e5c` | **Cerrado** ✅ · tag `v1.43.0` (peels `95a2e5c`, ancestor of main via PR #180 — push directo bloqueado por GH006, 4º precedente) · 5 repository traits (Element/Evidence/Source/Evaluation/Diagram) implemented by `LbugStore`; `graph.rs` no longer imports `lbug` (dep-fitness 4→3) |
 | `p1-04-raw-graph-query-boundary` | `feat/p1-04-raw-graph-query-boundary` (merged to main via PR #181) + patch `fix/p1-04-admin-query-guard` (PR #182) | `b039dee` | **Cerrado** ✅ · tags `v1.44.0`+`v1.44.1` · RawGraphQuery admin-only boundary (tokenized `is_read_only_query` guard), SemanticEdgeRepository, `ensure_metatype`, `diagram::queries`→`DiagramRepository`, ~300 LOC dead code out; ADR-059 (+amendment); verify PW→remediated · debt-verify PW (0 criticals) · UAT READY 3/3 |
+| `p1-05-unit-of-work` | `feat/p1-05-unit-of-work-pr1` (merged to main via PR #184, merge `cf8de64`) + `feat/p1-05-unit-of-work` (merged to main via PR #185, merge `189f029`) | `189f029` | **Cerrado** ✅ · tag `v1.45.0` (peels `189f029`, annotated, pushed + verified remote) · `UnitOfWork` port + `Transaction<'a>` session newtype; 5 apply pipelines wrapped (call_graph, state_machine, class_diagram, c4_discover, diagram::apply_to_store); A-W1 (`+ RawGraphQuery` supertrait dropped) + C-W1 (`session_mut`/`execute_raw_cypher_for_test` cfg-gated under `test-fixtures` feature, `nm` escape-hatch gate = 0) closure; ADR-059 amendment L46.5; verify PASS · debt-verify PASS (0/0/6, DQS 5.7→7.1) · 838/838 tests · chained `--no-ff` PRs (GH006 5º precedente) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
@@ -1443,9 +1444,9 @@ Razones:
 ## Cycle cerrado — `p1-05-unit-of-work` (v1.45.0)
 
 - **Fecha**: 2026-08-15
-- **Branch**: `feat/p1-05-unit-of-work` (merged to main via chained PRs PR1 + PR2)
-- **Tag**: `v1.45.0` (pending release)
-- **Verdict**: verify PASS · debt-verify pending · apply DONE (3 commits: 48201d8, 4f79812, pending)
+- **Branch**: `feat/p1-05-unit-of-work-pr1` (PR #184 → `cf8de64` --no-ff) + `feat/p1-05-unit-of-work` (PR #185 → `189f029` --no-ff); branches retained per orchestrator directive
+- **Tag**: `v1.45.0` (peels `189f029`, annotated tag `0caf38a0`, pushed + verified remote peeled `189f029` == HEAD)
+- **Verdict**: verify PASS · debt-verify PASS (0/0/6, DQS 5.7→7.1) · UAT READY (minor policy) · apply DONE (21 work commits across PR1 + PR2 + W1 remediation + 2 fmt sweeps) · archive PENDING (next phase)
 - **Output**:
   - PR1 (`feat(store): UnitOfWork + Transaction`):
     - `pub trait UnitOfWork` + `pub struct Transaction<'a>` (Option γ, primitive-borrower newtype) in `store.rs`
@@ -1468,4 +1469,4 @@ Razones:
     - Pre-existing clippy dead-code warnings cleaned up (unused imports + dead helpers)
 - **Kùzu jurisprudence documented**: Kùzu 0.18.3 auto-reverts entire transaction on any query error. `link_with_merge_fallback` fixed to use idempotent `OPTIONAL MATCH ... WHERE r IS NULL ... CREATE` pattern — single query, no conditional error-throwing, no spurious auto-reverts.
 - **Notas**: ADR-059 documents the trait-split decision; the 22 application call sites that were using `GraphStore::query` for writes are now using typed repository methods.
-- **Próximo candidato**: P1-02 (CLI commands → handlers) o P1-05 (UnitOfWork — absorbería el follow-up de separación estática del supertrait `RawGraphQuery` y el cfg(test)-gate de `execute_raw_cypher_for_test`, W-2/W-3 del debt-verify).
+- **Próximo candidato**: P1-02 (CLI commands → handlers) o P1-06/P1-07 (extractor suite sobre el `UnitOfWork` port ahora estabilizado, o depuración de la connascence-of-Implementation residual con `*mut LbugStore` cuando llegue SparrowStore). A-W1 + C-W1 ya cerrados en este ciclo, así que ya no son deuda viva.
