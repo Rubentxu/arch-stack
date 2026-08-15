@@ -4,6 +4,8 @@
 > **Status:** Aceptado — 2026-08-15
 > **Supersedes:** ADR-044 §Puertos (persistence ports section)
 > **Aplica a:** `archctl/src/store.rs`, `archctl/src/cli.rs`, `archctl/src/diagram/queries.rs`, `archctl/src/code/*.rs`
+>
+> **Amendment 2026-08-15 (W-2 remediation):** Decisión 2 ("GraphStore pierde query/prepare/execute") fue parcialmente revertida durante la implementación. `RawGraphQuery` fue añadido como **supertrait** de `GraphStore` en el commit `60940da` para mantener `Box<dyn GraphStore>::query()` accesible en paths de test/admin que no podían migrarse simultáneamente al nuevo seam. La guarda runtime `is_read_only_query` (`store.rs:789`) sigue siendo la defensa primaria contra writes. La separación estática completa (hard-port removal) es candidato para un ciclo futuro (e.g. P1-05 UnitOfWork).
 
 ## Contexto
 
@@ -39,6 +41,8 @@ pub trait RawGraphQuery: Send + Sync {
 ### 2. `GraphStore` pierde `query`/`prepare`/`execute`
 
 Los tres métodos se eliminan del trait `GraphStore`. El único camino Cypher raw es `RawGraphQuery`.
+
+> **Amendment 2026-08-15:** Durante la implementación (commit `60940da`), `RawGraphQuery` fue añadido como **supertrait** de `GraphStore` (`store.rs:204`) para mantener `Box<dyn GraphStore>::query()` accesible en paths de test/admin que no podían migrarse simultáneamente al nuevo seam. La separación estática completa se aplaza a un ciclo futuro (e.g. P1-05 UnitOfWork). La defensa runtime es `is_read_only_query` (`store.rs:789`) que rechaza keywords de write en todo path `query()`.
 
 ### 3. Nuevo `pub trait SemanticEdgeRepository` en `store.rs`
 
