@@ -143,9 +143,7 @@ fn seed_meta_predicate(store: &mut LbugStore) {
     for mt in meta_types {
         let mt = archctl::graph::validate_identifier(mt).expect("mt");
         store
-            .execute_raw_cypher_for_test(&format!(
-                "MERGE (:MetaType {{id: '{mt}'}});"
-            ))
+            .execute_raw_cypher_for_test(&format!("MERGE (:MetaType {{id: '{mt}'}});"))
             .expect("seed metatype write");
     }
     let predicates = [
@@ -159,9 +157,7 @@ fn seed_meta_predicate(store: &mut LbugStore) {
     for p in predicates {
         let p = archctl::graph::validate_identifier(p).expect("p");
         store
-            .execute_raw_cypher_for_test(&format!(
-                "MERGE (:Predicate {{id: '{p}'}});"
-            ))
+            .execute_raw_cypher_for_test(&format!("MERGE (:Predicate {{id: '{p}'}});"))
             .expect("seed predicate write");
     }
 }
