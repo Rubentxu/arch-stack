@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::code::strategies::Strategy;
 use crate::filesystem::Filesystem;
-use crate::store::{ElementRepository, EvidenceRepository, GraphStore, LbugStore};
+use crate::store::{EvidenceRepository, GraphStore, LbugStore};
 
 /// JSON Schema for DiscoverReport (JSON Schema 2020-12).
 pub const DISCOVER_REPORT_SCHEMA: &str =
@@ -215,88 +215,6 @@ fn c4_language_label(file: &str) -> &'static str {
     }
 }
 
-/// Write the Element node. `metatype` is the MetaType id (e.g. "mt.container", "mt.component").
-/// `element_id_prefix` is "container" or "component" (used in the element_id format).
-fn write_element(
-    store: &mut LbugStore,
-    element_id: &str,
-    container: &Container,
-    version_id: &str,
-    metatype: &str,
-) -> Result<()> {
-    ElementRepository::upsert_element(
-        store,
-        &crate::graph::Element {
-            id: element_id.to_string(),
-            kind_id: metatype.to_string(),
-            category: "c4".to_string(),
-            canonical_key: container.canonical_key.clone(),
-            current_name: container.name.clone(),
-            current_status: "active".to_string(),
-            current_confidence: container.confidence,
-            current_version_id: version_id.to_string(),
-        },
-    )
-    .with_context(|| format!("put_element {element_id}"))?;
-    Ok(())
-}
-
-/// Write the ElementVersion node for a Container. Returns the version_id.
-fn write_element_version(
-    store: &mut LbugStore,
-    element_id: &str,
-    container: &Container,
-) -> Result<String> {
-    let version_props = serde_json::json!({
-        "inferred": true,
-        "strategy": container.strategy,
-        "confidence": container.confidence,
-        "merged_from": container.merged_from,
-        "discovery_schema_version": "1.0",
-    });
-    let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
-    // Include element_id so each container gets a distinct ElementVersion.
-    let version_id = format!(
-        "blake3:{}",
-        blake3::hash(format!("{version_props_str}:{element_id}").as_bytes()).to_hex()
-    );
-    let mut props_map = serde_json::Map::new();
-    for (k, v) in version_props.as_object().cloned().unwrap_or_default() {
-        props_map.insert(k, v);
-    }
-    ElementRepository::upsert_element_version(
-        store,
-        &crate::graph::ElementVersion {
-            id: version_id.clone(),
-            element_id: element_id.to_string(),
-            name: container.name.clone(),
-            status: "drafted".to_string(),
-            origin: "c4-discover".to_string(),
-            confidence: container.confidence,
-            props: props_map,
-        },
-    )
-    .with_context(|| format!("put_element_version {version_id}"))?;
-    Ok(version_id)
-}
-
-/// Write the CURRENT_VERSION, VERSION_OF, and OF_TYPE edges for an Element.
-/// `metatype` is the MetaType id (e.g. "mt.container", "mt.component").
-fn link_element_edges(
-    store: &mut LbugStore,
-    element_id: &str,
-    version_id: &str,
-    metatype: &str,
-) -> Result<()> {
-    let _ = ElementRepository::link_current_version(store, element_id, version_id);
-    let _ = ElementRepository::link_version_of(store, element_id, version_id);
-    let _ = ElementRepository::link_of_type(store, element_id, metatype);
-    Ok(())
-}
-
-// write_component_element, write_component_element_version, link_component_element_edges removed —
-// unified via write_element(metatype) and link_element_edges(metatype)
-
 /// Write an Evidence node and its two edges (SUPPORTED_BY, EXTRACTED_FROM).
 fn write_evidence(
     store: &mut LbugStore,
@@ -394,7 +312,16 @@ pub fn apply(
     ElementRepository::ensure_metatype(s, "mt.container", "c4", "container", "structure")?;
     ElementRepository::ensure_metatype(s, "mt.component", "c4", "component", "structure")?;
 
+    // M32 D2: Hoist existing_canonical_keys OUT of per-container loop.
+    // Skip-before-batch: only include containers NOT already in store in UNWIND batches.
     let existing_keys = ElementRepository::existing_canonical_keys(s)?;
+
+    // ── Phase 1: Collect candidates across all containers ─────────────────────────
+    // Pre-compute version_ids before batching so we can construct Element + ElementVersion
+    // in a single pass.
+    let mut container_elements: Vec<crate::graph::Element> = Vec::new();
+    let mut container_versions: Vec<crate::graph::ElementVersion> = Vec::new();
+    let mut container_metatypes: Vec<String> = Vec::new(); // parallel to elements/versions
 
     for container in &report.discovered {
         if existing_keys.contains(&container.canonical_key) {
@@ -409,11 +336,91 @@ pub fn apply(
         };
         let element_id = format!("c4:{}:{}", element_prefix, container.canonical_key);
 
-        let version_id = write_element_version(s, &element_id, container)?;
-        write_element(s, &element_id, container, &version_id, metatype)?;
-        elements_written += 1;
+        // Pre-compute version_props (mirrors write_element_version logic)
+        let version_props = serde_json::json!({
+            "inferred": true,
+            "strategy": container.strategy,
+            "confidence": container.confidence,
+            "merged_from": container.merged_from,
+            "discovery_schema_version": "1.0",
+        });
+        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+        let version_id = format!(
+            "blake3:{}",
+            blake3::hash(format!("{version_props_str}:{element_id}").as_bytes()).to_hex()
+        );
 
-        link_element_edges(s, &element_id, &version_id, metatype)?;
+        container_elements.push(crate::graph::Element {
+            id: element_id.clone(),
+            kind_id: metatype.to_string(),
+            category: "c4".to_string(),
+            canonical_key: container.canonical_key.clone(),
+            current_name: container.name.clone(),
+            current_status: "active".to_string(),
+            current_confidence: container.confidence,
+            current_version_id: version_id.clone(),
+        });
+
+        let mut props_map = serde_json::Map::new();
+        if let Some(obj) = version_props.as_object() {
+            for (k, v) in obj {
+                props_map.insert(k.clone(), v.clone());
+            }
+        }
+        container_versions.push(crate::graph::ElementVersion {
+            id: version_id,
+            element_id,
+            name: container.name.clone(),
+            status: "drafted".to_string(),
+            origin: "c4-discover".to_string(),
+            confidence: container.confidence,
+            props: props_map,
+        });
+        container_metatypes.push(metatype.to_string());
+        elements_written += 1;
+    }
+
+    // ── Phase 2: Batch-insert via UNWIND helpers ─────────────────────────────────
+    // M32 D2: containers (Element + ElementVersion) — CURRENT_VERSION + VERSION_OF edges
+    // created by batch_upsert_element_version internally.
+    if !container_elements.is_empty() {
+        crate::code::apply_common::batch_upsert_element(s, &container_elements)?;
+        crate::code::apply_common::batch_upsert_element_version(s, &container_versions)?;
+    }
+
+    // ── Phase 3: OF_TYPE edges (link_of_type per container) ──────────────────
+    // CURRENT_VERSION and VERSION_OF edges are already created by batch_upsert_element_version.
+    // Only OF_TYPE remains: one edge per container.
+    for (element, metatype) in container_elements.iter().zip(container_metatypes.iter()) {
+        let _ = ElementRepository::link_of_type(s, &element.id, metatype);
+    }
+
+    // ── Phase 4: Evidence writes (kept as-is, per-evidence loop inside tx) ────
+    // Evidence writes need fs.read_to_string, so they can't be batched via UNWIND.
+    // They are inside the UnitOfWork tx so no per-query commit cost.
+    for container in &report.discovered {
+        if existing_keys.contains(&container.canonical_key) {
+            continue;
+        }
+
+        let (_metatype, element_prefix) = match container.strategy.as_str() {
+            "components" => ("mt.component", "component"),
+            _ => ("mt.container", "container"),
+        };
+        let element_id = format!("c4:{}:{}", element_prefix, container.canonical_key);
+
+        let version_props = serde_json::json!({
+            "inferred": true,
+            "strategy": container.strategy,
+            "confidence": container.confidence,
+            "merged_from": container.merged_from,
+            "discovery_schema_version": "1.0",
+        });
+        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+        let version_id = format!(
+            "blake3:{}",
+            blake3::hash(format!("{version_props_str}:{element_id}").as_bytes()).to_hex()
+        );
 
         // SourceArtifact deduplication map (keyed by file path)
         let mut source_artifact_ids: BTreeMap<String, String> = BTreeMap::new();
