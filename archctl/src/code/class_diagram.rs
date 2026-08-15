@@ -1345,7 +1345,9 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork};
+    use crate::store::{
+        ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork,
+    };
     use anyhow::Context;
 
     let start = Instant::now();

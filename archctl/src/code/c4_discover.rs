@@ -426,8 +426,7 @@ pub fn apply(
                     .map(|s| crate::evidence::content_hash_of(&s))
                     .unwrap_or_default();
                 let lang_label = c4_language_label(&evidence.file);
-                let id =
-                    write_source_artifact(s, &evidence.file, &content_hash, lang_label)?;
+                let id = write_source_artifact(s, &evidence.file, &content_hash, lang_label)?;
                 source_artifact_ids.insert(evidence.file.clone(), id.clone());
                 source_artifacts_written += 1;
                 id
