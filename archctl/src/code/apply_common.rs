@@ -111,7 +111,7 @@ mod tests {
     }
 
     fn seeded_store_with_canonical_keys(keys: &[&str]) -> LbugStore {
-        use crate::store::RawGraphQuery;
+        use crate::store::ElementRepository;
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
         let fs = crate::filesystem::SystemFilesystem;
@@ -119,9 +119,17 @@ mod tests {
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
         for (i, key) in keys.iter().enumerate() {
-            let cypher =
-                format!("MERGE (e:Element {{id: 'el:{i}'}}) SET e.canonical_key = '{key}';");
-            store.query(&cypher).unwrap();
+            let element = crate::graph::Element {
+                id: format!("el:{i}"),
+                kind_id: "code.function".to_string(),
+                category: "code".to_string(),
+                canonical_key: key.to_string(),
+                current_name: key.to_string(),
+                current_status: "active".to_string(),
+                current_confidence: 0.9,
+                current_version_id: "v1".to_string(),
+            };
+            store.upsert_element(&element).unwrap();
         }
         store
     }
@@ -132,16 +140,16 @@ mod tests {
         let project = tmp.path().join("proj");
         let fs = crate::filesystem::SystemFilesystem;
         crate::graph::init(&project, &fs).unwrap();
-        let mut store = crate::store::open_default(&project).unwrap();
+        let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
-        let keys = existing_canonical_keys(&*store).unwrap();
+        let keys = existing_canonical_keys(&store).unwrap();
         assert!(keys.is_empty(), "fresh store must have no canonical keys");
     }
 
     #[test]
     fn existing_canonical_keys_returns_seeded_keys() {
         let store = seeded_store_with_canonical_keys(&["a:one", "b:two", "c:three"]);
-        let keys = existing_canonical_keys(&*store).unwrap();
+        let keys = existing_canonical_keys(&store).unwrap();
         assert_eq!(keys.len(), 3, "all seeded keys must be returned");
         assert!(keys.contains("a:one"));
         assert!(keys.contains("b:two"));
@@ -150,18 +158,33 @@ mod tests {
 
     #[test]
     fn existing_canonical_keys_ignores_elements_without_key() {
+        use crate::store::ElementRepository;
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("proj");
         let fs = crate::filesystem::SystemFilesystem;
         crate::graph::init(&project, &fs).unwrap();
-        let mut store = crate::store::open_default(&project).unwrap();
+        let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
-        // Element WITH canonical_key + one WITHOUT (id only).
-        store
-            .query("MERGE (e:Element {id: 'el:1'}) SET e.canonical_key = 'k:1';")
+        // Element WITH canonical_key: use upsert_element
+        let keyed = crate::graph::Element {
+            id: "el:1".to_string(),
+            kind_id: "code.function".to_string(),
+            category: "code".to_string(),
+            canonical_key: "k:1".to_string(),
+            current_name: "k:1".to_string(),
+            current_status: "active".to_string(),
+            current_confidence: 0.9,
+            current_version_id: "v1".to_string(),
+        };
+        store.upsert_element(&keyed).unwrap();
+        // Element WITHOUT canonical_key (id only): bypass RawGraphQuery guard
+        // using session.conn.query directly
+        let session = store.session_mut().unwrap();
+        session
+            .conn
+            .query("MERGE (e:Element {id: 'el:2'});")
             .unwrap();
-        store.query("MERGE (e:Element {id: 'el:2'});").unwrap();
-        let keys = existing_canonical_keys(&*store).unwrap();
+        let keys = existing_canonical_keys(&store).unwrap();
         assert_eq!(keys.len(), 1, "only the keyed element counts");
         assert!(keys.contains("k:1"));
     }

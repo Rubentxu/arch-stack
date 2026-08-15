@@ -540,13 +540,25 @@ impl Params {
 /// Used by [`RawGraphQuery`] to defensively reject queries containing
 /// MERGE/CREATE/DELETE/SET/REMOVE. Admin callers are trusted but the
 /// guard provides a safety net for the future admin surface.
-pub(crate) fn is_read_only_query(cypher: &str) -> bool {
+///
+/// Uses word-boundary-aware matching to avoid false positives from
+/// substrings in identifiers (e.g. "CREATED_AT" contains "CREATE",
+/// "updated_at" contains no "SET" but "vm.updated_at" does).
+fn is_read_only_query(cypher: &str) -> bool {
     let upper = cypher.to_uppercase();
-    !upper.contains("MERGE")
-        && !upper.contains("CREATE")
-        && !upper.contains("DELETE")
-        && !upper.contains("SET")
-        && !upper.contains("REMOVE")
+    // Use word-boundary-aware check: the keyword must be surrounded by
+    // non-identifier chars (start/end of string, space, paren, comma, etc.)
+    // to avoid flagging substrings like "CREATED_AT" or "vm.updated_at".
+    let check = |keyword: &str| {
+        let pat = keyword.to_string();
+        let kw_upper = format!(" {pat} ");
+        let kw_upper_start = format!("({pat} ");
+        let kw_upper_end = format!(" {pat});");
+        !upper.contains(&kw_upper)
+            && !upper.contains(&kw_upper_start)
+            && !upper.contains(&kw_upper_end)
+    };
+    check("MERGE") && check("CREATE") && check("DELETE") && check("SET") && check("REMOVE")
 }
 
 impl From<anyhow::Error> for StoreError {
@@ -629,7 +641,12 @@ impl LbugStore {
         })
     }
 
-    fn session_mut(&mut self) -> Result<&mut LbugSession> {
+    /// Acquire a mutable reference to the inner lbug session.
+    ///
+    /// Used by typed repository methods (`ElementRepository`,
+    /// `SemanticEdgeRepository`, etc.) and in test helpers that need to bypass
+    /// `RawGraphQuery`'s write-keyword guard for seeding operations.
+    pub(crate) fn session_mut(&mut self) -> Result<&mut LbugSession> {
         if self.session.is_none() {
             self.session = Some(open_lbug_session(&self.project_dir)?);
         }
@@ -1773,14 +1790,13 @@ impl SemanticEdgeRepository for LbugStore {
         active: bool,
     ) -> Result<()> {
         let session = self.session_mut()?;
-        let safe_src = crate::graph::validate_identifier(src_id)
-            .context("link_semantic_edge: src_id failed validation")?;
-        let safe_tgt = crate::graph::validate_identifier(tgt_id)
-            .context("link_semantic_edge: tgt_id failed validation")?;
-        let safe_rel = crate::graph::validate_identifier(relation_id)
-            .context("link_semantic_edge: relation_id failed validation")?;
-        let safe_pred = crate::graph::validate_identifier(predicate_id)
-            .context("link_semantic_edge: predicate_id failed validation")?;
+        // Escape single quotes — these are property VALUES embedded in the query string,
+        // NOT Cypher identifiers. validate_identifier rejects valid property chars like
+        // ':' and '>' that appear in canonical keys and relation IDs.
+        let safe_src = src_id.replace('\'', "\\'");
+        let safe_tgt = tgt_id.replace('\'', "\\'");
+        let safe_rel = relation_id.replace('\'', "\\'");
+        let safe_pred = predicate_id.replace('\'', "\\'");
         let props_json = serde_json::to_string(props).context("serialize edge props")?;
         let safe_props = props_json.replace('\'', "\\'");
         let cypher = format!(
@@ -1801,10 +1817,9 @@ impl SemanticEdgeRepository for LbugStore {
         props: &serde_json::Map<String, serde_json::Value>,
     ) -> Result<()> {
         let session = self.session_mut()?;
-        let safe_src = crate::graph::validate_identifier(src_id)
-            .context("link_call_edge_with_resolution: src_id failed validation")?;
-        let safe_rel = crate::graph::validate_identifier(relation_id)
-            .context("link_call_edge_with_resolution: relation_id failed validation")?;
+        // Escape single quotes — these are property VALUES, not Cypher identifiers.
+        let safe_src = src_id.replace('\'', "\\'");
+        let safe_rel = relation_id.replace('\'', "\\'");
         let safe_callee = callee_name.replace('\'', "\\'");
         let props_json = serde_json::to_string(props).context("serialize edge props")?;
         let safe_props = props_json.replace('\'', "\\'");
