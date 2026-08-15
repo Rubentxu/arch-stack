@@ -367,27 +367,11 @@ pub fn apply(
     fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
     use crate::code::apply_common::write_source_artifact;
-    use crate::store::{ElementRepository, LbugStore, RawGraphQuery};
+    use crate::store::{ElementRepository, LbugStore};
 
     let mut store =
         LbugStore::open(project_dir).map_err(|e| anyhow::anyhow!("failed to open store: {e}"))?;
     store.init().context("c4_discover apply: init")?;
-
-    // Seed mt.container MetaType if it doesn't exist
-    let seed_metatype_container = r#"
-        MERGE (mt:MetaType {id: 'mt.container'})
-        SET mt.namespace = 'c4', mt.name = 'container', mt.category = 'structure'
-        RETURN mt.id;
-    "#;
-    store.query(seed_metatype_container).ok(); // best-effort; non-fatal if it fails
-
-    // Seed mt.component MetaType if it doesn't exist
-    let seed_metatype_component = r#"
-        MERGE (mt:MetaType {id: 'mt.component'})
-        SET mt.namespace = 'c4', mt.name = 'component', mt.category = 'structure'
-        RETURN mt.id;
-    "#;
-    store.query(seed_metatype_component).ok(); // best-effort; non-fatal if it fails
 
     let mut elements_written = 0usize;
     let mut elements_skipped = 0usize;
