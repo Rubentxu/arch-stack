@@ -641,92 +641,14 @@ mod tests {
         }
     }
 
-    impl crate::store::RawGraphQuery for MockGraphStore {
-        fn query(&self, cypher: &str) -> anyhow::Result<Vec<Row>> {
-            let upper = cypher.to_uppercase();
-            // Route based on Cypher pattern
-            if upper.contains("MATCH (E:ELEMENT)") && upper.contains("E.CATEGORY") {
-                // query_elements: apply WHERE filtering
-                let (category, canonical_key, kind_id) = Self::extract_query_filters(&upper);
-                let filtered: Vec<Row> = self
-                    .elements
-                    .iter()
-                    .filter(|row| {
-                        let row_cat = row
-                            .get("e.category")
-                            .and_then(|c| c.as_str())
-                            .map(|s| s.to_uppercase())
-                            .unwrap_or_default();
-                        let row_key = row
-                            .get("e.canonical_key")
-                            .and_then(|c| c.as_str())
-                            .map(|s| s.to_uppercase())
-                            .unwrap_or_default();
-                        let row_kind = row
-                            .get("e.kind_id")
-                            .and_then(|c| c.as_str())
-                            .map(|s| s.to_uppercase())
-                            .unwrap_or_default();
-                        let cat_match = category
-                            .as_ref()
-                            .map(|c| row_cat == c.to_uppercase())
-                            .unwrap_or(true);
-                        let key_match = canonical_key
-                            .as_ref()
-                            .map(|k| row_key.starts_with(&k.to_uppercase()))
-                            .unwrap_or(true);
-                        let kind_match = kind_id
-                            .as_ref()
-                            .map(|k| row_kind.starts_with(&k.to_uppercase()))
-                            .unwrap_or(true);
-                        cat_match && key_match && kind_match
-                    })
-                    .cloned()
-                    .collect();
-                Ok(filtered)
-            } else if upper.contains("SEMANTIC_EDGE") {
-                // query_semantic_edges
-                Ok(self.edges.clone())
-            } else if upper.contains("SUPPORTED_BY") {
-                // query_evidence_for_versions — filter by version IDs
-                let ids = Self::extract_id_list(cypher, "EV.ID");
-                let filtered: Vec<Row> = self
-                    .evidence
-                    .iter()
-                    .filter(|row| {
-                        let vid = row
-                            .get("v.id")
-                            .and_then(|c| c.as_str())
-                            .map(|s| s.to_uppercase())
-                            .unwrap_or_default();
-                        ids.iter().any(|target| vid == target.to_uppercase())
-                    })
-                    .cloned()
-                    .collect();
-                Ok(filtered)
-            } else if upper.contains("MATCH (V:ELEMENTVERSION)") {
-                // query_version_props
-                Ok(self.version_props.clone())
-            } else {
-                Ok(Vec::new())
-            }
-        }
-        fn prepare(
-            &mut self,
-            _: &str,
-        ) -> std::result::Result<crate::store::PreparedStatementHandle, crate::store::StoreError>
-        {
-            Err(crate::store::StoreError::Prepare(
-                "MockGraphStore does not support prepare".to_string(),
-            ))
-        }
-        fn execute(
-            &mut self,
-            _: &mut crate::store::PreparedStatementHandle,
-            _: crate::store::Params,
-        ) -> std::result::Result<Vec<Row>, crate::store::StoreError> {
-            Err(crate::store::StoreError::Execute(
-                "MockGraphStore does not support execute".to_string(),
+    impl crate::store::UnitOfWork for MockGraphStore {
+        fn begin_transaction<'a>(
+            &'a mut self,
+        ) -> std::result::Result<crate::store::Transaction<'a>, crate::store::StoreError> {
+            // MockGraphStore is in-memory; transaction semantics are a no-op.
+            // Return an error to indicate transactions are not supported.
+            Err(crate::store::StoreError::Transaction(
+                "MockGraphStore does not support transactions".to_string(),
             ))
         }
     }
