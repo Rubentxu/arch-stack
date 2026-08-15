@@ -1345,7 +1345,7 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository};
+    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork};
     use anyhow::Context;
 
     let start = Instant::now();
@@ -1361,117 +1361,105 @@ pub fn apply(
 
     let version_id = uuid::Uuid::new_v4().to_string();
 
-    // D5: wrap writes in single transaction. Same begin/commit pattern
-    // as M32 PR1's call_graph::apply (IIFE scope bounds the &mut borrow
-    // of `Box<dyn GraphStore>` so commit/rollback can re-borrow after).
-    store.begin_transaction().map_err(|se| {
-        ClassDiagramError::GraphWrite(anyhow::anyhow!("begin_transaction failed: {se}"))
-    })?;
+    // D5: wrap writes in single transaction via UnitOfWork.
+    // On error: return propagates, Transaction drops → implicit rollback
+    // (tracing::warn! on failure). On success: explicit commit.
+    let mut tx = UnitOfWork::begin_transaction(&mut store)
+        .context("class_diagram apply: begin_transaction")?;
 
-    let inner_result: Result<(), ClassDiagramError> = {
-        let s: &mut LbugStore = &mut store;
+    // Reborrow through Transaction to call LbugStore repository methods.
+    let s: &mut LbugStore = tx.as_mut();
 
-        for node in &report.nodes {
-            let kind_id = match node.kind {
-                TypeKind::Class => "uml.class",
-                TypeKind::Interface => "uml.interface",
-                TypeKind::Trait => "uml.trait",
-                TypeKind::Enum => "uml.enum",
-                TypeKind::Record => "uml.record",
-            };
+    for node in &report.nodes {
+        let kind_id = match node.kind {
+            TypeKind::Class => "uml.class",
+            TypeKind::Interface => "uml.interface",
+            TypeKind::Trait => "uml.trait",
+            TypeKind::Enum => "uml.enum",
+            TypeKind::Record => "uml.record",
+        };
 
-            let id = format!("cd:{}", node.canonical_key);
+        let id = format!("cd:{}", node.canonical_key);
 
-            let version_props = serde_json::json!({
-                "kind": format!("{:?}", node.kind).to_lowercase(),
-                "language": node.language.lang_label(),
-                "confidence": node.confidence,
-                "members": node.members.len(),
-            });
+        let version_props = serde_json::json!({
+            "kind": format!("{:?}", node.kind).to_lowercase(),
+            "language": node.language.lang_label(),
+            "confidence": node.confidence,
+            "members": node.members.len(),
+        });
 
-            // Use existing_canonical_keys check for idempotency
-            let existing_keys =
-                ElementRepository::existing_canonical_keys(s).context("fetch existing keys")?;
-            if existing_keys.contains(&node.canonical_key) {
-                elements_skipped += 1;
-            } else {
-                s.upsert_element(&crate::graph::Element {
-                    id: id.clone(),
-                    kind_id: kind_id.to_string(),
-                    category: "uml".to_string(),
-                    canonical_key: node.canonical_key.clone(),
-                    current_name: node.name.clone(),
-                    current_status: "active".to_string(),
-                    current_confidence: node.confidence,
-                    current_version_id: version_id.clone(),
-                })?;
-                elements_written += 1;
-            }
-
-            // ElementVersion
-            let mut props_map = serde_json::Map::new();
-            if let Some(obj) = version_props.as_object() {
-                for (k, v) in obj {
-                    props_map.insert(k.clone(), v.clone());
-                }
-            }
-            s.upsert_element_version(&crate::graph::ElementVersion {
-                id: version_id.clone(),
-                element_id: id,
-                name: node.name.clone(),
-                status: "active".to_string(),
-                origin: "class-diagram".to_string(),
-                confidence: node.confidence,
-                props: props_map,
+        // Use existing_canonical_keys check for idempotency
+        let existing_keys =
+            ElementRepository::existing_canonical_keys(s).context("fetch existing keys")?;
+        if existing_keys.contains(&node.canonical_key) {
+            elements_skipped += 1;
+        } else {
+            s.upsert_element(&crate::graph::Element {
+                id: id.clone(),
+                kind_id: kind_id.to_string(),
+                category: "uml".to_string(),
+                canonical_key: node.canonical_key.clone(),
+                current_name: node.name.clone(),
+                current_status: "active".to_string(),
+                current_confidence: node.confidence,
+                current_version_id: version_id.clone(),
             })?;
+            elements_written += 1;
         }
 
-        // Write edges
-        for edge in &report.edges {
-            let pred_tag = match edge.predicate {
-                ClassEdgeKind::Extends => "uml.extends",
-                ClassEdgeKind::Implements => "uml.implements",
-                ClassEdgeKind::Composes => "uml.composition",
-            };
-
-            let source_id = format!("cd:{}", edge.source);
-            let target_id = format!("cd:{}", edge.target);
-            let rel_id = format!("cd:{}→{}", edge.source, edge.target);
-
-            let mut rel_props = serde_json::Map::new();
-            rel_props.insert(
-                "predicate_id".to_string(),
-                serde_json::Value::String(pred_tag.to_string()),
-            );
-            rel_props.insert(
-                "confidence".to_string(),
-                serde_json::Value::Number(
-                    serde_json::Number::from_f64(edge.confidence)
-                        .unwrap_or(serde_json::Number::from(0)),
-                ),
-            );
-
-            if s.link_semantic_edge(&source_id, &target_id, &rel_id, pred_tag, &rel_props, true)
-                .is_ok()
-            {
-                relations_written += 1;
-            } else {
-                relations_skipped += 1;
+        // ElementVersion
+        let mut props_map = serde_json::Map::new();
+        if let Some(obj) = version_props.as_object() {
+            for (k, v) in obj {
+                props_map.insert(k.clone(), v.clone());
             }
         }
-
-        Ok(())
-    };
-
-    if let Err(e) = inner_result {
-        // Best-effort rollback — do not mask the original error.
-        let _ = store.rollback_transaction();
-        return Err(e);
+        s.upsert_element_version(&crate::graph::ElementVersion {
+            id: version_id.clone(),
+            element_id: id,
+            name: node.name.clone(),
+            status: "active".to_string(),
+            origin: "class-diagram".to_string(),
+            confidence: node.confidence,
+            props: props_map,
+        })?;
     }
 
-    store.commit_transaction().map_err(|se| {
-        ClassDiagramError::GraphWrite(anyhow::anyhow!("commit_transaction failed: {se}"))
-    })?;
+    // Write edges
+    for edge in &report.edges {
+        let pred_tag = match edge.predicate {
+            ClassEdgeKind::Extends => "uml.extends",
+            ClassEdgeKind::Implements => "uml.implements",
+            ClassEdgeKind::Composes => "uml.composition",
+        };
+
+        let source_id = format!("cd:{}", edge.source);
+        let target_id = format!("cd:{}", edge.target);
+        let rel_id = format!("cd:{}→{}", edge.source, edge.target);
+
+        let mut rel_props = serde_json::Map::new();
+        rel_props.insert(
+            "predicate_id".to_string(),
+            serde_json::Value::String(pred_tag.to_string()),
+        );
+        rel_props.insert(
+            "confidence".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(edge.confidence)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+
+        if s.link_semantic_edge(&source_id, &target_id, &rel_id, pred_tag, &rel_props, true)
+            .is_ok()
+        {
+            relations_written += 1;
+        } else {
+            relations_skipped += 1;
+        }
+    }
+
+    tx.commit().context("tx.commit")?;
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
