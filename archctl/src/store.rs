@@ -393,11 +393,13 @@ pub fn open_default(project_dir: &Path) -> Result<Box<dyn GraphStore>> {
     Ok(Box::new(store))
 }
 
-/// Open a `LbugStore` and return it as `Arc<dyn RawGraphQuery>`.
-/// Used by admin paths (`archctl graph query`, etc.) that need the
-/// raw Cypher escape hatch.
+/// Open a `LbugStore`, run pending schema migrations, and return it as
+/// `Arc<dyn RawGraphQuery>`. Used by admin paths (`archctl graph query`,
+/// etc.) that need the raw Cypher escape hatch. Without the init step the
+/// session is never opened and every query fails with "called before init".
 pub fn open_raw(project_dir: &Path) -> Result<Arc<dyn RawGraphQuery>> {
-    let store = LbugStore::open(project_dir)?;
+    let mut store = LbugStore::open(project_dir)?;
+    store.init().context("graph init (raw admin path)")?;
     Ok(Arc::new(store))
 }
 
@@ -553,20 +555,14 @@ impl Params {
 /// substrings in identifiers (e.g. "CREATED_AT" contains "CREATE",
 /// "updated_at" contains no "SET" but "vm.updated_at" does).
 fn is_read_only_query(cypher: &str) -> bool {
-    let upper = cypher.to_uppercase();
-    // Use word-boundary-aware check: the keyword must be surrounded by
-    // non-identifier chars (start/end of string, space, paren, comma, etc.)
-    // to avoid flagging substrings like "CREATED_AT" or "vm.updated_at".
-    let check = |keyword: &str| {
-        let pat = keyword.to_string();
-        let kw_upper = format!(" {pat} ");
-        let kw_upper_start = format!("({pat} ");
-        let kw_upper_end = format!(" {pat});");
-        !upper.contains(&kw_upper)
-            && !upper.contains(&kw_upper_start)
-            && !upper.contains(&kw_upper_end)
-    };
-    check("MERGE") && check("CREATE") && check("DELETE") && check("SET") && check("REMOVE")
+    // Tokenize on non-alphanumeric boundaries and compare whole tokens.
+    // This closes the "keyword at string start" gap of the previous
+    // substring approach (e.g. "MERGE (n:...)" was considered read-only)
+    // while still avoiding false positives like CREATED_AT or vm.updated_at.
+    let write_keywords = ["MERGE", "CREATE", "DELETE", "SET", "REMOVE", "DROP"];
+    !cypher
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|token| write_keywords.contains(&token))
 }
 
 impl From<anyhow::Error> for StoreError {
@@ -2276,8 +2272,10 @@ mod tests {
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
         store
-            .query("CREATE (:MetaType {id: 'mt.port', namespace: 'c4', name: 'port'});")
-            .expect("CREATE via port");
+            .execute_raw_cypher_for_test(
+                "CREATE (:MetaType {id: 'mt.port', namespace: 'c4', name: 'port'});",
+            )
+            .expect("CREATE via test escape hatch");
         let rows = store
             .query("MATCH (m:MetaType) RETURN m.id, m.name ORDER BY m.id;")
             .unwrap();

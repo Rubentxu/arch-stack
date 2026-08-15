@@ -619,7 +619,7 @@ mod tests {
             .unwrap();
 
         store
-            .query(
+            .execute_raw_cypher_for_test(
                 "CREATE (:Element {id: 'el:api', kind_id: 'mt.system', category: 'c4', canonical_key: 'el:api'}) RETURN 1;",
             )
             .unwrap();

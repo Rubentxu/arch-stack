@@ -14,7 +14,7 @@ use archctl::diagram::changeset_schema::CHANGESET_SCHEMA;
 use archctl::diagram::changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet};
 use archctl::diagram::export::build_bundle;
 use archctl::diagram::view_types::{Diagram, ViewMember};
-use archctl::store::{DiagramOps, GraphStore, LbugStore, RawGraphQuery};
+use archctl::store::{DiagramOps, GraphStore, LbugStore};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Schema consistency (pure unit test — no DB needed)
@@ -354,7 +354,7 @@ fn apply_with_matching_base_revision_succeeds() {
     // canonical_key must match the view selector scope: query_elements filters
     // `canonical_key STARTS WITH 'api'` for selector `container:api`.
     store
-        .query(
+        .execute_raw_cypher_for_test(
             "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'api'}) RETURN 1;",
         )
         .unwrap();
@@ -450,7 +450,7 @@ fn apply_round_trips_export_revision() {
 
     // Create Element node so link_renders finds it (idiom apply.rs:559)
     store
-        .query(
+        .execute_raw_cypher_for_test(
             "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'api', current_name: 'API', current_version_id: 'v:api'}) RETURN 1;",
         )
         .unwrap();
@@ -533,7 +533,7 @@ fn apply_round_trips_export_revision_after_cosmetic_edit() {
 
     // Seed Element
     store
-        .query(
+        .execute_raw_cypher_for_test(
             "CREATE (:Element {id: 'el:1', kind_id: 'mt.container', category: 'c4', canonical_key: 'orders'}) RETURN 1;",
         )
         .unwrap();
@@ -635,14 +635,14 @@ fn build_bundle_propagates_view_member_cosmetics() {
 
     // Seed Element
     store
-        .query(
+        .execute_raw_cypher_for_test(
             "CREATE (:Element {id: 'el:api', kind_id: 'mt.container', category: 'c4', canonical_key: 'api', current_name: 'API', current_status: 'active', current_confidence: 0.9, current_version_id: 'v:api'}) RETURN 1;",
         )
         .unwrap();
 
     // Seed ElementVersion
     store
-        .query(
+        .execute_raw_cypher_for_test(
             "CREATE (:ElementVersion {id: 'v:api', name: 'API', description: 'API service'}) RETURN 1;",
         )
         .unwrap();
