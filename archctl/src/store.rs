@@ -2143,17 +2143,17 @@ fn open_lbug_session(project_dir: &Path) -> Result<LbugSession> {
     Ok(LbugSession { conn, _db: db })
 }
 
-/// Create a relationship edge between two existing nodes, with MERGE-then-CREATE fallback.
+/// Create a relationship edge between two existing nodes, idempotent and transaction-safe.
 ///
-/// lbug 0.18.3 rejects MERGE on a REL TABLE (ADR-017 §"Nota técnica").
-/// When that happens we fall back to MATCH + CREATE — the CREATE is
-/// idempotent in lbug's single-graph mode (a second CREATE on an existing
-/// edge is a no-op).
+/// Uses OPTIONAL MATCH to check for an existing relationship before creating.
+/// This is idempotent (calling twice is a no-op) and never throws a duplicate-PK
+/// error inside a transaction, making it safe for Kùzu 0.18.3's auto-revert
+/// behaviour on query failures inside transactions.
 ///
-/// All four arguments (`from_label`, `from_id`, `rel_type`, `to_label`,
-/// `to_id`) are caller-validated identifiers. Errors from the fallback
-/// path are wrapped with a label-rich context so the caller's intent is
-/// visible at the error site.
+/// If either node does not exist, the relationship is simply not created
+/// (no error, matching the prior fallback behaviour).
+///
+/// All four arguments are caller-validated identifiers.
 fn link_with_merge_fallback(
     conn: &lbug::Connection,
     from_label: &str,
@@ -2162,18 +2162,21 @@ fn link_with_merge_fallback(
     to_label: &str,
     to_id: &str,
 ) -> Result<()> {
-    let primary = format!(
-        "MERGE (a:{from_label} {{id: '{from_id}'}})-[:{rel_type}]->(b:{to_label} {{id: '{to_id}'}});"
+    // Single, idempotent, transaction-safe query.
+    // OPTIONAL MATCH returns null for the relationship if it doesn't exist;
+    // WHERE r IS NULL ensures we only CREATE when the edge is absent.
+    // If either endpoint node is missing the MATCH finds nothing and the
+    // CREATE is never reached — no error, matching prior fallback semantics.
+    let cypher = format!(
+        "MATCH (a:{from_label} {{id: '{from_id}'}}), (b:{to_label} {{id: '{to_id}'}}) \
+         WITH a, b \
+         OPTIONAL MATCH (a)-[r:{rel_type}]->(b) \
+         WITH a, b, r \
+         WHERE r IS NULL \
+         CREATE (a)-[:{rel_type}]->(b);"
     );
-    if conn.query(&primary).is_err() {
-        let fallback = format!(
-            "MATCH (a:{from_label} {{id: '{from_id}'}}), (b:{to_label} {{id: '{to_id}'}}) \
-             CREATE (a)-[:{rel_type}]->(b);"
-        );
-        conn.query(&fallback).with_context(|| {
-            format!("link {rel_type} fallback for ({from_label}:{from_id}, {to_label}:{to_id})")
-        })?;
-    }
+    conn.query(&cypher)
+        .with_context(|| format!("link {rel_type} ({from_label}:{from_id}, {to_label}:{to_id})"))?;
     Ok(())
 }
 
