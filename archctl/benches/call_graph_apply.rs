@@ -140,6 +140,7 @@ fn bench_call_graph_apply_zustand(c: &mut Criterion) {
 /// Deterministic, no cache dependency. Thresholds:
 ///   - < 5s wall-clock (criterion measured)
 ///   - ≤ 30 ms/element (ADR-036 §D4 post-D2 target)
+///
 /// This bench extracts from the committed .go file (mimicking real CLI usage).
 ///
 /// T4.1: per-element throughput assertion added.
