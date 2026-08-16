@@ -1,8 +1,8 @@
 //! Capability registry — single source of truth for archctl feature surface.
 //!
-//! Replaces nine drift sources (README.md, MANUAL.md, SUPPORTED_LANGUAGES,
-//! schemas/call-graph-report.schema.json language enum, STATE.md, ROADMAP.md,
-//! docs/specs/index.md, ADRs) with one introspectable registry.
+//! Replaces nine drift sources (README.md, MANUAL.md, schemas/call-graph-report.schema.json
+//! language enum, STATE.md, ROADMAP.md, docs/specs/index.md, ADRs) with one
+//! introspectable registry. Language support is derived from the registry itself.
 //!
 //! Per ADR-045: every strategy, renderer, view kind, doctor scope, IDE
 //! adapter, MCP tool, and CLI subcommand declared in code has a matching
@@ -53,10 +53,12 @@ impl Maturity {
 
 /// Runtime availability of a capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum Availability {
+    #[serde(rename = "available")]
     Available,
+    #[serde(rename = "opt_in")]
     OptIn,
+    #[serde(rename = "experimental")]
     Experimental,
 }
 
@@ -281,6 +283,7 @@ pub fn registry() -> CapabilityRegistry {
 pub fn render_json(reg: &CapabilityRegistry) -> String {
     #[derive(serde::Serialize)]
     struct RegistryOutput<'a> {
+        #[serde(rename = "schemaVersion")]
         schema_version: &'a str,
         capabilities: &'a [Capability],
     }

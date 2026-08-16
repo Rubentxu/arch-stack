@@ -120,7 +120,7 @@ fn test_strategy_drift_fails() {
 
     let missing: Vec<&str> = registered_strategy_ids
         .iter()
-        .filter(|id| !registry_ids.contains(&id.to_string()))
+        .filter(|id| !registry_ids.contains(*id as &str))
         .copied()
         .collect();
 

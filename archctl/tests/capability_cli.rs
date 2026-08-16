@@ -28,10 +28,10 @@ fn test_capabilities_default_json_shape() {
     let out = capabilities_stdout(&["capabilities"]).expect("capabilities JSON runs");
     let json: serde_json::Value = serde_json::from_str(&out).expect("stdout is valid JSON");
     assert_eq!(
-        json.get("schema_version")
-            .expect("schema_version field present"),
+        json.get("schemaVersion")
+            .expect("schemaVersion field present"),
         "1",
-        "schema_version must be '1'"
+        "schemaVersion must be '1'"
     );
     let caps = json
         .get("capabilities")
@@ -42,6 +42,19 @@ fn test_capabilities_default_json_shape() {
         !arr.is_empty(),
         "capabilities must not be empty (13 categories)"
     );
+
+    // Validate output against embedded schema.
+    let schema_str = archctl::capability::CAPABILITY_REGISTRY_SCHEMA;
+    let schema: serde_json::Value =
+        serde_json::from_str(schema_str).expect("embedded schema is valid JSON");
+    let validator =
+        jsonschema::validator_for(&schema).expect("capability-registry schema compiles");
+    let result = validator.validate(&json);
+    assert!(
+        result.is_ok(),
+        "capabilities JSON must validate against schema: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -51,7 +64,7 @@ fn test_capabilities_json_flag() {
         .expect("capabilities --format json runs");
     let json: serde_json::Value = serde_json::from_str(&out).expect("--format json is valid JSON");
     assert_eq!(
-        json.get("schema_version").expect("schema_version present"),
+        json.get("schemaVersion").expect("schemaVersion present"),
         "1"
     );
 }
@@ -73,7 +86,7 @@ fn test_capabilities_markdown_deterministic() {
 fn test_capabilities_invalid_format_rejected() {
     // S5: Invalid --format exits with clap error (exit 2).
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_archctl"));
-    cmd.args(&["capabilities", "--format", "xml"]);
+    cmd.args(["capabilities", "--format", "xml"]);
     let output = cmd.output().expect("archctl binary exists");
     // Clap exits 2 for invalid value.
     assert_eq!(
@@ -98,7 +111,7 @@ fn test_capabilities_check_exits_zero_when_fresh() {
     // Run check with that file as CWD.
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_archctl"));
     cmd.current_dir(tmp.path());
-    cmd.args(&["capabilities", "--check"]);
+    cmd.args(["capabilities", "--check"]);
     let output = cmd.output().expect("archctl binary exists");
     assert_eq!(
         output.status.code(),
@@ -123,7 +136,7 @@ fn test_capabilities_check_exits_nonzero_on_stale() {
 
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_archctl"));
     cmd.current_dir(tmp.path());
-    cmd.args(&["capabilities", "--check"]);
+    cmd.args(["capabilities", "--check"]);
     let output = cmd.output().expect("archctl binary exists");
     assert_eq!(
         output.status.code(),

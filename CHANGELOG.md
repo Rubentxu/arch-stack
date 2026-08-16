@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **P1-08 Wave 1 (items 15+16)** — `archctl capabilities` CLI (`--format json|markdown`, `--check`): typed capability registry with 79 entries across categories (extractors per language, renderers, views, doctor scopes, IDE adapters, MCP tools, CLI, plugins); bidirectional alignment tests; generated `docs/CAPABILITIES.md` + staleness gates in `verify-local.sh`/`test-ci-gates.sh`; ADR-045 promoted accepted.
+
+### Fixed
+- **P1-08 Wave 1** — `schemas/capability-registry.schema.json` `schemaVersion` field now correctly camelCased per spec (was `schema_version` in JSON output); Go/Java/Kotlin reports previously failed schema validation due to stale language enum in `schemas/call-graph-report.schema.json` (3→6 languages: rust, typescript, python, go, java, kotlin); stale language matrices removed from README/MANUAL (now pointer to `docs/CAPABILITIES.md`); `SUPPORTED_LANGUAGES` stale const removed from `cli.rs`.
+
 ## [1.47.1] — 2026-08-16
 
 ### Fixed
