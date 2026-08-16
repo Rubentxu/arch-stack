@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.48.1] — 2026-08-16
+
+### Changed
+- **docs-state-refresh-v148** — `docs/STATE.md` full refresh to v1.48.0 reality (Wave 0 7/7 DONE — was "6/7 falta item 7"; Wave 1 items 8–16 ALL DONE); corrected version-table rows for v1.41.6 (CI fast gate), v1.42.0 (ladybug doctor — was mislabeled "Wave 0 item 7"), v1.43.0 (batch: p0-03 native runners + p1-09 + p1-01 + p1-03), v1.45.0 (UnitOfWork, dropped bogus "item 15"), v1.47.0 (M32 PR2 UNWIND extension — was mislabeled remediation), v1.47.1 (remediation r1); real counts (118 tags, ~41.1K LOC src, ~11.6K tests, ~900 benches); fixed wrong `/var/home/...` path; "Próxima acción" → Wave 2 (items 17–18).
+- **docs-state-refresh-v148** — `docs/ROADMAP.md` M32 row: corrected the `v1.46.0` tag claim (PR1 merged as PR #187 but tag never created; documented gap).
+- **docs-state-refresh-v148** — `docs/specs/capability-registry.md` W1 wording fix (13 → 8 categories, 79 entries).
+
+### Fixed
+- **docs-state-refresh-v148** — `manifests/scope.toml`: `archctl/src/doctor.rs` → `archctl/src/doctor/` (file became directory in 2026-07-30; the editable_files_exist gate was failing silently in the full-suite run — STATE.md "30/30 scopes" was actually 28/30).
+- **docs-state-refresh-v148** — `manifests/distribution.toml` + `Formula/archctl.rb`: restored the cross-link between the Homebrew formula and `docs/maintainers/HOMEBREW_FORMULA.md` (dropped when the doc moved in 2026-08-11; must_hold invariant was silently failing since then). Doctor full suite now genuinely 30/30 OK.
+- **docs-state-refresh-v148** — `archctl/src/cli.rs`: removed dead `_ctx: &CliContext` parameter from `capabilities_cmd` (debt-verify OE-2); relocated the orphaned `row_to_json` doc comment stranded above `capabilities_cmd` during the p1-08 insertion and gave `capabilities_cmd` its own doc comment.
+
 ## [1.48.0] — 2026-08-16
 
 ### Added
