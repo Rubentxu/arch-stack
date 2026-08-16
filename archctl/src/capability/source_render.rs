@@ -8,29 +8,38 @@ use crate::capability::{Availability, Capability, Category, Maturity, Provider};
 /// All diagram renderers.
 ///
 /// Order: structurizr, plantuml, mermaid (matches RenderKind declaration order).
-pub const ALL: &[Capability] = &[
-    Capability::new(
-        "render.structurizr",
-        Category::Render,
-        Maturity::Stable,
-        true,
-        Availability::Available,
-        vec![Provider::new("any", Maturity::Stable)],
-    ),
-    Capability::new(
-        "render.plantuml",
-        Category::Render,
-        Maturity::Stable,
-        true,
-        Availability::Available,
-        vec![Provider::new("any", Maturity::Stable)],
-    ),
-    Capability::new(
-        "render.mermaid",
-        Category::Render,
-        Maturity::Stable,
-        true,
-        Availability::Available,
-        vec![Provider::new("any", Maturity::Stable)],
-    ),
-];
+#[allow(dead_code)]
+pub fn all() -> Vec<Capability> {
+    vec![
+        Capability::new(
+            "render.structurizr",
+            Category::Render,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "render.plantuml",
+            Category::Render,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "render.mermaid",
+            Category::Render,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+    ]
+}
+
+/// Backwards-compatible const alias.
+/// Prefer `all()` in new code.
+#[deprecated(since = "0.1.0", note = "use all() instead")]
+#[allow(dead_code)]
+pub const ALL: &[Capability] = &[];

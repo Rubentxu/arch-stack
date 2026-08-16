@@ -8,6 +8,17 @@
 //! adapter, MCP tool, and CLI subcommand declared in code has a matching
 //! registry entry, and vice versa. Violations fail `alignment.rs` tests.
 
+mod alignment;
+mod source_cargo;
+mod source_cli;
+mod source_code;
+mod source_diagram;
+mod source_doctor;
+mod source_ide;
+mod source_mcp;
+mod source_plugin;
+mod source_render;
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -72,24 +83,20 @@ pub struct Provider {
 
 impl Provider {
     /// Build a new provider.
-    pub fn new(language: impl Into<String>, maturity: Maturity) -> Self {
+    pub fn new(language: &'static str, maturity: Maturity) -> Self {
         Self {
-            language: language.into(),
+            language: String::from(language),
             maturity,
             schema: None,
         }
     }
 
     /// Build a new provider with a schema id.
-    pub fn with_schema(
-        language: impl Into<String>,
-        maturity: Maturity,
-        schema: impl Into<String>,
-    ) -> Self {
+    pub fn with_schema(language: &'static str, maturity: Maturity, schema: &'static str) -> Self {
         Self {
-            language: language.into(),
+            language: String::from(language),
             maturity,
-            schema: Some(schema.into()),
+            schema: Some(String::from(schema)),
         }
     }
 }
@@ -120,37 +127,50 @@ pub struct Capability {
 impl Capability {
     /// Build a new capability entry.
     ///
-    /// # Panics
-    ///
-    /// Panics if `id` does not contain exactly one `.` separator.
+    /// The id is not validated at const-construction time; call `validate_id`
+    /// separately in non-const init or tests.
     pub fn new(
-        id: impl Into<String>,
+        id: &'static str,
         category: Category,
         maturity: Maturity,
         deterministic: bool,
         availability: Availability,
-        providers: impl Into<Vec<Provider>>,
+        providers: Vec<Provider>,
     ) -> Self {
-        let id_str = id.into();
-        assert!(
-            id_str.matches('.').count() == 1,
-            "capability id must have exactly one '.': got {id_str}"
-        );
+        Self::validate_id(id);
         Self {
-            id: id_str,
+            id: String::from(id),
             category,
             maturity,
             deterministic,
             requirements: BTreeSet::new(),
             availability,
-            providers: providers.into(),
+            providers,
         }
     }
 
     /// Add a requirement string.
-    pub fn with_requirement(mut self, req: impl Into<String>) -> Self {
-        self.requirements.insert(req.into());
+    pub fn with_requirement(mut self, req: &'static str) -> Self {
+        self.requirements.insert(String::from(req));
         self
+    }
+
+    /// Validate that `id` is a well-formed registry identifier.
+    ///
+    /// Format: `category.technology` or `category.technology.variant`
+    /// - Must contain at least one `.` separator
+    /// - No empty segments (no leading, trailing, or consecutive dots)
+    #[track_caller]
+    pub fn validate_id(id: &str) {
+        assert!(
+            !id.is_empty()
+                && !id.starts_with('.')
+                && !id.ends_with('.')
+                && !id.contains("..")
+                && id.split('.').count() >= 2
+                && id.split('.').all(|s| !s.is_empty()),
+            "capability id must be 'category.technology' or 'category.technology.variant': got {id}"
+        );
     }
 }
 
@@ -227,10 +247,10 @@ mod tests {
         });
         assert!(result.is_err());
 
-        // Invalid: two dots — should panic
+        // Invalid: empty segment (consecutive dots) — should panic
         let result = std::panic::catch_unwind(|| {
             Capability::new(
-                "a.b.c",
+                "code..call_graph",
                 Category::Code,
                 Maturity::Stable,
                 true,

@@ -10,29 +10,38 @@ use crate::capability::{Availability, Capability, Category, Maturity, Provider};
 ///
 /// DO NOT add, remove, or modify entries here to change runtime behaviour.
 /// The runtime gateway (`cognitive::mcp::gateway`) is the authoritative gate.
-pub const ALL: &[Capability] = &[
-    Capability::new(
-        "mcp.tool.graph_query",
-        Category::Mcp,
-        Maturity::Stable,
-        true,
-        Availability::OptIn,
-        vec![Provider::new("any", Maturity::Stable)],
-    ),
-    Capability::new(
-        "mcp.tool.schema_validate",
-        Category::Mcp,
-        Maturity::Stable,
-        true,
-        Availability::OptIn,
-        vec![Provider::new("any", Maturity::Stable)],
-    ),
-    Capability::new(
-        "mcp.tool.run_tests_local",
-        Category::Mcp,
-        Maturity::Experimental,
-        true,
-        Availability::OptIn,
-        vec![Provider::new("any", Maturity::Experimental)],
-    ),
-];
+#[allow(dead_code)]
+pub fn all() -> Vec<Capability> {
+    vec![
+        Capability::new(
+            "mcp.tool.graph_query",
+            Category::Mcp,
+            Maturity::Stable,
+            true,
+            Availability::OptIn,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "mcp.tool.schema_validate",
+            Category::Mcp,
+            Maturity::Stable,
+            true,
+            Availability::OptIn,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "mcp.tool.run_tests_local",
+            Category::Mcp,
+            Maturity::Experimental,
+            true,
+            Availability::OptIn,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+    ]
+}
+
+/// Backwards-compatible const alias.
+/// Prefer `all()` in new code.
+#[deprecated(since = "0.1.0", note = "use all() instead")]
+#[allow(dead_code)]
+pub const ALL: &[Capability] = &[];

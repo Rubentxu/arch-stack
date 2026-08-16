@@ -1,126 +1,136 @@
-//! Source: C4 diagram kinds and UML view kinds.
+//! Source: CLI subcommands.
 //!
-//! Mirrors `diagram::selector::C4Kind` and `diagram::project_selector::ViewKind`
-//! into the capability registry.
+//! Mirrors `cli::Command` into the capability registry as `cli.<subcommand>`.
 
 use crate::capability::{Availability, Capability, Category, Maturity, Provider};
 
-/// All C4 diagram kinds (from `diagram::selector::C4Kind`).
-#[allow(dead_code)]
-pub fn c4_kinds() -> Vec<Capability> {
-    vec![
-        Capability::new(
-            "diagram.c4.context",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.c4.container",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.c4.component",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.c4.dynamic",
-            Category::Diagram,
-            Maturity::Experimental,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Experimental)],
-        ),
-        Capability::new(
-            "diagram.c4.deployment",
-            Category::Diagram,
-            Maturity::Experimental,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Experimental)],
-        ),
-    ]
-}
-
-/// All UML/view kinds (from `diagram::project_selector::ViewKind`).
-#[allow(dead_code)]
-pub fn view_kinds() -> Vec<Capability> {
-    vec![
-        Capability::new(
-            "diagram.view.c4_context",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.view.c4_container",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.view.c4_component",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.view.class",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.view.sequence",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.view.state",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-        Capability::new(
-            "diagram.view.usecase",
-            Category::Diagram,
-            Maturity::Stable,
-            true,
-            Availability::Available,
-            vec![Provider::new("any", Maturity::Stable)],
-        ),
-    ]
-}
-
-/// All diagram kinds (C4 + UML views).
+/// All CLI subcommands (top-level `Command` variants).
+///
+/// Order matches the `cli::Command` enum declaration.
 #[allow(dead_code)]
 pub fn all() -> Vec<Capability> {
-    let mut caps = c4_kinds();
-    caps.extend(view_kinds());
-    caps
+    vec![
+        Capability::new(
+            "cli.doctor",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.project",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.graph",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.inventory",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.diagram",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.evidence",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.render",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.code",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.skills",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.agent",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.mcp",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.plugin",
+            Category::Cli,
+            Maturity::Experimental,
+            true,
+            Availability::OptIn,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+        Capability::new(
+            "cli.ide",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.view",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "cli.self",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+    ]
 }
 
 /// Backwards-compatible const alias.

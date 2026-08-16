@@ -1,0 +1,261 @@
+//! Source: doctor scope gates (28 manifests).
+//!
+//! Mirrors `manifests/*.toml` into the capability registry as `doctor.scope.<id>`.
+//! Each manifest represents a scope gate checked by `archctl doctor --scopes`.
+
+use crate::capability::{Availability, Capability, Category, Maturity, Provider};
+
+/// All doctor scope gates.
+///
+/// List matches `manifests/*.toml` directory listing.
+#[allow(dead_code)]
+pub fn all() -> Vec<Capability> {
+    vec![
+        Capability::new(
+            "doctor.scope.astgrep",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.benchmark",
+            Category::Doctor,
+            Maturity::Experimental,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+        Capability::new(
+            "doctor.scope.bench",
+            Category::Doctor,
+            Maturity::Experimental,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+        Capability::new(
+            "doctor.scope.capability",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.cli",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.clock",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.code",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.diagram",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.distribution",
+            Category::Doctor,
+            Maturity::Experimental,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+        Capability::new(
+            "doctor.scope.doctor",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.environment",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.evaluation",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.evidence",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.filesystem",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.graph",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.identity",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.ide",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.inventory",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.plugin",
+            Category::Doctor,
+            Maturity::Experimental,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+        Capability::new(
+            "doctor.scope.project",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.render",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.row",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.scope",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.self",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.skills",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.source",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.store",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.telemetry",
+            Category::Doctor,
+            Maturity::Experimental,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Experimental)],
+        ),
+        Capability::new(
+            "doctor.scope.view",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+        Capability::new(
+            "doctor.scope.xdg",
+            Category::Doctor,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
+    ]
+}
+
+/// Backwards-compatible const alias.
+/// Prefer `all()` in new code.
+#[deprecated(since = "0.1.0", note = "use all() instead")]
+#[allow(dead_code)]
+pub const ALL: &[Capability] = &[];
