@@ -1,4 +1,5 @@
 pub mod astgrep;
+pub mod capability;
 pub mod cli;
 pub mod clock;
 pub mod code;

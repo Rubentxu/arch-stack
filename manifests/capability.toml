@@ -1,0 +1,47 @@
+# scope: capability
+#
+# Capability registry — single source of truth for archctl feature surface.
+# Per ADR-045, this module enumerates every strategy, renderer, view kind,
+# doctor scope, IDE adapter, MCP tool, and CLI subcommand declared in code.
+
+id = "capability"
+version = "0.1.0"
+description = "Capability registry — typed carriers + source introspectors + alignment tests (P1-08)"
+
+cargo_dir = "archctl"
+
+editable = [
+  "archctl/src/capability/mod.rs",
+]
+
+# Public surface of the capability module.
+public_symbols = [
+  "Capability",
+  "CapabilityRegistry",
+  "Provider",
+  "Maturity",
+  "Availability",
+  "Category",
+]
+
+# What `capability` must keep doing.
+must_hold = [
+  "pub struct Capability",
+  "pub struct Provider",
+  "pub enum Maturity",
+  "pub enum Availability",
+  "pub enum Category",
+  "pub struct CapabilityRegistry",
+  "fn add(",
+  "fn iter(",
+]
+
+# No untyped JSON values; no reqwest; no HashMap in deterministic paths.
+must_not_contain = [
+  "serde_json::Value",
+  "use reqwest",
+  "std::collections::HashMap",
+]
+
+# Minimum 3 tests: id format, maturity downgrade, deterministic sort.
+minimum_tests = 3

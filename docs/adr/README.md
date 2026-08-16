@@ -51,6 +51,7 @@
 | [ADR-040](ADR-040-cognitive-conditional-activation.md) | Cognitive layer conditional activation — ADR-021/022/023 marcados conditional/parcial/diferido | Aceptado (2026-08-09) |
 | [ADR-041](ADR-041-workspace-state-persistence.md) | Workspace state persistence — durable workspace state for `archctl view` | Aceptado (2026-08-10) |
 | [ADR-042](ADR-042-ide-adapter-abstraction.md) | IDE adapter abstraction — multi-IDE plugin target | Propuesto (2026-08-10) |
+| [ADR-045](ADR-045-capability-registry-single-source-of-truth.md) | Capability Registry como fuente única de verdad (P1-08) | Aceptado (2026-08-16) |
 | [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | Propuesto (2026-08-10) |
 | [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | Propuesto (2026-08-10) |
 | [ADR-059](ADR-059-rawgraphquery-trait-split.md) | RawGraphQuery trait split + SemanticEdgeRepository boundary (P1-04) | Aceptado (2026-08-15) |

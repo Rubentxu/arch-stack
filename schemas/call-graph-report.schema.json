@@ -13,7 +13,11 @@
       "properties": {
         "root": { "type": "string" },
         "filesScanned": { "type": "integer", "minimum": 0 },
-        "languages": { "type": "array", "items": { "type": "string" } },
+        "languages": {
+          "type": "object",
+          "description": "Language → file-count map (e.g. {\"rust\": 30, \"typescript\": 12}).",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
         "durationMs": { "type": "integer", "minimum": 0 }
       }
     },
@@ -21,11 +25,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["canonicalKey", "kind", "language", "file", "line", "name", "confidence"],
+        "required": ["canonical_key", "kind", "language", "file", "line", "name", "confidence"],
         "properties": {
-          "canonicalKey": { "type": "string", "pattern": "^[a-z]+:.+:[^:]+:[0-9]+$" },
-          "kind": { "enum": ["Function", "Method", "Closure"] },
-          "language": { "enum": ["Rust", "TypeScript", "Python"] },
+          "canonical_key": { "type": "string", "pattern": "^[a-z]+:.+:[^:]+:[0-9]+$" },
+          "kind": { "enum": ["function", "method", "closure"] },
+          "language": { "enum": ["rust", "typescript", "python", "go", "java", "kotlin"] },
           "file": { "type": "string" },
           "contentHash": { "type": "string", "description": "sha256:<hex> of file content (D2 identity input)" },
           "line": { "type": "integer", "minimum": 1 },
@@ -40,16 +44,16 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["canonicalKey", "caller", "callee", "file", "line", "kind", "messageKind", "confidence"],
+        "required": ["canonical_key", "caller", "callee", "file", "line", "kind", "messageKind", "confidence"],
         "properties": {
-          "canonicalKey": { "type": "string" },
+          "canonical_key": { "type": "string" },
           "caller": { "type": "string" },
           "callee": { "type": "string" },
           "file": { "type": "string" },
           "contentHash": { "type": "string", "description": "sha256:<hex> of file content (D2 identity input)" },
           "line": { "type": "integer", "minimum": 1 },
-          "kind": { "enum": ["DirectCall", "MethodCall", "ChainedCall"] },
-          "messageKind": { "enum": ["SyncCall", "AsyncCall"] },
+          "kind": { "enum": ["direct_call", "method_call", "chained_call"] },
+          "messageKind": { "enum": ["sync_call", "async_call", "return"] },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
         }
       }

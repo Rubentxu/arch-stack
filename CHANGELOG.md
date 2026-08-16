@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.48.0] — 2026-08-16
+
+### Added
+- **P1-08 Wave 1 (items 15+16)** — `archctl capabilities` CLI (`--format json|markdown`, `--check`): typed capability registry as single source of truth (ADR-045, promoted accepted) with 79 entries across 8 categories (extractors per language, strategies, renderers, views, doctor scopes, IDE adapters, MCP tools, CLI, plugins); bidirectional alignment tests (incl. IDE adapter id derivation); generated `docs/CAPABILITIES.md` + staleness gates in `verify-local.sh`/`test-ci-gates.sh`; `schemas/capability-registry.schema.json` (schemaVersion "1"); `docs/specs/capability-registry.md` (8 requirements, 17 G/W/T scenarios).
+
+### Fixed
+- **P1-08** — `schemas/call-graph-report.schema.json` stale language enum 3 → 6 (rust, typescript, python, go, java, kotlin): Go/Java/Kotlin reports previously failed schema validation; `schemaVersion` field correctly camelCased per spec; stale language matrices removed from README/MANUAL (now pointer to `docs/CAPABILITIES.md`); `SUPPORTED_LANGUAGES` stale const removed from `cli.rs`.
+- **P1-08** — Registry IDE ids derive from `ide::builtin_adapters()` ids (`ide.claude-code`, was drifted `ide.claude_code`) — debt-verify CP-5.
+- Pre-existing clippy `--all-targets` errors fixed (unused imports in `tests/code_state_machine.rs` from the M32 refactor; doc-lint in `benches/call_graph_apply.rs`) — surfaced by this cycle's verify-local gate.
+
 ## [1.47.1] — 2026-08-16
 
 ### Fixed

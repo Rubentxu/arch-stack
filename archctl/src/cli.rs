@@ -14,9 +14,6 @@ use crate::skills;
 use crate::source::SourceArtifact;
 use crate::{doctor, environment, filesystem, graph, inventory, render};
 
-// D5: Shared constant for CLI help strings.
-pub const SUPPORTED_LANGUAGES: &str = "rust, typescript, python, go";
-
 /// Container for the ports a CLI handler needs.
 ///
 /// Constructed once at the top of `run()`, then passed by reference to
@@ -91,6 +88,13 @@ impl CliContext {
             .current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
     }
+}
+
+/// Output format for the capabilities command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CapabilityFormat {
+    Json,
+    Markdown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -554,6 +558,15 @@ pub enum Command {
     Lifecycle {
         #[command(subcommand)]
         action: SelfAction,
+    },
+    /// Query the capability registry (default: JSON output).
+    Capabilities {
+        /// Output in a specific format (default: json).
+        #[arg(long, value_enum, default_value_t = CapabilityFormat::Json)]
+        format: CapabilityFormat,
+        /// Check whether docs/CAPABILITIES.md is up to date (exits non-zero if stale).
+        #[arg(long)]
+        check: bool,
     },
 }
 
@@ -1299,6 +1312,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
         },
+        Command::Capabilities { format, check } => Ok(capabilities_cmd(format, check, ctx)?),
     }
 }
 
@@ -1438,6 +1452,73 @@ fn graph_neighbours_cmd(
 /// name. This is the **only** place in `archctl` that turns a `Row`
 /// into JSON for CLI output — keeping the conversion local means the
 /// domain stays free of `serde_json`.
+fn capabilities_cmd(
+    format: CapabilityFormat,
+    check: bool,
+    _ctx: &CliContext,
+) -> anyhow::Result<i32> {
+    let reg = crate::capability::registry();
+
+    if check {
+        // S9 / S10: staleness check against docs/CAPABILITIES.md.
+        let fresh = crate::capability::render_markdown(&reg);
+        let docs_path = std::path::Path::new("docs/CAPABILITIES.md");
+        if !docs_path.exists() {
+            anyhow::bail!(
+                "docs/CAPABILITIES.md does not exist. Run: \
+                archctl capabilities --format markdown > docs/CAPABILITIES.md"
+            );
+        }
+        let current = std::fs::read_to_string(docs_path).context("read docs/CAPABILITIES.md")?;
+        // Normalize: shell redirect adds exactly one \n via println!. Strip exactly one
+        // trailing \n so we compare the markdown content, not the println! artifact.
+        let current_trimmed = if current.ends_with('\n') {
+            &current[..current.len() - 1]
+        } else {
+            &current[..]
+        };
+        if current_trimmed != fresh {
+            let current_lines: Vec<&str> = current_trimmed.lines().collect();
+            let fresh_lines: Vec<&str> = fresh.lines().collect();
+            let max_len = current_lines.len().max(fresh_lines.len());
+            let mut mismatch = 0;
+            for (i, (c, f)) in current_lines
+                .iter()
+                .zip(fresh_lines.iter())
+                .enumerate()
+                .take(max_len)
+            {
+                if c != f {
+                    mismatch = i + 1;
+                    break;
+                }
+            }
+            if mismatch == 0 && current_lines.len() != fresh_lines.len() {
+                mismatch = 1;
+            }
+            anyhow::bail!(
+                "docs/CAPABILITIES.md is stale (first difference at line {}). Run: \
+                archctl capabilities --format markdown > docs/CAPABILITIES.md",
+                mismatch
+            );
+        }
+        Ok(0)
+    } else {
+        // Default: emit in the requested format.
+        match format {
+            CapabilityFormat::Json => {
+                let output = crate::capability::render_json(&reg);
+                println!("{}", output);
+            }
+            CapabilityFormat::Markdown => {
+                let output = crate::capability::render_markdown(&reg);
+                println!("{}", output);
+            }
+        }
+        Ok(0)
+    }
+}
+
 fn row_to_json(row: &crate::row::Row) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     for (k, cell) in row.iter() {

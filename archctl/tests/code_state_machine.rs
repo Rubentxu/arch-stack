@@ -1,9 +1,7 @@
 //! Integration tests for `archctl code state-machine` apply contract.
 
-use std::collections::BTreeMap;
-
 use archctl::filesystem::SystemFilesystem;
-use archctl::store::{LbugStore, RawGraphQuery};
+use archctl::store::RawGraphQuery;
 use tempfile::TempDir;
 
 // ─── UNWIND bulk correctness (M32 D2) ────────────────────────────────────
@@ -21,7 +19,7 @@ fn state_machine_apply_unwind_bulk_correctness() {
     use archctl::code::state_machine::{
         State, StateKind, StateMachine, StateMachineReport, Transition,
     };
-    use archctl::store::{ElementRepository, GraphStore, LbugStore};
+    use archctl::store::{GraphStore, LbugStore};
 
     let tmp = TempDir::new().unwrap();
     let project = tmp.path();
