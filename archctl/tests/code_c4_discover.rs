@@ -1011,3 +1011,225 @@ fn c4_discover_apply_atomic_abort_via_unit_of_work() {
          Version count: {final_versions}"
     );
 }
+
+// ─── M32 D2: UNWIND bulk correctness ─────────────────────────────────────────
+
+/// Regression guard for M32 D2: the UNWIND bulk-import path in c4_discover::apply
+/// must produce the same element and edge counts as the pre-UNWIND per-element path.
+///
+/// Strategy: build a DiscoverReport with 3 containers, apply it, verify exact counts
+/// via LbugStore queries, then apply again and verify idempotency (skip, no duplicates).
+///
+/// T7.2: c4_discover UNWIND test.
+#[test]
+fn c4_discover_apply_unwind_bulk_correctness() {
+    use archctl::code::c4_discover::{
+        Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
+    };
+    use archctl::filesystem::MemoryFilesystem;
+    use archctl::store::{GraphStore, LbugStore};
+
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+
+    // Build a DiscoverReport with 3 containers.
+    let containers = vec![
+        Container {
+            canonical_key: "auth-svc".to_string(),
+            name: "auth-svc".to_string(),
+            strategy: "cargo-workspace".to_string(),
+            confidence: 0.85,
+            merged_from: vec!["cargo-workspace".to_string()],
+            evidences: vec![
+                Evidence {
+                    content_hash: "sha256:aaaa".to_string(),
+                    file: "auth-svc/Cargo.toml".to_string(),
+                    line: 3,
+                    kind: EvidenceKind::Structural,
+                    text: "Cargo workspace member".to_string(),
+                },
+                Evidence {
+                    content_hash: "sha256:bbbb".to_string(),
+                    file: "auth-svc/src/lib.rs".to_string(),
+                    line: 1,
+                    kind: EvidenceKind::Lexical,
+                    text: "Module root".to_string(),
+                },
+            ],
+        },
+        Container {
+            canonical_key: "api-gateway".to_string(),
+            name: "api-gateway".to_string(),
+            strategy: "dockerfile".to_string(),
+            confidence: 0.60,
+            merged_from: vec!["dockerfile".to_string()],
+            evidences: vec![Evidence {
+                content_hash: "sha256:cccc".to_string(),
+                file: "services/api/Dockerfile".to_string(),
+                line: 1,
+                kind: EvidenceKind::Structural,
+                text: "Dockerfile for api-gateway".to_string(),
+            }],
+        },
+        Container {
+            canonical_key: "shared-lib".to_string(),
+            name: "shared-lib".to_string(),
+            strategy: "cargo-workspace".to_string(),
+            confidence: 0.90,
+            merged_from: vec!["cargo-workspace".to_string()],
+            evidences: vec![Evidence {
+                content_hash: "sha256:dddd".to_string(),
+                file: "libs/shared/Cargo.toml".to_string(),
+                line: 3,
+                kind: EvidenceKind::Structural,
+                text: "Shared library".to_string(),
+            }],
+        },
+    ];
+
+    let report = DiscoverReport {
+        schema_version: "1.0".to_string(),
+        project: ProjectMeta {
+            root: project.display().to_string(),
+            files_scanned: 5,
+            languages: BTreeMap::from([("rust".to_string(), 4), ("dockerfile".to_string(), 1)]),
+            duration_ms: 25,
+        },
+        discovered: containers,
+        errors: vec![],
+    };
+
+    let fs = MemoryFilesystem::new();
+
+    // ── First apply: writes all 3 containers ───────────────────────────────────
+    let r1 =
+        archctl::code::c4_discover::apply(project, &report, &fs).expect("first apply must succeed");
+    assert_eq!(
+        r1.elements_written, 3,
+        "first apply should write 3 container elements"
+    );
+    assert_eq!(r1.elements_skipped, 0);
+    assert!(
+        r1.evidences_written >= 4,
+        "first apply should write 4 evidences (2+1+1)"
+    );
+    assert!(
+        r1.source_artifacts_written >= 4,
+        "first apply should write 4 source artifacts (2+1+1)"
+    );
+
+    // ── Verify store state after first apply ────────────────────────────────────
+    {
+        let mut store = LbugStore::open(project).expect("store must open");
+        store.init().expect("store must init");
+
+        // 3 containers + 3 metatype seeds (mt.container, mt.component, plus possible mt.element init)
+        let element_count: i64 = store
+            .query("MATCH (e:Element) RETURN count(e) AS cnt;")
+            .expect("count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert!(
+            element_count >= 3,
+            "should have at least 3 container elements, got {element_count}"
+        );
+
+        // 3 ElementVersions (one per container)
+        let version_count: i64 = store
+            .query("MATCH (v:ElementVersion) RETURN count(v) AS cnt;")
+            .expect("version count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(version_count, 3, "should have 3 ElementVersions");
+
+        // Per container: CURRENT_VERSION + VERSION_OF + OF_TYPE = 3 edges each
+        // + evidence SUPPORTED_BY + EXTRACTED_FROM = 2 per evidence
+        // 3 containers × 3 edges + 4 evidences × 2 edges = 9 + 8 = 17
+        let edge_count: i64 = store
+            .query("MATCH ()-[r]->() RETURN count(r) AS cnt;")
+            .expect("edge count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(
+            edge_count, 17,
+            "should have 17 edges (9 structural + 8 evidence), got {edge_count}"
+        );
+
+        // 4 evidences
+        let evidence_count: i64 = store
+            .query("MATCH (ev:Evidence) RETURN count(ev) AS cnt;")
+            .expect("evidence count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(evidence_count, 4, "should have 4 evidences");
+
+        drop(store);
+    }
+
+    // ── Second apply: idempotency — all skipped, no duplicates ─────────────────
+    // Note: link_semantic_edge (called by evidence write path) uses MERGE which always
+    // succeeds, so relations_written is non-zero on re-apply even though no NEW edges
+    // are created. We verify idempotency via store counts instead.
+    let r2 = archctl::code::c4_discover::apply(project, &report, &fs)
+        .expect("second apply must succeed (idempotent)");
+
+    assert_eq!(
+        r2.elements_written, 0,
+        "idempotent re-apply: expected 0 elements written (all skipped)"
+    );
+    assert_eq!(
+        r2.elements_skipped, 3,
+        "idempotent re-apply: expected 3 elements skipped"
+    );
+
+    // Verify no duplicate elements or edges were created by re-apply
+    {
+        let mut store = LbugStore::open(project).expect("store must open");
+        store.init().expect("store must init");
+
+        let total_elements: i64 = store
+            .query("MATCH (e:Element) RETURN count(e) AS cnt;")
+            .expect("count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(
+            total_elements, 3,
+            "idempotent re-apply: no duplicate elements"
+        );
+
+        let total_versions: i64 = store
+            .query("MATCH (v:ElementVersion) RETURN count(v) AS cnt;")
+            .expect("version count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(
+            total_versions, 3,
+            "idempotent re-apply: no duplicate versions"
+        );
+
+        let total_edges: i64 = store
+            .query("MATCH ()-[r]->() RETURN count(r) AS cnt;")
+            .expect("edge count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(total_edges, 17, "idempotent re-apply: no duplicate edges");
+
+        let total_evidence: i64 = store
+            .query("MATCH (ev:Evidence) RETURN count(ev) AS cnt;")
+            .expect("evidence count query must succeed")
+            .pop()
+            .and_then(|r| r.get("cnt").and_then(|c| c.as_i64()))
+            .expect("count must be i64");
+        assert_eq!(
+            total_evidence, 4,
+            "idempotent re-apply: no duplicate evidence"
+        );
+    }
+}
