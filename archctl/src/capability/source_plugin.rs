@@ -18,9 +18,3 @@ pub fn all() -> Vec<Capability> {
         vec![Provider::new("any", Maturity::Experimental)],
     )]
 }
-
-/// Backwards-compatible const alias.
-/// Prefer `all()` in new code.
-#[deprecated(since = "0.1.0", note = "use all() instead")]
-#[allow(dead_code)]
-pub const ALL: &[Capability] = &[];

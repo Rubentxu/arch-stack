@@ -164,3 +164,43 @@ fn test_state_machine_language_coverage() {
         "code.state_machine missing providers: {missing:?}"
     );
 }
+
+/// Bidirectional IDE-adapter alignment (debt-verify CP-5).
+///
+/// Every adapter in `ide::builtin_adapters()` must have a registry entry
+/// `ide.{adapter.id()}` and vice versa. Catches both directions of drift:
+/// a new adapter without a registry entry, and a registry entry whose id
+/// does not derive from a real adapter id (e.g. `ide.claude_code` vs the
+/// real `claude-code`).
+#[test]
+fn test_ide_adapter_alignment() {
+    use crate::capability::source_ide;
+    use crate::ide::builtin_adapters;
+
+    let adapter_ids: Vec<String> = builtin_adapters()
+        .iter()
+        .map(|a| a.id().to_string())
+        .collect();
+    let expected: Vec<String> = adapter_ids.iter().map(|id| format!("ide.{id}")).collect();
+    let registry = source_ide::all();
+    let registry_ids: Vec<&str> = registry.iter().map(|c| c.id.as_str()).collect();
+
+    let missing: Vec<&String> = expected
+        .iter()
+        .filter(|id| !registry_ids.contains(&id.as_str()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "IDE adapters in code without registry entry (ids must be `ide.{{adapter.id()}}`): {missing:?}"
+    );
+
+    let orphan: Vec<&str> = registry_ids
+        .iter()
+        .filter(|id| !expected.iter().any(|e| e == *id))
+        .copied()
+        .collect();
+    assert!(
+        orphan.is_empty(),
+        "Registry IDE entries without a real adapter (id must derive from ide::builtin_adapters()): {orphan:?}"
+    );
+}

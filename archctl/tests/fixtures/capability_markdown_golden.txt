@@ -70,7 +70,7 @@
 | doctor.scope.telemetry | doctor | experimental | true | available | any (experimental) |
 | doctor.scope.view | doctor | stable | true | available | any (stable) |
 | doctor.scope.xdg | doctor | stable | true | available | any (stable) |
-| ide.claude_code | ide | stable | true | available | any (stable) |
+| ide.claude-code | ide | stable | true | available | any (stable) |
 | ide.codex | ide | experimental | true | available | any (experimental) |
 | ide.opencode | ide | stable | true | available | any (stable) |
 | ide.zcode | ide | experimental | true | available | any (experimental) |
