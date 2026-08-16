@@ -1696,24 +1696,55 @@ impl SnapshotRepository for LbugStore {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        // Try to find existing row by identity tuple
-        let find_cypher = format!(
-            "MATCH (s:Snapshot) \
-             WHERE s.props['repo_identity'] = '{repo_identity}' \
-               AND s.commit_hash = '{commit_hash}' \
-               AND s.schema_version = {schema_version} \
-               AND s.props['extractor_digest'] = '{extractor_digest}' \
-             RETURN s.id;",
-            repo_identity = repo_identity.replace('\'', "\\'"),
-            commit_hash = snap.commit_hash.replace('\'', "\\'"),
-            schema_version = snap.schema_version,
-            extractor_digest = extractor_digest.replace('\'', "\\'"),
-        );
-        let existing: Vec<Row> = run_query(&session.conn, &find_cypher)?;
-        if let Some(row) = existing.first()
-            && let Some(id) = row.get("s.id").and_then(|c| c.as_str())
-        {
-            return Ok(id.to_string());
+        // Try to find existing row by identity tuple.
+        // NOTE: lbug does not support native JSON WHERE filtering (store.rs D6).
+        // We return all Snapshot rows and filter in Rust instead.
+        let find_cypher =
+            "MATCH (s:Snapshot) RETURN s.id, s.commit_hash, s.schema_version, s.props;";
+        let existing: Vec<Row> = run_query(&session.conn, find_cypher)?;
+        // Helper to extract props Map regardless of whether lbug stored it as a JSON string or JSON object.
+        #[allow(clippy::collapsible_if)]
+        let extract_props = |cell: &Cell| -> serde_json::Map<String, serde_json::Value> {
+            // Case 1: stored as a JSON string (lbug may return it as Cell::String)
+            if let Some(s) = cell.as_str() {
+                if let Ok(map) = serde_json::from_str(s) {
+                    return map;
+                }
+            }
+            // Case 2: stored as a native JSON object (lbug may return it as Cell::Object)
+            if let Some(obj) = cell.to_map() {
+                return obj;
+            }
+            serde_json::Map::new()
+        };
+        #[allow(clippy::collapsible_if)]
+        if let Some(row) = existing.iter().find(|row| {
+            let row_commit_hash = row
+                .get("s.commit_hash")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default();
+            let row_schema_version = row
+                .get("s.schema_version")
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0);
+            let row_props_json = row.get("s.props").map(extract_props).unwrap_or_default();
+            let row_repo_identity = row_props_json
+                .get("repo_identity")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let row_extractor_digest = row_props_json
+                .get("extractor_digest")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+
+            row_commit_hash == snap.commit_hash
+                && row_schema_version == snap.schema_version
+                && row_repo_identity == repo_identity
+                && row_extractor_digest == extractor_digest
+        }) {
+            if let Some(id) = row.get("s.id").and_then(|c| c.as_str()) {
+                return Ok(id.to_string());
+            }
         }
 
         // Not found — insert new row
@@ -1722,7 +1753,8 @@ impl SnapshotRepository for LbugStore {
         let safe_commit = snap.commit_hash.replace('\'', "\\'");
         let safe_worktree = snap.worktree_id.replace('\'', "\\'");
         let props_json = serde_json::to_string(&snap.props).context("serialize snapshot props")?;
-        let safe_props = props_json.replace('\'', "\\'");
+        // NOTE: props_json is valid JSON from serde_json; do NOT re-escape single quotes.
+        // The replace('\'') was corrupting the JSON by re-escaping already-escaped chars.
         let now = chrono::Utc::now().to_rfc3339();
 
         let cypher = format!(
@@ -1733,7 +1765,7 @@ impl SnapshotRepository for LbugStore {
              s.worktree_id = '{safe_worktree}', \
              s.schema_version = {schema_version}, \
              s.created_at = timestamp('{now}'), \
-             s.props = '{safe_props}';",
+             s.props = '{props_json}';",
             sequence = sequence,
             schema_version = snap.schema_version,
         );
@@ -1761,14 +1793,26 @@ impl SnapshotRepository for LbugStore {
                 .and_then(|c| c.as_str())
                 .map(String::from)
                 .unwrap_or_default()
-                .replace("\\'", "'")
         };
         let cell_to_i64 = |col: &str| -> i64 { row.get(col).and_then(|c| c.as_i64()).unwrap_or(0) };
+        // Helper to extract props Map regardless of whether lbug stored it as a JSON string or JSON object.
+        #[allow(clippy::collapsible_if)]
         let cell_to_json = |col: &str| -> serde_json::Map<String, serde_json::Value> {
-            row.get(col)
-                .and_then(|c| c.as_str())
-                .and_then(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
-                .unwrap_or_default()
+            let cell = match row.get(col) {
+                Some(c) => c,
+                None => return serde_json::Map::new(),
+            };
+            // Case 1: stored as a JSON string
+            if let Some(s) = cell.as_str() {
+                if let Ok(map) = serde_json::from_str(s) {
+                    return map;
+                }
+            }
+            // Case 2: stored as a native JSON object
+            if let Some(obj) = cell.to_map() {
+                return obj;
+            }
+            serde_json::Map::new()
         };
         Ok(Snapshot {
             id: cell_to_str("s.id"),
@@ -1797,15 +1841,27 @@ impl SnapshotRepository for LbugStore {
                         .and_then(|c| c.as_str())
                         .map(String::from)
                         .unwrap_or_default()
-                        .replace("\\'", "'")
                 };
                 let cell_to_i64 =
                     |col: &str| -> i64 { row.get(col).and_then(|c| c.as_i64()).unwrap_or(0) };
+                // Helper to extract props Map regardless of whether lbug stored it as a JSON string or JSON object.
+                #[allow(clippy::collapsible_if)]
                 let cell_to_json = |col: &str| -> serde_json::Map<String, serde_json::Value> {
-                    row.get(col)
-                        .and_then(|c| c.as_str())
-                        .and_then(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
-                        .unwrap_or_default()
+                    let cell = match row.get(col) {
+                        Some(c) => c,
+                        None => return serde_json::Map::new(),
+                    };
+                    // Case 1: stored as a JSON string
+                    if let Some(s) = cell.as_str() {
+                        if let Ok(map) = serde_json::from_str(s) {
+                            return map;
+                        }
+                    }
+                    // Case 2: stored as a native JSON object
+                    if let Some(obj) = cell.to_map() {
+                        return obj;
+                    }
+                    serde_json::Map::new()
                 };
                 Snapshot {
                     id: cell_to_str("s.id"),

@@ -31,6 +31,10 @@ pub fn create(
     // Open the store (acquires flock — ADR-010)
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| SnapshotError::Store(anyhow::anyhow!("LbugStore::open: {e}")))?;
+    // Initialize the schema and open the session before using begin_transaction.
+    store
+        .init()
+        .map_err(|e| SnapshotError::Store(anyhow::anyhow!("store.init: {e}")))?;
 
     // Resolve stable repository identity
     let repo_identity: RepositoryIdentity = resolve_repository_identity(cwd, fs)?
@@ -115,6 +119,10 @@ pub fn gc(
 ) -> Result<SnapshotGcReport, SnapshotError> {
     let mut store = LbugStore::open(project_dir)
         .map_err(|e| SnapshotError::Store(anyhow::anyhow!("LbugStore::open: {e}")))?;
+    // Initialize the schema and open the session before using begin_transaction.
+    store
+        .init()
+        .map_err(|e| SnapshotError::Store(anyhow::anyhow!("store.init: {e}")))?;
 
     let all = SnapshotRepository::list_snapshots(&store).map_err(SnapshotError::from)?;
 
