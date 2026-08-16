@@ -134,4 +134,29 @@ mod tests {
             "go provider should appear before rust in the providers column"
         );
     }
+
+    #[test]
+    fn markdown_golden_output() {
+        // Golden test: output must match the committed fixture.
+        // If this fails, docs/CAPABILITIES.md is out of sync with the registry.
+        let reg = crate::capability::registry();
+        let fresh = render_markdown(&reg);
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let golden_path =
+            std::path::Path::new(manifest_dir).join("tests/fixtures/capability_markdown_golden.txt");
+        let golden =
+            std::fs::read_to_string(&golden_path).unwrap_or_else(|e| panic!("golden file missing: {}: {e}", golden_path.display()));
+        // Normalize: the golden file is written via `println!` (CLI) which appends a
+        // trailing \n. render_markdown() already ends with \n (from lines.join + push("")).
+        // Strip exactly one trailing \n from the golden file so both sides match.
+        let golden_trimmed = if golden.ends_with('\n') {
+            &golden[..golden.len() - 1]
+        } else {
+            &golden[..]
+        };
+        assert_eq!(fresh, golden_trimmed,
+            "markdown output does not match golden file {}. Run: \
+             archctl capabilities --format markdown > tests/fixtures/capability_markdown_golden.txt",
+            golden_path.display());
+    }
 }
