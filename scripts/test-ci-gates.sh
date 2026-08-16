@@ -390,6 +390,24 @@ require "dep-fitness --json emits valid JSON object" \
   bash -c '"$0" --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert \"findings\" in d and \"baseline\" in d"' "$FIT"
 
 # ---------------------------------------------------------------------------
+# 9c. Capability registry staleness gate (P1-08).
+# ---------------------------------------------------------------------------
+require "verify-local.sh contains capabilities staleness gate" \
+  grep -q 'capabilities --format markdown' scripts/verify-local.sh
+require "capabilities --check exits 0 when docs/CAPABILITIES.md is fresh" \
+  bash -c 'cd "$1" && ./archctl/target/release/archctl capabilities --check >/dev/null 2>&1' _ "$REPO_ROOT"
+# Simulate staleness: a hand-edited file must cause non-zero exit.
+require_not "capabilities --check exits non-zero when docs/CAPABILITIES.md is stale" \
+  bash -c '
+    cd "$1"
+    cp docs/CAPABILITIES.md /tmp/capabilities_backup.md
+    echo "# extra line" >> docs/CAPABILITIES.md
+    ./archctl/target/release/archctl capabilities --check >/dev/null 2>&1; rc=$?
+    mv /tmp/capabilities_backup.md docs/CAPABILITIES.md
+    exit $rc
+  ' _ "$REPO_ROOT"
+
+# ---------------------------------------------------------------------------
 # 10. ADR-025 recorded and indexed.
 # ---------------------------------------------------------------------------
 require "ADR-025 file exists" \
