@@ -396,6 +396,9 @@ impl ElementRepository for TinyGraphStore {
     ) -> anyhow::Result<usize> {
         unimplemented!()
     }
+    fn batch_link_of_type(&mut self, _: &[(String, String)]) -> anyhow::Result<usize> {
+        unimplemented!()
+    }
 }
 
 impl EvidenceRepository for TinyGraphStore {

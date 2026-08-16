@@ -1469,15 +1469,21 @@ pub fn apply(
         .context("batch_upsert_element_versions")
         .map_err(CallGraphError::GraphWrite)?;
 
-    // OF_TYPE edges still need per-element calls (no UNWIND helper yet).
-    for n in &candidate_nodes {
-        let kind_id = match n.kind {
-            FunctionKind::Function => "code.function",
-            FunctionKind::Method => "code.method",
-            FunctionKind::Closure => "code.closure",
-        };
-        s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
-            .context("link_of_type")
+    // HIGH-5: batch OF_TYPE edge links via UNWIND (was per-element loop).
+    let of_type_pairs: Vec<(String, String)> = candidate_nodes
+        .iter()
+        .map(|n| {
+            let kind_id = match n.kind {
+                FunctionKind::Function => "code.function",
+                FunctionKind::Method => "code.method",
+                FunctionKind::Closure => "code.closure",
+            };
+            (format!("cg:{}", n.canonical_key), kind_id.to_string())
+        })
+        .collect();
+    if !of_type_pairs.is_empty() {
+        ElementRepository::batch_link_of_type(s, &of_type_pairs)
+            .context("batch_link_of_type")
             .map_err(CallGraphError::GraphWrite)?;
     }
 

@@ -388,11 +388,17 @@ pub fn apply(
         ElementRepository::batch_upsert_element_versions(s, &container_versions)?;
     }
 
-    // ── Phase 3: OF_TYPE edges (link_of_type per container) ──────────────────
-    // CURRENT_VERSION and VERSION_OF edges are already created by batch_upsert_element_version.
-    // Only OF_TYPE remains: one edge per container.
-    for (element, metatype) in container_elements.iter().zip(container_metatypes.iter()) {
-        let _ = ElementRepository::link_of_type(s, &element.id, metatype);
+    // ── Phase 3: OF_TYPE edges batched via UNWIND ─────────────────────────────
+    // CURRENT_VERSION and VERSION_OF edges are already created by batch_upsert_element_versions.
+    // HIGH-5: replaced per-element loop with batch call.
+    let of_type_pairs: Vec<(String, String)> = container_elements
+        .iter()
+        .zip(container_metatypes.iter())
+        .map(|(element, metatype)| (element.id.clone(), metatype.clone()))
+        .collect();
+    if !of_type_pairs.is_empty() {
+        ElementRepository::batch_link_of_type(s, &of_type_pairs)
+            .context("c4_discover batch_link_of_type")?;
     }
 
     // ── Phase 4: Evidence writes (kept as-is, per-evidence loop inside tx) ────

@@ -830,6 +830,9 @@ mod tests {
         ) -> anyhow::Result<usize> {
             unimplemented!()
         }
+        fn batch_link_of_type(&mut self, _: &[(String, String)]) -> anyhow::Result<usize> {
+            unimplemented!()
+        }
     }
 
     impl crate::store::EvidenceRepository for MockGraphStore {

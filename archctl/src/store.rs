@@ -377,6 +377,16 @@ pub trait ElementRepository: Send + Sync {
     /// Idempotent: `MERGE` skips existing versions; caller pre-filters `existing_keys`.
     /// Returns the total number of element versions written across all chunks.
     fn batch_upsert_element_versions(&mut self, batch: &[ElementVersion]) -> Result<usize>;
+
+    /// Bulk-link Element→MetaType via OF_TYPE edges.
+    ///
+    /// Pairs are (element_id, metatype_id). Uses OPTIONAL MATCH so missing
+    /// MetaType nodes silently produce no edge (same semantics as
+    /// link_of_type). Batching is done per-element (Kùzu UNWIND + OPTIONAL MATCH
+    /// does not support row-variable in WHERE clause).
+    ///
+    /// Returns the total number of edge-link attempts across all chunks.
+    fn batch_link_of_type(&mut self, pairs: &[(String, String)]) -> Result<usize>;
 }
 
 /// Structural-evidence write port (P1-03). The call-graph and c4-discover
@@ -1826,6 +1836,30 @@ impl ElementRepository for LbugStore {
             total += chunk.len();
         }
         Ok(total)
+    }
+
+    fn batch_link_of_type(&mut self, pairs: &[(String, String)]) -> Result<usize> {
+        // HIGH-5: batched using per-element calls (validate_identifier for
+        // escaping, then direct MATCH ... MERGE per pair). Kùzu's UNWIND +
+        // OPTIONAL MATCH + WHERE pattern does not support row variable in WHERE
+        // (error: "Cannot evaluate expression with type VARIABLE"), so we use
+        // the same validated single-row approach as the existing link_of_type.
+        let session = self.session_mut_inner()?;
+        for (element_id, metatype_id) in pairs {
+            let eid = crate::graph::validate_identifier(element_id)
+                .with_context(|| format!("batch_link_of_type: element_id {element_id}"))?;
+            let mid = crate::graph::validate_identifier(metatype_id)
+                .with_context(|| format!("batch_link_of_type: metatype_id {metatype_id}"))?;
+            let cypher = format!(
+                "MATCH (e:Element {{id: '{eid}'}}) \
+                 OPTIONAL MATCH (mt:MetaType {{id: '{mid}'}}) \
+                 WITH e, mt \
+                 WHERE mt IS NOT NULL \
+                 MERGE (e)-[:OF_TYPE]->(mt);"
+            );
+            let _ = session.conn.query(&cypher);
+        }
+        Ok(pairs.len())
     }
 }
 
