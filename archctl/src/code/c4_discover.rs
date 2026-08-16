@@ -270,8 +270,8 @@ fn write_evidence(
     )
     .context("write_evidence: put_structural_evidence")?;
 
-    let _ = EvidenceRepository::link_supported_by(store, version_id, &evidence_id);
-    let _ = EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
+    let _ = EvidenceRepository::link_supported_by(store, version_id, &evidence_id).ok();
+    let _ = EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id).ok();
     Ok(())
 }
 

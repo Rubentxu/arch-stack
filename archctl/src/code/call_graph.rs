@@ -1258,7 +1258,8 @@ fn write_call_edge(
         &edge.callee,
         &rel_id,
         &rel_props,
-    );
+    )
+    .ok();
 
     // Evidence node via EvidenceRepository::put_structural_evidence
     let evidence_id = format!(
@@ -1297,10 +1298,11 @@ fn write_call_edge(
     .with_context(|| format!("write_call_evidence {}", evidence_id))?;
 
     // Link Evidence to SourceArtifact
-    let _ = crate::store::EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
+    let _ = crate::store::EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id).ok();
 
     // Link Evidence to ElementVersion via SUPPORTED_BY
-    let _ = crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id);
+    let _ =
+        crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id).ok();
 
     Ok(())
 }

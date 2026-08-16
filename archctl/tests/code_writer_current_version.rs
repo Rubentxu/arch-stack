@@ -25,9 +25,15 @@ fn assert_current_version_integrity(store: &LbugStore, writer_name: &str) {
 
     if !mismatches.is_empty() {
         for row in &mismatches {
-            let elem_id = row.get("element_id").and_then(|c| c.as_str()).unwrap_or("?");
+            let elem_id = row
+                .get("element_id")
+                .and_then(|c| c.as_str())
+                .unwrap_or("?");
             let elem_ver = row.get("elem_ver").and_then(|c| c.as_str()).unwrap_or("?");
-            let ver_id = row.get("version_id").and_then(|c| c.as_str()).unwrap_or("?");
+            let ver_id = row
+                .get("version_id")
+                .and_then(|c| c.as_str())
+                .unwrap_or("?");
             eprintln!(
                 "CURRENT_VERSION mismatch in {}: element_id={}, element.current_version_id={}, version.id={}",
                 writer_name, elem_id, elem_ver, ver_id
@@ -114,8 +120,16 @@ fn state_machine_current_version_integrity() {
             file: "src/lib.rs".to_string(),
             content_hash: "sha256:abc".to_string(),
             states: vec![
-                State { name: "S1".to_string(), kind: StateKind::Initial, line: 4 },
-                State { name: "S2".to_string(), kind: StateKind::Regular, line: 5 },
+                State {
+                    name: "S1".to_string(),
+                    kind: StateKind::Initial,
+                    line: 4,
+                },
+                State {
+                    name: "S2".to_string(),
+                    kind: StateKind::Regular,
+                    line: 5,
+                },
             ],
             transitions: vec![Transition {
                 from: "S1".to_string(),
