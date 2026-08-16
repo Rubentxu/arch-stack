@@ -380,12 +380,12 @@ pub fn apply(
         elements_written += 1;
     }
 
-    // ── Phase 2: Batch-insert via UNWIND helpers ─────────────────────────────────
+    // ── Phase 2: Batch-insert via ElementRepository trait methods ─────────────────
     // M32 D2: containers (Element + ElementVersion) — CURRENT_VERSION + VERSION_OF edges
-    // created by batch_upsert_element_version internally.
+    // created by batch_upsert_element_versions internally.
     if !container_elements.is_empty() {
-        crate::code::apply_common::batch_upsert_element(s, &container_elements)?;
-        crate::code::apply_common::batch_upsert_element_version(s, &container_versions)?;
+        ElementRepository::batch_upsert_elements(s, &container_elements)?;
+        ElementRepository::batch_upsert_element_versions(s, &container_versions)?;
     }
 
     // ── Phase 3: OF_TYPE edges (link_of_type per container) ──────────────────

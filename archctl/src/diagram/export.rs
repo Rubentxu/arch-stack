@@ -821,6 +821,15 @@ mod tests {
             }
             Ok(out)
         }
+        fn batch_upsert_elements(&mut self, _: &[crate::graph::Element]) -> anyhow::Result<usize> {
+            unimplemented!()
+        }
+        fn batch_upsert_element_versions(
+            &mut self,
+            _: &[crate::graph::ElementVersion],
+        ) -> anyhow::Result<usize> {
+            unimplemented!()
+        }
     }
 
     impl crate::store::EvidenceRepository for MockGraphStore {

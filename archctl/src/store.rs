@@ -355,6 +355,28 @@ pub trait ElementRepository: Send + Sync {
         category: &str,
     ) -> Result<()>;
     fn existing_canonical_keys(&self) -> Result<HashSet<String>>;
+
+    /// Bulk-insert a batch of [`Element`] nodes using Kùzu's UNWIND bulk-import
+    /// pattern. Chunks the batch into BATCH_SIZE sub-batches.
+    ///
+    /// Each Element is formatted as an inline Cypher map and sent in a single
+    /// `UNWIND [...] AS row MERGE (e:Element {id: row.id}) SET e += row.props`
+    /// query. Idempotent: `MERGE` skips existing canonical_keys; the caller is
+    /// responsible for pre-filtering `existing_keys` before calling this helper.
+    ///
+    /// Returns the total number of elements written across all chunks.
+    fn batch_upsert_elements(&mut self, batch: &[Element]) -> Result<usize>;
+
+    /// Bulk-insert a batch of [`ElementVersion`] nodes and link each to its parent
+    /// Element via `CURRENT_VERSION` + `VERSION_OF` edges. Chunks into BATCH_SIZE.
+    ///
+    /// Two UNWIND passes per chunk:
+    ///  1. `ElementVersion` nodes via `UNWIND [...] AS row MERGE (v:ElementVersion {id: row.id})`
+    ///  2. `CURRENT_VERSION` links via `UNWIND [...] AS row MATCH (e:Element {id: row.eid}) MATCH (v:ElementVersion {id: row.id}) MERGE (e)-[:CURRENT_VERSION]->(v)`
+    ///
+    /// Idempotent: `MERGE` skips existing versions; caller pre-filters `existing_keys`.
+    /// Returns the total number of element versions written across all chunks.
+    fn batch_upsert_element_versions(&mut self, batch: &[ElementVersion]) -> Result<usize>;
 }
 
 /// Structural-evidence write port (P1-03). The call-graph and c4-discover
@@ -1715,6 +1737,103 @@ impl ElementRepository for LbugStore {
                     .map(|s| s.to_string())
             })
             .collect())
+    }
+
+    fn batch_upsert_elements(&mut self, batch: &[Element]) -> Result<usize> {
+        if batch.is_empty() {
+            return Ok(0);
+        }
+        let session = self.session_mut_inner()?;
+        let mut total = 0usize;
+        for chunk in batch.chunks(crate::code::apply_common::BATCH_SIZE) {
+            let mut rows = Vec::with_capacity(chunk.len());
+            for e in chunk {
+                // Escape all string fields before inline Cypher interpolation.
+                let safe_cat = e.category.replace('\'', "\\'");
+                let safe_name = e.current_name.replace('\'', "\\'");
+                let safe_status = e.current_status.replace('\'', "\\'");
+                rows.push(format!(
+                    "{{id: '{}', kind_id: '{}', category: '{}', canonical_key: '{}', current_name: '{}', current_status: '{}', current_confidence: {}, current_version_id: '{}'}}",
+                    escape_cypher_string(&e.id),
+                    escape_cypher_string(&e.kind_id),
+                    safe_cat,
+                    escape_cypher_string(&e.canonical_key),
+                    safe_name,
+                    safe_status,
+                    e.current_confidence,
+                    escape_cypher_string(&e.current_version_id),
+                ));
+            }
+            let cypher = format!(
+                "UNWIND [{}] AS row MERGE (e:Element {{id: row.id}}) SET \
+                 e.kind_id = row.kind_id, e.category = row.category, \
+                 e.canonical_key = row.canonical_key, \
+                 e.current_name = row.current_name, e.current_status = row.current_status, \
+                 e.current_confidence = row.current_confidence, e.current_version_id = row.current_version_id;",
+                rows.join(", ")
+            );
+            session.conn.query(&cypher).map(|_| ())?;
+            total += chunk.len();
+        }
+        Ok(total)
+    }
+
+    fn batch_upsert_element_versions(&mut self, batch: &[ElementVersion]) -> Result<usize> {
+        if batch.is_empty() {
+            return Ok(0);
+        }
+        let session = self.session_mut_inner()?;
+        let mut total = 0usize;
+        for chunk in batch.chunks(crate::code::apply_common::BATCH_SIZE) {
+            // Pass 1: ElementVersion nodes
+            let mut rows = Vec::with_capacity(chunk.len());
+            for v in chunk {
+                let props_json =
+                    serde_json::to_string(&v.props).unwrap_or_else(|_| "{}".to_string());
+                let safe_props = props_json.replace('\'', "\\'");
+                let safe_name = v.name.replace('\'', "\\'");
+                let safe_status = v.status.replace('\'', "\\'");
+                let safe_origin = v.origin.replace('\'', "\\'");
+                rows.push(format!(
+                    "{{id: '{}', element_id: '{}', name: '{}', status: '{}', origin: '{}', confidence: {}, props: '{}'}}",
+                    escape_cypher_string(&v.id),
+                    escape_cypher_string(&v.element_id),
+                    safe_name,
+                    safe_status,
+                    safe_origin,
+                    v.confidence,
+                    safe_props,
+                ));
+            }
+            let cypher = format!(
+                "UNWIND [{}] AS row MERGE (v:ElementVersion {{id: row.id}}) SET \
+                 v.element_id = row.element_id, v.name = row.name, v.status = row.status, \
+                 v.origin = row.origin, v.confidence = row.confidence, v.props = row.props;",
+                rows.join(", ")
+            );
+            session.conn.query(&cypher).map(|_| ())?;
+
+            // Pass 2: CURRENT_VERSION + VERSION_OF edges
+            let mut edge_rows = Vec::with_capacity(chunk.len());
+            for v in chunk {
+                edge_rows.push(format!(
+                    "{{id: '{}', eid: '{}'}}",
+                    escape_cypher_string(&v.id),
+                    escape_cypher_string(&v.element_id)
+                ));
+            }
+            let edge_cypher = format!(
+                "UNWIND [{}] AS row \
+                 MATCH (e:Element {{id: row.eid}}) \
+                 MATCH (v:ElementVersion {{id: row.id}}) \
+                 MERGE (e)-[:CURRENT_VERSION]->(v) \
+                 MERGE (v)-[:VERSION_OF]->(e);",
+                edge_rows.join(", ")
+            );
+            session.conn.query(&edge_cypher).map(|_| ())?;
+            total += chunk.len();
+        }
+        Ok(total)
     }
 }
 

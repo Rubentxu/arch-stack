@@ -1312,9 +1312,7 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::{
-        batch_upsert_element, batch_upsert_element_version, write_source_artifact,
-    };
+    use crate::code::apply_common::write_source_artifact;
     use crate::store::{GraphStore, LbugStore, UnitOfWork};
 
     let mut store = LbugStore::open(project_dir)
@@ -1465,10 +1463,10 @@ pub fn apply(
         });
     }
 
-    batch_upsert_element(s, &elements).context("batch_upsert_element")?;
-    elements_written += elements.len();
-    batch_upsert_element_version(s, &element_versions)
-        .context("batch_upsert_element_version")
+    elements_written +=
+        ElementRepository::batch_upsert_elements(s, &elements).context("batch_upsert_elements")?;
+    ElementRepository::batch_upsert_element_versions(s, &element_versions)
+        .context("batch_upsert_element_versions")
         .map_err(CallGraphError::GraphWrite)?;
 
     // OF_TYPE edges still need per-element calls (no UNWIND helper yet).

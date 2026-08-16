@@ -1345,7 +1345,6 @@ pub fn apply(
     report: &ClassDiagramReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, ClassDiagramError> {
-    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version};
     use crate::store::{
         ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork,
     };
@@ -1440,11 +1439,11 @@ pub fn apply(
         });
     }
 
-    batch_upsert_element(s, &elements).context("class_diagram batch_upsert_element")?;
-    elements_written += elements.len();
+    elements_written += ElementRepository::batch_upsert_elements(s, &elements)
+        .context("class_diagram batch_upsert_elements")?;
 
-    batch_upsert_element_version(s, &element_versions)
-        .context("class_diagram batch_upsert_element_version")
+    ElementRepository::batch_upsert_element_versions(s, &element_versions)
+        .context("class_diagram batch_upsert_element_versions")
         .map_err(ClassDiagramError::GraphWrite)?;
 
     elements_skipped += report.nodes.len() - candidate_nodes.len();

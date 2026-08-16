@@ -1098,7 +1098,6 @@ pub fn apply(
     report: &StateMachineReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
-    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version};
     use crate::store::{
         ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork,
     };
@@ -1229,25 +1228,22 @@ pub fn apply(
         }
     }
 
-    // ── Phase 2: Batch-insert via UNWIND helpers ─────────────────────────────
+    // ── Phase 2: Batch-insert via trait methods ───────────────────────────────
     // M32 D2: machines (Element + ElementVersion)
     if !machine_elements.is_empty() {
-        let count = batch_upsert_element(s, &machine_elements)?;
-        elements_written += count;
-        batch_upsert_element_version(s, &machine_versions)?;
+        elements_written += ElementRepository::batch_upsert_elements(s, &machine_elements)?;
+        ElementRepository::batch_upsert_element_versions(s, &machine_versions)?;
     }
 
     // M32 D2: states (Element + ElementVersion)
     if !state_elements.is_empty() {
-        let count = batch_upsert_element(s, &state_elements)?;
-        elements_written += count;
-        batch_upsert_element_version(s, &state_versions)?;
+        elements_written += ElementRepository::batch_upsert_elements(s, &state_elements)?;
+        ElementRepository::batch_upsert_element_versions(s, &state_versions)?;
     }
 
     // M32 D2: transitions (Element only, no ElementVersion)
     if !transition_elements.is_empty() {
-        let count = batch_upsert_element(s, &transition_elements)?;
-        elements_written += count;
+        elements_written += ElementRepository::batch_upsert_elements(s, &transition_elements)?;
     }
 
     // ── Phase 3: Re-collect for edge linking (needed because we consumed the loop) ─
