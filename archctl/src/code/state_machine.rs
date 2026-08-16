@@ -1086,6 +1086,17 @@ fn extract_transition_decorator_args(
 
 // ─── Apply ─────────────────────────────────────────────────────────────────
 
+/// Edge data for transition→state semantic links.
+/// Emitted in Phase 1 (collect) so Phase 3 (link) does not need to re-walk
+/// report.machines (SRP fix: one logical walk per phase).
+struct TransitionEdge {
+    trans_id: String,
+    state_id: String,
+    rel_id: String,
+    predicate: &'static str,
+    state_name: String,
+}
+
 /// Apply a state machine report to the graph.
 ///
 /// M32 D5: wraps all writes in a single Kùzu transaction
@@ -1093,12 +1104,15 @@ fn extract_transition_decorator_args(
 /// M32 PR1's `call_graph::apply`. Multi-statement seed MERGEs are
 /// split into individual `query()` calls (lbug 0.18.3 binder
 /// exception + implicit transaction rollback).
+///
+/// HIGH-2 fix: Phase 1 collects element data AND edge tuples in one walk.
+/// Phase 3 links edges from the pre-collected tuples — no re-walk of
+/// report.machines (previously ~240 LOC with a separate iteration for edge data).
 pub fn apply(
     project_dir: &Path,
     report: &StateMachineReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport> {
-    use crate::code::apply_common::{batch_upsert_element, batch_upsert_element_version};
     use crate::store::{
         ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository, UnitOfWork,
     };
@@ -1122,12 +1136,15 @@ pub fn apply(
     // Reborrow through Transaction to call LbugStore repository methods.
     let s: &mut LbugStore = tx.as_mut();
 
-    // ── Phase 1: Collect candidates across all machines ─────────────────────────
+    // ── Phase 1: Collect candidates AND edge tuples in ONE walk ─────────────────
+    // HIGH-2 fix: previously edge data was re-collected in a separate Phase 3 loop.
+    // Now we emit TransitionEdge tuples here so Phase 3 only iterates pre-collected data.
     let mut machine_elements: Vec<crate::graph::Element> = Vec::new();
     let mut machine_versions: Vec<crate::graph::ElementVersion> = Vec::new();
     let mut state_elements: Vec<crate::graph::Element> = Vec::new();
     let mut state_versions: Vec<crate::graph::ElementVersion> = Vec::new();
     let mut transition_elements: Vec<crate::graph::Element> = Vec::new();
+    let mut transition_edges: Vec<TransitionEdge> = Vec::new();
 
     for machine in &report.machines {
         let machine_id = format!("sm:{}", machine.canonical_key);
@@ -1206,6 +1223,7 @@ pub fn apply(
                 "{}:transition:{}_{}:{}",
                 lang_file_prefix, transition.from, transition.to, transition.line
             );
+            let trans_id = format!("sm:transition:{}", transition_key);
 
             if !existing_keys.contains(&transition_key) {
                 let version_id = format!(
@@ -1214,7 +1232,7 @@ pub fn apply(
                 );
                 let transition_name = format!("{}_to_{}", transition.from, transition.to);
                 transition_elements.push(crate::graph::Element {
-                    id: format!("sm:transition:{}", transition_key),
+                    id: trans_id.clone(),
                     kind_id: "uml.transition".to_string(),
                     category: "uml".to_string(),
                     canonical_key: transition_key.clone(),
@@ -1226,117 +1244,83 @@ pub fn apply(
             } else {
                 elements_skipped += 1;
             }
+
+            // HIGH-2: emit edge tuples for both source and target state links.
+            // We look up state_ids from the machine.states list directly.
+            let src_state = machine.states.iter().find(|s| s.name == transition.from);
+            let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
+
+            if let Some(src) = src_state {
+                let src_key = format!("{}:state:{}:{}", lang_file_prefix, src.name, src.line);
+                let src_id = format!("sm:state:{}", src_key);
+                transition_edges.push(TransitionEdge {
+                    trans_id: trans_id.clone(),
+                    state_id: src_id,
+                    rel_id: format!("sm:edge:transition:{}:source:{}", transition_key, src.name),
+                    predicate: "behavior.source_state",
+                    state_name: transition.from.clone(),
+                });
+            }
+
+            if let Some(tgt) = tgt_state {
+                let tgt_key = format!("{}:state:{}:{}", lang_file_prefix, tgt.name, tgt.line);
+                let tgt_id = format!("sm:state:{}", tgt_key);
+                transition_edges.push(TransitionEdge {
+                    trans_id,
+                    state_id: tgt_id,
+                    rel_id: format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name),
+                    predicate: "behavior.target_state",
+                    state_name: transition.to.clone(),
+                });
+            }
         }
     }
 
-    // ── Phase 2: Batch-insert via UNWIND helpers ─────────────────────────────
+    // ── Phase 2: Batch-insert via trait methods ───────────────────────────────
     // M32 D2: machines (Element + ElementVersion)
     if !machine_elements.is_empty() {
-        let count = batch_upsert_element(s, &machine_elements)?;
-        elements_written += count;
-        batch_upsert_element_version(s, &machine_versions)?;
+        elements_written += ElementRepository::batch_upsert_elements(s, &machine_elements)?;
+        ElementRepository::batch_upsert_element_versions(s, &machine_versions)?;
     }
 
     // M32 D2: states (Element + ElementVersion)
     if !state_elements.is_empty() {
-        let count = batch_upsert_element(s, &state_elements)?;
-        elements_written += count;
-        batch_upsert_element_version(s, &state_versions)?;
+        elements_written += ElementRepository::batch_upsert_elements(s, &state_elements)?;
+        ElementRepository::batch_upsert_element_versions(s, &state_versions)?;
     }
 
     // M32 D2: transitions (Element only, no ElementVersion)
     if !transition_elements.is_empty() {
-        let count = batch_upsert_element(s, &transition_elements)?;
-        elements_written += count;
+        elements_written += ElementRepository::batch_upsert_elements(s, &transition_elements)?;
     }
 
-    // ── Phase 3: Re-collect for edge linking (needed because we consumed the loop) ─
-    // Note: we re-iterate to build the edge linking data, since we no longer have
-    // the per-transition state lookups inside the same loop as the element writes.
-    // This is acceptable because the elements are already written — the edge links
-    // are just relationship assertions that succeed or skip independently.
-    for machine in &report.machines {
-        let lang_file_prefix = machine
-            .canonical_key
-            .split_once(":state_machine:")
-            .map(|(prefix, _)| prefix)
-            .unwrap_or(&machine.canonical_key);
+    // ── Phase 3: Link edges from pre-collected tuples ──────────────────────────
+    // HIGH-2 fix: no re-walk of report.machines — we iterate the TransitionEdge
+    // tuples emitted in Phase 1.
+    for edge in transition_edges {
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "state_name".to_string(),
+            serde_json::Value::String(edge.state_name),
+        );
+        props.insert(
+            "predicate_id".to_string(),
+            serde_json::Value::String(edge.predicate.to_string()),
+        );
 
-        for transition in &machine.transitions {
-            let transition_key = format!(
-                "{}:transition:{}_{}:{}",
-                lang_file_prefix, transition.from, transition.to, transition.line
-            );
-            let trans_id = format!("sm:transition:{}", transition_key);
-
-            let src_state = machine.states.iter().find(|s| s.name == transition.from);
-            let tgt_state = machine.states.iter().find(|s| s.name == transition.to);
-
-            // Create transition→source_state edge
-            if let Some(src) = src_state {
-                let src_key = format!("{}:state:{}:{}", lang_file_prefix, src.name, src.line);
-                let src_id = format!("sm:state:{}", src_key);
-
-                let edge_rel_id =
-                    format!("sm:edge:transition:{}:source:{}", transition_key, src.name);
-                let mut props = serde_json::Map::new();
-                props.insert(
-                    "source_state".to_string(),
-                    serde_json::Value::String(transition.from.clone()),
-                );
-                props.insert(
-                    "predicate_id".to_string(),
-                    serde_json::Value::String("behavior.source_state".to_string()),
-                );
-
-                if s.link_semantic_edge(
-                    &trans_id,
-                    &src_id,
-                    &edge_rel_id,
-                    "behavior.source_state",
-                    &props,
-                    true,
-                )
-                .is_ok()
-                {
-                    relations_written += 1;
-                } else {
-                    relations_skipped += 1;
-                }
-            }
-
-            // Create transition→target_state edge
-            if let Some(tgt) = tgt_state {
-                let tgt_key = format!("{}:state:{}:{}", lang_file_prefix, tgt.name, tgt.line);
-                let tgt_id = format!("sm:state:{}", tgt_key);
-
-                let edge_rel_id =
-                    format!("sm:edge:transition:{}:target:{}", transition_key, tgt.name);
-                let mut props = serde_json::Map::new();
-                props.insert(
-                    "target_state".to_string(),
-                    serde_json::Value::String(transition.to.clone()),
-                );
-                props.insert(
-                    "predicate_id".to_string(),
-                    serde_json::Value::String("behavior.target_state".to_string()),
-                );
-
-                if s.link_semantic_edge(
-                    &trans_id,
-                    &tgt_id,
-                    &edge_rel_id,
-                    "behavior.target_state",
-                    &props,
-                    true,
-                )
-                .is_ok()
-                {
-                    relations_written += 1;
-                } else {
-                    relations_skipped += 1;
-                }
-            }
+        if s.link_semantic_edge(
+            &edge.trans_id,
+            &edge.state_id,
+            &edge.rel_id,
+            edge.predicate,
+            &props,
+            true,
+        )
+        .is_ok()
+        {
+            relations_written += 1;
+        } else {
+            relations_skipped += 1;
         }
     }
 

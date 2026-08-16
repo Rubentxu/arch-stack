@@ -270,8 +270,8 @@ fn write_evidence(
     )
     .context("write_evidence: put_structural_evidence")?;
 
-    let _ = EvidenceRepository::link_supported_by(store, version_id, &evidence_id);
-    let _ = EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
+    let _ = EvidenceRepository::link_supported_by(store, version_id, &evidence_id).ok();
+    let _ = EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id).ok();
     Ok(())
 }
 
@@ -380,19 +380,25 @@ pub fn apply(
         elements_written += 1;
     }
 
-    // ── Phase 2: Batch-insert via UNWIND helpers ─────────────────────────────────
+    // ── Phase 2: Batch-insert via ElementRepository trait methods ─────────────────
     // M32 D2: containers (Element + ElementVersion) — CURRENT_VERSION + VERSION_OF edges
-    // created by batch_upsert_element_version internally.
+    // created by batch_upsert_element_versions internally.
     if !container_elements.is_empty() {
-        crate::code::apply_common::batch_upsert_element(s, &container_elements)?;
-        crate::code::apply_common::batch_upsert_element_version(s, &container_versions)?;
+        ElementRepository::batch_upsert_elements(s, &container_elements)?;
+        ElementRepository::batch_upsert_element_versions(s, &container_versions)?;
     }
 
-    // ── Phase 3: OF_TYPE edges (link_of_type per container) ──────────────────
-    // CURRENT_VERSION and VERSION_OF edges are already created by batch_upsert_element_version.
-    // Only OF_TYPE remains: one edge per container.
-    for (element, metatype) in container_elements.iter().zip(container_metatypes.iter()) {
-        let _ = ElementRepository::link_of_type(s, &element.id, metatype);
+    // ── Phase 3: OF_TYPE edges batched via UNWIND ─────────────────────────────
+    // CURRENT_VERSION and VERSION_OF edges are already created by batch_upsert_element_versions.
+    // HIGH-5: replaced per-element loop with batch call.
+    let of_type_pairs: Vec<(String, String)> = container_elements
+        .iter()
+        .zip(container_metatypes.iter())
+        .map(|(element, metatype)| (element.id.clone(), metatype.clone()))
+        .collect();
+    if !of_type_pairs.is_empty() {
+        ElementRepository::batch_link_of_type(s, &of_type_pairs)
+            .context("c4_discover batch_link_of_type")?;
     }
 
     // ── Phase 4: Evidence writes (kept as-is, per-evidence loop inside tx) ────

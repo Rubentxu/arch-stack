@@ -387,6 +387,18 @@ impl ElementRepository for TinyGraphStore {
     fn existing_canonical_keys(&self) -> anyhow::Result<std::collections::HashSet<String>> {
         unimplemented!()
     }
+    fn batch_upsert_elements(&mut self, _: &[archctl::graph::Element]) -> anyhow::Result<usize> {
+        unimplemented!()
+    }
+    fn batch_upsert_element_versions(
+        &mut self,
+        _: &[archctl::graph::ElementVersion],
+    ) -> anyhow::Result<usize> {
+        unimplemented!()
+    }
+    fn batch_link_of_type(&mut self, _: &[(String, String)]) -> anyhow::Result<usize> {
+        unimplemented!()
+    }
 }
 
 impl EvidenceRepository for TinyGraphStore {

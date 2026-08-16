@@ -8,134 +8,23 @@
 //! per-module (~150 LOC across 4 private copies of
 //! `escape_cypher_string`, 2 of `existing_canonical_keys`, 2 of
 //! `write_source_artifact` + 2 local `Pipe` traits).
+//!
+//! Note: `batch_upsert_elements` and `batch_upsert_element_versions` moved to
+//! the `ElementRepository` port trait in `store.rs` (CRITICAL-2 / P1-03 fix).
+//! The `BATCH_SIZE` constant remains here and is used by the store adapter.
 
 use anyhow::Result;
 
-use crate::graph::{Element, ElementVersion};
 use crate::source::SourceArtifact;
 use crate::store::GraphStore;
 
-/// Batch size for UNWIND bulk-import queries.
-///
+/// Batch size for UNWIND bulk-import queries (used by ElementRepository impl in store.rs).
 ///
 /// Chosen for the echo dataset (1307 elements): 1307 / 500 ≈ 3 batches.
 /// Kùzu accepts inline-map UNWIND lists without prepared statements
 /// (ADR-036 §D2 trade-off). Smaller batches → more round-trips;
 /// larger batches → bigger Cypher strings (~100KB at 500 rows).
 pub const BATCH_SIZE: usize = 500;
-
-/// Bulk-insert a batch of [`Element`] nodes using Kùzu's UNWIND bulk-import
-/// pattern.
-///
-/// Each Element is formatted as an inline Cypher map and sent in a single
-/// `UNWIND [...] AS row MERGE (e:Element {canonical_key: row.ck}) SET e += row.props`
-/// query. Idempotent: `MERGE` skips existing canonical_keys; the caller is
-/// responsible for pre-filtering `existing_keys` before calling this helper.
-///
-/// Returns the number of elements in the batch (all were written or skipped).
-pub fn batch_upsert_element(s: &mut crate::store::LbugStore, batch: &[Element]) -> Result<usize> {
-    if batch.is_empty() {
-        return Ok(0);
-    }
-    let session = s.session_mut_inner()?;
-
-    let mut rows = Vec::with_capacity(batch.len());
-    for e in batch {
-        let safe_cat = e.category.replace('\'', "\\'");
-        let safe_name = e.current_name.replace('\'', "\\'");
-        let safe_status = e.current_status.replace('\'', "\\'");
-        rows.push(format!(
-            "{{id: '{}', kind_id: '{}', category: '{}', canonical_key: '{}', current_name: '{}', current_status: '{}', current_confidence: {}, current_version_id: '{}'}}",
-            e.id,
-            e.kind_id,
-            safe_cat,
-            e.canonical_key,
-            safe_name,
-            safe_status,
-            e.current_confidence,
-            e.current_version_id,
-        ));
-    }
-
-    // MERGE on primary key 'id' — Kùzu requires the primary key to be part of the
-    // merge pattern. canonical_key is a property (unique but not the PK).
-    let cypher = format!(
-        "UNWIND [{}] AS row MERGE (e:Element {{id: row.id}}) SET \
-         e.kind_id = row.kind_id, e.category = row.category, \
-         e.canonical_key = row.canonical_key, \
-         e.current_name = row.current_name, e.current_status = row.current_status, \
-         e.current_confidence = row.current_confidence, e.current_version_id = row.current_version_id;",
-        rows.join(", ")
-    );
-
-    session.conn.query(&cypher).map(|_| batch.len())?;
-    Ok(batch.len())
-}
-
-/// Bulk-insert a batch of [`ElementVersion`] nodes and link each to its parent
-/// Element via `CURRENT_VERSION` + `VERSION_OF` edges.
-///
-/// Two UNWIND passes per batch:
-///  1. `ElementVersion` nodes via `UNWIND [...] AS row MERGE (v:ElementVersion {id: row.id})`
-///  2. `CURRENT_VERSION` links via `UNWIND [...] AS row MATCH (e:Element {id: row.eid}) MATCH (v:ElementVersion {id: row.id}) MERGE (e)-[:CURRENT_VERSION]->(v)`
-///
-/// Idempotent: `MERGE` skips existing versions; caller pre-filters `existing_keys`.
-/// Returns the number of element versions in the batch.
-pub fn batch_upsert_element_version(
-    s: &mut crate::store::LbugStore,
-    batch: &[ElementVersion],
-) -> Result<usize> {
-    if batch.is_empty() {
-        return Ok(0);
-    }
-    let session = s.session_mut_inner()?;
-
-    // Pass 1: ElementVersion nodes
-    let mut rows = Vec::with_capacity(batch.len());
-    for v in batch {
-        let props_json = serde_json::to_string(&v.props).unwrap_or_else(|_| "{}".to_string());
-        let safe_props = props_json.replace('\'', "\\'");
-        let safe_name = v.name.replace('\'', "\\'");
-        let safe_status = v.status.replace('\'', "\\'");
-        let safe_origin = v.origin.replace('\'', "\\'");
-        rows.push(format!(
-            "{{id: '{}', element_id: '{}', name: '{}', status: '{}', origin: '{}', confidence: {}, props: '{}'}}",
-            v.id,
-            v.element_id,
-            safe_name,
-            safe_status,
-            safe_origin,
-            v.confidence,
-            safe_props,
-        ));
-    }
-
-    let cypher = format!(
-        "UNWIND [{}] AS row MERGE (v:ElementVersion {{id: row.id}}) SET \
-         v.element_id = row.element_id, v.name = row.name, v.status = row.status, \
-         v.origin = row.origin, v.confidence = row.confidence, v.props = row.props;",
-        rows.join(", ")
-    );
-    session.conn.query(&cypher).map(|_| ())?;
-
-    // Pass 2: CURRENT_VERSION + VERSION_OF edges
-    let mut edge_rows = Vec::with_capacity(batch.len());
-    for v in batch {
-        edge_rows.push(format!("{{id: '{}', eid: '{}'}}", v.id, v.element_id));
-    }
-
-    let edge_cypher = format!(
-        "UNWIND [{}] AS row \
-         MATCH (e:Element {{id: row.eid}}) \
-         MATCH (v:ElementVersion {{id: row.id}}) \
-         MERGE (e)-[:CURRENT_VERSION]->(v) \
-         MERGE (v)-[:VERSION_OF]->(e);",
-        edge_rows.join(", ")
-    );
-    session.conn.query(&edge_cypher).map(|_| ())?;
-
-    Ok(batch.len())
-}
 
 /// Escape a string for use inside a Cypher single-quoted string.
 ///

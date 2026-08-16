@@ -1258,7 +1258,8 @@ fn write_call_edge(
         &edge.callee,
         &rel_id,
         &rel_props,
-    );
+    )
+    .ok();
 
     // Evidence node via EvidenceRepository::put_structural_evidence
     let evidence_id = format!(
@@ -1297,10 +1298,11 @@ fn write_call_edge(
     .with_context(|| format!("write_call_evidence {}", evidence_id))?;
 
     // Link Evidence to SourceArtifact
-    let _ = crate::store::EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id);
+    let _ = crate::store::EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id).ok();
 
     // Link Evidence to ElementVersion via SUPPORTED_BY
-    let _ = crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id);
+    let _ =
+        crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id).ok();
 
     Ok(())
 }
@@ -1312,9 +1314,7 @@ pub fn apply(
     report: &CallGraphReport,
     _fs: &dyn Filesystem,
 ) -> Result<ApplyReport, CallGraphError> {
-    use crate::code::apply_common::{
-        batch_upsert_element, batch_upsert_element_version, write_source_artifact,
-    };
+    use crate::code::apply_common::write_source_artifact;
     use crate::store::{GraphStore, LbugStore, UnitOfWork};
 
     let mut store = LbugStore::open(project_dir)
@@ -1465,21 +1465,27 @@ pub fn apply(
         });
     }
 
-    batch_upsert_element(s, &elements).context("batch_upsert_element")?;
-    elements_written += elements.len();
-    batch_upsert_element_version(s, &element_versions)
-        .context("batch_upsert_element_version")
+    elements_written +=
+        ElementRepository::batch_upsert_elements(s, &elements).context("batch_upsert_elements")?;
+    ElementRepository::batch_upsert_element_versions(s, &element_versions)
+        .context("batch_upsert_element_versions")
         .map_err(CallGraphError::GraphWrite)?;
 
-    // OF_TYPE edges still need per-element calls (no UNWIND helper yet).
-    for n in &candidate_nodes {
-        let kind_id = match n.kind {
-            FunctionKind::Function => "code.function",
-            FunctionKind::Method => "code.method",
-            FunctionKind::Closure => "code.closure",
-        };
-        s.link_of_type(&format!("cg:{}", n.canonical_key), kind_id)
-            .context("link_of_type")
+    // HIGH-5: batch OF_TYPE edge links via UNWIND (was per-element loop).
+    let of_type_pairs: Vec<(String, String)> = candidate_nodes
+        .iter()
+        .map(|n| {
+            let kind_id = match n.kind {
+                FunctionKind::Function => "code.function",
+                FunctionKind::Method => "code.method",
+                FunctionKind::Closure => "code.closure",
+            };
+            (format!("cg:{}", n.canonical_key), kind_id.to_string())
+        })
+        .collect();
+    if !of_type_pairs.is_empty() {
+        ElementRepository::batch_link_of_type(s, &of_type_pairs)
+            .context("batch_link_of_type")
             .map_err(CallGraphError::GraphWrite)?;
     }
 

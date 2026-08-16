@@ -7,9 +7,9 @@
 use tempfile::TempDir;
 
 use archctl::Row;
-use archctl::code::apply_common::{BATCH_SIZE, batch_upsert_element};
+use archctl::code::apply_common::BATCH_SIZE;
 use archctl::graph::Element;
-use archctl::store::{GraphStore, LbugStore, RawGraphQuery, UnitOfWork};
+use archctl::store::{ElementRepository, GraphStore, LbugStore, RawGraphQuery, UnitOfWork};
 
 /// Extension trait to execute raw writes for testing transaction scenarios.
 /// The RawGraphQuery::query guard rejects write keywords (MERGE, SET, etc.);
@@ -243,7 +243,8 @@ fn unwind_bulk_insert_idempotent() {
     let batch2 = make_elements(50, "idem"); // same keys as batch1
 
     let mut tx = UnitOfWork::begin_transaction(&mut store).expect("begin must succeed");
-    let n1 = batch_upsert_element(tx.as_mut(), &batch1).expect("first batch must succeed");
+    let n1 = ElementRepository::batch_upsert_elements(tx.as_mut(), &batch1)
+        .expect("first batch must succeed");
     assert_eq!(n1, 50, "first batch returns 50");
     tx.commit().expect("commit must succeed");
 
@@ -255,7 +256,8 @@ fn unwind_bulk_insert_idempotent() {
 
     // Second insert with identical keys — MERGE is idempotent, no duplicates.
     let mut tx2 = UnitOfWork::begin_transaction(&mut store).expect("begin must succeed");
-    let n2 = batch_upsert_element(tx2.as_mut(), &batch2).expect("second batch must succeed");
+    let n2 = ElementRepository::batch_upsert_elements(tx2.as_mut(), &batch2)
+        .expect("second batch must succeed");
     assert_eq!(n2, 50, "second batch returns 50 (MERGE deduplicates)");
     tx2.commit().expect("commit must succeed");
 
@@ -276,7 +278,8 @@ fn unwind_batch_size_boundary() {
     // Test 1: exactly BATCH_SIZE (500) elements — single chunk.
     let batch_500 = make_elements(BATCH_SIZE, "boundary500");
     let mut tx = UnitOfWork::begin_transaction(&mut store).expect("begin must succeed");
-    let n = batch_upsert_element(tx.as_mut(), &batch_500).expect("500-element batch must succeed");
+    let n = ElementRepository::batch_upsert_elements(tx.as_mut(), &batch_500)
+        .expect("500-element batch must succeed");
     assert_eq!(n, BATCH_SIZE, "returns batch size");
     tx.commit().expect("commit must succeed");
 
@@ -290,8 +293,8 @@ fn unwind_batch_size_boundary() {
     // Test 2: BATCH_SIZE+1 elements — two chunks (499 + 1 or 500 + 1).
     let batch_501 = make_elements(BATCH_SIZE + 1, "boundary501");
     let mut tx2 = UnitOfWork::begin_transaction(&mut store).expect("begin must succeed");
-    let n2 =
-        batch_upsert_element(tx2.as_mut(), &batch_501).expect("501-element batch must succeed");
+    let n2 = ElementRepository::batch_upsert_elements(tx2.as_mut(), &batch_501)
+        .expect("501-element batch must succeed");
     assert_eq!(n2, BATCH_SIZE + 1, "returns BATCH_SIZE+1");
     tx2.commit().expect("commit must succeed");
 
