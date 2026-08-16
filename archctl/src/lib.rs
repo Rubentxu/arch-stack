@@ -1,4 +1,7 @@
+pub mod architecture;
 pub mod astgrep;
+pub use architecture::digest::extractor_set_digest;
+pub use architecture::{create, gc, list};
 pub mod capability;
 pub mod cli;
 pub mod clock;

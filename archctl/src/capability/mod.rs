@@ -10,10 +10,10 @@
 
 mod alignment;
 mod docs;
-mod source_cargo;
-mod source_cli;
-mod source_code;
-mod source_diagram;
+pub mod source_cargo;
+pub mod source_cli;
+pub mod source_code;
+pub mod source_diagram;
 mod source_doctor;
 mod source_ide;
 mod source_mcp;

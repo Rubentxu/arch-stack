@@ -11,9 +11,9 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
-use crate::capability::source_code;
-use crate::capability::source_cargo;
 use crate::capability::Capability;
+use crate::capability::source_cargo;
+use crate::capability::source_code;
 
 /// A single entry in the extractor digest projection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,7 +42,8 @@ pub struct ExtractorSetProjection {
 /// Result is a `blake3:...` string.
 pub fn extractor_set_digest() -> String {
     let projection = extractor_set_projection();
-    let json = serde_json::to_string(&projection).expect("ExtractorSetProjection is JSON-serializable");
+    let json =
+        serde_json::to_string(&projection).expect("ExtractorSetProjection is JSON-serializable");
     let mut hasher = Hasher::new();
     hasher.update(json.as_bytes());
     let digest = hasher.finalize();
@@ -69,7 +70,7 @@ pub fn extractor_set_projection() -> ExtractorSetProjection {
                     crate::capability::Maturity::Stable => "stable",
                     crate::capability::Maturity::Beta => "beta",
                     crate::capability::Maturity::Experimental => "experimental",
-                    crate::capability::Maturity::Deprecated => "deprecated",
+                    crate::capability::Maturity::Proposed => "proposed",
                 };
                 ExtractorEntry {
                     extractor_id: cap.id.clone(),
@@ -116,14 +117,20 @@ mod tests {
             let b = &window[1];
             let key_a = format!("{}\0{}", a.extractor_id, a.language);
             let key_b = format!("{}\0{}", b.extractor_id, b.language);
-            assert!(key_a <= key_b, "entries must be sorted by extractor_id+language");
+            assert!(
+                key_a <= key_b,
+                "entries must be sorted by extractor_id+language"
+            );
         }
     }
 
     #[test]
     fn sequence_is_excluded() {
         let proj = extractor_set_projection();
-        let has_sequence = proj.entries.iter().any(|e| e.extractor_id == "code.sequence");
+        let has_sequence = proj
+            .entries
+            .iter()
+            .any(|e| e.extractor_id == "code.sequence");
         assert!(!has_sequence, "code.sequence must be excluded from digest");
     }
 }
