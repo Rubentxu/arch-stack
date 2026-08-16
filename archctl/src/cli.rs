@@ -1448,10 +1448,10 @@ fn graph_neighbours_cmd(
     Ok(0)
 }
 
-/// Convert one `Row` to a `serde_json::Value` object keyed by column
-/// name. This is the **only** place in `archctl` that turns a `Row`
-/// into JSON for CLI output — keeping the conversion local means the
-/// domain stays free of `serde_json`.
+/// Print the capability registry (ADR-045): `--format json` (default,
+/// validates against `schemas/capability-registry.schema.json`) or
+/// `--format markdown` (same bytes as `docs/CAPABILITIES.md`);
+/// `--check` exits non-zero when the checked-in doc is stale.
 fn capabilities_cmd(format: CapabilityFormat, check: bool) -> anyhow::Result<i32> {
     let reg = crate::capability::registry();
 
@@ -1515,6 +1515,10 @@ fn capabilities_cmd(format: CapabilityFormat, check: bool) -> anyhow::Result<i32
     }
 }
 
+/// Convert one `Row` to a `serde_json::Value` object keyed by column
+/// name. This is the **only** place in `archctl` that turns a `Row`
+/// into JSON for CLI output — keeping the conversion local means the
+/// domain stays free of `serde_json`.
 fn row_to_json(row: &crate::row::Row) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     for (k, cell) in row.iter() {
