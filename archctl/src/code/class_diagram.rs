@@ -1387,46 +1387,50 @@ pub fn apply(
         .collect();
 
     // M32 D2 UNWIND bulk: build Element + ElementVersion batches, call helpers once.
-    let elements: Vec<crate::graph::Element> = candidate_nodes
-        .iter()
-        .map(|n| {
-            let kind_id = match n.kind {
-                TypeKind::Class => "uml.class",
-                TypeKind::Interface => "uml.interface",
-                TypeKind::Trait => "uml.trait",
-                TypeKind::Enum => "uml.enum",
-                TypeKind::Record => "uml.record",
-            };
-            crate::graph::Element {
-                id: format!("cd:{}", n.canonical_key),
-                kind_id: kind_id.to_string(),
-                category: "uml".to_string(),
-                canonical_key: n.canonical_key.clone(),
-                current_name: n.name.clone(),
-                current_status: "active".to_string(),
-                current_confidence: n.confidence,
-                current_version_id: format!("cdv:{}:{}", n.canonical_key, uuid::Uuid::new_v4()),
-            }
-        })
-        .collect();
-
+    // CRITICAL-1 fix: compute version_id ONCE per node (deterministic blake3 hash)
+    // so Element.current_version_id == ElementVersion.id, preserving CURRENT_VERSION
+    // relationship integrity. Previously used two independent uuid::Uuid::new_v4()
+    // calls which broke the relationship (data corruption).
+    let mut elements: Vec<crate::graph::Element> = Vec::with_capacity(candidate_nodes.len());
     let mut element_versions: Vec<crate::graph::ElementVersion> =
         Vec::with_capacity(candidate_nodes.len());
     for n in &candidate_nodes {
+        let kind_id = match n.kind {
+            TypeKind::Class => "uml.class",
+            TypeKind::Interface => "uml.interface",
+            TypeKind::Trait => "uml.trait",
+            TypeKind::Enum => "uml.enum",
+            TypeKind::Record => "uml.record",
+        };
         let version_props = serde_json::json!({
             "kind": format!("{:?}", n.kind).to_lowercase(),
             "language": n.language.lang_label(),
             "confidence": n.confidence,
             "members": n.members.len(),
         });
+        let version_props_str = serde_json::to_string(&version_props).unwrap_or_default();
+        let version_id = format!(
+            "cdv:{}",
+            blake3::hash(version_props_str.as_bytes()).to_hex()
+        );
         let mut props_map = serde_json::Map::new();
         if let Some(obj) = version_props.as_object() {
             for (k, v) in obj {
                 props_map.insert(k.clone(), v.clone());
             }
         }
+        elements.push(crate::graph::Element {
+            id: format!("cd:{}", n.canonical_key),
+            kind_id: kind_id.to_string(),
+            category: "uml".to_string(),
+            canonical_key: n.canonical_key.clone(),
+            current_name: n.name.clone(),
+            current_status: "active".to_string(),
+            current_confidence: n.confidence,
+            current_version_id: version_id.clone(),
+        });
         element_versions.push(crate::graph::ElementVersion {
-            id: format!("cdv:{}:{}", n.canonical_key, uuid::Uuid::new_v4()),
+            id: version_id,
             element_id: format!("cd:{}", n.canonical_key),
             name: n.name.clone(),
             status: "active".to_string(),
