@@ -6,6 +6,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.47.1] — 2026-08-16
+
+### Fixed
+- **M32 remediation r1** — `class_diagram::apply` version-id mismatch (data
+  corruption): `Element.current_version_id` and `ElementVersion.id` were two
+  independent `uuid::Uuid::new_v4()` calls that never matched, breaking the
+  CURRENT_VERSION integrity invariant (`e.current_version_id = v.id` returned
+  0 rows). Both now share one deterministic `blake3` version id, mirroring
+  `call_graph`/`state_machine`/`c4_discover`. Found by M32 debt-verify (FAIL),
+  fixed forward on `fix/m32-debt-remediation-r1`.
+- **M32 remediation r1** — Port boundary restored (ADR-059):
+  `batch_upsert_element`/`batch_upsert_element_version` moved from free
+  functions taking `&mut LbugStore` (with `session_mut_inner()` raw Cypher)
+  into the `ElementRepository` port trait; Cypher generation now lives in the
+  adapter. New `batch_link_of_type` port method batches the remaining
+  per-element OF_TYPE loops in `call_graph`.
+- **M32 remediation r1** — UNWIND row escaping: all interpolated string fields
+  now go through `escape_cypher_string` (previously only 3 of 9 fields were
+  escaped in `batch_upsert_element`, 4 of 11 in the version helper).
+- **M32 remediation r1** — `BATCH_SIZE=500` is now real: batch helpers chunk
+  via `batch.chunks(BATCH_SIZE)` (constant was declared but unused).
+
+### Changed
+- **M32 remediation r1** — `state_machine::apply` single-walk restructure:
+  the collect phase now emits `TransitionEdge` tuples so the edge-linking
+  phase no longer re-walks the entire `report.machines` (~270 LOC, was 3
+  phases with a redundant third re-walk).
+- **M32 remediation r1** — Silent `let _ =` on edge-link `Result`s replaced
+  with explicit `.ok()` best-effort semantics in production writers.
+
+### Added
+- **M32 remediation r1** — Cross-writer CURRENT_VERSION integrity regression
+  suite (`archctl/tests/code_writer_current_version.rs`): applies fixtures
+  through all four writers and asserts `element.current_version_id =
+  version.id` for every CURRENT_VERSION edge. This is the test that would
+  have caught the original UUID mismatch.
+
 ## [1.47.0] — 2026-08-16
 
 ### Changed
