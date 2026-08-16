@@ -1,4 +1,5 @@
 class Archctl < Formula
+  # Maintainer release guide: docs/maintainers/HOMEBREW_FORMULA.md
   desc "CLI sidecar for arch-stack: extract + render architecture diagrams, manage skills"
   homepage "https://github.com/Rubentxu/arch-stack"
   url "https://github.com/Rubentxu/arch-stack/releases/download/v1.37.0/archctl-x86_64-unknown-linux-gnu.tar.gz"

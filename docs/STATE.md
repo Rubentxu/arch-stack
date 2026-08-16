@@ -16,7 +16,7 @@
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | ~41,100 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.48.0; incluye unit tests inline) |
 | LOC tests | ~11,600 (`archctl/tests/**/*.rs`, integration) |
-| LOC benches | ~790 |
+| LOC benches | ~900 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83 + M32-remediation + p1-08) |
 | Tags | 118 (v0.1.0 → v1.48.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
