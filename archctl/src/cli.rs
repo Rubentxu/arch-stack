@@ -1312,7 +1312,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 Ok(0)
             }
         },
-        Command::Capabilities { format, check } => Ok(capabilities_cmd(format, check, ctx)?),
+        Command::Capabilities { format, check } => Ok(capabilities_cmd(format, check)?),
     }
 }
 
@@ -1452,11 +1452,7 @@ fn graph_neighbours_cmd(
 /// name. This is the **only** place in `archctl` that turns a `Row`
 /// into JSON for CLI output — keeping the conversion local means the
 /// domain stays free of `serde_json`.
-fn capabilities_cmd(
-    format: CapabilityFormat,
-    check: bool,
-    _ctx: &CliContext,
-) -> anyhow::Result<i32> {
+fn capabilities_cmd(format: CapabilityFormat, check: bool) -> anyhow::Result<i32> {
     let reg = crate::capability::registry();
 
     if check {
