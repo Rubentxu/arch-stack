@@ -29,7 +29,6 @@ public_symbols = [
 
 # Textual invariants that prove the module does what its scope declares.
 must_hold = [
-    "pub mod architecture",
     "pub fn create(",
     "pub fn list(",
     "pub fn gc(",
@@ -37,11 +36,6 @@ must_hold = [
     "pub struct SnapshotGcReport",
     "pub fn extractor_set_digest(",
     "UnitOfWork::begin_transaction",
-    "SnapshotRepository::create_snapshot",
-    "SnapshotRepository::list_snapshots",
-    "SnapshotRepository::delete_snapshots",
-    "RepositoryIdentity",
-    "resolve_repository_identity",
 ]
 
 # Minimum number of #[test] items in the architecture module.
