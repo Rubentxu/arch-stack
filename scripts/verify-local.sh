@@ -110,6 +110,14 @@ fi
 # ---- dependency fitness ratchet (P1-09, report-only with baseline) ---------
 run_gate "$REPO_ROOT/scripts/check-dep-fitness.sh"
 
+# ---- capability registry staleness gate (P1-08) ------------------------------
+# Regenerate markdown to a temp file and diff against the committed docs/CAPABILITIES.md.
+# The binary uses the process cwd; run from repo root so docs/CAPABILITIES.md resolves.
+run_gate bash -c '
+    archctl/target/release/archctl capabilities --format markdown > /tmp/capabilities_fresh.md || exit 1
+    diff -q docs/CAPABILITIES.md /tmp/capabilities_fresh.md || { echo "verify-local: docs/CAPABILITIES.md is stale. Run: archctl capabilities --format markdown > docs/CAPABILITIES.md"; exit 1; }
+'
+
 if [ "$MODE" = "full" ]; then
     # ---- fresh baseline: fetch origin/main unless --baseline given ----
     if [ -z "$BASELINE" ]; then
