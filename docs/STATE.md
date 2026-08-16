@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-14, post-release v1.42.0 (p0-ladybug-compatibility-doctor-v2).
+> Última actualización: 2026-08-16, post-release v1.48.0 (p1-08-capability-registry).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | squash commit on `main` post-PR-166 (M80b — arrows export adapter) |
-| Versión | `v1.41.0` (latest tag, post-PR-166 squash) |
-| Tests | 785 Rust + 128 archview tests pasan; 15 ignored (env-specific) |
-| Working tree | trunk `main` en sync con `origin/main`, post-PR-166 squash merge |
+| Tip | merge commit `bae340a` (PR #191 — p1-08-capability-registry) |
+| Versión | `v1.48.0` (latest tag, post-PR #191) |
+| Tests | 872 Rust tests pasan (`cargo test --features test-fixtures`); clippy clean |
+| Working tree | `docs/state-refresh-v148` (apply phase) |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~30,951 + ~30 (M82) + (M83 −303) + (**M80b** +720 net: `arrows.rs` 423 + `export_types.rs` +47 + `cli.rs` +119 + `mod.rs` +1 + `manifests/diagram.toml` +6 + `tests/diagram_arrows_export.rs` +206 + `index.md` +2 + `arrows-compatibility-adapter.md` +103 + `.gitignore` +3 + `Cargo.toml` +2 + `Cargo.lock` +2 − `CHANGELOG.md` +10 = ~878 / 46 truncated) |
-| LOC tests | ~6,560 + ~25 (M82) + (M80b: 7 inline unit tests in `arrows.rs` + 4 integration tests in `diagram_arrows_export.rs` + 1 `ExportFormat::parse_case_insensitive` = 12 new) |
-| LOC benches | ~790 |
-| Vault milestones | 35 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83) |
-| Tags | 41 (v1.1.0 → v1.36.0; v1.31.0–v1.35.0 backfilled below; +v1.37.0–v1.41.0) |
+| LOC src | ~41,100 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.48.0; incluye unit tests inline) |
+| LOC tests | ~11,600 (`archctl/tests/**/*.rs`, integration) |
+| LOC benches | ~900 (`archctl/benches/**/*.rs`) |
+| Vault milestones | 37 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83 + M32-remediation + p1-08) |
+| Tags | 118 (v0.1.0 → v1.48.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -73,7 +73,15 @@
 | `v1.39.1` | M82 | `npm-single` pnpm-workspace-path detection: 1-argument swap in `archctl/src/code/strategies/npm_single.rs:67` so `pnpm_workspace_declares_packages` reads from `pkg_json.parent()` instead of `project_root`. Aligns with the sibling convention at `archctl/src/code/strategies/npm.rs:52`. Fixes mis-classification of vueuse-style monorepos (`apps/web/{package.json,pnpm-workspace.yaml}`). 1 regression test added. |
 | `v1.40.0` | M83 | `archctl stack` removal: hard delete of the CLI surface (Command::Stack, StackAction, dispatch arm), the dead-code module (`archctl/src/stack.rs` 229 LOC), and the orphaned manifest gate (`manifests/stack.toml`). Migrated 3 e2e contracts (`e2e/install_e2e.sh`, `e2e/human_loop_sandbox.sh`, `e2e/HUMAN_LOOP_TEST.md`) + `docs/specs/e2e-installation.md` + the embedded `stack-management` skill to `archctl ide install <ide>` / `archctl ide doctor <ide>`. Breaking change — semver minor. ADRs untouched (historical truth preserved). |
 | `v1.41.0` | M80b | Arrows export adapter: `archctl diagram export <selector> --format arrows` produces a deterministic `.arrows` JSON document (Arrows.app v0.8 shape). Pure serializer over `BundleEnvelope { projection, styles }` (`archctl/src/diagram/arrows.rs` 423 LOC, 7 inline unit tests). Case-insensitive `--format` dispatch wired via `ExportFormat::parse()` in `cli.rs::diagram_export_cmd`. Default output path derived from the selector (replaces `:` and `/` with `_`). `--json` envelope includes `unplaced_count` for cosmetic audit. 4 integration tests in `archctl/tests/diagram_arrows_export.rs`. Manifest gate updated (`editable[] += arrows.rs`, `must_hold[] += "pub fn serialize("`, `minimum_tests: 58 → 60`). M69 stub (`docs/specs/arrows-compatibility-adapter.md`) realigned to reflect export-only-public-surface; import marked as phase 2 deferred until a real consumer trigger fires. Path A-lite, no new ADR, no new port, no new bounded context. |
-| `v1.41.6` | p0-ladybug-doctor-v2 | `archctl doctor --scope storage [--json]`: LadybugDB (lbug) availability, crate/native alignment, schema initialization, and CRUD smoke probe. New `doctor/` module with `DoctorScope`, `LbugStorageProbe`, `NativeProbe`, and smoke gate runner. JSON output follows 5-axis envelope (ADR-048). Tier-1 CI smoke gate wired in `pr.yml` + release gate in `release.yml`. 9 integration tests covering all 7 spec scenarios. |
+| `v1.41.6` | P0-12 | CI pre-merge fast gate workflow for PRs (`pr.yml`, PR #173) — Wave 0 item 6. |
+| `v1.42.0` | p0-ladybug-doctor-v2 | `archctl doctor --scope storage [--json]`: LadybugDB (lbug) availability, crate/native alignment, schema initialization, and CRUD smoke probe. New `doctor/` module with `DoctorScope`, `LbugStorageProbe`, `NativeProbe`, and smoke gate runner. JSON output follows 5-axis envelope (ADR-048). Tier-1 CI smoke gate wired in `pr.yml` + release gate in `release.yml`. 9 integration tests covering all 7 spec scenarios (PR #174) — Wave 0 item 5. |
+| `v1.43.0` | Wave 0 item 7 + Wave 1 batch | **p0-03** native release runners (darwin on `macos-13`/`macos-14`, linux aarch64 on `ubuntu-24.04-arm`, PR #177 — Wave 0 7/7 closed) + **p1-09** dep-fitness baseline + **p1-01** composition root (`CliContext` + factories) + **p1-03** repository ports (PRs #178–#180) — Wave 1 items 8/9/11. |
+| `v1.44.0` | p1-04 | RawGraphQuery admin-only boundary (tokenized `is_read_only_query` guard, ADR-059) — Wave 1 item 13. |
+| `v1.44.1` | p1-04 patch | RawGraphQuery admin-query guard follow-up (PR #182). |
+| `v1.45.0` | p1-05 | UnitOfWork port + `Transaction<'a>` session newtype; 5 apply pipelines wrapped (PRs #184–#185). |
+| `v1.47.0` | M32 PR2 | UNWIND bulk import extended to `state_machine` (3 nesting levels) + `c4_discover` writers; ADR-036 amendment (D2 re-ship, D3 deferral). PR #188. **Nota: PR1 (call_graph + class_diagram UNWIND, PR #187) quedó SIN tag — gap `v1.46.0` documentado; CHANGELOG `[1.46.0]` describe su contenido.** |
+| `v1.47.1` | M32 remediation r1 | `class_diagram` version-id mismatch (blake3 compartido) + `apply_common` port bypass (batch helpers → `ElementRepository` port, ADR-059) fixed; cross-writer CURRENT_VERSION regression suite added (PR #189+#190). |
+| `v1.48.0` | p1-08 | CapabilityRegistry: 8 categories, 79 entries; `archctl capabilities --format json\|markdown` + `--check`; bidirectional alignment invariants in `alignment.rs`; generated `docs/CAPABILITIES.md`; staleness gates in `verify-local.sh` + `test-ci-gates.sh`; ADR-045 accepted; call-graph schema enum fix 3→6 langs (PR #191) — Wave 1 items 15+16, Wave 1 completa. |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -122,7 +130,7 @@
 
 ## Deuda técnica activa
 
-**Doctor:** 26/26 scopes pass. No findings.
+**Doctor:** 30/30 scopes pass. No findings.
 
 **Closed in this session** (M37–M56):
 - `seed_writes` lying API removed (BREAK-1, v1.4.1)
@@ -132,10 +140,18 @@
 - 3 stale "no parameter binding" doc claims (M52)
 - `backend_available()` helper DRY'd (M56, -60 LOC across 5 files)
 
-**Pending** (from M55 study):
-- **TODO markers** (2): `code/strategies/dockerfile.rs:139`, `code/class_diagram.rs:1067`. M60 proposes resolving.
-- **store.rs** (2,383 LOC): biggest file. M63 proposes splitting.
-- **Cognitive-layer test coverage**: 14 sub-modules, minimal tests. M61 proposes audit.
+**M32 remediation (closed in v1.47.0/v1.47.1)**:
+- class_diagram UUID mismatch fixed; port bypass corrected; cross-writer `CURRENT_VERSION` regression suite added.
+
+**Accepted debt (per proposal + cycle retrospective)**:
+- **Registry introspection v2**: registry sources are catalog-mirrors, not runtime introspection. Follow-up deferred to registry-introspection-v2 proposal.
+- **POSIX-only symlink**: `stack.rs`-era symlink bootstrap works on POSIX; Windows not supported (documented).
+- **Parallel `Vec<Element>` + `ElementVersion`** (~120 LOC, M32 era): `apply.rs` processes elements in parallel; noted as debt in p1-08 retrospective.
+- **D4 throughput**: measured 96.57 ms/element vs ≤30 ms/element budget (ADR-019); accepted as small-N edge case.
+
+**Pending**:
+- **store.rs** (3,540 LOC): biggest file. M63 proposes splitting (still pending).
+- **Cognitive-layer test coverage**: 14 sub-modules, minimal tests. M61 audit partially done (cognitive policy tests added), full coverage deferred.
 
 ## Plan vigente
 
@@ -152,10 +168,21 @@
 
 Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
 
-**Next horizon (per ROADMAP H0–H3):**
-- **H0 — Ejecutable / verdad verificable**: contrato bundle schema ↔ Rust DTO ↔ TS types + selector configurable en `archctl view`. First code cycle of the H0 era.
-- H1, H2, H3 — pendiente, ver ROADMAP H0–H3 section.
-- **H4 — Distribución & ciclo de vida del CLI**: **CERRADO en v1.36.0 (M73+M75+M76)** — 2026-08-11. Multi-version installs, self-update, IDE adapters (OpenCode/ZCode/Claude Code/Codex), plugin tap model.
+**2026-08-13 plan (Wave 0/1/2/3)** — ver
+`docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`.
+
+Estado de la wave:
+
+1. **Wave 0 (remediation)** — **7/7 DONE** (PRs #168–#175 + #177): plugin tests,
+   plugin hardening, ADR integrity, license coherence, Ladybug doctor
+   (v1.42.0), PR CI fast gates, **native release runners (v1.43.0)**.
+2. **Wave 1 (architecture scaffolding)** — **8–16 ALL DONE** (v1.43.0–v1.45.0
+   + v1.48.0): dependency-fitness baseline (v1.43.0, p1-09), composition
+   root (v1.43.0, p1-01), repositories (v1.43.0, p1-03), RawGraphQuery
+   boundary (v1.44.0+v1.44.1, p1-04), UnitOfWork (v1.45.0, p1-05),
+   filesystem contracts, doctor/diagram migrations via CliContext, **capability
+   registry (v1.48.0, p1-08, PR #191)**.
+3. **Wave 2 (intelligence)** / **Wave 3 (platform)** — pendientes.
 
 ## Comandos de verificación
 
@@ -168,33 +195,28 @@ git status
 # Tests
 cd archctl
 cargo build --quiet
-cargo test --quiet
-cargo clippy --quiet --all-targets
+cargo test --features test-fixtures --quiet   # 872/872 baseline
+cargo clippy --quiet --all-targets --features test-fixtures -- -D warnings
 cargo fmt --check
 
 # Verificación completa (cheap mode)
-cd /var/home/rubentxu/Proyectos/agentesIA/arch-stack
+cd /var/mnt/DiscoChino2-fast/Proyectos/agentesIA/arch-stack
 bash scripts/verify-local.sh
 
-# 26/26 doctor scopes
-cargo run --bin archctl -- doctor --scopes $(ls manifests | sed 's/.toml//' | tr '\n' ',' | sed 's/,$//') --cwd archctl
+# 30/30 doctor scopes
+cargo run --bin archctl -- doctor --scopes $(ls ../manifests | sed 's/.toml//' | tr '\n' ',' | sed 's/,$//') --cwd ..
+
+# Capability registry staleness
+cargo run --quiet --bin archctl -- capabilities --check
 ```
 
 ## Próxima acción del usuario
 
-Plan vigente: **wave P0–P3** del estudio
-`docs/arch-stack-proposals-2026-08-13/` (ver
-`09-IMPLEMENTATION-PR-PLAN.md`). Los horizontes H0–H4 están cerrados
-(H0: M70 v1.31.0 · H1: M71 v1.32.0 · H2: M80/M81/M80b · H4: v1.36.0).
+Wave 2 (intelligence) items 17–18:
+- **17 — Snapshot metadata MVP**: attach version/timestamp/capability metadata to
+  graph snapshots for auditability.
+- **18 — Architecture Diff schema/pure diff**: ADR-053 schema for pure
+  diff output (no lbug write); `archctl diff` CLI surface.
 
-Estado de la wave:
-
-1. **Wave 0 (remediation)** — 6/7 DONE (PRs #168–#175):
-   plugin tests, plugin hardening, ADR integrity, license coherence,
-   Ladybug doctor (v1.42.0), PR CI fast gates. **Falta item 7**
-   (native release runners: `release.yml` compila targets darwin en
-   `ubuntu-22.04`).
-2. **Wave 1 (architecture scaffolding)** — items 8–16: dependency
-   fitness baseline, composition root, migrar doctor/diagram a ports,
-   RawGraphQuery boundary, filesystem contracts, CapabilityRegistry.
-3. **Wave 2 (intelligence)** / **Wave 3 (platform)** — pendientes.
+Ver `docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`
+para el plan completo de items 17–27.

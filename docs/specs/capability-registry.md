@@ -35,7 +35,7 @@ The registry SHALL expose `archctl::capability::Capability` carriers. Each entry
 - **GIVEN** a built `archctl` binary
 - **WHEN** the user runs `archctl capabilities`
 - **THEN** stdout is valid JSON with `schemaVersion` equal to `"1"`
-- **AND** `capabilities[]` length matches the contract (13 categories)
+- **AND** `capabilities[]` length matches the contract (8 categories, 79 entries)
 
 #### Scenario: Markdown is deterministic
 

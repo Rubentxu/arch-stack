@@ -4,7 +4,7 @@ id = "scope"
 version = "0.1.0"
 description = "Scope gate engine + manifest loader (migrated to Filesystem port)"
 cargo_dir = "archctl"
-editable = ["archctl/src/scope.rs", "archctl/src/doctor.rs"]
+editable = ["archctl/src/scope.rs", "archctl/src/doctor/"]
 public_symbols = [
   "ScopeManifest", "ScopeCheckReport", "ScopeFinding", "ScopeSeverity",
   "ScopeGate", "check_scope", "check_all_scopes",

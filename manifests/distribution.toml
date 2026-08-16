@@ -16,7 +16,7 @@ public_symbols = [
 
 must_hold = [
   "Formula/archctl.rb",
-  "HOMEBREW_FORMULA.md",
+  "docs/maintainers/HOMEBREW_FORMULA.md",
 ]
 
 minimum_tests = 0
