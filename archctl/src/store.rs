@@ -1748,18 +1748,14 @@ impl ElementRepository for LbugStore {
         for chunk in batch.chunks(crate::code::apply_common::BATCH_SIZE) {
             let mut rows = Vec::with_capacity(chunk.len());
             for e in chunk {
-                // Escape all string fields before inline Cypher interpolation.
-                let safe_cat = e.category.replace('\'', "\\'");
-                let safe_name = e.current_name.replace('\'', "\\'");
-                let safe_status = e.current_status.replace('\'', "\\'");
                 rows.push(format!(
                     "{{id: '{}', kind_id: '{}', category: '{}', canonical_key: '{}', current_name: '{}', current_status: '{}', current_confidence: {}, current_version_id: '{}'}}",
                     escape_cypher_string(&e.id),
                     escape_cypher_string(&e.kind_id),
-                    safe_cat,
+                    escape_cypher_string(&e.category),
                     escape_cypher_string(&e.canonical_key),
-                    safe_name,
-                    safe_status,
+                    escape_cypher_string(&e.current_name),
+                    escape_cypher_string(&e.current_status),
                     e.current_confidence,
                     escape_cypher_string(&e.current_version_id),
                 ));
@@ -1790,19 +1786,15 @@ impl ElementRepository for LbugStore {
             for v in chunk {
                 let props_json =
                     serde_json::to_string(&v.props).unwrap_or_else(|_| "{}".to_string());
-                let safe_props = props_json.replace('\'', "\\'");
-                let safe_name = v.name.replace('\'', "\\'");
-                let safe_status = v.status.replace('\'', "\\'");
-                let safe_origin = v.origin.replace('\'', "\\'");
                 rows.push(format!(
                     "{{id: '{}', element_id: '{}', name: '{}', status: '{}', origin: '{}', confidence: {}, props: '{}'}}",
                     escape_cypher_string(&v.id),
                     escape_cypher_string(&v.element_id),
-                    safe_name,
-                    safe_status,
-                    safe_origin,
+                    escape_cypher_string(&v.name),
+                    escape_cypher_string(&v.status),
+                    escape_cypher_string(&v.origin),
                     v.confidence,
-                    safe_props,
+                    escape_cypher_string(&props_json),
                 ));
             }
             let cypher = format!(
