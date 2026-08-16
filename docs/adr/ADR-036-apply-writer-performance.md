@@ -118,6 +118,39 @@ writer.
 | zustand 212 elementos | 92s | **< 5s** |
 | Proyección 10k elementos | ~70min | ~10-40s |
 
+## Amendment — M32 D2 Re-ship + D5 Extension (2026-08-16)
+
+**Reason:** D2 of this ADR was **regressed** by [P1-04 T3 commit `599c863`](https://github.com/Rubentxu/arch-stack/commit/599c863) which accidentally removed the UNWIND bulk import from `call_graph.rs` during a refactor. The regression went undetected until the M32 cycle re-audited writer performance post-P1-05 UnitOfWork merge.
+
+### D2 — UNWIND Bulk Import: Re-shipped
+
+**What changed:** D2 was re-implemented across 4 writers on 2026-08-16:
+
+| Writer | Commit | Notes |
+|--------|--------|-------|
+| `call_graph` | `a92ee0e` | UNWIND restore via `apply_common::batch_upsert_element` |
+| `class_diagram` | `3ab707c` | UNWIND restore + N+1 hoist (prerequisite) |
+| `state_machine` | `df174bb` | UNWIND on 3 nested loops (machines, states, transitions) |
+| `c4_discover` | `9e05b81` | UNWIND for container nodes + versions |
+
+**BATCH_SIZE:** `500` (echo 1307 / 500 ≈ 3 batches, rationale documented in `apply_common.rs`).
+
+**Trade-offs:** Same as original D2. Per-edge `write_call_edge` / `link_semantic_edge` / `link_transition_*` kept as per-row `OPTIONAL MATCH` — D2 only covers Element + ElementVersion bulk import.
+
+### D3 — Prepared Statements + Parameter Binding: STAYs DEFERRED
+
+**Status:** No change. D3 remains deferred from v1.21.0 (M51 cycle).
+
+**Re-open trigger:** lbug ships typed bindings (`Value::String` direct, not `Value::Json`) OR Kùzu documents `CAST($p AS STRING)` semantics that match typed String columns. Without one of these, the JSON-wrapper binding fails `WHERE canonical_key = $p` on String-typed columns.
+
+**Path forward:** New `BatchedWriter` port (out of scope for M32; would supersede the inline `UNWIND` helpers).
+
+### Bonus Fix — class_diagram N+1 on `existing_canonical_keys`
+
+**Problem:** `class_diagram::apply` called `ElementRepository::existing_canonical_keys(s)` **inside** the per-node loop at L1394-1395, causing 1 query per node (the N+1 bug that made D2 batching impossible).
+
+**Fix:** Hoisted `existing_canonical_keys` out of the loop to a single pre-pass. Verified by `class_diagram_existing_keys_not_n_plus_one` test (grep assertion + instrumentation).
+
 ## Referencias
 
 - `archctl/src/code/call_graph.rs` (apply L1298, writer helpers L1050-1290)
