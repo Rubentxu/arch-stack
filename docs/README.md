@@ -125,6 +125,7 @@ kinds, edge predicates, and projection shape mapping for Mermaid + PlantUML.
 - [`specs/e2e-installation.md`](specs/e2e-installation.md) — E2E installation suite
 - [`specs/e2e-render.md`](specs/e2e-render.md) — E2E render suite
 - [`specs/e2e-sandbox.md`](specs/e2e-sandbox.md) — E2E sandbox suite
+- [`specs/capability-registry.md`](specs/capability-registry.md) — typed introspector of every entry point `archctl` exposes (P1-08)
 
 ### Schemas (JSON Schema 2020-12)
 

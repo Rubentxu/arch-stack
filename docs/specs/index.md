@@ -44,6 +44,12 @@
 |---|---|---|
 | [`plantuml-render.md`](plantuml-render.md) | `render` module, PlantUML backend | PlantUML render via user-installed backend (Java CLI / docker / custom). Local-only by default (ADR-011). |
 
+## Cross-cutting (1)
+
+| Spec | Audience | One-line summary |
+|---|---|---|
+| [`capability-registry.md`](capability-registry.md) | `capability` module, `archctl capabilities`, docs gate | Typed introspector of every entry point `archctl` exposes; replaces hand-maintained drift matrices with one versioned JSON, deterministic Markdown, and alignment gate (P1-08). |
+
 ## Benchmarking (2)
 
 | Spec | Audience | One-line summary |
