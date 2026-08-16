@@ -1,5 +1,6 @@
 //! Snapshot domain errors.
 
+use serde::Serialize;
 use thiserror::Error;
 
 /// Errors specific to snapshot operations.
@@ -25,7 +26,7 @@ pub enum SnapshotError {
 }
 
 /// GC outcome report.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SnapshotGcReport {
     /// Snapshot ids that would be (or were) deleted.
     pub deleted: Vec<String>,

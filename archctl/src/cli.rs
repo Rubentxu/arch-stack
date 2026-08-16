@@ -115,6 +115,56 @@ pub enum ProjectAction {
     },
 }
 
+/// `archctl architecture snapshot` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum ArchitectureAction {
+    /// Create a new architecture snapshot.
+    Create {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Snapshot kind (e.g., "full", "incr", "diff").
+        #[arg(long, default_value = "full")]
+        kind: String,
+        /// Schema version number (e.g., 1 for "1.0.0").
+        #[arg(long, default_value = "1")]
+        schema_version: i64,
+        /// Optional human-readable label.
+        #[arg(long)]
+        label: Option<String>,
+        /// Pin this snapshot (exempt from GC unless --gc-unpinned is set).
+        #[arg(long)]
+        pinned: bool,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
+    /// List all snapshots for the project.
+    List {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Garbage-collect old snapshots.
+    Gc {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Number of recent unpinned snapshots to preserve.
+        #[arg(long, default_value = "10")]
+        keep_last: usize,
+        /// Show what would be deleted without actually deleting.
+        #[arg(long)]
+        dry_run: bool,
+        /// Confirm deletion of snapshots.
+        #[arg(long)]
+        yes: bool,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SkillsAction {
     List,
@@ -505,6 +555,10 @@ pub enum Command {
         #[command(subcommand)]
         action: DiagramAction,
     },
+    Architecture {
+        #[command(subcommand)]
+        action: ArchitectureAction,
+    },
     Evidence {
         #[command(subcommand)]
         action: EvidenceAction,
@@ -742,6 +796,34 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 output,
                 json,
             } => diagram_project_cmd(cwd, &view, &format, &output, json, ctx),
+        },
+        Command::Architecture { action } => match action {
+            ArchitectureAction::Create {
+                cwd,
+                kind,
+                schema_version,
+                label,
+                pinned,
+                json,
+            } => architecture_snapshot_create_cmd(
+                cwd,
+                &kind,
+                schema_version,
+                label.as_deref(),
+                pinned,
+                json,
+                ctx,
+            ),
+            ArchitectureAction::List { cwd, json } => {
+                architecture_snapshot_list_cmd(cwd, json, ctx)
+            }
+            ArchitectureAction::Gc {
+                cwd,
+                keep_last,
+                dry_run,
+                yes,
+                json,
+            } => architecture_snapshot_gc_cmd(cwd, keep_last, dry_run, yes, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2385,6 +2467,128 @@ fn parse_from_selector(s: &str) -> Result<crate::code::sequence::FromSelector, S
             name: s.to_string(),
         })
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Architecture snapshot commands (T3.1 + T3.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn architecture_snapshot_create_cmd(
+    cwd: Option<PathBuf>,
+    kind: &str,
+    schema_version: i64,
+    label: Option<&str>,
+    pinned: bool,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+
+    let (snapshot_id, sequence) = crate::architecture::create(
+        &info.project_dir,
+        &cwd.to_string_lossy(),
+        ctx.fs.as_ref(),
+        kind,
+        schema_version,
+        label,
+        pinned,
+    )?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "snapshot_id": snapshot_id,
+                "sequence": sequence,
+            })
+        );
+    } else {
+        println!("Created snapshot {} (sequence {})", snapshot_id, sequence);
+    }
+    Ok(0)
+}
+
+fn architecture_snapshot_list_cmd(
+    cwd: Option<PathBuf>,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let snapshots = crate::architecture::list(&*store)?;
+
+    if json {
+        let out: Vec<_> = snapshots
+            .into_iter()
+            .map(|s| {
+                serde_json::json!({
+                    "id": s.id,
+                    "sequence": s.sequence,
+                    "kind": s.kind,
+                    "commit_hash": s.commit_hash,
+                    "schema_version": s.schema_version,
+                    "props": s.props,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        if snapshots.is_empty() {
+            println!("No snapshots found.");
+        } else {
+            println!("{:12} {:>8} {:10} {:40}", "ID", "SEQ", "KIND", "COMMIT");
+            println!("{}", "-".repeat(73));
+            for s in snapshots {
+                println!(
+                    "{:12} {:>8} {:10} {:40}",
+                    s.id.chars().take(12).collect::<String>(),
+                    s.sequence,
+                    s.kind,
+                    s.commit_hash.chars().take(40).collect::<String>(),
+                );
+            }
+        }
+    }
+    Ok(0)
+}
+
+fn architecture_snapshot_gc_cmd(
+    cwd: Option<PathBuf>,
+    keep_last: usize,
+    dry_run: bool,
+    yes: bool,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+
+    let report = crate::architecture::gc(&info.project_dir, keep_last, dry_run, yes)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        if report.deleted.is_empty() {
+            println!("No snapshots to delete.");
+        } else if report.dry_run {
+            println!(
+                "Would delete {} snapshot(s) (dry run): {}",
+                report.deleted.len(),
+                report.deleted.join(", ")
+            );
+        } else {
+            println!(
+                "Deleted {} snapshot(s): {}",
+                report.deleted.len(),
+                report.deleted.join(", ")
+            );
+        }
+        println!("Preserved {} snapshot(s).", report.preserved.len());
+    }
+    Ok(0)
 }
 
 fn code_sequence_cmd(
