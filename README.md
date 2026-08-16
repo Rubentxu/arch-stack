@@ -31,7 +31,7 @@ $ archctl view                               # open the workbench
 |---|---|
 | **C4 Diagrams** | Context, Container, Component levels from code extraction |
 | **UML Diagrams** | Class, Sequence, State, Use Case |
-| **Multi-language** | Rust, Go, Python, Java, Kotlin (call-graph) |
+| **Capabilities** | Full capability matrix by language and maturity: see [docs/CAPABILITIES.md](../docs/CAPABILITIES.md) |
 | **Local-first** | All data stays in `~/.local/share/archctl/` (XDG) |
 | **Evidence-backed** | Every node and edge links to `file:line` provenance |
 | **Embedded workbench** | `archctl view` serves archview from the binary (no separate install) |
@@ -236,7 +236,7 @@ Some commands require external tools. `archctl` reports a clear error if they ar
 |---|---|---|
 | Java | PlantUML rendering | `sudo apt install default-jre` |
 | PlantUML | PlantUML diagram export | [plantuml.com](https://plantuml.com/download) |
-| ast-grep | Rust / TypeScript extraction | `cargo install ast-grep` |
+| ast-grep | Multi-language code extraction (see [docs/CAPABILITIES.md](../docs/CAPABILITIES.md)) | `cargo install ast-grep` |
 | tree-sitter-graph | Advanced extraction | `cargo install tree-sitter-graph` |
 
 ---

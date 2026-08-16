@@ -51,7 +51,7 @@ The key idea: **the diagram is a view of the graph, not the source of truth**. T
 |---|---|
 | C4 Context / Container / Component | ✅ Stable |
 | UML Class / Sequence / State / Use Case | ✅ Stable |
-| Call graph extraction | ✅ Rust, Go, Python, Java, Kotlin |
+| Call graph extraction | ✅ Multi-language (see [docs/CAPABILITIES.md](../docs/CAPABILITIES.md)) |
 | Evidence provenance (`file:line`) | ✅ Every node and edge |
 | Local rendering (Mermaid, PlantUML, SVG) | ✅ |
 | Interactive workbench (`archctl view`) | ✅ Embedded in binary |
@@ -771,7 +771,7 @@ These tools are optional. If missing, certain features are disabled:
 
 | Missing tool | Affected feature | Fix |
 |---|---|---|
-| `ast-grep` | Rust/TypeScript extraction | `cargo install ast-grep` |
+| `ast-grep` | Multi-language code extraction (see [docs/CAPABILITIES.md](../docs/CAPABILITIES.md)) | `cargo install ast-grep` |
 | `tree-sitter-graph` | Advanced extraction | `cargo install tree-sitter-graph` |
 | Java | PlantUML rendering | `sudo apt install default-jre` |
 | PlantUML | PlantUML export | [plantuml.com/download](https://plantuml.com/download) |
