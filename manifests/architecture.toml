@@ -1,0 +1,48 @@
+# scope: architecture
+#
+# architecture::snapshot provides the snapshot management bounded
+# context for archctl. It exposes create/list/gc use cases that
+# consume SnapshotRepository through the GraphStore port.
+
+id = "architecture"
+version = "0.1.0"
+description = "Architecture snapshot management bounded context (T2.1)"
+
+cargo_dir = "archctl"
+
+editable = [
+    "archctl/src/architecture/mod.rs",
+    "archctl/src/architecture/errors.rs",
+    "archctl/src/architecture/snapshot.rs",
+    "archctl/src/architecture/digest.rs",
+]
+
+# Public symbols that consumers depend on.
+public_symbols = [
+    "create",
+    "list",
+    "gc",
+    "SnapshotError",
+    "SnapshotGcReport",
+    "extractor_set_digest",
+]
+
+# Textual invariants that prove the module does what its scope declares.
+must_hold = [
+    "pub mod architecture",
+    "pub fn create(",
+    "pub fn list(",
+    "pub fn gc(",
+    "pub enum SnapshotError",
+    "pub struct SnapshotGcReport",
+    "pub fn extractor_set_digest(",
+    "UnitOfWork::begin_transaction",
+    "SnapshotRepository::create_snapshot",
+    "SnapshotRepository::list_snapshots",
+    "SnapshotRepository::delete_snapshots",
+    "RepositoryIdentity",
+    "resolve_repository_identity",
+]
+
+# Minimum number of #[test] items in the architecture module.
+minimum_tests = 1

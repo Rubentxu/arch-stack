@@ -45,8 +45,8 @@ pub mod view;
 pub mod xdg;
 
 pub use cli::{
-    Cli, Command, DiagramAction, EvidenceAction, GraphAction, InventoryAction, ProjectAction,
-    RenderFormat, SkillsAction, run,
+    ArchitectureAction, Cli, Command, DiagramAction, EvidenceAction, GraphAction,
+    InventoryAction, ProjectAction, RenderFormat, SkillsAction, run,
 };
 pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
 pub use doctor::{
