@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.47.0] — 2026-08-16
+
+### Changed
+- **M32 PR2** — Extend UNWIND bulk import (ADR-036 §D2) to `state_machine` and
+  `c4_discover` apply writers. `state_machine::apply` now batch-inserts machines,
+  states, and transition nodes in 3 UNWIND passes; `c4_discover::apply` batch-inserts
+  containers and their ElementVersion nodes in 2 UNWIND passes.
+- **M32 PR2** — ADR-036 amendment: D2 re-ship documented (was regressed by P1-04 T3
+  commit `599c863`); D3 (prepared + param binding) stays deferred per M51 decision;
+  class_diagram N+1 fix on `existing_canonical_keys` hoisted out as D2 batching
+  prerequisite.
+
 ## [1.46.0] — 2026-08-16
 
 ### Changed
