@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/capability-registry.schema.json",
+  "title": "Capability Registry",
+  "description": "archctl capabilities --json output (schemaVersion 1)",
+  "type": "object",
+  "required": ["schemaVersion", "capabilities"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "1"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "maturity", "deterministic", "availability", "providers"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable identifier in <domain>.<kind> form",
+            "pattern": "^[^.]+\\.[^.]+"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["code", "render", "diagram", "ide", "mcp", "doctor", "cli", "plugin"]
+          },
+          "maturity": {
+            "type": "string",
+            "enum": ["stable", "beta", "experimental", "proposed"]
+          },
+          "deterministic": {
+            "type": "boolean"
+          },
+          "requirements": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          },
+          "availability": {
+            "type": "string",
+            "enum": ["available", "opt_in", "experimental"]
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["language", "maturity"],
+              "additionalProperties": false,
+              "properties": {
+                "language": {
+                  "type": "string",
+                  "description": "Lowercase language identifier"
+                },
+                "maturity": {
+                  "type": "string",
+                  "enum": ["stable", "beta", "experimental", "proposed"]
+                },
+                "schema": {
+                  "type": "string",
+                  "description": "Optional schema id this provider emits"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

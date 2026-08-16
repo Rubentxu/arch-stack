@@ -9,6 +9,7 @@
 //! registry entry, and vice versa. Violations fail `alignment.rs` tests.
 
 mod alignment;
+mod docs;
 mod source_cargo;
 mod source_cli;
 mod source_code;
@@ -18,6 +19,10 @@ mod source_ide;
 mod source_mcp;
 mod source_plugin;
 mod source_render;
+
+/// JSON Schema for the capability registry (JSON Schema 2020-12).
+pub const CAPABILITY_REGISTRY_SCHEMA: &str =
+    include_str!("../../../schemas/capability-registry.schema.json");
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -55,6 +60,17 @@ pub enum Availability {
     Experimental,
 }
 
+impl Availability {
+    /// Human-readable label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Availability::Available => "available",
+            Availability::OptIn => "opt_in",
+            Availability::Experimental => "experimental",
+        }
+    }
+}
+
 /// High-level category for grouping capabilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -67,6 +83,22 @@ pub enum Category {
     Doctor,
     Cli,
     Plugin,
+}
+
+impl Category {
+    /// Human-readable label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Category::Code => "code",
+            Category::Render => "render",
+            Category::Diagram => "diagram",
+            Category::Ide => "ide",
+            Category::Mcp => "mcp",
+            Category::Doctor => "doctor",
+            Category::Cli => "cli",
+            Category::Plugin => "plugin",
+        }
+    }
 }
 
 /// A single language-specific implementation of a capability.
@@ -216,6 +248,51 @@ impl CapabilityRegistry {
         self.entries.is_empty()
     }
 }
+
+/// Build the capability registry from all registered sources.
+///
+/// Entries are sorted by `id` (deterministic iteration order).
+pub fn registry() -> CapabilityRegistry {
+    let mut reg = CapabilityRegistry::new();
+    // Gather all capability sources; each `all()` function returns `Vec<Capability>`.
+    let sources: Vec<Vec<Capability>> = vec![
+        source_cargo::all(),
+        source_cli::all(),
+        source_code::all(),
+        source_diagram::all(),
+        source_doctor::all(),
+        source_ide::all(),
+        source_mcp::all(),
+        source_plugin::all(),
+        source_render::all(),
+    ];
+    for source in sources {
+        for cap in source {
+            reg.add(cap.clone());
+        }
+    }
+    reg
+}
+
+/// Render the registry as a versioned JSON object.
+///
+/// Output is deterministic (sorted by id) and validates against
+/// `CAPABILITY_REGISTRY_SCHEMA`.
+pub fn render_json(reg: &CapabilityRegistry) -> String {
+    #[derive(serde::Serialize)]
+    struct RegistryOutput<'a> {
+        schema_version: &'a str,
+        capabilities: &'a [Capability],
+    }
+    let output = RegistryOutput {
+        schema_version: "1",
+        capabilities: &reg.entries,
+    };
+    serde_json::to_string_pretty(&output).expect("capability registry serializes to JSON")
+}
+
+// Re-export for convenience.
+pub use docs::render_markdown;
 
 #[cfg(test)]
 mod tests {
