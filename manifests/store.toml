@@ -31,9 +31,11 @@ public_symbols = [
   "SourceRepository",
   "EvaluationRepository",
   "DiagramRepository",
+  "SnapshotRepository",
   "RawGraphQuery",
   "open_default",
   "StoreError",
+  "Snapshot",
 ]
 
 # What `store` must keep doing, proved by a literal line in source.
@@ -49,6 +51,8 @@ must_hold = [
   "pub trait SourceRepository",
   "pub trait EvaluationRepository",
   "pub trait DiagramRepository",
+  "pub trait SnapshotRepository",
+  "pub struct Snapshot",
   "pub trait RawGraphQuery",
   "fn put_evidence",
   "fn put_source",

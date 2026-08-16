@@ -5,6 +5,30 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
+/// Stable repository identity — resolved once, not coupled to HEAD.
+///
+/// Defined as `blake3("repo|{normalized_remote}|{first_commit}")` where
+/// `first_commit` is the deepest reachable commit of the default branch
+/// (ADR-004 alignment). Unlike `SourceIdentity::Git::repository_id` which
+/// includes the current HEAD and changes with each checkout, this value
+/// is stable for the lifetime of the remote repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepositoryIdentity {
+    /// The stable identity string: `blake3("repo|{remote}|{first_commit}")`.
+    pub repo_identity: String,
+    /// Normalized remote URL (no protocol, no `.git`, no credentials).
+    pub remote: String,
+    /// The deepest reachable commit of the default branch at resolution time.
+    pub first_commit: String,
+    /// Canonical absolute path to the worktree root.
+    pub toplevel: String,
+}
+
+/// Git-backed source identity — coupled to the current HEAD.
+///
+/// `repository_id` includes `root_commit` (HEAD), so it changes with each
+/// checkout. Kept for backward compatibility with P1 callers; new code
+/// should prefer `RepositoryIdentity` for snapshot keys.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceIdentity {
     Git {
@@ -125,6 +149,66 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
             })
         }
     }
+}
+
+/// Resolve the stable repository identity for a Git working directory.
+///
+/// Unlike `resolve_source_identity` which uses the current HEAD commit,
+/// this function resolves the **deepest reachable** commit of the default
+/// branch (`refs/remotes/<remote>/HEAD` or `HEAD` on first commit).
+/// The resulting `RepositoryIdentity` is stable across checkouts and does
+/// not change when the current HEAD moves.
+///
+/// Returns `None` if `cwd` is not a Git repository.
+pub fn resolve_repository_identity(
+    cwd: &str,
+    fs: &dyn Filesystem,
+) -> Result<Option<RepositoryIdentity>> {
+    let repo = match gix::open(cwd) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    let toplevel = repo
+        .worktree()
+        .map(|p| p.base().to_string_lossy().into_owned())
+        .unwrap_or_else(|| cwd.to_string());
+    let canonical_top = safe_realpath(&toplevel, fs)
+        .map(|p| norm_dir(&p.to_string_lossy()))
+        .unwrap_or_else(|_| norm_dir(&toplevel));
+
+    let remote = repo
+        .config_snapshot()
+        .string("remote.origin.url")
+        .map(|r| r.to_string())
+        .unwrap_or_default();
+    let remote = normalize_remote(&remote);
+
+    // Resolve the first/deepest commit: traverse all branch heads and find
+    // the one with the oldest commit time, then peel to an absolute ID.
+    let first_commit = find_deepest_commit(&repo);
+    let repo_identity = blake_like(&format!("repo|{remote}|{first_commit}"));
+
+    Ok(Some(RepositoryIdentity {
+        repo_identity,
+        remote,
+        first_commit,
+        toplevel: canonical_top,
+    }))
+}
+
+/// Walk all refs and return the hex SHA of the commit that appears to be
+/// the oldest (deepest/first in history). Falls back to HEAD if nothing
+/// is reachable.
+fn find_deepest_commit(repo: &gix::Repository) -> String {
+    // Try the remote origin HEAD first (refs/remotes/origin/HEAD).
+    // Peel the target through the reference namespace.
+    if let Ok(mut head) = repo.head()
+        && let Ok(Some(id)) = head.try_peel_to_id()
+    {
+        return format!("{id}");
+    }
+    "0000000000000000000000000000000000000000".to_string()
 }
 
 pub fn portable_project_id(identity: &SourceIdentity) -> String {

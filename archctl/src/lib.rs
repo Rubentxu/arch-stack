@@ -67,8 +67,8 @@ pub use graph::{
     stat as graph_stat, validate_identifier,
 };
 pub use identity::{
-    SourceIdentity, blake_like, identity_summary, normalize_remote, portable_project_id,
-    resolve_source_identity,
+    RepositoryIdentity, SourceIdentity, blake_like, identity_summary, normalize_remote,
+    portable_project_id, resolve_repository_identity, resolve_source_identity,
 };
 pub use project::{ProjectInfo, resolve_project};
 pub use row::{Cell, Row};

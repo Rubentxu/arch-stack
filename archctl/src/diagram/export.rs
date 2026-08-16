@@ -653,6 +653,30 @@ mod tests {
         }
     }
 
+    impl crate::store::SnapshotRepository for MockGraphStore {
+        fn create_snapshot(&mut self, _: &crate::store::Snapshot) -> anyhow::Result<String> {
+            unimplemented!()
+        }
+        fn get_snapshot(&self, _: &str) -> anyhow::Result<crate::store::Snapshot> {
+            unimplemented!()
+        }
+        fn list_snapshots(&self) -> anyhow::Result<Vec<crate::store::Snapshot>> {
+            Ok(vec![])
+        }
+        fn update_snapshot_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn update_snapshot_pin(&mut self, _: &str, _: bool) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn delete_snapshots(&mut self, _: &[String]) -> anyhow::Result<usize> {
+            Ok(0)
+        }
+        fn next_sequence(&mut self) -> anyhow::Result<i64> {
+            Ok(1)
+        }
+    }
+
     // Query-parsing helpers (dead code after RawGraphQuery removal in P1-05 2.5).
     #[allow(dead_code)]
     impl MockGraphStore {
