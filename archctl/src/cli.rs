@@ -865,11 +865,9 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 snapshot_b,
                 json,
             } => architecture_snapshot_diff_cmd(cwd, snapshot_a, snapshot_b, json, ctx),
-            ArchitectureAction::Explain {
-                cwd,
-                id,
-                json,
-            } => architecture_explain_cmd(cwd, &id, json, ctx),
+            ArchitectureAction::Explain { cwd, id, json } => {
+                architecture_explain_cmd(cwd, &id, json, ctx)
+            }
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2749,12 +2747,20 @@ fn architecture_explain_cmd(
             if json {
                 eprintln!(
                     "{{\"error\": \"{} not found: {id}\", \"hint\": \"run `archctl architecture list` to see available subjects\"}}",
-                    if id.starts_with("rel:") { "relation" } else { "element" }
+                    if id.starts_with("rel:") {
+                        "relation"
+                    } else {
+                        "element"
+                    }
                 );
             } else {
                 eprintln!(
                     "error: {} not found: {id} — run `archctl architecture list` to see available subjects",
-                    if id.starts_with("rel:") { "relation" } else { "element" }
+                    if id.starts_with("rel:") {
+                        "relation"
+                    } else {
+                        "element"
+                    }
                 );
             }
             return Ok(1);

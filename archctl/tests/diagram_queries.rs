@@ -8,8 +8,8 @@
 // SCN-052: query_evidence_for_versions filters to Accepted status (in Rust).
 // SCN-053: query_version_props returns version properties.
 
-use archctl::graph::{ElementRow, RelationRow, SemanticEdgeRow, VersionPropsRow};
 use archctl::diagram::export_types::EvidenceEntry;
+use archctl::graph::{ElementRow, RelationRow, SemanticEdgeRow, VersionPropsRow};
 use archctl::row::{Cell, Row};
 use archctl::store::{
     DiagramOps, DiagramRepository, ElementRepository, EvaluationRepository, EvidenceOps,

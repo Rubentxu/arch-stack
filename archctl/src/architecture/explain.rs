@@ -71,10 +71,18 @@ impl std::fmt::Display for ExplainError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExplainError::SubjectNotFound(id) => {
-                write!(f, "element not found: {} — run `archctl architecture list` to see available elements", id)
+                write!(
+                    f,
+                    "element not found: {} — run `archctl architecture list` to see available elements",
+                    id
+                )
             }
             ExplainError::RelationNotFound(id) => {
-                write!(f, "relation not found: {} — run `archctl architecture list` to see available relations", id)
+                write!(
+                    f,
+                    "relation not found: {} — run `archctl architecture list` to see available relations",
+                    id
+                )
             }
             ExplainError::Store(msg) => {
                 write!(f, "store error: {msg}")
@@ -127,9 +135,7 @@ fn explain_element(repo: &dyn DiagramRepository, id: &str) -> Result<ExplainRepo
         .list_elements(category, None, None)
         .map_err(ExplainError::from)?;
 
-    let element_row = elements
-        .into_iter()
-        .find(|e| e.id == id);
+    let element_row = elements.into_iter().find(|e| e.id == id);
 
     let element_row = match element_row {
         Some(e) => e,
@@ -200,9 +206,7 @@ fn build_element_report(
 
 /// Explain a relation subject.
 fn explain_relation(repo: &dyn DiagramRepository, id: &str) -> Result<ExplainReport, ExplainError> {
-    let rel_row = repo
-        .read_relation_by_id(id)
-        .map_err(ExplainError::from)?;
+    let rel_row = repo.read_relation_by_id(id).map_err(ExplainError::from)?;
 
     let rel_row = match rel_row {
         Some(r) => r,
@@ -309,7 +313,8 @@ mod tests {
             self
         }
         fn with_element_evidence(mut self, version_id: &str, evidence: EvidenceEntry) -> Self {
-            self.element_evidence.push((version_id.to_string(), vec![evidence]));
+            self.element_evidence
+                .push((version_id.to_string(), vec![evidence]));
             self
         }
         fn with_relation(mut self, id: &str, version_id: &str, label: &str) -> Self {
@@ -451,10 +456,12 @@ mod tests {
 
         let result = explain(&repo, "c4:container:orders").unwrap();
         assert!(result.provenance.unsubstantiated);
-        assert!(result
-            .warnings
-            .iter()
-            .any(|w| w.contains("no current version")));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("no current version"))
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -498,10 +505,12 @@ mod tests {
 
         let result = explain(&repo, "rel:orders-payment").unwrap();
         assert!(result.provenance.unsubstantiated);
-        assert!(result
-            .warnings
-            .iter()
-            .any(|w| w.contains("no current version")));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("no current version"))
+        );
     }
 
     // -------------------------------------------------------------------------

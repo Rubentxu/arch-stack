@@ -103,7 +103,12 @@ fn explain_element_json_happy_path() {
 #[test]
 fn explain_relation_json_happy_path() {
     let (mut store, _tmp) = test_store();
-    seed_relation_with_evidence(&mut store, "rel:orders-payment", "rv:orders-payment:1", "calls");
+    seed_relation_with_evidence(
+        &mut store,
+        "rel:orders-payment",
+        "rv:orders-payment:1",
+        "calls",
+    );
 
     let report = archctl::architecture::explain(&store, "rel:orders-payment").unwrap();
 
@@ -111,7 +116,10 @@ fn explain_relation_json_happy_path() {
     assert_eq!(report.capability, "architecture-explain-mvp");
     assert_eq!(report.subject.kind, "relation");
     assert_eq!(report.subject.id, "rel:orders-payment");
-    assert_eq!(report.subject.version_id, Some("rv:orders-payment:1".to_string()));
+    assert_eq!(
+        report.subject.version_id,
+        Some("rv:orders-payment:1".to_string())
+    );
     assert_eq!(report.subject.statement, "calls");
     assert!(!report.provenance.unsubstantiated);
     assert_eq!(report.provenance.evidence.len(), 1);
@@ -178,7 +186,10 @@ fn explain_unknown_element_id_returns_error() {
     let (store, _tmp) = test_store();
 
     let result = archctl::architecture::explain(&store, "c4:container:nonexistent");
-    assert!(matches!(result, Err(archctl::architecture::explain::ExplainError::SubjectNotFound(_))));
+    assert!(matches!(
+        result,
+        Err(archctl::architecture::explain::ExplainError::SubjectNotFound(_))
+    ));
 }
 
 #[test]
@@ -186,7 +197,10 @@ fn explain_unknown_relation_id_returns_error() {
     let (store, _tmp) = test_store();
 
     let result = archctl::architecture::explain(&store, "rel:nonexistent");
-    assert!(matches!(result, Err(archctl::architecture::explain::ExplainError::RelationNotFound(_))));
+    assert!(matches!(
+        result,
+        Err(archctl::architecture::explain::ExplainError::RelationNotFound(_))
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -229,5 +243,10 @@ fn explain_null_version_id_yields_unsubstantiated_with_warning() {
 
     assert!(report.provenance.unsubstantiated);
     assert!(report.subject.version_id.is_none());
-    assert!(report.warnings.iter().any(|w| w.contains("no current version")));
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("no current version"))
+    );
 }

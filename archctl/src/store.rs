@@ -437,7 +437,10 @@ pub trait DiagramRepository: Send + Sync {
     ///
     /// Mirrors `list_evidence_for_versions` but traverses `(rv:RelationVersion)-[:SUPPORTED_BY]->(e:Evidence)`
     /// instead of `(ev:ElementVersion)-[:SUPPORTED_BY]->(e:Evidence)`.
-    fn list_evidence_for_relation_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>>;
+    fn list_evidence_for_relation_versions(
+        &self,
+        version_ids: &[String],
+    ) -> Result<Vec<EvidenceEntry>>;
 }
 
 /// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
@@ -2486,8 +2489,8 @@ impl DiagramRepository for LbugStore {
             "MATCH (r:SemanticRelation {{id: '{validated_id}'}}) \
              RETURN r.id, r.current_version_id, r.current_label;"
         );
-        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
-            .context("read_relation_by_id")?;
+        let rows =
+            <LbugStore as RawGraphQuery>::query(self, &cypher).context("read_relation_by_id")?;
         if rows.is_empty() {
             return Ok(None);
         }
@@ -2502,7 +2505,10 @@ impl DiagramRepository for LbugStore {
         }))
     }
 
-    fn list_evidence_for_relation_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>> {
+    fn list_evidence_for_relation_versions(
+        &self,
+        version_ids: &[String],
+    ) -> Result<Vec<EvidenceEntry>> {
         if version_ids.is_empty() {
             return Ok(vec![]);
         }
@@ -4030,9 +4036,11 @@ mod tests {
         let project = tmp.path().join("proj");
         let mut store = LbugStore::open(&project).unwrap();
         store.init().unwrap();
-        let result =
-            DiagramRepository::list_evidence_for_relation_versions(&store, &[]).unwrap();
-        assert!(result.is_empty(), "empty version_ids should return empty vec");
+        let result = DiagramRepository::list_evidence_for_relation_versions(&store, &[]).unwrap();
+        assert!(
+            result.is_empty(),
+            "empty version_ids should return empty vec"
+        );
     }
 
     #[test]

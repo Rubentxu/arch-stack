@@ -594,7 +594,10 @@ mod tests {
                 })
                 .collect())
         }
-        fn read_relation_by_id(&self, _id: &str) -> anyhow::Result<Option<crate::graph::RelationRow>> {
+        fn read_relation_by_id(
+            &self,
+            _id: &str,
+        ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
             // MockGraphStore does not exercise relation reads
             Ok(None)
         }
