@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P2-09a observation/claim carriers MVP** — `archctl/src/observation_claim.rs`
+  with `Observation` and `Claim` carriers, `observation_from_evidence()`,
+  `compat_claim_from_evidence()`, and
+  `observations_and_claims_for_version(&dyn DiagramRepository, &str)` use case.
+  `Observation` maps 1:1 from `EvidenceEntry` with `obs:<evidence_id>` id
+  namespace. `Claim` carries `clm:compat:<evidence_id>`, `fused: false`,
+  status mirrors `EvidenceEntry.status`, confidence defaults (1.0 accepted,
+  0.0 others). Both types re-exported at `architecture::`. No new Cargo
+  dependencies.
+  `archctl architecture observe --version-id <VID> [--json]` CLI command:
+  validates `version_id` via `graph::validate_identifier` (exit 1 on bad id),
+  calls `observations_and_claims_for_version()`, prints JSON
+  `{"observations": [...], "claims": [...]}` or human summary
+  (`N observation(s), M claim(s)` + per-claim `id status confidence fused`).
+  `ArchitectureAction::Observe` variant added to `cli.rs`.
+  `manifests/architecture.toml` updated (observation_claim.rs in editable;
+  Observation, Claim, observation_from_evidence, compat_claim_from_evidence,
+  observations_and_claims_for_version in public_symbols and must_hold).
+  `manifests/cli.toml` updated (ArchitectureAction::Observe in public_symbols
+  and must_hold). Unit tests S1–S9 in observation_claim.rs; integration tests
+  S8, S8b, empty version in `archctl/tests/observation_claim.rs`.
 - **P2-05 architecture-policy MVP** — `archctl/src/architecture/policy.rs` with
   the ADR-054 closed rule set (6 rules): `forbid_dependency`,
   `require_dependency`, `forbid_cycle` (iterative Tarjan SCC), `max_fanout`,

@@ -19,6 +19,7 @@ pub mod identity;
 pub mod inventory;
 pub mod lifecycle;
 pub mod migrations;
+pub mod observation_claim;
 pub mod plugin;
 pub mod project;
 pub mod render;
