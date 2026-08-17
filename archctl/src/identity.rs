@@ -201,14 +201,49 @@ pub fn resolve_repository_identity(
 /// the oldest (deepest/first in history). Falls back to HEAD if nothing
 /// is reachable.
 fn find_deepest_commit(repo: &gix::Repository) -> String {
-    // Try the remote origin HEAD first (refs/remotes/origin/HEAD).
-    // Peel the target through the reference namespace.
-    if let Ok(mut head) = repo.head()
-        && let Ok(Some(id)) = head.try_peel_to_id()
-    {
-        return format!("{id}");
+    // Walk all refs using repo.references() + Platform::all() to iterate.
+    // Platform::all() returns Result<Iter, Error>; Iter has .next() which
+    // returns Option<Result<Reference, Error>>.
+    let head_id = match repo.head() {
+        Ok(mut h) => match h.try_peel_to_id() {
+            Ok(Some(id)) => id,
+            _ => return "0000000000000000000000000000000000000000".to_string(),
+        },
+        Err(_) => return "0000000000000000000000000000000000000000".to_string(),
+    };
+
+    let mut oldest_id = head_id;
+
+    // Iterate all refs: Platform::all() -> Result<Iter, Error>
+    if let Ok(references) = repo.references() {
+        // references is Platform; .all() -> Result<Iter, Error>
+        let all_refs = match references.all() {
+            Ok(a) => a,
+            Err(_) => return format!("{head_id}"),
+        };
+        // all_refs is Iter; use .next() to iterate
+        // Iter::next() returns Option<Result<Reference, Error>>
+        let mut iter = all_refs;
+        loop {
+            let next = iter.next();
+            match next {
+                Some(Ok(mut r)) => {
+                    // Skip symbolic references (like HEAD) - they need peeling
+                    // and we only care about direct commit references
+                    let target_id = r.peel_to_id().ok();
+                    if let Some(id) = target_id
+                        && id < oldest_id
+                    {
+                        oldest_id = id;
+                    }
+                }
+                Some(Err(_)) => continue,
+                None => break,
+            }
+        }
     }
-    "0000000000000000000000000000000000000000".to_string()
+
+    format!("{oldest_id}")
 }
 
 pub fn portable_project_id(identity: &SourceIdentity) -> String {
@@ -332,7 +367,7 @@ mod tests {
     fn identity_summary_formats_both_modes() {
         let dir = SourceIdentity::Directory {
             directory_id: "x".into(),
-            canonical_realpath: "/tmp".into(),
+            canonical_realpath: "/tmp".to_string(),
         };
         assert_eq!(identity_summary(&dir), "dir:/tmp");
         let git = SourceIdentity::Git {
@@ -343,5 +378,28 @@ mod tests {
             remote: "github.com/a/b".into(),
         };
         assert_eq!(identity_summary(&git), "git:github.com/a/b@abcdef123456");
+    }
+
+    #[test]
+    fn find_deepest_commit_is_deterministic_and_valid() {
+        // find_deepest_commit must return a valid hex SHA (40 chars) for a real repo.
+        // This test opens the workspace root (parent of archctl/) as the git repo.
+        let repo = gix::open("..").expect("must open workspace repo");
+        let result = find_deepest_commit(&repo);
+        assert_eq!(
+            result.len(),
+            40,
+            "find_deepest_commit must return a valid 40-char hex SHA, got: {}",
+            result
+        );
+        assert!(
+            result.chars().all(|c| c.is_ascii_hexdigit()),
+            "result must be all hex digits, got: {}",
+            result
+        );
+
+        // Calling twice must return the same result (deterministic)
+        let result2 = find_deepest_commit(&repo);
+        assert_eq!(result, result2, "find_deepest_commit must be deterministic");
     }
 }

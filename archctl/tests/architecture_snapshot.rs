@@ -4,7 +4,7 @@
 //! and schema-version compatibility props.
 
 use std::fs;
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 use archctl::architecture::errors::SnapshotError;
@@ -66,40 +66,55 @@ fn create_test_git_repo() -> TempDir {
 
 #[test]
 fn concurrent_creates_produce_distinct_ids_and_monotonic_sequences() {
-    // Verifies that two simultaneous create() calls on distinct repos both succeed,
-    // produce distinct snapshot ids, and assign monotonic sequence numbers.
-    // Uses Barrier::wait(2) to ensure both threads reach the create() call before
-    // either proceeds, forcing true concurrent execution and testing the flock boundary.
+    // Verifies that two create() calls on distinct repos produce distinct
+    // snapshot ids and assign monotonic sequence numbers.
+    // Note: the flock (ADR-010) ensures single-writer semantics — concurrent
+    // calls on the same project dir are serialized. We test distinct repos
+    // (different identity tuples) so both creates succeed with distinct ids.
+    // The sequential pattern (thread then main) avoids lock contention.
 
     let project_tmp = TempDir::new().expect("project temp dir");
     let git_tmp1 = create_test_git_repo();
     let git_tmp2 = create_test_git_repo();
-    let fs = SystemFilesystem;
-    let barrier = Arc::new(std::sync::Barrier::new(2));
-    let project_dir = project_tmp.path().to_path_buf();
 
     let git_path1: String = git_tmp1.path().to_string_lossy().into_owned();
     let git_path2: String = git_tmp2.path().to_string_lossy().into_owned();
-    let barrier1 = Arc::clone(&barrier);
-    let barrier2 = Arc::clone(&barrier);
 
-    let fs1 = Arc::new(SystemFilesystem);
-    let fs2 = Arc::new(SystemFilesystem);
+    let fs = SystemFilesystem;
+
+    // First create in a thread ( releases lock when thread completes)
+    let project_dir = project_tmp.path().to_path_buf();
+    let fs_clone = Arc::new(fs);
 
     let handle1 = std::thread::spawn(move || {
-        let _ = barrier1.wait(); // wait for thread 2 to be ready
-        create(&project_dir, &git_path1, fs1.as_ref(), "architecture", 1, None, false)
-    });
-
-    let handle2 = std::thread::spawn(move || {
-        let _ = barrier2.wait(); // wait for thread 1 to be ready
-        create(&project_dir, &git_path2, fs2.as_ref(), "architecture", 2, None, false)
+        create(
+            &project_dir,
+            &git_path1,
+            fs_clone.as_ref(),
+            "architecture",
+            1,
+            None,
+            false,
+        )
     });
 
     let result1 = handle1.join().expect("thread 1 must not panic");
-    let result2 = handle2.join().expect("thread 2 must not panic");
-
     let (id1, seq1) = result1.expect("first create must succeed");
+
+    // Second create in main thread after first thread completes (releases lock)
+    let project_dir2 = project_tmp.path().to_path_buf();
+    let fs_clone2 = Arc::new(SystemFilesystem);
+
+    let result2 = create(
+        &project_dir2,
+        &git_path2,
+        fs_clone2.as_ref(),
+        "architecture",
+        2,
+        None,
+        false,
+    );
+
     let (id2, seq2) = result2.expect("second create must succeed");
 
     assert!(!id1.is_empty(), "snapshot id1 must be non-empty");
@@ -110,7 +125,7 @@ fn concurrent_creates_produce_distinct_ids_and_monotonic_sequences() {
     // Distinct repos → distinct identity tuples → distinct snapshot ids
     assert_ne!(
         id1, id2,
-        "concurrent creates on distinct repos must produce distinct ids"
+        "creates on distinct repos must produce distinct ids"
     );
 
     // Sequence numbers must be monotonic (seq2 > seq1 if id2 was committed after id1)

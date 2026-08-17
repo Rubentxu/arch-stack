@@ -147,21 +147,46 @@ mod tests {
         // so we verify by checking that code.* entries are present but
         // render.*, ide.*, mcp.*, plugin.* are not.
         let proj = extractor_set_projection();
-        let has_code_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("code."));
-        assert!(has_code_entry, "code.* entries must be present in projection");
+        let has_code_entry = proj
+            .entries
+            .iter()
+            .any(|e| e.extractor_id.starts_with("code."));
+        assert!(
+            has_code_entry,
+            "code.* entries must be present in projection"
+        );
 
-        let has_render_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("render."));
-        let has_ide_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("ide."));
-        let has_mcp_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("mcp."));
-        let has_plugin_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("plugin."));
-        assert!(!has_render_entry, "render.* must not appear in digest projection");
+        let has_render_entry = proj
+            .entries
+            .iter()
+            .any(|e| e.extractor_id.starts_with("render."));
+        let has_ide_entry = proj
+            .entries
+            .iter()
+            .any(|e| e.extractor_id.starts_with("ide."));
+        let has_mcp_entry = proj
+            .entries
+            .iter()
+            .any(|e| e.extractor_id.starts_with("mcp."));
+        let has_plugin_entry = proj
+            .entries
+            .iter()
+            .any(|e| e.extractor_id.starts_with("plugin."));
+        assert!(
+            !has_render_entry,
+            "render.* must not appear in digest projection"
+        );
         assert!(!has_ide_entry, "ide.* must not appear in digest projection");
         assert!(!has_mcp_entry, "mcp.* must not appear in digest projection");
-        assert!(!has_plugin_entry, "plugin.* must not appear in digest projection");
+        assert!(
+            !has_plugin_entry,
+            "plugin.* must not appear in digest projection"
+        );
 
         // Digest must remain stable (no renderer/IDE/MCP/plugin influence)
         assert_eq!(
-            baseline, extractor_set_digest(),
+            baseline,
+            extractor_set_digest(),
             "digest must be stable regardless of non-code capabilities"
         );
     }
