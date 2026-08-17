@@ -23,6 +23,13 @@ fn seed_element(store: &mut LbugStore, id: &str, name: &str, confidence: f64) {
             "CREATE (:Element {{id: '{id}', kind_id: 'container', category: 'c4', canonical_key: '{id}', current_name: '{name}', current_status: 'active', current_confidence: {confidence}, current_version_id: '{id}-v1'}})"
         ))
         .expect("seed element");
+    // ElementVersion node — required for SUPPORTED_BY evidence linking.
+    // Without this, seed_evidence's MATCH (v:ElementVersion) fails silently.
+    store
+        .execute_raw_cypher_for_test(&format!(
+            "CREATE (:ElementVersion {{id: '{id}-v1', element_id: '{id}', name: '{name}', status: 'active', origin: 'test', confidence: {confidence}}})"
+        ))
+        .expect("seed element version");
 }
 
 /// Seed a semantic edge from source to target.
@@ -41,6 +48,10 @@ fn seed_edge(
 }
 
 /// Seed evidence for an element version.
+///
+/// The Evidence schema has no `status` column (lives in `props` JSON),
+/// so `status` is encoded into the props map — mirrors the encoding in
+/// `tests/architecture_explain.rs` and `tests/architecture_coverage.rs`.
 fn seed_evidence(
     store: &mut LbugStore,
     version_id: &str,
@@ -50,7 +61,7 @@ fn seed_evidence(
 ) {
     store
         .execute_raw_cypher_for_test(&format!(
-            "MATCH (v:ElementVersion {{id: '{version_id}'}}) CREATE (v)-[:SUPPORTED_BY]->(:Evidence {{id: '{evidence_id}', kind: 'structural', claim: '{claim}', path: 'src/lib.rs', start_line: 10, end_line: 15, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule', content_hash: 'sha256:abc', observed_at: '2026-08-01T00:00:00Z', status: '{status}'}})"
+            "MATCH (v:ElementVersion {{id: '{version_id}'}}) CREATE (v)-[:SUPPORTED_BY]->(:Evidence {{id: '{evidence_id}', kind: 'structural', claim: '{claim}', path: 'src/lib.rs', start_line: 10, end_line: 15, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule', content_hash: 'sha256:abc', observed_at: '2026-08-01T00:00:00Z', props: '{{\"status\":\"{status}\"}}'}})"
         ))
         .expect("seed evidence");
 }
@@ -93,8 +104,9 @@ fn task_context_truncation_under_small_budget() {
     seed_element(&mut store, "c4:container:b", "B", 0.8);
     seed_element(&mut store, "c4:container:c", "C", 0.7);
 
-    // Tiny budget that can only fit one element
-    let result: TaskContextReport = compile_task_context(&store, "c", 50, 10).unwrap();
+    // Tiny budget that can only fit one element. Query matches all three
+    // (substring on canonical_key); A wins by confidence, then B, then C.
+    let result: TaskContextReport = compile_task_context(&store, "c4:container", 50, 10).unwrap();
 
     // Should have packed at least one element (even if it alone exceeds budget)
     assert!(!result.elements.is_empty());
