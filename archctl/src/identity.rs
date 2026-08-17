@@ -208,9 +208,9 @@ pub fn resolve_repository_identity(
     }))
 }
 
-/// Walk all refs and return the hex SHA of the commit that appears to be
-/// the oldest (deepest/first in history). Falls back to HEAD if nothing
-/// is reachable.
+/// Walk all refs and return the hex SHA of the commit with the smallest
+/// SHA-1 ID among all reachable refs (lexicographic byte-order, not
+/// topological age). Falls back to HEAD if nothing is reachable.
 fn find_deepest_commit(repo: &gix::Repository) -> String {
     // Walk all refs using repo.references() + Platform::all() to iterate.
     // Platform::all() returns Result<Iter, Error>; Iter has .next() which

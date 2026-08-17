@@ -2,23 +2,23 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-16, post-release v1.48.0 (p1-08-capability-registry).
+> Última actualización: 2026-08-17, post-release v1.50.0 (p2-02-followup).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | merge commit `bae340a` (PR #191 — p1-08-capability-registry) |
-| Versión | `v1.48.0` (latest tag, post-PR #191) |
-| Tests | 872 Rust tests pasan (`cargo test --features test-fixtures`); clippy clean |
-| Working tree | `docs/state-refresh-v148` (apply phase) |
+| Tip | merge commit `8e6c434` (PR #197 — fix/p2-02-pending-chores) |
+| Versión | `v1.50.0` (latest tag, post-PR #197) |
+| Tests | 663 Rust tests pasan (`cargo test --features test-fixtures`); clippy clean |
+| Working tree | `main` |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | ~41,100 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.48.0; incluye unit tests inline) |
 | LOC tests | ~11,600 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | ~900 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83 + M32-remediation + p1-08) |
-| Tags | 118 (v0.1.0 → v1.48.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Vault milestones | 39 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83 + M32-remediation + p1-08 + p2-01 + p2-02) |
+| Tags | 120 (v0.1.0 → v1.50.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -82,6 +82,8 @@
 | `v1.47.0` | M32 PR2 | UNWIND bulk import extended to `state_machine` (3 nesting levels) + `c4_discover` writers; ADR-036 amendment (D2 re-ship, D3 deferral). PR #188. **Nota: PR1 (call_graph + class_diagram UNWIND, PR #187) quedó SIN tag — gap `v1.46.0` documentado; CHANGELOG `[1.46.0]` describe su contenido.** |
 | `v1.47.1` | M32 remediation r1 | `class_diagram` version-id mismatch (blake3 compartido) + `apply_common` port bypass (batch helpers → `ElementRepository` port, ADR-059) fixed; cross-writer CURRENT_VERSION regression suite added (PR #189+#190). |
 | `v1.48.0` | p1-08 | CapabilityRegistry: 8 categories, 79 entries; `archctl capabilities --format json\|markdown` + `--check`; bidirectional alignment invariants in `alignment.rs`; generated `docs/CAPABILITIES.md`; staleness gates in `verify-local.sh` + `test-ci-gates.sh`; ADR-045 accepted; call-graph schema enum fix 3→6 langs (PR #191) — Wave 1 items 15+16, Wave 1 completa. |
+| `v1.49.0` | p2-01-snapshot-mvp | Snapshot metadata MVP: new bounded context `archctl/src/architecture/` with `Snapshot` carrier, `create/list/gc`, `SnapshotError`; `RepositoryIdentity` carrier with stable `blake3("repo\|{remote}\|{first_commit}")` formula; `extractor_set_digest()` (renderer/IDE-stable); `SnapshotRepository` port + `LbugStore` impl; GC retention (`--keep-last`, `--dry-run`, `--yes`); new `manifests/architecture.toml` scope gate. |
+| `v1.50.0` | p2-02-followup | Follow-up addressing 7 WARNINGs from p2-01: ADR-060 documents `archctl architecture {create,list,gc}` CLI surface (Path B deviation); `cli.architecture` registered in capability registry; `ArchitectureAction` added to `manifests/cli.toml`; `must_not_contain LbugStore` in `manifests/architecture.toml`; digest stability regression test; concurrent test documented (flock serialization); `find_deepest_commit` rewritten with `peel_to_id`; `--ref` flag, `--dry-run` default true, `--keep-last` clamp 1..=1000; 3 regression tests added. |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -182,7 +184,11 @@ Estado de la wave:
    boundary (v1.44.0+v1.44.1, p1-04), UnitOfWork (v1.45.0, p1-05),
    filesystem contracts, doctor/diagram migrations via CliContext, **capability
    registry (v1.48.0, p1-08, PR #191)**.
-3. **Wave 2 (intelligence)** / **Wave 3 (platform)** — pendientes.
+3. **Wave 2 (P2 architecture snapshots)** — **P2-01+P2-02 DONE** (v1.49.0+v1.50.0):
+   P2-01 snapshot MVP (RepositoryIdentity, extractor digest, SnapshotRepository,
+   architecture CLI, GC, scope gate); P2-02 follow-up (ADR-060, capability
+   registry fix, manifest gates, CLI flags, regression tests).
+4. **Wave 2 (intelligence)** / **Wave 3 (platform)** — pendientes.
 
 ## Comandos de verificación
 
