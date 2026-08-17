@@ -3,6 +3,8 @@
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::architecture::diff::DiffError;
+
 /// Errors specific to snapshot operations.
 #[derive(Debug, Error)]
 pub enum SnapshotError {
@@ -23,6 +25,12 @@ pub enum SnapshotError {
 
     #[error("GC would delete {count} snapshots; use --yes to confirm")]
     GcRequiresConfirmation { count: usize },
+}
+
+impl From<DiffError> for SnapshotError {
+    fn from(err: DiffError) -> Self {
+        SnapshotError::Store(anyhow::anyhow!("{err}"))
+    }
 }
 
 /// GC outcome report.
