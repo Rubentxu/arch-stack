@@ -53,8 +53,8 @@ use crate::clock::Clock;
 use crate::evaluation::Evaluation;
 use crate::evidence::{Evidence, EvidenceStatus};
 use crate::graph::{
-    Element, ElementRow, ElementVersion, GraphStat, SemanticEdgeRow, StructuralEvidence,
-    VersionPropsRow,
+    Element, ElementRow, ElementVersion, GraphStat, RelationRow, SemanticEdgeRow,
+    StructuralEvidence, VersionPropsRow,
 };
 use crate::migrations;
 use crate::row::{Cell, Row};
@@ -427,6 +427,17 @@ pub trait DiagramRepository: Send + Sync {
     fn list_semantic_edges(&self, category: &str) -> Result<Vec<SemanticEdgeRow>>;
     fn list_evidence_for_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>>;
     fn list_version_props(&self, version_ids: &[String]) -> Result<Vec<VersionPropsRow>>;
+
+    /// Read a SemanticRelation row by its canonical id.
+    ///
+    /// Returns `Ok(None)` when the relation does not exist.
+    fn read_relation_by_id(&self, id: &str) -> Result<Option<RelationRow>>;
+
+    /// List evidence rows linked to one or more RelationVersion ids via SUPPORTED_BY.
+    ///
+    /// Mirrors `list_evidence_for_versions` but traverses `(rv:RelationVersion)-[:SUPPORTED_BY]->(e:Evidence)`
+    /// instead of `(ev:ElementVersion)-[:SUPPORTED_BY]->(e:Evidence)`.
+    fn list_evidence_for_relation_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>>;
 }
 
 /// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
@@ -2467,6 +2478,55 @@ impl DiagramRepository for LbugStore {
             <LbugStore as RawGraphQuery>::query(self, &cypher).context("list_version_props")?;
         rows.into_iter().map(row_to_version_props_row).collect()
     }
+
+    fn read_relation_by_id(&self, id: &str) -> Result<Option<RelationRow>> {
+        let validated_id =
+            crate::graph::validate_identifier(id).context("read_relation_by_id: id validation")?;
+        let cypher = format!(
+            "MATCH (r:SemanticRelation {{id: '{validated_id}'}}) \
+             RETURN r.id, r.current_version_id, r.current_label;"
+        );
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
+            .context("read_relation_by_id")?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let row = rows.into_iter().next().unwrap();
+        let str_col = |r: &Row, k: &str| -> String {
+            r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string()
+        };
+        Ok(Some(RelationRow {
+            id: str_col(&row, "r.id"),
+            current_version_id: str_col(&row, "r.current_version_id"),
+            current_label: str_col(&row, "r.current_label"),
+        }))
+    }
+
+    fn list_evidence_for_relation_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>> {
+        if version_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let safe_ids: Result<Vec<_>, _> = version_ids
+            .iter()
+            .map(|id| crate::graph::validate_identifier(id).map(|s| s.to_string()))
+            .collect();
+        let safe_ids = safe_ids.context("list_evidence_for_relation_versions: id validation")?;
+        let id_list = safe_ids
+            .iter()
+            .map(|id| format!("'{}'", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cypher = format!(
+            "MATCH (rv:RelationVersion)-[r:SUPPORTED_BY]->(e:Evidence) \
+             WHERE rv.id IN [{id_list}] \
+             RETURN e.id, e.kind, e.claim, e.path, e.start_line, e.end_line, \
+                    e.tool_name, e.tool_version, e.rule_id, e.props, \
+                    e.content_hash, e.observed_at;"
+        );
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
+            .context("list_evidence_for_relation_versions")?;
+        Ok(rows.into_iter().filter_map(row_to_evidence_entry).collect())
+    }
 }
 
 impl SemanticEdgeRepository for LbugStore {
@@ -3926,5 +3986,106 @@ mod tests {
         let uml_rows = DiagramRepository::list_elements(&store, "uml", None, None).unwrap();
         assert_eq!(uml_rows.len(), 1);
         assert_eq!(uml_rows[0].id, "el:uml:1");
+    }
+
+    // -------------------------------------------------------------------------
+    // Relation read primitives (P2-03)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn read_relation_by_id_returns_none_for_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+        let result = DiagramRepository::read_relation_by_id(&store, "rel:nonexistent").unwrap();
+        assert!(result.is_none(), "nonexistent relation should return None");
+    }
+
+    #[test]
+    fn read_relation_by_id_returns_relation_when_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed a SemanticRelation row via raw Cypher (no high-level writer exists for this table)
+        store
+            .execute_raw_cypher_for_test(
+                "CREATE (:SemanticRelation {id: 'rel:test:1', current_version_id: 'rv:test:1', current_label: 'calls'})",
+            )
+            .expect("seed SemanticRelation");
+
+        let result = DiagramRepository::read_relation_by_id(&store, "rel:test:1").unwrap();
+        assert!(result.is_some(), "relation should be found");
+        let row = result.unwrap();
+        assert_eq!(row.id, "rel:test:1");
+        assert_eq!(row.current_version_id, "rv:test:1");
+        assert_eq!(row.current_label, "calls");
+    }
+
+    #[test]
+    fn list_evidence_for_relation_versions_empty_returns_empty_vec() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+        let result =
+            DiagramRepository::list_evidence_for_relation_versions(&store, &[]).unwrap();
+        assert!(result.is_empty(), "empty version_ids should return empty vec");
+    }
+
+    #[test]
+    fn list_evidence_for_relation_versions_malformed_id_returns_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+        // ID with invalid character (space) should fail validation
+        let result = DiagramRepository::list_evidence_for_relation_versions(
+            &store,
+            &["rel:test with space".to_string()],
+        );
+        assert!(result.is_err(), "malformed id should return error");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid character") || err.contains("id validation"),
+            "error should mention validation failure: {err}"
+        );
+    }
+
+    #[test]
+    fn list_evidence_for_relation_versions_returns_linked_evidence() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        // Seed: RelationVersion + Evidence + SUPPORTED_BY edge
+        store
+            .execute_raw_cypher_for_test(
+                "CREATE (:RelationVersion {id: 'rv:rel:1', relation_id: 'rel:test:1', label: 'calls', status: 'active', origin: 'ast-grep', confidence: 0.9})",
+            )
+            .expect("seed RelationVersion");
+        store
+            .execute_raw_cypher_for_test(
+                "CREATE (:Evidence {id: 'ev:rel:1', kind: 'structural', claim: 'calls test', path: 'src/lib.rs', start_line: 10, end_line: 15, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:calls', props: '{\"status\":\"accepted\"}', content_hash: 'sha256:abc', observed_at: timestamp('2026-08-01T00:00:00Z')})",
+            )
+            .expect("seed Evidence");
+        store
+            .execute_raw_cypher_for_test(
+                "MATCH (rv:RelationVersion {id: 'rv:rel:1'}), (e:Evidence {id: 'ev:rel:1'}) CREATE (rv)-[:SUPPORTED_BY]->(e)",
+            )
+            .expect("link RelationVersion to Evidence");
+
+        let result = DiagramRepository::list_evidence_for_relation_versions(
+            &store,
+            &["rv:rel:1".to_string()],
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1, "should return one evidence row");
+        assert_eq!(result[0].id, "ev:rel:1");
+        assert_eq!(result[0].path, "src/lib.rs");
+        assert_eq!(result[0].start_line, 10);
     }
 }

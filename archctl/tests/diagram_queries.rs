@@ -8,7 +8,8 @@
 // SCN-052: query_evidence_for_versions filters to Accepted status (in Rust).
 // SCN-053: query_version_props returns version properties.
 
-use archctl::graph::{ElementRow, SemanticEdgeRow, VersionPropsRow};
+use archctl::graph::{ElementRow, RelationRow, SemanticEdgeRow, VersionPropsRow};
+use archctl::diagram::export_types::EvidenceEntry;
 use archctl::row::{Cell, Row};
 use archctl::store::{
     DiagramOps, DiagramRepository, ElementRepository, EvaluationRepository, EvidenceOps,
@@ -545,6 +546,19 @@ impl DiagramRepository for TinyGraphStore {
         // For TinyGraphStore, return all versions as VersionPropsRow
         let rows: Vec<Row> = self.versions.to_vec();
         rows.into_iter().map(row_to_version_props_row).collect()
+    }
+
+    fn read_relation_by_id(&self, _id: &str) -> anyhow::Result<Option<RelationRow>> {
+        // TinyGraphStore does not exercise relation reads
+        Ok(None)
+    }
+
+    fn list_evidence_for_relation_versions(
+        &self,
+        _version_ids: &[String],
+    ) -> anyhow::Result<Vec<EvidenceEntry>> {
+        // TinyGraphStore does not exercise relation evidence
+        Ok(vec![])
     }
 }
 
