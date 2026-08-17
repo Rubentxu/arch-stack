@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **P2-02 architecture-diff MVP** — `archctl/src/architecture/diff.rs` with
+  `ArchitectureDiffReport` carrier (schema `architecture-diff-report/1`),
+  `DiffError { InvalidIdentifier, SnapshotNotFound }`, and pure
+  `diff_snapshots(&Snapshot, &Snapshot) -> ArchitectureDiffReport` use case.
+  Compares 7 field groups (`commitHash`, `schemaVersion`, `extractorDigest`,
+  `repoIdentity`, `label`, `pinned`, `createdAt`); emits `compatibility.schema
+  = "same" | "different"` with reason. No store writes.
+- **P2-02** — `archctl architecture diff <id_a> <id_b> [--json]` CLI command:
+  validates both ids via `graph::validate_identifier` (exit 1 on bad id),
+  loads both snapshots via `SnapshotRepository::get_snapshot`, calls
+  `diff_snapshots`, prints human table or JSON `architecture-diff-report/1`.
+  `ArchitectureAction::Diff` variant added to `cli.rs`.
+- **P2-02** — `From<DiffError> for SnapshotError` conversion in
+  `archctl/src/architecture/errors.rs`; `manifests/architecture.toml` updated
+  (new `diff.rs` in editable, `diff_snapshots`/`ArchitectureDiffReport`/
+  `DiffError` in public_symbols and must_hold).
+- **P2-02** — 4 unit tests in `archctl/src/architecture/diff.rs` (identical
+  snapshots, different commit_hash, different schema_version, different
+  extractor_digest) and 4 integration tests in `archctl/tests/architecture_diff.rs`
+  (`--json` round-trip, identical diff, invalid id rejection, snapshot-not-found).
+
 ## [1.49.0] — 2026-08-17
 
 ### Added
@@ -52,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   context (no capability registry entry added; follow-up cycle planned).
 
 ### Out-of-scope (next cycle)
-- `ElementVersion`/`RelationVersion` ↔ `Snapshot` materialization (P2-02).
+- `ElementVersion`/`RelationVersion` ↔ `Snapshot` materialization (P2-03).
 - Diff between snapshots (P2-03).
 - Non-Git worktree overlay (P3-01).
 - `--ref <git-rev>` flag on `create` (proposal §Design; verify WARNING #9).

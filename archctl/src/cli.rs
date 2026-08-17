@@ -174,6 +174,18 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Diff two snapshots and emit an architecture-diff-report.
+    Diff {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// First snapshot id.
+        snapshot_a: String,
+        /// Second snapshot id.
+        snapshot_b: String,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -837,6 +849,12 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 yes,
                 json,
             } => architecture_snapshot_gc_cmd(cwd, keep_last, !no_dry_run, yes, json, ctx),
+            ArchitectureAction::Diff {
+                cwd,
+                snapshot_a,
+                snapshot_b,
+                json,
+            } => architecture_snapshot_diff_cmd(cwd, snapshot_a, snapshot_b, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2604,6 +2622,86 @@ fn architecture_snapshot_gc_cmd(
         }
         println!("Preserved {} snapshot(s).", report.preserved.len());
     }
+    Ok(0)
+}
+
+fn architecture_snapshot_diff_cmd(
+    cwd: Option<PathBuf>,
+    snapshot_a: String,
+    snapshot_b: String,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::diff::ArchitectureDiffReport;
+    use crate::store::SnapshotRepository;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    // Validate both snapshot ids before touching the store.
+    crate::graph::validate_identifier(&snapshot_a).map_err(|_| {
+        anyhow::anyhow!("invalid snapshot id (contains unsafe characters): {snapshot_a}")
+    })?;
+    crate::graph::validate_identifier(&snapshot_b).map_err(|_| {
+        anyhow::anyhow!("invalid snapshot id (contains unsafe characters): {snapshot_b}")
+    })?;
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let snap_a = SnapshotRepository::get_snapshot(&*store, &snapshot_a)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let snap_b = SnapshotRepository::get_snapshot(&*store, &snapshot_b)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let report: ArchitectureDiffReport = crate::architecture::diff_snapshots(&snap_a, &snap_b);
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        println!("Architecture Diff Report");
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!();
+        println!("Compatibility: {}", report.compatibility.schema);
+        if !report.compatibility.reason.is_empty() {
+            println!("  Reason: {}", report.compatibility.reason);
+        }
+        println!();
+        println!(
+            "  Before: {} (commit {}, schema {})",
+            report.snapshots.before.id,
+            report
+                .snapshots
+                .before
+                .commit_hash
+                .chars()
+                .take(8)
+                .collect::<String>(),
+            report.snapshots.before.schema_version
+        );
+        println!(
+            "  After:  {} (commit {}, schema {})",
+            report.snapshots.after.id,
+            report
+                .snapshots
+                .after
+                .commit_hash
+                .chars()
+                .take(8)
+                .collect::<String>(),
+            report.snapshots.after.schema_version
+        );
+        println!();
+        if report.differences.is_empty() {
+            println!("No differences found — snapshots are identical.");
+        } else {
+            println!("{} difference(s) found:", report.differences.len());
+            for delta in &report.differences {
+                println!("  {}: {} → {}", delta.field, delta.before, delta.after);
+            }
+        }
+    }
+
     Ok(0)
 }
 

@@ -1,7 +1,7 @@
 # scope: architecture
 #
 # architecture::snapshot provides the snapshot management bounded
-# context for archctl. It exposes create/list/gc use cases that
+# context for archctl. It exposes create/list/gc/diff use cases that
 # consume SnapshotRepository through the GraphStore port.
 
 id = "architecture"
@@ -15,6 +15,7 @@ editable = [
     "archctl/src/architecture/errors.rs",
     "archctl/src/architecture/snapshot.rs",
     "archctl/src/architecture/digest.rs",
+    "archctl/src/architecture/diff.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -22,6 +23,9 @@ public_symbols = [
     "create",
     "list",
     "gc",
+    "diff_snapshots",
+    "ArchitectureDiffReport",
+    "DiffError",
     "SnapshotError",
     "SnapshotGcReport",
     "extractor_set_digest",
@@ -32,6 +36,9 @@ must_hold = [
     "pub fn create(",
     "pub fn list(",
     "pub fn gc(",
+    "pub fn diff_snapshots(",
+    "pub enum DiffError",
+    "pub struct ArchitectureDiffReport",
     "pub enum SnapshotError",
     "pub struct SnapshotGcReport",
     "pub fn extractor_set_digest(",
