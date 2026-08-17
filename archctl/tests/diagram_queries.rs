@@ -12,7 +12,7 @@ use archctl::graph::{ElementRow, SemanticEdgeRow, VersionPropsRow};
 use archctl::row::{Cell, Row};
 use archctl::store::{
     DiagramOps, DiagramRepository, ElementRepository, EvaluationRepository, EvidenceOps,
-    EvidenceRepository, GraphStore, SourceOps, SourceRepository,
+    EvidenceRepository, GraphStore, SnapshotRepository, SourceOps, SourceRepository,
 };
 
 /// Build a Row from a flat list of (column, value) pairs.
@@ -431,6 +431,30 @@ impl EvaluationRepository for TinyGraphStore {
     }
     fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
         unimplemented!()
+    }
+}
+
+impl SnapshotRepository for TinyGraphStore {
+    fn create_snapshot(&mut self, _: &archctl::store::Snapshot) -> anyhow::Result<String> {
+        unimplemented!()
+    }
+    fn get_snapshot(&self, _: &str) -> anyhow::Result<archctl::store::Snapshot> {
+        unimplemented!()
+    }
+    fn list_snapshots(&self) -> anyhow::Result<Vec<archctl::store::Snapshot>> {
+        Ok(vec![])
+    }
+    fn update_snapshot_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn update_snapshot_pin(&mut self, _: &str, _: bool) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+    fn delete_snapshots(&mut self, _: &[String]) -> anyhow::Result<usize> {
+        Ok(0)
+    }
+    fn next_sequence(&mut self) -> anyhow::Result<i64> {
+        Ok(1)
     }
 }
 

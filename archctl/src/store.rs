@@ -60,6 +60,7 @@ use crate::migrations;
 use crate::row::{Cell, Row};
 use crate::source::SourceArtifact;
 
+use crate::blake_like;
 use crate::diagram::export_types::EvidenceEntry;
 use std::collections::HashSet;
 
@@ -203,6 +204,7 @@ pub trait GraphStore:
     + SourceRepository
     + EvaluationRepository
     + DiagramRepository
+    + SnapshotRepository
 {
     /// Open or create a store rooted at `project_dir`. Each adapter
     /// decides what file (or set of files) lives there.
@@ -425,6 +427,86 @@ pub trait DiagramRepository: Send + Sync {
     fn list_semantic_edges(&self, category: &str) -> Result<Vec<SemanticEdgeRow>>;
     fn list_evidence_for_versions(&self, version_ids: &[String]) -> Result<Vec<EvidenceEntry>>;
     fn list_version_props(&self, version_ids: &[String]) -> Result<Vec<VersionPropsRow>>;
+}
+
+/// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
+/// on the existing `Snapshot` node table through the typed `SnapshotRepository`
+/// interface. All writes are transactional via `UnitOfWork`.
+///
+/// Key identity tuple (idempotency): `(repo_identity, commit_hash, schema_version, extractor_digest)`.
+/// The snapshot ID is `blake3("snap|{repo_identity}|{commit_hash}|{schema_version}|{extractor_digest}")`.
+pub trait SnapshotRepository: Send + Sync {
+    /// Persist a snapshot row. Idempotent on `(repo_identity, commit_hash, schema_version, extractor_digest)` —
+    /// a second call with the same tuple returns the existing row without creating a duplicate.
+    /// Returns the snapshot id.
+    fn create_snapshot(&mut self, snap: &Snapshot) -> Result<String>;
+
+    /// Fetch a snapshot by its canonical id. Errors if not found.
+    fn get_snapshot(&self, id: &str) -> Result<Snapshot>;
+
+    /// List all snapshots, ordered by `created_at` descending.
+    fn list_snapshots(&self) -> Result<Vec<Snapshot>>;
+
+    /// Update the `label` field of an existing snapshot. Errors if not found.
+    fn update_snapshot_label(&mut self, id: &str, label: &str) -> Result<()>;
+
+    /// Update the `pinned` flag of an existing snapshot. Errors if not found.
+    fn update_snapshot_pin(&mut self, id: &str, pinned: bool) -> Result<()>;
+
+    /// GC snapshots: delete all snapshots matching the given `ids_to_delete`.
+    /// Returns the number of rows deleted.
+    fn delete_snapshots(&mut self, ids: &[String]) -> Result<usize>;
+
+    /// Compute the next monotonic `sequence` for the project DB.
+    /// Called within a `UnitOfWork` transaction to avoid races.
+    fn next_sequence(&mut self) -> Result<i64>;
+}
+
+/// Snapshot carrier — the primary domain struct for snapshot rows.
+///
+/// Immutable key fields live in the typed columns (`commit_hash`, `worktree_id`,
+/// `schema_version`, `created_at`, `sequence`); additive metadata lives in
+/// `props` (ADR-017 convention: no `ALTER TABLE` for new fields).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    /// Canonical snapshot id: `blake3("snap|{repo_identity}|{commit_hash}|{schema_version}|{extractor_digest}")`.
+    pub id: String,
+    /// Per-project monotonic sequence number assigned at creation time.
+    pub sequence: i64,
+    /// Snapshot kind (e.g. "architecture").
+    pub kind: String,
+    /// Git commit SHA this snapshot was taken at.
+    pub commit_hash: String,
+    /// Git worktree id.
+    pub worktree_id: String,
+    /// Schema version — the integer **major** version stored in the column.
+    /// The exact semantic version lives in `props.schema_version`.
+    pub schema_version: i64,
+    /// ISO-8601 creation timestamp.
+    pub created_at: String,
+    /// JSON blob with additive metadata: `repo_identity`, `extractor_digest`,
+    /// `schema_compatibility`, `label`, `pinned`, `source_ref`, `checksum`.
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Snapshot {
+    /// The identity key used for idempotent creates: the 4-tuple that makes
+    /// two creates return the same snapshot id.
+    pub fn identity_key(&self) -> String {
+        format!(
+            "snap|{}|{}|{}|{}",
+            self.props
+                .get("repo_identity")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            self.commit_hash,
+            self.schema_version,
+            self.props
+                .get("extractor_digest")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        )
+    }
 }
 
 /// Admin-only raw Cypher escape hatch (P1-04).
@@ -1588,6 +1670,314 @@ impl DiagramOps for LbugStore {
             })
             .collect();
         Ok(members)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SnapshotRepository impl (P2-01)
+// ---------------------------------------------------------------------------
+
+impl SnapshotRepository for LbugStore {
+    fn create_snapshot(&mut self, snap: &Snapshot) -> Result<String> {
+        // Get sequence FIRST (mutable borrow of self), then get session (second borrow).
+        let sequence = self.next_sequence()?;
+        let session = self.session_mut_inner()?;
+
+        // Build the idempotency key: check if a snapshot with the same
+        // (repo_identity, commit_hash, schema_version, extractor_digest) already exists.
+        let repo_identity = snap
+            .props
+            .get("repo_identity")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let extractor_digest = snap
+            .props
+            .get("extractor_digest")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+
+        // Try to find existing row by identity tuple.
+        // NOTE: lbug does not support native JSON WHERE filtering (store.rs D6).
+        // We return all Snapshot rows and filter in Rust instead.
+        let find_cypher =
+            "MATCH (s:Snapshot) RETURN s.id, s.commit_hash, s.schema_version, s.props;";
+        let existing: Vec<Row> = run_query(&session.conn, find_cypher)?;
+        // Helper to extract props Map regardless of whether lbug stored it as a JSON string or JSON object.
+        #[allow(clippy::collapsible_if)]
+        let extract_props = |cell: &Cell| -> serde_json::Map<String, serde_json::Value> {
+            // Case 1: stored as a JSON string (lbug may return it as Cell::String)
+            if let Some(s) = cell.as_str() {
+                if let Ok(map) = serde_json::from_str(s) {
+                    return map;
+                }
+            }
+            // Case 2: stored as a native JSON object (lbug may return it as Cell::Object)
+            if let Some(obj) = cell.to_map() {
+                return obj;
+            }
+            serde_json::Map::new()
+        };
+        #[allow(clippy::collapsible_if)]
+        if let Some(row) = existing.iter().find(|row| {
+            let row_commit_hash = row
+                .get("s.commit_hash")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default();
+            let row_schema_version = row
+                .get("s.schema_version")
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0);
+            let row_props_json = row.get("s.props").map(extract_props).unwrap_or_default();
+            let row_repo_identity = row_props_json
+                .get("repo_identity")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let row_extractor_digest = row_props_json
+                .get("extractor_digest")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+
+            row_commit_hash == snap.commit_hash
+                && row_schema_version == snap.schema_version
+                && row_repo_identity == repo_identity
+                && row_extractor_digest == extractor_digest
+        }) {
+            if let Some(id) = row.get("s.id").and_then(|c| c.as_str()) {
+                return Ok(id.to_string());
+            }
+        }
+
+        // Not found — insert new row
+        let id = blake_like(&snap.identity_key());
+        let kind = blake_like(&snap.kind);
+        let safe_commit = snap.commit_hash.replace('\'', "\\'");
+        let safe_worktree = snap.worktree_id.replace('\'', "\\'");
+        let props_json = serde_json::to_string(&snap.props).context("serialize snapshot props")?;
+        // NOTE: props_json is valid JSON from serde_json; do NOT re-escape single quotes.
+        // The replace('\'') was corrupting the JSON by re-escaping already-escaped chars.
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let cypher = format!(
+            "MERGE (s:Snapshot {{id: '{id}'}}) SET \
+             s.sequence = {sequence}, \
+             s.kind = '{kind}', \
+             s.commit_hash = '{safe_commit}', \
+             s.worktree_id = '{safe_worktree}', \
+             s.schema_version = {schema_version}, \
+             s.created_at = timestamp('{now}'), \
+             s.props = '{props_json}';",
+            sequence = sequence,
+            schema_version = snap.schema_version,
+        );
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("create_snapshot: failed to persist Snapshot {id}"))?;
+        Ok(id)
+    }
+
+    fn get_snapshot(&self, id: &str) -> Result<Snapshot> {
+        let validated_id =
+            crate::graph::validate_identifier(id).context("get_snapshot: id failed validation")?;
+        let rows = self.query(&format!(
+            "MATCH (s:Snapshot {{id: '{validated_id}'}}) \
+             RETURN s.id, s.sequence, s.kind, s.commit_hash, s.worktree_id, \
+                    s.schema_version, s.created_at, s.props;"
+        ))?;
+        if rows.is_empty() {
+            anyhow::bail!("snapshot not found: {id}");
+        }
+        let row = rows.into_iter().next().unwrap();
+        let cell_to_str = |col: &str| -> String {
+            row.get(col)
+                .and_then(|c| c.as_str())
+                .map(String::from)
+                .unwrap_or_default()
+        };
+        let cell_to_i64 = |col: &str| -> i64 { row.get(col).and_then(|c| c.as_i64()).unwrap_or(0) };
+        // Helper to extract props Map regardless of whether lbug stored it as a JSON string or JSON object.
+        #[allow(clippy::collapsible_if)]
+        let cell_to_json = |col: &str| -> serde_json::Map<String, serde_json::Value> {
+            let cell = match row.get(col) {
+                Some(c) => c,
+                None => return serde_json::Map::new(),
+            };
+            // Case 1: stored as a JSON string
+            if let Some(s) = cell.as_str() {
+                if let Ok(map) = serde_json::from_str(s) {
+                    return map;
+                }
+            }
+            // Case 2: stored as a native JSON object
+            if let Some(obj) = cell.to_map() {
+                return obj;
+            }
+            serde_json::Map::new()
+        };
+        Ok(Snapshot {
+            id: cell_to_str("s.id"),
+            sequence: cell_to_i64("s.sequence"),
+            kind: cell_to_str("s.kind"),
+            commit_hash: cell_to_str("s.commit_hash"),
+            worktree_id: cell_to_str("s.worktree_id"),
+            schema_version: cell_to_i64("s.schema_version"),
+            created_at: cell_to_str("s.created_at"),
+            props: cell_to_json("s.props"),
+        })
+    }
+
+    fn list_snapshots(&self) -> Result<Vec<Snapshot>> {
+        let rows = self.query(
+            "MATCH (s:Snapshot) \
+             RETURN s.id, s.sequence, s.kind, s.commit_hash, s.worktree_id, \
+                    s.schema_version, s.created_at, s.props \
+             ORDER BY s.created_at DESC;",
+        )?;
+        let snaps: Vec<Snapshot> = rows
+            .into_iter()
+            .map(|row| {
+                let cell_to_str = |col: &str| -> String {
+                    row.get(col)
+                        .and_then(|c| c.as_str())
+                        .map(String::from)
+                        .unwrap_or_default()
+                };
+                let cell_to_i64 =
+                    |col: &str| -> i64 { row.get(col).and_then(|c| c.as_i64()).unwrap_or(0) };
+                // Helper to extract props Map regardless of whether lbug stored it as a JSON string or JSON object.
+                #[allow(clippy::collapsible_if)]
+                let cell_to_json = |col: &str| -> serde_json::Map<String, serde_json::Value> {
+                    let cell = match row.get(col) {
+                        Some(c) => c,
+                        None => return serde_json::Map::new(),
+                    };
+                    // Case 1: stored as a JSON string
+                    if let Some(s) = cell.as_str() {
+                        if let Ok(map) = serde_json::from_str(s) {
+                            return map;
+                        }
+                    }
+                    // Case 2: stored as a native JSON object
+                    if let Some(obj) = cell.to_map() {
+                        return obj;
+                    }
+                    serde_json::Map::new()
+                };
+                Snapshot {
+                    id: cell_to_str("s.id"),
+                    sequence: cell_to_i64("s.sequence"),
+                    kind: cell_to_str("s.kind"),
+                    commit_hash: cell_to_str("s.commit_hash"),
+                    worktree_id: cell_to_str("s.worktree_id"),
+                    schema_version: cell_to_i64("s.schema_version"),
+                    created_at: cell_to_str("s.created_at"),
+                    props: cell_to_json("s.props"),
+                }
+            })
+            .collect();
+        Ok(snaps)
+    }
+
+    fn update_snapshot_label(&mut self, id: &str, label: &str) -> Result<()> {
+        let session = self.session_mut_inner()?;
+        let validated_id = crate::graph::validate_identifier(id)
+            .context("update_snapshot_label: id failed validation")?;
+
+        // Read current props, merge label, write back
+        let read_cypher = format!("MATCH (s:Snapshot {{id: '{validated_id}'}}) RETURN s.props;");
+        let rows = run_query(&session.conn, &read_cypher)
+            .with_context(|| format!("update_snapshot_label: failed to read {id}"))?;
+        if rows.is_empty() {
+            anyhow::bail!("snapshot not found: {id}");
+        }
+        let mut props: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("s.props"))
+            .and_then(|c| c.as_str())
+            .and_then(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
+            .unwrap_or_default();
+        props.insert(
+            "label".to_string(),
+            serde_json::Value::String(label.to_string()),
+        );
+        let safe_props = serde_json::to_string(&props)
+            .context("serialize updated props")?
+            .replace('\'', "\\'");
+
+        let write_cypher =
+            format!("MATCH (s:Snapshot {{id: '{validated_id}'}}) SET s.props = '{safe_props}';");
+        session
+            .conn
+            .query(&write_cypher)
+            .with_context(|| format!("update_snapshot_label: failed to update {id}"))?;
+        Ok(())
+    }
+
+    fn update_snapshot_pin(&mut self, id: &str, pinned: bool) -> Result<()> {
+        let session = self.session_mut_inner()?;
+        let validated_id = crate::graph::validate_identifier(id)
+            .context("update_snapshot_pin: id failed validation")?;
+
+        let read_cypher = format!("MATCH (s:Snapshot {{id: '{validated_id}'}}) RETURN s.props;");
+        let rows = run_query(&session.conn, &read_cypher)
+            .with_context(|| format!("update_snapshot_pin: failed to read {id}"))?;
+        if rows.is_empty() {
+            anyhow::bail!("snapshot not found: {id}");
+        }
+        let mut props: serde_json::Map<String, serde_json::Value> = rows
+            .first()
+            .and_then(|r| r.get("s.props"))
+            .and_then(|c| c.as_str())
+            .and_then(|s| serde_json::from_str(&s.replace("\\'", "'")).ok())
+            .unwrap_or_default();
+        props.insert("pinned".to_string(), serde_json::Value::Bool(pinned));
+        let safe_props = serde_json::to_string(&props)
+            .context("serialize updated props")?
+            .replace('\'', "\\'");
+
+        let write_cypher =
+            format!("MATCH (s:Snapshot {{id: '{validated_id}'}}) SET s.props = '{safe_props}';");
+        session
+            .conn
+            .query(&write_cypher)
+            .with_context(|| format!("update_snapshot_pin: failed to update {id}"))?;
+        Ok(())
+    }
+
+    fn delete_snapshots(&mut self, ids: &[String]) -> Result<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let session = self.session_mut_inner()?;
+        let id_list: Vec<String> = ids
+            .iter()
+            .map(|id| {
+                crate::graph::validate_identifier(id)
+                    .map(|v| format!("'{v}'"))
+                    .unwrap_or_else(|_| format!("'{id}'"))
+            })
+            .collect();
+        let id_set = id_list.join(", ");
+        let cypher = format!("MATCH (s:Snapshot) WHERE s.id IN [{id_set}] DETACH DELETE s;");
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("delete_snapshots: failed to delete {} rows", ids.len()))?;
+        Ok(ids.len())
+    }
+
+    fn next_sequence(&mut self) -> Result<i64> {
+        let session = self.session_mut_inner()?;
+        let rows = run_query(
+            &session.conn,
+            "MATCH (s:Snapshot) RETURN COALESCE(MAX(s.sequence), 0) AS max_seq;",
+        )?;
+        let max_seq: i64 = rows
+            .into_iter()
+            .next()
+            .and_then(|r| r.get("max_seq").and_then(|c| c.as_i64()))
+            .unwrap_or(0);
+        Ok(max_seq + 1)
     }
 }
 

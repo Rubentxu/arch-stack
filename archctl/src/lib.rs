@@ -1,4 +1,7 @@
+pub mod architecture;
 pub mod astgrep;
+pub use architecture::digest::extractor_set_digest;
+pub use architecture::{create, gc, list};
 pub mod capability;
 pub mod cli;
 pub mod clock;
@@ -42,8 +45,8 @@ pub mod view;
 pub mod xdg;
 
 pub use cli::{
-    Cli, Command, DiagramAction, EvidenceAction, GraphAction, InventoryAction, ProjectAction,
-    RenderFormat, SkillsAction, run,
+    ArchitectureAction, Cli, Command, DiagramAction, EvidenceAction, GraphAction, InventoryAction,
+    ProjectAction, RenderFormat, SkillsAction, run,
 };
 pub use clock::{Clock, FixedClock, SystemClock, fixed_clock, system_clock};
 pub use doctor::{
@@ -67,8 +70,8 @@ pub use graph::{
     stat as graph_stat, validate_identifier,
 };
 pub use identity::{
-    SourceIdentity, blake_like, identity_summary, normalize_remote, portable_project_id,
-    resolve_source_identity,
+    RepositoryIdentity, SourceIdentity, blake_like, identity_summary, normalize_remote,
+    portable_project_id, resolve_repository_identity, resolve_source_identity,
 };
 pub use project::{ProjectInfo, resolve_project};
 pub use row::{Cell, Row};
