@@ -71,7 +71,7 @@ pub struct Projection {
 }
 
 /// An evidence entry in the bundle.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvidenceEntry {
     pub id: String,
     pub kind: String,

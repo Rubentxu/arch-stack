@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
+  `ExplainReport` carrier (schema `explain-report/1`), `ExplainError
+  { SubjectNotFound, RelationNotFound, Store }`, and pure
+  `explain(&dyn DiagramRepository, &str) -> ExplainReport` use case.
+  Routes by id prefix: `rel:*` → relation path, all others → element path.
+  Element path reads `Element` + `ElementVersion` + `SUPPORTED_BY→Evidence`.
+  Relation path reads `SemanticRelation` + `RelationVersion` +
+  `SUPPORTED_BY→Evidence`. Honesty principle: unsubstantiated subjects
+  (no evidence) return `unsubstantiated: true` with a warning, never silent
+  omission.
+- **P2-03** — `archctl architecture explain <id> [--json]` CLI command:
+  validates id via `graph::validate_identifier` (exit 1 on bad id), calls
+  `architecture::explain()`, prints human summary or JSON `explain-report/1`.
+  `ArchitectureAction::Explain` variant added to `cli.rs`.
+- **P2-03** — `From<ExplainError> for SnapshotError` conversion in
+  `archctl/src/architecture/errors.rs`; `manifests/architecture.toml` updated
+  (new `explain.rs` in editable, `explain`/`ExplainReport`/`ExplainError`/
+  `ExplainSubject`/`ExplainProvenance` in public_symbols and must_hold).
+- **P2-03** — 11 unit tests in `archctl/src/architecture/explain.rs`
+  (happy path, unsubstantiated, error cases, schema/capability, routing)
+  and 9 integration tests in `archctl/tests/architecture_explain.rs`
+  (element/relation happy path, unsubstantiated honesty, unknown ids, routing,
+  null version). Store primitives for relation read: `RelationRow` struct,
+  `DiagramRepository::read_relation_by_id` and
+  `DiagramRepository::list_evidence_for_relation_versions` added to store.rs
+  trait and `LbugStore` implementation.
 - **P2-02 architecture-diff MVP** — `archctl/src/architecture/diff.rs` with
   `ArchitectureDiffReport` carrier (schema `architecture-diff-report/1`),
   `DiffError { InvalidIdentifier, SnapshotNotFound }`, and pure

@@ -90,6 +90,17 @@ pub struct VersionPropsRow {
     pub props: serde_json::Map<String, serde_json::Value>,
 }
 
+/// A row from the SemanticRelation node table.
+///
+/// Mirrors `ElementRow` for the relation side of the graph.
+/// Used by the `explain` use case to read relation metadata.
+#[derive(Debug, Clone)]
+pub struct RelationRow {
+    pub id: String,
+    pub current_version_id: String,
+    pub current_label: String,
+}
+
 pub fn database_path(project_dir: &Path) -> PathBuf {
     project_dir.join("architecture.lbdb")
 }

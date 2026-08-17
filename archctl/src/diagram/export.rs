@@ -594,6 +594,20 @@ mod tests {
                 })
                 .collect())
         }
+        fn read_relation_by_id(
+            &self,
+            _id: &str,
+        ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
+            // MockGraphStore does not exercise relation reads
+            Ok(None)
+        }
+        fn list_evidence_for_relation_versions(
+            &self,
+            _version_ids: &[String],
+        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
+            // MockGraphStore does not exercise relation evidence
+            Ok(vec![])
+        }
     }
 
     impl MockGraphStore {

@@ -186,6 +186,16 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Explain a subject (element or relation) by returning its provenance chain.
+    Explain {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Subject id (e.g., c4:container:orders or rel:orders-payment).
+        id: String,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -855,6 +865,9 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 snapshot_b,
                 json,
             } => architecture_snapshot_diff_cmd(cwd, snapshot_a, snapshot_b, json, ctx),
+            ArchitectureAction::Explain { cwd, id, json } => {
+                architecture_explain_cmd(cwd, &id, json, ctx)
+            }
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2698,6 +2711,100 @@ fn architecture_snapshot_diff_cmd(
             println!("{} difference(s) found:", report.differences.len());
             for delta in &report.differences {
                 println!("  {}: {} → {}", delta.field, delta.before, delta.after);
+            }
+        }
+    }
+
+    Ok(0)
+}
+
+fn architecture_explain_cmd(
+    cwd: Option<PathBuf>,
+    id: &str,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::explain::{ExplainError, ExplainReport};
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    // Validate the id before touching the store.
+    if let Err(e) = crate::graph::validate_identifier(id) {
+        if json {
+            eprintln!("{{\"error\": \"invalid id: {id}\", \"details\": \"{e}\"}}");
+        } else {
+            eprintln!("error: invalid id: {id} — {e}");
+        }
+        return Ok(1);
+    }
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let report: ExplainReport = match crate::architecture::explain(&*store, id) {
+        Ok(r) => r,
+        Err(ExplainError::SubjectNotFound(_) | ExplainError::RelationNotFound(_)) => {
+            if json {
+                eprintln!(
+                    "{{\"error\": \"{} not found: {id}\", \"hint\": \"run `archctl architecture list` to see available subjects\"}}",
+                    if id.starts_with("rel:") {
+                        "relation"
+                    } else {
+                        "element"
+                    }
+                );
+            } else {
+                eprintln!(
+                    "error: {} not found: {id} — run `archctl architecture list` to see available subjects",
+                    if id.starts_with("rel:") {
+                        "relation"
+                    } else {
+                        "element"
+                    }
+                );
+            }
+            return Ok(1);
+        }
+        Err(e) => {
+            if json {
+                eprintln!("{{\"error\": \"{e}\"}}");
+            } else {
+                eprintln!("error: {e}");
+            }
+            return Ok(1);
+        }
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        println!("Architecture Explain Report");
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!();
+        println!("Subject: {} ({})", report.subject.id, report.subject.kind);
+        println!("  Statement: {}", report.subject.statement);
+        if let Some(vid) = &report.subject.version_id {
+            println!("  Version: {}", vid);
+        } else {
+            println!("  Version: (none)");
+        }
+        println!();
+        if report.provenance.unsubstantiated {
+            println!("⚠ UNSUBSTANTIATED — no evidence backs this subject");
+        } else {
+            println!("{} evidence entry(s):", report.provenance.evidence.len());
+        }
+        for ev in &report.provenance.evidence {
+            println!(
+                "  {}:{} (tool: {}, rule: {})",
+                ev.path, ev.start_line, ev.tool_name, ev.rule_id
+            );
+        }
+        if !report.warnings.is_empty() {
+            println!();
+            for w in &report.warnings {
+                println!("⚠ {w}");
             }
         }
     }
