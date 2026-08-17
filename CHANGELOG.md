@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P2-10 intent vs reality MVP** — `archctl/src/architecture/intent.rs` with
+  `IntentDeclaration`, `DeclaredElement`, `DeclaredRelation`, `IntentDelta`,
+  `IntentReport`, `IntentError`, and pure `check_intent(&dyn DiagramRepository,
+  &IntentDeclaration, &str) -> IntentReport` use case. Four-class delta:
+  `DeclaredAndPresent`, `DeclaredButMissing`, `ObservedUndeclared` (informational),
+  `KindMismatch`. Deltas sorted by id ASC. No new Cargo dependencies.
+  `archctl/src/architecture/intent_loader.rs` with `load_intent(&Path) ->
+  Result<IntentDeclaration, IntentError>` (TOML via `toml = "0.8"`).
+  `schemas/architecture-intent-report.schema.json` (schemaVersion `1.0`,
+  capability `architecture-intent-mvp`).
+  `archctl architecture intent check --intent <file> [--json] [--fail-on
+  error|warning|info]` CLI command: validates `--fail-on` before graph read,
+  loads TOML, calls `check_intent`, prints JSON or human per-class summary.
+  Exit 1 when `DeclaredButMissing` or `KindMismatch` (drift) at `--fail-on
+  = error`; `ObservedUndeclared` never triggers non-zero alone.
+  `IntentAction::Check` subcommand and `ArchitectureAction::Intent` variant
+  added to `cli.rs`. Unit tests S1–S7 in `intent.rs`; integration tests
+  in `archctl/tests/architecture_intent.rs`. Self-dogfood:
+  `archctl-intent.toml` at repo root declaring 17 bounded contexts.
+  `manifests/architecture.toml` updated (intent.rs, intent_loader.rs in
+  editable; check_intent, IntentDeclaration, IntentError, IntentReport,
+  load_intent in public_symbols and must_hold). `manifests/cli.toml` updated
+  (IntentAction in must_hold).
 - **P2-09a observation/claim carriers MVP** — `archctl/src/observation_claim.rs`
   with `Observation` and `Claim` carriers, `observation_from_evidence()`,
   `compat_claim_from_evidence()`, and

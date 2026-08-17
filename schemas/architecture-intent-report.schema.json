@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/architecture-intent-report.schema.json",
+  "title": "Intent Report",
+  "description": "archctl architecture intent check output (schemaVersion 1.0, capability architecture-intent-mvp)",
+  "type": "object",
+  "required": ["schemaVersion", "capability", "intentFile", "evaluatedAt", "deltas", "summary"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "capability": {
+      "const": "architecture-intent-mvp"
+    },
+    "intentFile": {
+      "type": "string"
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "description": "ISO-8601 / RFC3339 timestamp"
+    },
+    "deltas": {
+      "type": "object",
+      "required": ["declaredAndPresent", "declaredButMissing", "observedUndeclared", "kindMismatch"],
+      "properties": {
+        "declaredAndPresent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kindId", "category"],
+            "properties": {
+              "id": { "type": "string" },
+              "kindId": { "type": "string" },
+              "category": { "type": "string" }
+            }
+          }
+        },
+        "declaredButMissing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kindId"],
+            "properties": {
+              "id": { "type": "string" },
+              "kindId": { "type": "string" },
+              "category": { "type": "string" }
+            }
+          }
+        },
+        "observedUndeclared": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kindId", "category"],
+            "properties": {
+              "id": { "type": "string" },
+              "kindId": { "type": "string" },
+              "category": { "type": "string" }
+            }
+          }
+        },
+        "kindMismatch": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "expectedKind", "observedKind"],
+            "properties": {
+              "id": { "type": "string" },
+              "expectedKind": { "type": "string" },
+              "observedKind": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["totalDeclared", "totalObserved", "matched", "drift"],
+      "properties": {
+        "totalDeclared": { "type": "integer", "minimum": 0 },
+        "totalObserved": { "type": "integer", "minimum": 0 },
+        "matched": { "type": "integer", "minimum": 0 },
+        "drift": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}

@@ -21,6 +21,8 @@ pub mod diff;
 pub mod digest;
 pub mod errors;
 pub mod explain;
+pub mod intent;
+pub mod intent_loader;
 pub mod policy;
 pub mod relevance;
 pub mod report_formats;
@@ -36,6 +38,8 @@ pub use coverage::{CoverageError, CoverageReport, coverage};
 pub use diff::{ArchitectureDiffReport, DiffError, diff_snapshots};
 pub use errors::{SnapshotError, SnapshotGcReport};
 pub use explain::{ExplainError, ExplainReport, explain};
+pub use intent::{IntentDeclaration, IntentDelta, IntentError, IntentReport, check_intent};
+pub use intent_loader::load_intent;
 pub use policy::{PolicyError, PolicyReport, PolicyRule, Waiver, check_policy};
 pub use relevance::{
     RelevanceError, RelevanceOptions, RelevanceReport, ScoredElement, ScoredRelation,
