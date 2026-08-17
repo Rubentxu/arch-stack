@@ -17,19 +17,23 @@ fn test_store() -> (LbugStore, TempDir) {
 }
 
 /// Seed an EvidenceEntry linked to an ElementVersion.
+///
+/// Uses `MERGE` for the element/version nodes (idempotent across
+/// multiple calls with the same `version_id`) so a test can register
+/// several evidence rows against one version without panicking.
 fn seed_evidence_for_version(store: &mut LbugStore, ev_id: &str, version_id: &str, status: &str) {
-    // Seed element + version
+    // Idempotent element + version via MERGE
     store
         .execute_raw_cypher_for_test(&format!(
-            "CREATE (:Element {{id: 'el:{version_id}', kind_id: 'container', category: 'c4', canonical_key: 'el:{version_id}', current_name: 'TestEl', current_status: 'active', current_confidence: 0.9, current_version_id: '{version_id}'}})"
+            "MERGE (e:Element {{id: 'el:{version_id}'}}) ON CREATE SET e.kind_id = 'container', e.category = 'c4', e.canonical_key = 'el:{version_id}', e.current_name = 'TestEl', e.current_status = 'active', e.current_confidence = 0.9, e.current_version_id = '{version_id}'"
         ))
         .expect("seed element");
     store
         .execute_raw_cypher_for_test(&format!(
-            "CREATE (:ElementVersion {{id: '{version_id}', element_id: 'el:{version_id}', name: 'TestEl', status: 'active', origin: 'ast-grep', confidence: 0.9}})"
+            "MERGE (v:ElementVersion {{id: '{version_id}'}}) ON CREATE SET v.element_id = 'el:{version_id}', v.name = 'TestEl', v.status = 'active', v.origin = 'ast-grep', v.confidence = 0.9"
         ))
         .expect("seed element version");
-    // Seed evidence with status in props JSON
+    // Unique evidence per ev_id
     store
         .execute_raw_cypher_for_test(&format!(
             "CREATE (:Evidence {{id: '{ev_id}', kind: 'structural', claim: 'test evidence for {ev_id}', path: 'src/lib.rs', start_line: 10, end_line: 20, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule', props: '{{\"status\":\"{status}\"}}', content_hash: 'sha256:{ev_id}', observed_at: timestamp('2026-08-01T00:00:00Z')}})"
