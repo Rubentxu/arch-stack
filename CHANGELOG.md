@@ -23,11 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   read, validates `--fail-on`, evaluates over the live graph, prints human
   summary or JSON `architecturePolicyReport/1`. Exit 1 when any remaining
   violation severity >= the `--fail-on` threshold (default `error`).
-- **P2-05** — 47 unit tests in `archctl/src/architecture/policy.rs` and 6
-  integration tests in `archctl/tests/architecture_policy.rs` (S1–S5 +
-  confidence_min). `manifests/architecture.toml` updated (policy.rs in
-  editable; policy symbols in public_symbols and must_hold).
-- **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
+ - **P2-05** — 47 unit tests in `archctl/src/architecture/policy.rs` and 6
+   integration tests in `archctl/tests/architecture_policy.rs` (S1–S5 +
+   confidence_min). `manifests/architecture.toml` updated (policy.rs in
+   editable; policy symbols in public_symbols and must_hold).
+ - **P2-06 fitness evaluator** — `archctl/src/architecture/report_formats.rs`
+   with `to_sarif(&PolicyReport) -> SarifLog` projector (SARIF 2.1.0) and
+   `to_junit_xml(&PolicyReport) -> String` projector (JUnit XML). Severity
+   mapping: `Error → "error"`, `Warning → "warning"`, `Info → "note"`.
+   SARIF output: `archctl://graph/<subject.id>` URI per violation. JUnit
+   output: `<testsuites>` root with `tests/failures/skipped` attributes,
+   `<testcase classname="<rule>" name="<subject.id>">` per violation,
+   `<failure>` for error/warning, `<skipped/>` for info. Hand-rolled XML
+   (no external crate). 7 unit tests in `report_formats.rs` and 7
+   integration tests in `archctl/tests/architecture_policy_report_formats.rs`.
+ - **P2-06** — `archctl architecture policy check --format {json,sarif,junit}`
+   CLI flag (`PolicyReportFormat` enum: `Json`, `Sarif`, `Junit`). Existing
+   `--json` flag preserved as deprecated alias for `--format json`. Output
+   via projectors in `architecture_policy_check_cmd`. `manifests/architecture.toml`
+   updated (report_formats.rs in editable; `to_sarif`/`to_junit_xml` in
+   public_symbols and must_hold).
+ - **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
   `ExplainReport` carrier (schema `explain-report/1`), `ExplainError
   { SubjectNotFound, RelationNotFound, Store }`, and pure
   `explain(&dyn DiagramRepository, &str) -> ExplainReport` use case.

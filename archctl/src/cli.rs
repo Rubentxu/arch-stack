@@ -211,6 +211,13 @@ pub enum ArchitectureAction {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum PolicyReportFormat {
+    Json,
+    Sarif,
+    Junit,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum PolicyAction {
     /// Check the policy file against the live graph.
@@ -226,6 +233,9 @@ pub enum PolicyAction {
         /// Severity threshold that triggers a non-zero exit (error|warning|info).
         #[arg(long, default_value = "error")]
         fail_on: String,
+        /// Output format for the report.
+        #[arg(long, value_enum, default_value = "json")]
+        format: PolicyReportFormat,
     },
 }
 
@@ -2921,7 +2931,8 @@ fn architecture_policy_cmd(action: PolicyAction, ctx: &CliContext) -> Result<i32
             policy,
             json,
             fail_on,
-        } => architecture_policy_check_cmd(cwd, policy, json, fail_on, ctx),
+            format,
+        } => architecture_policy_check_cmd(cwd, policy, json, fail_on, format, ctx),
     }
 }
 
@@ -2930,9 +2941,11 @@ fn architecture_policy_check_cmd(
     policy: Option<PathBuf>,
     json: bool,
     fail_on: String,
+    format: PolicyReportFormat,
     ctx: &CliContext,
 ) -> Result<i32> {
     use crate::architecture::policy::{PolicyError, PolicyReport, Severity};
+    use crate::architecture::report_formats::{to_junit_xml, to_sarif};
 
     // Validate fail_on before touching the graph or the policy file.
     let fail_on_severity = match fail_on.as_str() {
@@ -2998,51 +3011,24 @@ fn architecture_policy_check_cmd(
             }
         };
 
-    if json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+    let effective_format = if json {
+        PolicyReportFormat::Json
     } else {
-        println!("Architecture Policy Report");
-        println!("Schema version: {}", report.schema_version);
-        println!("Capability: {}", report.capability);
-        println!("Fail-on threshold: {}", report.summary.fail_on);
-        println!();
-        println!(
-            "Summary: total={}, passed={}, failed={}, waived={}",
-            report.summary.total,
-            report.summary.passed,
-            report.summary.failed,
-            report.summary.waived
-        );
-        if !report.violations.is_empty() {
-            println!();
-            println!("Violations:");
-            for v in &report.violations {
-                println!(
-                    "  [{}] {} — {} (subject: {})",
-                    match v.severity {
-                        Severity::Error => "error",
-                        Severity::Warning => "warning",
-                        Severity::Info => "info",
-                    },
-                    v.rule,
-                    v.message,
-                    v.subject.id
-                );
-            }
+        format
+    };
+
+    match effective_format {
+        PolicyReportFormat::Json | PolicyReportFormat::Sarif => {
+            let output = if effective_format == PolicyReportFormat::Json {
+                serde_json::to_string_pretty(&report)?
+            } else {
+                let sarif_log = to_sarif(&report);
+                serde_json::to_string_pretty(&sarif_log)?
+            };
+            println!("{}", output);
         }
-        if !report.waivers.is_empty() {
-            println!();
-            println!("Waivers:");
-            for w in &report.waivers {
-                let state = if w.expired { "EXPIRED" } else { "active" };
-                println!("  [{state}] {} on {} — {}", w.rule, w.subject_id, w.reason);
-            }
-        }
-        if !report.warnings.is_empty() {
-            println!();
-            for w in &report.warnings {
-                println!("⚠ {w}");
-            }
+        PolicyReportFormat::Junit => {
+            println!("{}", to_junit_xml(&report));
         }
     }
 

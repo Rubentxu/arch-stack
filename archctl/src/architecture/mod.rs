@@ -22,6 +22,7 @@ pub mod digest;
 pub mod errors;
 pub mod explain;
 pub mod policy;
+pub mod report_formats;
 pub mod snapshot;
 
 // Public re-exports
@@ -30,4 +31,5 @@ pub use diff::{ArchitectureDiffReport, DiffError, diff_snapshots};
 pub use errors::{SnapshotError, SnapshotGcReport};
 pub use explain::{ExplainError, ExplainReport, explain};
 pub use policy::{PolicyError, PolicyReport, PolicyRule, Waiver, check_policy};
+pub use report_formats::{to_junit_xml, to_sarif};
 pub use snapshot::{create, gc, list};
