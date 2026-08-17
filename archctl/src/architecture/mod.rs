@@ -28,6 +28,10 @@ pub mod snapshot;
 pub mod task_context;
 
 // Public re-exports
+pub use crate::observation_claim::{
+    Claim, Observation, ObservationError, compat_claim_from_evidence, observation_from_evidence,
+    observations_and_claims_for_version,
+};
 pub use coverage::{CoverageError, CoverageReport, coverage};
 pub use diff::{ArchitectureDiffReport, DiffError, diff_snapshots};
 pub use errors::{SnapshotError, SnapshotGcReport};

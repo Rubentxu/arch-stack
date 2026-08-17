@@ -243,6 +243,17 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Derive observations and compatibility claims for a version.
+    Observe {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Version id to project observations and claims for.
+        #[arg(long)]
+        version_id: String,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -959,6 +970,11 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 top,
                 json,
             } => architecture_context_cmd(cwd, &task, budget_tokens, top, json, ctx),
+            ArchitectureAction::Observe {
+                cwd,
+                version_id,
+                json,
+            } => architecture_observe_cmd(cwd, &version_id, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2897,6 +2913,89 @@ fn architecture_explain_cmd(
             for w in &report.warnings {
                 println!("⚠ {w}");
             }
+        }
+    }
+
+    Ok(0)
+}
+
+fn architecture_observe_cmd(
+    cwd: Option<PathBuf>,
+    version_id: &str,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::observation_claim::{Claim, Observation, ObservationError};
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    // Validate version_id before touching the store.
+    if let Err(e) = crate::graph::validate_identifier(version_id) {
+        if json {
+            eprintln!("{{\"error\": \"invalid version id: {version_id}\", \"details\": \"{e}\"}}");
+        } else {
+            eprintln!("error: invalid version id: {version_id} — {e}");
+        }
+        return Ok(1);
+    }
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let (observations, claims) = match crate::observation_claim::observations_and_claims_for_version(
+        &*store, version_id,
+    ) {
+        Ok(pair) => pair,
+        Err(ObservationError::Store(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"{msg}\"}}");
+            } else {
+                eprintln!("error: {msg}");
+            }
+            return Ok(1);
+        }
+        Err(ObservationError::InvalidVersionId(msg)) => {
+            if json {
+                eprintln!(
+                    "{{\"error\": \"invalid version id: {version_id}\", \"details\": \"{msg}\"}}"
+                );
+            } else {
+                eprintln!("error: invalid version id: {version_id} — {msg}");
+            }
+            return Ok(1);
+        }
+    };
+
+    if json {
+        #[derive(serde::Serialize)]
+        struct ObserveReport<'a> {
+            observations: &'a [Observation],
+            claims: &'a [Claim],
+        }
+        let report = ObserveReport {
+            observations: &observations,
+            claims: &claims,
+        };
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        println!("Architecture Observe Report");
+        println!("Version: {version_id}");
+        println!();
+        println!(
+            "{} observation(s), {} claim(s)",
+            observations.len(),
+            claims.len()
+        );
+        for claim in &claims {
+            println!(
+                "  {}  status={}  confidence={}  fused={}",
+                claim.id, claim.status, claim.confidence, claim.fused
+            );
+        }
+        if observations.len() != claims.len() {
+            // This should never happen — parallel arrays guarantee same length
+            println!();
+            println!("⚠ internal error: observation/claim array length mismatch");
         }
     }
 

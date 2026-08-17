@@ -22,6 +22,7 @@ editable = [
     "archctl/src/architecture/relevance.rs",
     "archctl/src/architecture/report_formats.rs",
     "archctl/src/architecture/task_context.rs",
+    "archctl/src/observation_claim.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -62,6 +63,11 @@ public_symbols = [
     "ContextElement",
     "ContextRelation",
     "ContextError",
+    "Observation",
+    "Claim",
+    "observation_from_evidence",
+    "compat_claim_from_evidence",
+    "observations_and_claims_for_version",
 ]
 
 # Textual invariants that prove the module does what its scope declares.
@@ -101,6 +107,11 @@ must_hold = [
     "pub fn compile_task_context(",
     "pub struct TaskContextReport",
     "pub enum ContextError",
+    "pub struct Observation",
+    "pub struct Claim",
+    "pub fn observation_from_evidence(",
+    "pub fn compat_claim_from_evidence(",
+    "pub fn observations_and_claims_for_version(",
 ]
 
 # Minimum number of #[test] items in the architecture module.
