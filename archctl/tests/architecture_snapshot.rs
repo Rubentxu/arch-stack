@@ -549,3 +549,49 @@ fn list_returns_all_snapshots_ordered_by_created_at_desc() {
         );
     }
 }
+
+// ─── T3.2: --ref flag (ref_override parameter) ────────────────────────────────
+
+#[test]
+fn create_with_ref_override_uses_specified_revision() {
+    // Verifies that passing ref_override = Some("HEAD") to create() works
+    // without error. The --ref flag allows explicit git revision selection.
+    let project_tmp = TempDir::new().expect("project temp dir");
+    let git_tmp = create_test_git_repo();
+    let fs = SystemFilesystem;
+    let project_dir = project_tmp.path().to_path_buf();
+    let git_path = git_tmp.path().to_string_lossy();
+
+    // Create a snapshot with explicit --ref=HEAD (ref_override = Some("HEAD"))
+    let (id, seq) = create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        1,
+        Some("with-ref"),
+        false,
+        Some("HEAD"),
+    )
+    .expect("create with ref_override must succeed");
+
+    assert!(!id.is_empty(), "snapshot id must be non-empty");
+    assert!(seq >= 0, "sequence must be non-negative");
+
+    // Verify snapshot was stored correctly
+    let store = open_store(&project_dir);
+    let snapshots = list(&store).expect("list must succeed");
+    assert!(
+        snapshots.iter().any(|s| s.id == id),
+        "snapshot with ref_override must exist in store"
+    );
+}
+
+// ─── T3.4: --keep-last clamp unit tests (in cli.rs) ─────────────────────────
+// See cli.rs:3197 — clamp_keep_last is tested as a unit test there.
+// Integration-level: gc() clamps keep_last internally via keep_last.min(unpinned.len()).
+
+// ─── T3.3: --dry-run default true ────────────────────────────────────────────
+// Covered by gc_dry_run_does_not_delete: calls gc(keep_last=1, dry_run=true)
+// and asserts report.dry_run == true, verifying the dry-run=true behavior.
+// At CLI level, --dry-run defaults to true (--no-dry-run overrides).

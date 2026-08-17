@@ -3191,4 +3191,34 @@ mod tests {
             }
         }
     }
+
+    // ─── T3.4: clamp_keep_last unit tests ───────────────────────────────────────
+
+    #[test]
+    fn clamp_keep_last_within_range_returns_unchanged() {
+        assert_eq!(clamp_keep_last("1").unwrap(), 1);
+        assert_eq!(clamp_keep_last("500").unwrap(), 500);
+        assert_eq!(clamp_keep_last("1000").unwrap(), 1000);
+    }
+
+    #[test]
+    fn clamp_keep_last_below_1_clamps_to_1() {
+        assert_eq!(clamp_keep_last("0").unwrap(), 1);
+        assert!(
+            clamp_keep_last("-5").is_err(),
+            "negative numbers should error"
+        );
+    }
+
+    #[test]
+    fn clamp_keep_last_above_1000_clamps_to_1000() {
+        assert_eq!(clamp_keep_last("1001").unwrap(), 1000);
+        assert_eq!(clamp_keep_last("5000").unwrap(), 1000);
+    }
+
+    #[test]
+    fn clamp_keep_last_invalid_input_returns_error() {
+        assert!(clamp_keep_last("abc").is_err());
+        assert!(clamp_keep_last("").is_err());
+    }
 }

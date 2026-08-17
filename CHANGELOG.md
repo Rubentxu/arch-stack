@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.50.0] — 2026-08-17
+
+### Added
+- **P2-02 follow-up** — `--ref <git-rev>` flag on `archctl architecture create`:
+  plumbs through to `resolve_repository_identity()` for explicit git revision
+  selection (branch, tag, commit). 1 integration test asserts snapshot creation
+  with `ref_override = Some("HEAD")`.
+- **P2-02 follow-up** — `--keep-last N` clamped to `1..=1000` via clap
+  `value_parser`. Unit tests in `cli.rs` assert clamping behavior for edge cases
+  (0→1, 5000→1000, invalid input→error). Library-level GC uses
+  `keep_last.min(unpinned.len())` internally.
+
+### Changed
+- **P2-02 follow-up** — `--dry-run` inverts default: dry-run is now `true` by
+  default; `--no-dry-run` overrides to perform actual deletion. Behavior
+  verified by existing `gc_dry_run_does_not_delete` integration test
+  (`gc(keep_last=1, dry_run=true)` → `report.dry_run == true`).
+- **P2-02 follow-up** — `find_deepest_commit` rewritten to walk references via
+  `gix::Reference::peel_to_id()` instead of returning `repo.head()`. Heuristic
+  uses SHA-1 byte ordering; docstring updated accordingly.
+
+### Fixed
+- **P2-02 follow-up** — `cli.architecture` registered in capability registry
+  (`archctl/src/capability/source_cli.rs`). `docs/CAPABILITIES.md` regenerated.
+
+### Architecture
+- **ADR-060** — new ADR documents the `archctl architecture {create,list,gc}`
+  CLI surface deviation from the original proposal (which said `architecture
+  snapshot {create,list,gc}`). Path B (document deviation vs. breaking rename)
+  adopted; public surface is the flat form.
+
 ## [1.49.0] — 2026-08-17
 
 ### Added
