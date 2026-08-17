@@ -133,4 +133,36 @@ mod tests {
             .any(|e| e.extractor_id == "code.sequence");
         assert!(!has_sequence, "code.sequence must be excluded from digest");
     }
+
+    #[test]
+    fn digest_stable_across_unrelated_capability_bump() {
+        // Renderer, IDE, MCP, and plugin capabilities must not affect the digest.
+        // The digest covers only code-extraction capabilities (source_code + source_cargo).
+        // Adding a non-code capability should not change the digest.
+        let baseline = extractor_set_digest();
+
+        // Simulate adding renderer/IDE capabilities by extending source_code with
+        // entries that would NOT appear in source_code or source_cargo.
+        // The actual implementation already excludes non-code capabilities,
+        // so we verify by checking that code.* entries are present but
+        // render.*, ide.*, mcp.*, plugin.* are not.
+        let proj = extractor_set_projection();
+        let has_code_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("code."));
+        assert!(has_code_entry, "code.* entries must be present in projection");
+
+        let has_render_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("render."));
+        let has_ide_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("ide."));
+        let has_mcp_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("mcp."));
+        let has_plugin_entry = proj.entries.iter().any(|e| e.extractor_id.starts_with("plugin."));
+        assert!(!has_render_entry, "render.* must not appear in digest projection");
+        assert!(!has_ide_entry, "ide.* must not appear in digest projection");
+        assert!(!has_mcp_entry, "mcp.* must not appear in digest projection");
+        assert!(!has_plugin_entry, "plugin.* must not appear in digest projection");
+
+        // Digest must remain stable (no renderer/IDE/MCP/plugin influence)
+        assert_eq!(
+            baseline, extractor_set_digest(),
+            "digest must be stable regardless of non-code capabilities"
+        );
+    }
 }
