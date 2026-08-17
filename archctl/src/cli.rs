@@ -209,6 +209,22 @@ pub enum ArchitectureAction {
         #[command(subcommand)]
         action: PolicyAction,
     },
+    /// Compute a deterministic scored shortlist of elements and relations matching a query.
+    Relevance {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Query string (exact element id or free-text).
+        query: String,
+        /// Maximum number of results to return (default: 10).
+        #[arg(long)]
+        top: Option<usize>,
+        /// Maximum BFS expansion hop distance from seeds (default: 1).
+        #[arg(long)]
+        max_hops: Option<usize>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -911,6 +927,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             }
             ArchitectureAction::Coverage { cwd, json } => architecture_coverage_cmd(cwd, json, ctx),
             ArchitectureAction::Policy { action } => architecture_policy_cmd(action, ctx),
+            ArchitectureAction::Relevance {
+                cwd,
+                query,
+                top,
+                max_hops,
+                json,
+            } => architecture_relevance_cmd(cwd, &query, top, max_hops, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2934,6 +2957,94 @@ fn architecture_policy_cmd(action: PolicyAction, ctx: &CliContext) -> Result<i32
             format,
         } => architecture_policy_check_cmd(cwd, policy, json, fail_on, format, ctx),
     }
+}
+
+fn architecture_relevance_cmd(
+    cwd: Option<PathBuf>,
+    query: &str,
+    top: Option<usize>,
+    max_hops: Option<usize>,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::relevance::{RelevanceError, RelevanceOptions};
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    let opts = RelevanceOptions {
+        top: top.unwrap_or(10),
+        max_hops: max_hops.unwrap_or(1),
+    };
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let report = match crate::architecture::relevance(&*store, query, &opts) {
+        Ok(r) => r,
+        Err(RelevanceError::EmptyQuery) => {
+            if json {
+                eprintln!("{{\"error\": \"empty relevance query\"}}");
+            } else {
+                eprintln!("error: empty relevance query");
+            }
+            return Ok(1);
+        }
+        Err(RelevanceError::Store(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"{msg}\"}}");
+            } else {
+                eprintln!("error: {msg}");
+            }
+            return Ok(1);
+        }
+    };
+
+    // Exit 0 even if empty (per spec S6)
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Architecture Relevance Report");
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!("Query: {}", report.query);
+        println!();
+        println!(
+            "{} element(s), {} relation(s)",
+            report.elements.len(),
+            report.relations.len()
+        );
+        println!("Seeds matched: {}", report.selection_trace.seeds_matched);
+        println!(
+            "Candidates scanned: {}",
+            report.selection_trace.candidates_scanned
+        );
+        println!(
+            "Expansion edges followed: {}",
+            report.selection_trace.expansion_edges_followed
+        );
+        if !report.elements.is_empty() {
+            println!();
+            println!("Elements:");
+            for elem in &report.elements {
+                println!(
+                    "  [{:.3}] {} ({}) — {}",
+                    elem.score, elem.id, elem.match_type, elem.name
+                );
+            }
+        }
+        if !report.relations.is_empty() {
+            println!();
+            println!("Relations:");
+            for rel in &report.relations {
+                println!(
+                    "  [{:.3}] {} ({}: {} → {})",
+                    rel.score, rel.relation_id, rel.predicate_id, rel.source_id, rel.target_id
+                );
+            }
+        }
+    }
+
+    Ok(0)
 }
 
 fn architecture_policy_check_cmd(

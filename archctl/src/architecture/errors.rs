@@ -7,6 +7,7 @@ use crate::architecture::coverage::CoverageError;
 use crate::architecture::diff::DiffError;
 use crate::architecture::explain::ExplainError;
 use crate::architecture::policy::PolicyError;
+use crate::architecture::relevance::RelevanceError;
 
 /// Errors specific to snapshot operations.
 #[derive(Debug, Error)]
@@ -31,6 +32,9 @@ pub enum SnapshotError {
 
     #[error("policy error: {0}")]
     Policy(#[from] PolicyError),
+
+    #[error("relevance error: {0}")]
+    Relevance(#[from] RelevanceError),
 }
 
 impl From<DiffError> for SnapshotError {

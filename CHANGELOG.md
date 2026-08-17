@@ -37,12 +37,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
    `<failure>` for error/warning, `<skipped/>` for info. Hand-rolled XML
    (no external crate). 7 unit tests in `report_formats.rs` and 7
    integration tests in `archctl/tests/architecture_policy_report_formats.rs`.
- - **P2-06** — `archctl architecture policy check --format {json,sarif,junit}`
+  - **P2-06** — `archctl architecture policy check --format {json,sarif,junit}`
    CLI flag (`PolicyReportFormat` enum: `Json`, `Sarif`, `Junit`). Existing
    `--json` flag preserved as deprecated alias for `--format json`. Output
    via projectors in `architecture_policy_check_cmd`. `manifests/architecture.toml`
    updated (report_formats.rs in editable; `to_sarif`/`to_junit_xml` in
    public_symbols and must_hold).
+  - **P2-07 context relevance engine MVP** — `archctl/src/architecture/relevance.rs`
+   with `RelevanceReport` carrier (schema `relevance-report/1`, schemaVersion
+   `1.0`, capability `architecture-relevance-mvp`), `RelevanceOptions { top,
+   max_hops }`, `RelevanceError { EmptyQuery, Store }`, and pure
+   `relevance(&dyn DiagramRepository, &str, &RelevanceOptions) -> RelevanceReport`
+   use case. Scoring: exact-id → 1.0 × max(0.1, confidence); name/canonical_key
+   substring (case-insensitive, ASCII-folded) → 0.8 × max(0.1, confidence);
+   multi-token → proportional; BFS expansion 0.5^hop × confidence; relations
+   0.5 × min(srcScore, tgtScore) when source/target in shortlist. Sort (score
+   DESC, id ASC). ASCII-fold: ñ→n, á→a, é→e, í→i, ó→o, ú→u, ü→u. Stopword
+   drop (EN+ES). `manifests/architecture.toml` updated (relevance.rs in
+   editable; relevance symbols in public_symbols and must_hold).
+  - **P2-07** — `archctl architecture relevance --query <text> [--top N] [--max-hops N]
+   [--json]` CLI command: opens project store, calls `relevance()`, prints
+   JSON (`RelevanceReport`) or human shortlist. Exit 0 on success (incl. empty
+   results), exit 1 on `RelevanceError`. `schemas/relevance-report.schema.json`
+   shipped. No new Cargo dependencies.
  - **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
   `ExplainReport` carrier (schema `explain-report/1`), `ExplainError
   { SubjectNotFound, RelationNotFound, Store }`, and pure
