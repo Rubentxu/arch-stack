@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::architecture::relevance::{self, RelevanceOptions, RelevanceError, SelectionTrace};
+use crate::architecture::relevance::{self, RelevanceError, RelevanceOptions, SelectionTrace};
 use crate::diagram::export_types::EvidenceEntry;
 use crate::store::DiagramRepository;
 
