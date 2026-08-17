@@ -21,6 +21,7 @@ pub mod diff;
 pub mod digest;
 pub mod errors;
 pub mod explain;
+pub mod policy;
 pub mod snapshot;
 
 // Public re-exports
@@ -28,4 +29,5 @@ pub use coverage::{CoverageError, CoverageReport, coverage};
 pub use diff::{ArchitectureDiffReport, DiffError, diff_snapshots};
 pub use errors::{SnapshotError, SnapshotGcReport};
 pub use explain::{ExplainError, ExplainReport, explain};
+pub use policy::{PolicyError, PolicyReport, PolicyRule, Waiver, check_policy};
 pub use snapshot::{create, gc, list};

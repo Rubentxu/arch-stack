@@ -204,6 +204,29 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Evaluate a declarative policy (JSON rules) against the live architecture graph.
+    Policy {
+        #[command(subcommand)]
+        action: PolicyAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PolicyAction {
+    /// Check the policy file against the live graph.
+    Check {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Path to the policy JSON file (reads stdin when omitted).
+        #[arg(long)]
+        policy: Option<PathBuf>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+        /// Severity threshold that triggers a non-zero exit (error|warning|info).
+        #[arg(long, default_value = "error")]
+        fail_on: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -877,6 +900,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 architecture_explain_cmd(cwd, &id, json, ctx)
             }
             ArchitectureAction::Coverage { cwd, json } => architecture_coverage_cmd(cwd, json, ctx),
+            ArchitectureAction::Policy { action } => architecture_policy_cmd(action, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2888,6 +2912,146 @@ fn architecture_coverage_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext)
     }
 
     Ok(0)
+}
+
+fn architecture_policy_cmd(action: PolicyAction, ctx: &CliContext) -> Result<i32> {
+    match action {
+        PolicyAction::Check {
+            cwd,
+            policy,
+            json,
+            fail_on,
+        } => architecture_policy_check_cmd(cwd, policy, json, fail_on, ctx),
+    }
+}
+
+fn architecture_policy_check_cmd(
+    cwd: Option<PathBuf>,
+    policy: Option<PathBuf>,
+    json: bool,
+    fail_on: String,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::policy::{PolicyError, PolicyReport, Severity};
+
+    // Validate fail_on before touching the graph or the policy file.
+    let fail_on_severity = match fail_on.as_str() {
+        "info" => Severity::Info,
+        "warning" => Severity::Warning,
+        "error" => Severity::Error,
+        other => {
+            eprintln!("error: invalid --fail-on value '{other}' (expected error|warning|info)");
+            return Ok(1);
+        }
+    };
+
+    // Read the policy document (file or stdin) BEFORE any graph read (S5).
+    let raw = match &policy {
+        Some(path) => std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read policy file {}", path.display()))?,
+        None => {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .context("failed to read policy from stdin")?;
+            buf
+        }
+    };
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&raw).with_context(|| "malformed policy document: invalid JSON")?;
+    let rules: Vec<crate::architecture::policy::PolicyRule> = serde_json::from_value(
+        doc.get("rules")
+            .cloned()
+            .unwrap_or(serde_json::Value::Array(vec![])),
+    )
+    .with_context(|| "malformed policy document: invalid rules[]")?;
+    let waivers: Vec<crate::architecture::policy::Waiver> = serde_json::from_value(
+        doc.get("waivers")
+            .cloned()
+            .unwrap_or(serde_json::Value::Array(vec![])),
+    )
+    .with_context(|| "malformed policy document: invalid waivers[]")?;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let now = chrono::DateTime::parse_from_rfc3339(&ctx.clock.now_rfc3339())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|_| chrono::Utc::now());
+    let report: PolicyReport =
+        match crate::architecture::policy::check_policy(&rules, &waivers, &*store, &fail_on, now) {
+            Ok(r) => r,
+            Err(PolicyError::RepoRead(msg)) => {
+                if json {
+                    eprintln!("{{\"error\": \"{msg}\"}}");
+                } else {
+                    eprintln!("error: {msg}");
+                }
+                return Ok(1);
+            }
+            Err(other) => {
+                eprintln!("error: {other}");
+                return Ok(1);
+            }
+        };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Architecture Policy Report");
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!("Fail-on threshold: {}", report.summary.fail_on);
+        println!();
+        println!(
+            "Summary: total={}, passed={}, failed={}, waived={}",
+            report.summary.total,
+            report.summary.passed,
+            report.summary.failed,
+            report.summary.waived
+        );
+        if !report.violations.is_empty() {
+            println!();
+            println!("Violations:");
+            for v in &report.violations {
+                println!(
+                    "  [{}] {} — {} (subject: {})",
+                    match v.severity {
+                        Severity::Error => "error",
+                        Severity::Warning => "warning",
+                        Severity::Info => "info",
+                    },
+                    v.rule,
+                    v.message,
+                    v.subject.id
+                );
+            }
+        }
+        if !report.waivers.is_empty() {
+            println!();
+            println!("Waivers:");
+            for w in &report.waivers {
+                let state = if w.expired { "EXPIRED" } else { "active" };
+                println!("  [{state}] {} on {} — {}", w.rule, w.subject_id, w.reason);
+            }
+        }
+        if !report.warnings.is_empty() {
+            println!();
+            for w in &report.warnings {
+                println!("⚠ {w}");
+            }
+        }
+    }
+
+    // Exit code: non-zero when any remaining violation meets the fail-on threshold.
+    let breached = report
+        .violations
+        .iter()
+        .any(|v| v.severity >= fail_on_severity);
+    Ok(if breached { 1 } else { 0 })
 }
 
 fn code_sequence_cmd(

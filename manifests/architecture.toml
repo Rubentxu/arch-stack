@@ -18,6 +18,7 @@ editable = [
     "archctl/src/architecture/diff.rs",
     "archctl/src/architecture/explain.rs",
     "archctl/src/architecture/coverage.rs",
+    "archctl/src/architecture/policy.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -39,6 +40,12 @@ public_symbols = [
     "coverage",
     "CoverageReport",
     "CoverageError",
+    "check_policy",
+    "PolicyRule",
+    "PolicyReport",
+    "PolicyError",
+    "Waiver",
+    "matches_selector",
 ]
 
 # Textual invariants that prove the module does what its scope declares.
@@ -61,6 +68,12 @@ must_hold = [
     "pub fn coverage(",
     "pub struct CoverageReport",
     "pub enum CoverageError",
+    "pub fn check_policy(",
+    "pub enum PolicyRule",
+    "pub struct PolicyReport",
+    "pub enum PolicyError",
+    "pub struct Waiver",
+    "pub fn matches_selector(",
 ]
 
 # Minimum number of #[test] items in the architecture module.
