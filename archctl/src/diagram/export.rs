@@ -100,9 +100,13 @@ pub fn build_bundle(
         .map(|e| e.current_version_id.clone())
         .collect();
 
+    // Filter to accepted evidence only for the bundle (ADR-005: only canonical evidence in projections)
     let evidence_entries = store
         .list_evidence_for_versions(&version_ids)
-        .context("list_evidence_for_versions failed")?;
+        .context("list_evidence_for_versions failed")?
+        .into_iter()
+        .filter(|e| e.status.as_deref() == Some("accepted"))
+        .collect::<Vec<_>>();
 
     let version_props = store
         .list_version_props(&version_ids)
@@ -551,6 +555,19 @@ mod tests {
                         .and_then(|c| c.as_str())
                         .unwrap_or_default()
                         .to_string(),
+                    status: row.get("e.props").and_then(|p| {
+                        if let crate::row::Cell::Object(kvs) = p {
+                            kvs.iter().find(|(k, _)| *k == "status").and_then(|(_, v)| {
+                                if let crate::row::Cell::String(s) = v {
+                                    Some(s.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        } else {
+                            None
+                        }
+                    }),
                 })
                 .collect())
         }

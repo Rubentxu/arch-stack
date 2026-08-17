@@ -3,6 +3,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::architecture::coverage::CoverageError;
 use crate::architecture::diff::DiffError;
 use crate::architecture::explain::ExplainError;
 
@@ -36,6 +37,12 @@ impl From<DiffError> for SnapshotError {
 
 impl From<ExplainError> for SnapshotError {
     fn from(err: ExplainError) -> Self {
+        SnapshotError::Store(anyhow::anyhow!("{err}"))
+    }
+}
+
+impl From<CoverageError> for SnapshotError {
+    fn from(err: CoverageError) -> Self {
         SnapshotError::Store(anyhow::anyhow!("{err}"))
     }
 }

@@ -17,6 +17,7 @@ editable = [
     "archctl/src/architecture/digest.rs",
     "archctl/src/architecture/diff.rs",
     "archctl/src/architecture/explain.rs",
+    "archctl/src/architecture/coverage.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -35,6 +36,9 @@ public_symbols = [
     "ExplainError",
     "ExplainSubject",
     "ExplainProvenance",
+    "coverage",
+    "CoverageReport",
+    "CoverageError",
 ]
 
 # Textual invariants that prove the module does what its scope declares.
@@ -54,6 +58,9 @@ must_hold = [
     "pub enum ExplainError",
     "pub struct ExplainSubject",
     "pub struct ExplainProvenance",
+    "pub fn coverage(",
+    "pub struct CoverageReport",
+    "pub enum CoverageError",
 ]
 
 # Minimum number of #[test] items in the architecture module.

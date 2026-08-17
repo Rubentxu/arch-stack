@@ -196,6 +196,14 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Compute evidence quality coverage metrics over the live architecture graph.
+    Coverage {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -868,6 +876,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             ArchitectureAction::Explain { cwd, id, json } => {
                 architecture_explain_cmd(cwd, &id, json, ctx)
             }
+            ArchitectureAction::Coverage { cwd, json } => architecture_coverage_cmd(cwd, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2801,6 +2810,75 @@ fn architecture_explain_cmd(
                 ev.path, ev.start_line, ev.tool_name, ev.rule_id
             );
         }
+        if !report.warnings.is_empty() {
+            println!();
+            for w in &report.warnings {
+                println!("⚠ {w}");
+            }
+        }
+    }
+
+    Ok(0)
+}
+
+fn architecture_coverage_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<i32> {
+    use crate::architecture::coverage::{CoverageError, CoverageReport};
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let report: CoverageReport = match crate::architecture::coverage(&*store, &*ctx.clock) {
+        Ok(r) => r,
+        Err(CoverageError::Store(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"{msg}\"}}");
+            } else {
+                eprintln!("error: {msg}");
+            }
+            return Ok(1);
+        }
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Architecture Coverage Report");
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!();
+        println!("Totals:");
+        println!("  Elements: {}", report.total_elements);
+        println!("  Relations: {}", report.total_relations);
+        println!();
+        println!("By Confidence (high ≥ 0.9, medium ≥ 0.7, low ≥ 0.5, unknown < 0.5):");
+        println!(
+            "  High: {}, Medium: {}, Low: {}, Unknown: {}",
+            report.by_confidence.high,
+            report.by_confidence.medium,
+            report.by_confidence.low,
+            report.by_confidence.unknown
+        );
+        println!();
+        println!("By Evidence Status:");
+        println!(
+            "  Accepted: {}, Drafted: {}, Superseded: {}",
+            report.by_evidence_status.accepted,
+            report.by_evidence_status.drafted,
+            report.by_evidence_status.superseded
+        );
+        println!();
+        println!("By Conflict:");
+        println!("  Conflicted: {}", report.by_conflict.conflicted);
+        println!();
+        println!("By Staleness (fresh ≤ 90 days, stale > 90 days):");
+        println!(
+            "  Fresh: {}, Stale: {}",
+            report.by_staleness.fresh, report.by_staleness.stale
+        );
+        println!();
+        println!("Unsubstantiated elements: {}", report.unsubstantiated_count);
         if !report.warnings.is_empty() {
             println!();
             for w in &report.warnings {
