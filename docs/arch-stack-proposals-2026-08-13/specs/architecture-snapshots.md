@@ -18,7 +18,7 @@ Identity, creation, ref resolution, retention, schema/extractor digest.
 
 ## Public surface
 
-`archctl architecture snapshot create/list/gc`; SnapshotRepository.
+`archctl architecture create/list/gc`; SnapshotRepository.
 
 ## Modelo y semántica
 

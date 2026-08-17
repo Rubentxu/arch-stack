@@ -40,3 +40,5 @@ must_hold = [
 
 # Minimum number of #[test] items in the architecture module.
 minimum_tests = 1
+
+must_not_contain = ["use crate::store::LbugStore"]

@@ -19,6 +19,7 @@ use crate::store::{GraphStore, LbugStore, Snapshot, SnapshotRepository, UnitOfWo
 /// Uses `UnitOfWork` for atomic writes and proper lbug lock acquisition.
 ///
 /// Returns `(snapshot_id, sequence)`.
+#[allow(clippy::too_many_arguments)]
 pub fn create(
     project_dir: &Path,
     cwd: &str,
@@ -27,6 +28,7 @@ pub fn create(
     schema_version: i64,
     label: Option<&str>,
     pinned: bool,
+    ref_override: Option<&str>,
 ) -> Result<(String, i64), SnapshotError> {
     // Open the store (acquires flock — ADR-010)
     let mut store = LbugStore::open(project_dir)
@@ -37,7 +39,7 @@ pub fn create(
         .map_err(|e| SnapshotError::Store(anyhow::anyhow!("store.init: {e}")))?;
 
     // Resolve stable repository identity
-    let repo_identity: RepositoryIdentity = resolve_repository_identity(cwd, fs)?
+    let repo_identity: RepositoryIdentity = resolve_repository_identity(cwd, fs, ref_override)?
         .ok_or_else(|| SnapshotError::NotGitRepository(cwd.to_string()))?;
 
     let extractor_digest = extractor_set_digest();
