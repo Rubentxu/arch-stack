@@ -168,8 +168,11 @@ pub fn to_junit_xml(report: &PolicyReport) -> String {
     ));
     s.push('\n');
 
-    // One testsuite wrapper (matches the typical JUnit consumer expectation)
-    s.push_str(r#"  <testsuite name="archctl-policy" tests="" failures="" skipped="">"#);
+    // One testsuite wrapper (matches the typical JUnit consumer expectation);
+    // inner counts mirror the root attributes (single-suite report).
+    s.push_str(&format!(
+        r#"  <testsuite name="archctl-policy" tests="{tests}" failures="{errors}" skipped="{skipped}">"#
+    ));
     s.push('\n');
 
     for v in &report.violations {
@@ -364,6 +367,22 @@ mod tests {
         assert!(xml.contains(r#"tests="4""#), "xml = {xml}");
         assert!(xml.contains(r#"failures="3""#), "xml = {xml}");
         assert!(xml.contains(r#"skipped="1""#), "xml = {xml}");
+    }
+
+    /// Regression: the inner <testsuite> must carry the same counts as the
+    /// root <testsuites> — some CI consumers (GitLab, Azure Pipelines) read
+    /// only the inner element and saw empty counters.
+    #[test]
+    fn junit_inner_testsuite_carries_counts() {
+        let report = make_report(vec![
+            (Severity::Error, "forbid_dependency", "a"),
+            (Severity::Info, "evidence_required", "d"),
+        ]);
+        let xml = to_junit_xml(&report);
+        assert!(
+            xml.contains(r#"<testsuite name="archctl-policy" tests="2" failures="1" skipped="1">"#),
+            "inner testsuite must carry counts; xml = {xml}"
+        );
     }
 
     #[test]
