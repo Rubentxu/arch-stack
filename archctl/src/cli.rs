@@ -226,6 +226,23 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Compile a deterministic budgeted context bundle for a natural-language task.
+    Context {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Task string (natural-language query).
+        #[arg(long)]
+        task: String,
+        /// Maximum token budget for the context bundle (default: 4000).
+        #[arg(long)]
+        budget_tokens: Option<usize>,
+        /// Maximum number of top-scored elements to consider (default: 10).
+        #[arg(long)]
+        top: Option<usize>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -935,6 +952,13 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 max_hops,
                 json,
             } => architecture_relevance_cmd(cwd, &query, top, max_hops, json, ctx),
+            ArchitectureAction::Context {
+                cwd,
+                task,
+                budget_tokens,
+                top,
+                json,
+            } => architecture_context_cmd(cwd, &task, budget_tokens, top, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -3030,6 +3054,98 @@ fn architecture_relevance_cmd(
                 println!(
                     "  [{:.3}] {} ({}) — {}",
                     elem.score, elem.id, elem.match_type, elem.name
+                );
+            }
+        }
+        if !report.relations.is_empty() {
+            println!();
+            println!("Relations:");
+            for rel in &report.relations {
+                println!(
+                    "  [{:.3}] {} ({}: {} → {})",
+                    rel.score, rel.relation_id, rel.predicate_id, rel.source_id, rel.target_id
+                );
+            }
+        }
+    }
+
+    Ok(0)
+}
+
+fn architecture_context_cmd(
+    cwd: Option<PathBuf>,
+    task: &str,
+    budget_tokens: Option<usize>,
+    top: Option<usize>,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::task_context::ContextError;
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    let budget = budget_tokens.unwrap_or(4000);
+    let top_n = top.unwrap_or(10);
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let report = match crate::architecture::compile_task_context(&*store, task, budget, top_n) {
+        Ok(r) => r,
+        Err(ContextError::EmptyTask) => {
+            if json {
+                eprintln!("{{\"error\": \"empty task\"}}");
+            } else {
+                eprintln!("error: empty task");
+            }
+            return Ok(1);
+        }
+        Err(ContextError::InvalidBudget) => {
+            if json {
+                eprintln!("{{\"error\": \"budget must be > 0\"}}");
+            } else {
+                eprintln!("error: budget must be > 0");
+            }
+            return Ok(1);
+        }
+        Err(ContextError::Store(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"{msg}\"}}");
+            } else {
+                eprintln!("error: {msg}");
+            }
+            return Ok(1);
+        }
+    };
+
+    // Exit 0 even if empty (per spec S6)
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Architecture Task Context Report");
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!("Task: {}", report.task);
+        println!();
+        println!(
+            "{} element(s), {} relation(s)",
+            report.elements.len(),
+            report.relations.len()
+        );
+        println!(
+            "Budget: {} / {} tokens (truncated: {})",
+            report.budget.estimated_tokens, report.budget.requested_tokens, report.budget.truncated
+        );
+        if !report.elements.is_empty() {
+            println!();
+            println!("Elements:");
+            for elem in &report.elements {
+                println!(
+                    "  [{:.3}] {} — {} ({} evidence)",
+                    elem.score,
+                    elem.id,
+                    elem.name,
+                    elem.evidence.len()
                 );
             }
         }

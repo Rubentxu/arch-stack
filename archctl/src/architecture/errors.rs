@@ -8,6 +8,7 @@ use crate::architecture::diff::DiffError;
 use crate::architecture::explain::ExplainError;
 use crate::architecture::policy::PolicyError;
 use crate::architecture::relevance::RelevanceError;
+use crate::architecture::task_context::ContextError;
 
 /// Errors specific to snapshot operations.
 #[derive(Debug, Error)]
@@ -35,6 +36,9 @@ pub enum SnapshotError {
 
     #[error("relevance error: {0}")]
     Relevance(#[from] RelevanceError),
+
+    #[error("context error: {0}")]
+    Context(#[from] ContextError),
 }
 
 impl From<DiffError> for SnapshotError {

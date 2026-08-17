@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/task-context.schema.json",
+  "title": "Task Context Report",
+  "description": "archctl architecture task context output (schemaVersion 1.0, capability architecture-task-context-mvp)",
+  "type": "object",
+  "required": ["schemaVersion", "capability", "task", "elements", "relations", "budget", "selectionTrace"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "capability": {
+      "const": "architecture-task-context-mvp"
+    },
+    "task": {
+      "type": "string"
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kindId", "category", "name", "score", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "kindId": { "type": "string" },
+          "category": { "type": "string" },
+          "name": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "kind", "claim", "path", "startLine", "endLine", "toolName", "toolVersion", "ruleId", "contentHash", "observedAt"],
+              "properties": {
+                "id": { "type": "string" },
+                "kind": { "type": "string" },
+                "claim": { "type": "string" },
+                "path": { "type": "string" },
+                "startLine": { "type": "integer", "minimum": 0 },
+                "endLine": { "type": "integer", "minimum": 0 },
+                "toolName": { "type": "string" },
+                "toolVersion": { "type": "string" },
+                "ruleId": { "type": "string" },
+                "contentHash": { "type": "string" },
+                "observedAt": { "type": "string" },
+                "status": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relationId", "predicateId", "sourceId", "targetId", "score"],
+        "properties": {
+          "relationId": { "type": "string" },
+          "predicateId": { "type": "string" },
+          "sourceId": { "type": "string" },
+          "targetId": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": ["requestedTokens", "estimatedTokens", "truncated"],
+      "properties": {
+        "requestedTokens": { "type": "integer", "minimum": 0 },
+        "estimatedTokens": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "selectionTrace": {
+      "type": "object",
+      "required": ["seedsMatched", "candidatesScanned", "expansionEdgesFollowed"],
+      "properties": {
+        "seedsMatched": { "type": "integer", "minimum": 0 },
+        "candidatesScanned": { "type": "integer", "minimum": 0 },
+        "expansionEdgesFollowed": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "additionalProperties": false
+}

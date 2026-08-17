@@ -60,7 +60,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
    JSON (`RelevanceReport`) or human shortlist. Exit 0 on success (incl. empty
    results), exit 1 on `RelevanceError`. `schemas/relevance-report.schema.json`
    shipped. No new Cargo dependencies.
- - **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
+  - **P2-08 task context compiler MVP** — `archctl/src/architecture/task_context.rs`
+   with `TaskContextReport` carrier (schema `task-context/1`, schemaVersion
+   `1.0`, capability `architecture-task-context-mvp`), `BudgetInfo`,
+   `ContextElement`, `ContextRelation`, `ContextError { EmptyTask, InvalidBudget,
+   Store }`, and pure `compile_task_context(&dyn DiagramRepository, &str,
+   budget_tokens, top) -> Result<TaskContextReport, ContextError>` use case.
+   Delegates to P2-07 `relevance()` for ranking, enriches with evidence via
+   `list_evidence_for_versions`, packs elements under budget (token estimate
+   serialized_json_len / 4, ceiling division), relation closure (drops dangling
+   endpoints). Sort: (score DESC, id ASC) for elements, (sourceId ASC,
+   targetId ASC, predicateId ASC) for relations. Determinism: BTreeMap + sorted
+   Vec — byte-equal JSON across runs. 9 unit tests in task_context.rs.
+   `manifests/architecture.toml` updated (task_context.rs in editable;
+   compile_task_context, TaskContextReport, ContextElement, ContextRelation,
+   ContextError in public_symbols and must_hold).
+  - **P2-08** — `archctl architecture context --task <text> [--budget-tokens N]
+   [--top N] [--json]` CLI command: opens project store, calls
+   `compile_task_context()`, prints JSON (`TaskContextReport`) or human summary.
+   Defaults: `--budget-tokens 4000`, `--top 10`. Exit 0 on success (incl.
+   empty results), exit 1 on `ContextError`. `schemas/task-context.schema.json`
+   shipped. No new Cargo dependencies.
+  - **P2-08** — `archctl/tests/architecture_task_context.rs` integration tests:
+   S1 happy path with evidence, S2 budget truncation, S3 relation closure
+   (dangling dropped), S4 empty/whitespace task → EmptyTask, S5 budget 0 →
+   InvalidBudget, S6 empty graph → empty report exit 0, S7 JSON valid +
+   human readable, S8 evidence per retained element, S9 schema validates
+   report. No new Cargo dependencies.
+  - **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
   `ExplainReport` carrier (schema `explain-report/1`), `ExplainError
   { SubjectNotFound, RelationNotFound, Store }`, and pure
   `explain(&dyn DiagramRepository, &str) -> ExplainReport` use case.
