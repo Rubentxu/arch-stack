@@ -163,6 +163,7 @@ pub fn resolve_source_identity(cwd: &str, fs: &dyn Filesystem) -> Result<SourceI
 pub fn resolve_repository_identity(
     cwd: &str,
     fs: &dyn Filesystem,
+    ref_override: Option<&str>,
 ) -> Result<Option<RepositoryIdentity>> {
     let repo = match gix::open(cwd) {
         Ok(r) => r,
@@ -184,9 +185,19 @@ pub fn resolve_repository_identity(
         .unwrap_or_default();
     let remote = normalize_remote(&remote);
 
-    // Resolve the first/deepest commit: traverse all branch heads and find
-    // the one with the oldest commit time, then peel to an absolute ID.
-    let first_commit = find_deepest_commit(&repo);
+    // Resolve the first/deepest commit: if --ref is provided, use that
+    // revision directly; otherwise traverse all branch heads and find the
+    // one with the oldest commit time.
+    let first_commit = if let Some(rev) = ref_override {
+        // Resolve the given revision to a commit ID
+        repo.find_reference(rev)
+            .ok()
+            .and_then(|mut r| r.peel_to_id().ok())
+            .map(|id| format!("{id}"))
+            .unwrap_or_else(|| find_deepest_commit(&repo))
+    } else {
+        find_deepest_commit(&repo)
+    };
     let repo_identity = blake_like(&format!("repo|{remote}|{first_commit}"));
 
     Ok(Some(RepositoryIdentity {

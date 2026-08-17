@@ -115,6 +115,12 @@ pub enum ProjectAction {
     },
 }
 
+/// Clamp keep_last to 1..=1000 for the Gc command.
+fn clamp_keep_last(s: &str) -> Result<usize, String> {
+    let n: usize = s.parse().map_err(|e| format!("invalid number: {e}"))?;
+    Ok(n.clamp(1, 1000))
+}
+
 /// `archctl architecture snapshot` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum ArchitectureAction {
@@ -134,6 +140,10 @@ pub enum ArchitectureAction {
         /// Pin this snapshot (exempt from GC unless --gc-unpinned is set).
         #[arg(long)]
         pinned: bool,
+        /// Git revision (branch, tag, commit) to use for snapshot identity.
+        /// If not provided, uses the deepest reachable commit.
+        #[arg(long)]
+        r#ref: Option<String>,
         /// Output as JSON instead of human-readable.
         #[arg(long)]
         json: bool,
@@ -150,12 +160,13 @@ pub enum ArchitectureAction {
     Gc {
         #[arg(long)]
         cwd: Option<PathBuf>,
-        /// Number of recent unpinned snapshots to preserve.
-        #[arg(long, default_value = "10")]
+        /// Number of recent unpinned snapshots to preserve (clamped to 1..=1000).
+        #[arg(long, default_value = "10", value_parser = clamp_keep_last)]
         keep_last: usize,
-        /// Show what would be deleted without actually deleting.
+        /// Actually delete snapshots (dry-run is the default; pass --no-dry-run
+        /// to skip dry-run and perform deletion).
         #[arg(long)]
-        dry_run: bool,
+        no_dry_run: bool,
         /// Confirm deletion of snapshots.
         #[arg(long)]
         yes: bool,
@@ -804,6 +815,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 schema_version,
                 label,
                 pinned,
+                r#ref,
                 json,
             } => architecture_snapshot_create_cmd(
                 cwd,
@@ -811,6 +823,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 schema_version,
                 label.as_deref(),
                 pinned,
+                r#ref.as_deref(),
                 json,
                 ctx,
             ),
@@ -820,10 +833,10 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             ArchitectureAction::Gc {
                 cwd,
                 keep_last,
-                dry_run,
+                no_dry_run,
                 yes,
                 json,
-            } => architecture_snapshot_gc_cmd(cwd, keep_last, dry_run, yes, json, ctx),
+            } => architecture_snapshot_gc_cmd(cwd, keep_last, !no_dry_run, yes, json, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -2473,12 +2486,14 @@ fn parse_from_selector(s: &str) -> Result<crate::code::sequence::FromSelector, S
 // Architecture snapshot commands (T3.1 + T3.2)
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn architecture_snapshot_create_cmd(
     cwd: Option<PathBuf>,
     kind: &str,
     schema_version: i64,
     label: Option<&str>,
     pinned: bool,
+    ref_override: Option<&str>,
     json: bool,
     ctx: &CliContext,
 ) -> Result<i32> {
@@ -2493,6 +2508,7 @@ fn architecture_snapshot_create_cmd(
         schema_version,
         label,
         pinned,
+        ref_override,
     )?;
 
     if json {

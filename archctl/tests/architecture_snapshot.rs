@@ -95,6 +95,7 @@ fn concurrent_creates_produce_distinct_ids_and_monotonic_sequences() {
             1,
             None,
             false,
+            None,
         )
     });
 
@@ -113,6 +114,7 @@ fn concurrent_creates_produce_distinct_ids_and_monotonic_sequences() {
         2,
         None,
         false,
+        None,
     );
 
     let (id2, seq2) = result2.expect("second create must succeed");
@@ -151,6 +153,7 @@ fn create_on_non_git_directory_returns_not_git_repository_error() {
         1,
         None,
         false,
+        None,
     );
 
     let err = result.expect_err("create on non-git dir must fail");
@@ -180,6 +183,7 @@ fn gc_preserves_pinned_snapshots() {
         1,
         Some("first"),
         false,
+        None,
     )
     .expect("create first");
 
@@ -191,6 +195,7 @@ fn gc_preserves_pinned_snapshots() {
         2,
         Some("pinned"),
         true,
+        None,
     )
     .expect("create pinned");
 
@@ -202,6 +207,7 @@ fn gc_preserves_pinned_snapshots() {
         3,
         Some("third"),
         false,
+        None,
     )
     .expect("create third");
 
@@ -228,10 +234,28 @@ fn gc_dry_run_does_not_delete() {
 
     // Create 2 snapshots with distinct schema versions.
     // Distinct schema_versions ensure distinct identity keys (idempotency prevents duplicates).
-    let (id1, _seq1) =
-        create(&project_dir, &git_path, &fs, "architecture", 1, None, false).expect("create 1");
-    let (id2, _seq2) =
-        create(&project_dir, &git_path, &fs, "architecture", 2, None, false).expect("create 2");
+    let (id1, _seq1) = create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        1,
+        None,
+        false,
+        None,
+    )
+    .expect("create 1");
+    let (id2, _seq2) = create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        2,
+        None,
+        false,
+        None,
+    )
+    .expect("create 2");
 
     // GC with dry_run=true should not actually delete, but should report what would be deleted.
     // With 2 snapshots and keep_last=1, 1 snapshot (the older one) would be marked for deletion.
@@ -268,10 +292,39 @@ fn gc_yes_flag_enables_deletion() {
 
     // Create 3 snapshots with distinct schema versions.
     // Distinct schema_versions ensure distinct identity keys (idempotency prevents duplicates).
-    let (_id1, _seq1) =
-        create(&project_dir, &git_path, &fs, "architecture", 1, None, false).expect("create 1");
-    create(&project_dir, &git_path, &fs, "architecture", 2, None, false).expect("create 2");
-    create(&project_dir, &git_path, &fs, "architecture", 3, None, false).expect("create 3");
+    let (_id1, _seq1) = create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        1,
+        None,
+        false,
+        None,
+    )
+    .expect("create 1");
+    create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        2,
+        None,
+        false,
+        None,
+    )
+    .expect("create 2");
+    create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        3,
+        None,
+        false,
+        None,
+    )
+    .expect("create 3");
 
     // GC with keep_last=2, dry_run=false, confirmed=true should delete excess
     let report = gc(&project_dir, 2, false, true).expect("gc with --yes must succeed");
@@ -296,8 +349,28 @@ fn gc_requires_confirmation_when_not_dry_run() {
 
     // Create 2 snapshots with distinct schema versions.
     // Distinct schema_versions ensure distinct identity keys (idempotency prevents duplicates).
-    create(&project_dir, &git_path, &fs, "architecture", 1, None, false).expect("create 1");
-    create(&project_dir, &git_path, &fs, "architecture", 2, None, false).expect("create 2");
+    create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        1,
+        None,
+        false,
+        None,
+    )
+    .expect("create 1");
+    create(
+        &project_dir,
+        &git_path,
+        &fs,
+        "architecture",
+        2,
+        None,
+        false,
+        None,
+    )
+    .expect("create 2");
 
     // GC with dry_run=false, confirmed=false must fail with GcRequiresConfirmation
     let result = gc(&project_dir, 1, false, false);
@@ -330,6 +403,7 @@ fn gc_keeps_last_n_by_created_at() {
                 i + 1, // distinct schema_version for each snapshot
                 Some(&format!("snap_{}", i)),
                 false,
+                None,
             )
             .expect("create snapshot")
             .0
@@ -370,6 +444,7 @@ fn create_sets_schema_version_and_compatibility_props() {
         schema_version,
         Some("test"),
         false,
+        None,
     )
     .expect("create must succeed");
 
@@ -435,6 +510,7 @@ fn list_returns_all_snapshots_ordered_by_created_at_desc() {
         1,
         Some("first"),
         false,
+        None,
     )
     .expect("create 1");
     create(
@@ -445,6 +521,7 @@ fn list_returns_all_snapshots_ordered_by_created_at_desc() {
         2,
         Some("second"),
         false,
+        None,
     )
     .expect("create 2");
     create(
@@ -455,6 +532,7 @@ fn list_returns_all_snapshots_ordered_by_created_at_desc() {
         3,
         Some("third"),
         false,
+        None,
     )
     .expect("create 3");
 
