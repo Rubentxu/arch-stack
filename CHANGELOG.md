@@ -6,6 +6,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.49.0] — 2026-08-17
+
+### Added
+- **P2-01 snapshot metadata MVP** — new bounded context `archctl/src/architecture/`
+  with `Snapshot` carrier, `create()`, `list()`, `gc()` and `SnapshotError`. New
+  port method surface on `GraphStore` via `SnapshotRepository`
+  (`create_snapshot`, `get_snapshot`, `list_snapshots`, `label_snapshot`,
+  `pin_snapshot`, `update_snapshot_props`, `delete_snapshots`); LbugStore
+  implementation over the `Snapshot` table; `MockGraphStore` updated.
+- **P2-01** — `RepositoryIdentity` carrier in `archctl/src/identity.rs` with
+  `resolve_repository_identity()` resolver; stable
+  `blake3("repo|{normalized_remote}|{first_commit}")` formula
+  (`find_deepest_commit` fallback to HEAD currently documented in verify-report
+  WARNING #8; follow-up cycle `p2-02` planned).
+- **P2-01** — `extractor_set_digest()` in `archctl/src/architecture/digest.rs`:
+  renderer/IDE-stable digest over sorted
+  `(lang_id, lang_ver, view_strategy_id, project_strategy_id, evidence_extractor_id)`
+  from `source_code` + `source_cargo` only. `blake3:` prefix, deterministic,
+  `code.sequence` excluded. 4 unit tests green.
+- **P2-01** — CLI `archctl architecture {create,list,gc}` (`--json --label
+  --keep-last --dry-run --yes`); end-to-end CLI smoke (`archctl architecture
+  create --cwd <git-repo>` → `Created snapshot blake3:91480afa... (sequence 1)`).
+- **P2-01** — manifest gate NEW `manifests/architecture.toml` (must_hold for
+  `pub fn create/list/gc` + `UnitOfWork::begin_transaction`); MOD
+  `manifests/store.toml` (SnapshotRepository symbols). Follow-up cycle to add
+  `Command::Architecture` / `ArchitectureAction` to `manifests/cli.toml` (verify
+  WARNING #3) and `cli.architecture` to capability registry (verify WARNING #2).
+- **P2-01** — GC retention: `(pinned) ∪ (last N by created_at)` with
+  `--keep-last N` (default 10), `--dry-run` (opt-in), `--yes` confirms.
+  4 GC integration tests green.
+- **P2-01** — `SnapshotError::NotGitRepository` on non-Git cwd; no row written;
+  1 integration test asserts both error and side-effect absence.
+- **P2-01** — schema version metadata: `props.schema_version` (full semver) +
+  `props.schema_compatibility` ("1.0"); `INT64 schema_version` column = major.
+  1 integration test asserts both.
+
+### Changed
+- **P2-01** — `archctl/src/store.rs` gains `SnapshotRepository` trait at
+  `store.rs:438` and `LbugStore` impl at `store.rs:1680+`; `GraphStore`
+  supertrait extended with `+ SnapshotRepository` at `store.rs:207`.
+  `archctl/src/diagram/export.rs:656` updated for `MockGraphStore`.
+- **P2-01** — `archctl/src/lib.rs`: `pub mod architecture;` added.
+- **P2-01** — `archctl/src/capability/mod.rs`: minor wiring for new bounded
+  context (no capability registry entry added; follow-up cycle planned).
+
+### Out-of-scope (next cycle)
+- `ElementVersion`/`RelationVersion` ↔ `Snapshot` materialization (P2-02).
+- Diff between snapshots (P2-03).
+- Non-Git worktree overlay (P3-01).
+- `--ref <git-rev>` flag on `create` (proposal §Design; verify WARNING #9).
+- `--dry-run` default-true and `--keep-last N` clamp 1..=1000 (verify WARNING #10).
+- `find_deepest_commit` actual implementation (verify WARNING #8).
+- True concurrent-create test (verify WARNING #7); current test is sequential.
+- Renderer/IDE bump stability regression test (verify WARNING #6).
+- `use crate::store::LbugStore` removal from `architecture/snapshot.rs` (verify
+  WARNING #4; depends on `UnitOfWork` trait-generic refactor).
+- `manifests/cli.toml` `ArchitectureAction` registration (verify WARNING #3).
+- `cli.architecture` capability registry entry + `docs/CAPABILITIES.md`
+  regeneration (verify WARNING #2; #5 optional).
+- T5.2 spec docs (`docs/specs/{architecture-snapshot,snapshot-repository,
+  architecture-cli}.md`) — deferred per launch plan; will land as a follow-up
+  cycle.
+
+See `docs/ROADMAP.md` cycle log row
+`p-38e02210a9f14317/p2-01-snapshot-mvp` for the full cycle audit trail.
+
 ## [1.48.1] — 2026-08-16
 
 ### Changed
