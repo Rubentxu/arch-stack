@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P2-05 architecture-policy MVP** — `archctl/src/architecture/policy.rs` with
+  the ADR-054 closed rule set (6 rules): `forbid_dependency`,
+  `require_dependency`, `forbid_cycle` (iterative Tarjan SCC), `max_fanout`,
+  `evidence_required`, `confidence_min`. Carriers: `PolicyRule` (serde-tagged
+  JSON), `Waiver` (expiry recomputed at evaluation time), `Violation`,
+  `PolicySummary`, `PolicyReport` (schema `architecturePolicyReport/1`).
+  Selector glob: `*` suffix match with separator boundary (prefix ending in
+  `:`/`.` matches any remainder; bare prefix requires a separator next).
+  Waivers suppress matching violations while active; expired waivers stay in
+  `waivers[]` with `expired: true` and do NOT suppress.
+- **P2-05** — `archctl architecture policy check [--policy <file>] [--json]
+  [--fail-on error|warning|info]` CLI command: reads the policy document
+  (`{"rules": [...], "waivers": [...]}`, file or stdin) BEFORE any graph
+  read, validates `--fail-on`, evaluates over the live graph, prints human
+  summary or JSON `architecturePolicyReport/1`. Exit 1 when any remaining
+  violation severity >= the `--fail-on` threshold (default `error`).
+- **P2-05** — 47 unit tests in `archctl/src/architecture/policy.rs` and 6
+  integration tests in `archctl/tests/architecture_policy.rs` (S1–S5 +
+  confidence_min). `manifests/architecture.toml` updated (policy.rs in
+  editable; policy symbols in public_symbols and must_hold).
 - **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
   `ExplainReport` carrier (schema `explain-report/1`), `ExplainError
   { SubjectNotFound, RelationNotFound, Store }`, and pure

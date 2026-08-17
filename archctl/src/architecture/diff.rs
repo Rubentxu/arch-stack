@@ -328,6 +328,8 @@ mod tests {
         props
     }
 
+    // Test fixture builder: 8 fields mirror the Snapshot carrier under test.
+    #[allow(clippy::too_many_arguments)]
     fn make_snapshot(
         id: &str,
         commit_hash: &str,

@@ -314,7 +314,6 @@ mod tests {
     /// A minimal DiagramRepository stub for unit tests.
     struct FakeRepo {
         elements: Vec<ElementRow>,
-        relations: Vec<SemanticEdgeRow>,
         element_evidence: Vec<(String, Vec<EvidenceEntry>)>,
         relation_evidence: Vec<(String, Vec<EvidenceEntry>)>,
     }
@@ -323,7 +322,6 @@ mod tests {
         fn new() -> Self {
             Self {
                 elements: vec![],
-                relations: vec![],
                 element_evidence: vec![],
                 relation_evidence: vec![],
             }
@@ -353,17 +351,6 @@ mod tests {
         fn with_element_evidence(mut self, version_id: &str, evidence: EvidenceEntry) -> Self {
             self.element_evidence
                 .push((version_id.to_string(), vec![evidence]));
-            self
-        }
-        fn with_relation(mut self, id: &str, version_id: &str) -> Self {
-            self.relations.push(SemanticEdgeRow {
-                relation_id: id.to_string(),
-                predicate_id: "calls".to_string(),
-                source_id: "el:1".to_string(),
-                target_id: "el:2".to_string(),
-                order_key: "1".to_string(),
-                props: serde_json::Map::new(),
-            });
             self
         }
     }
@@ -412,7 +399,7 @@ mod tests {
 
         fn read_relation_by_id(
             &self,
-            id: &str,
+            _id: &str,
         ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
             // FakeRepo doesn't have full relation support
             Ok(None)

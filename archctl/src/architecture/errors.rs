@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::architecture::coverage::CoverageError;
 use crate::architecture::diff::DiffError;
 use crate::architecture::explain::ExplainError;
+use crate::architecture::policy::PolicyError;
 
 /// Errors specific to snapshot operations.
 #[derive(Debug, Error)]
@@ -27,6 +28,9 @@ pub enum SnapshotError {
 
     #[error("GC would delete {count} snapshots; use --yes to confirm")]
     GcRequiresConfirmation { count: usize },
+
+    #[error("policy error: {0}")]
+    Policy(#[from] PolicyError),
 }
 
 impl From<DiffError> for SnapshotError {
