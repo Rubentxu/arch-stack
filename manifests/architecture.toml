@@ -19,6 +19,7 @@ editable = [
     "archctl/src/architecture/explain.rs",
     "archctl/src/architecture/coverage.rs",
     "archctl/src/architecture/policy.rs",
+    "archctl/src/architecture/report_formats.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -46,6 +47,8 @@ public_symbols = [
     "PolicyError",
     "Waiver",
     "matches_selector",
+    "to_sarif",
+    "to_junit_xml",
 ]
 
 # Textual invariants that prove the module does what its scope declares.
@@ -74,6 +77,8 @@ must_hold = [
     "pub enum PolicyError",
     "pub struct Waiver",
     "pub fn matches_selector(",
+    "pub fn to_sarif(",
+    "pub fn to_junit_xml(",
 ]
 
 # Minimum number of #[test] items in the architecture module.
