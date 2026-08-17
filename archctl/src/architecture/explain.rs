@@ -161,12 +161,14 @@ fn build_element_report(
         Some(element.current_version_id.clone())
     };
 
-    let evidence = if let Some(ref vid) = version_id {
-        repo.list_evidence_for_versions(&[vid.clone()])
-            .map_err(ExplainError::from)?
-    } else {
-        vec![]
-    };
+    let evidence = version_id.as_ref().map_or_else(
+        || Ok(vec![]),
+        #[allow(clippy::cloned_ref_to_slice_refs)]
+        |vid| {
+            repo.list_evidence_for_versions(&[vid.clone()])
+                .map_err(ExplainError::from)
+        },
+    )?;
 
     let unsubstantiated = evidence.is_empty();
     let warnings = if unsubstantiated {
@@ -222,12 +224,15 @@ fn build_relation_report(
         Some(rel.current_version_id.clone())
     };
 
-    let evidence = if let Some(ref vid) = version_id {
-        repo.list_evidence_for_relation_versions(&[vid.clone()])
-            .map_err(ExplainError::from)?
-    } else {
-        vec![]
-    };
+    #[allow(clippy::cloned_ref_to_slice_refs)]
+    #[allow(clippy::cloned_ref_to_slice_refs)]
+    let evidence = version_id.as_ref().map_or_else(
+        || Ok(vec![]),
+        |vid| {
+            repo.list_evidence_for_relation_versions(&[vid.clone()])
+                .map_err(ExplainError::from)
+        },
+    )?;
 
     let unsubstantiated = evidence.is_empty();
     let warnings = if unsubstantiated {

@@ -16,6 +16,7 @@ editable = [
     "archctl/src/architecture/snapshot.rs",
     "archctl/src/architecture/digest.rs",
     "archctl/src/architecture/diff.rs",
+    "archctl/src/architecture/explain.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -29,6 +30,11 @@ public_symbols = [
     "SnapshotError",
     "SnapshotGcReport",
     "extractor_set_digest",
+    "explain",
+    "ExplainReport",
+    "ExplainError",
+    "ExplainSubject",
+    "ExplainProvenance",
 ]
 
 # Textual invariants that prove the module does what its scope declares.
@@ -43,6 +49,11 @@ must_hold = [
     "pub struct SnapshotGcReport",
     "pub fn extractor_set_digest(",
     "UnitOfWork::begin_transaction",
+    "pub fn explain(",
+    "pub struct ExplainReport",
+    "pub enum ExplainError",
+    "pub struct ExplainSubject",
+    "pub struct ExplainProvenance",
 ]
 
 # Minimum number of #[test] items in the architecture module.
