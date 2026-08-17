@@ -254,6 +254,30 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Check intent declaration against the live graph.
+    Intent {
+        #[command(subcommand)]
+        action: IntentAction,
+    },
+}
+
+/// Intent subcommands.
+#[derive(Debug, Subcommand)]
+pub enum IntentAction {
+    /// Check the intent file against the live graph.
+    Check {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Path to the intent TOML file.
+        #[arg(long)]
+        intent: Option<PathBuf>,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+        /// Fail-on threshold: error, warning, or info.
+        #[arg(long, default_value = "error")]
+        fail_on: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -975,6 +999,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 version_id,
                 json,
             } => architecture_observe_cmd(cwd, &version_id, json, ctx),
+            ArchitectureAction::Intent { action } => architecture_intent_cmd(action, ctx),
         },
         Command::Evidence { action } => match action {
             EvidenceAction::Extract {
@@ -3000,6 +3025,169 @@ fn architecture_observe_cmd(
     }
 
     Ok(0)
+}
+
+fn architecture_intent_cmd(action: IntentAction, ctx: &CliContext) -> Result<i32> {
+    match action {
+        IntentAction::Check {
+            cwd,
+            intent,
+            json,
+            fail_on,
+        } => architecture_intent_check_cmd(cwd, intent, json, fail_on, ctx),
+    }
+}
+
+fn architecture_intent_check_cmd(
+    cwd: Option<PathBuf>,
+    intent: Option<PathBuf>,
+    json: bool,
+    fail_on: String,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::intent::{IntentError, IntentReport};
+
+    // Validate fail_on before touching the graph or the intent file.
+    match fail_on.as_str() {
+        "error" | "warning" | "info" => {}
+        other => {
+            eprintln!("error: invalid --fail-on value '{other}' (expected error|warning|info)");
+            return Ok(1);
+        }
+    };
+
+    // Read the intent document (file or stdin) BEFORE any graph read.
+    let intent_path = match &intent {
+        Some(path) => path.clone(),
+        None => {
+            eprintln!("error: intent file required (--intent <file>)");
+            return Ok(1);
+        }
+    };
+
+    let intent_doc = match crate::architecture::load_intent(&intent_path) {
+        Ok(doc) => doc,
+        Err(IntentError::InvalidIntent(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"invalid intent: {msg}\"}}");
+            } else {
+                eprintln!("error: invalid intent: {msg}");
+            }
+            return Ok(1);
+        }
+        Err(IntentError::Store(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"store error: {msg}\"}}");
+            } else {
+                eprintln!("error: store error: {msg}");
+            }
+            return Ok(1);
+        }
+        Err(IntentError::InvalidSeverity(_)) => unreachable!(),
+    };
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let now = chrono::DateTime::parse_from_rfc3339(&ctx.clock.now_rfc3339())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|_| chrono::Utc::now());
+    let report: IntentReport = match crate::architecture::check_intent(
+        &*store,
+        &intent_doc,
+        &intent_path.to_string_lossy(),
+        now,
+    ) {
+        Ok(r) => r,
+        Err(IntentError::Store(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"{msg}\"}}");
+            } else {
+                eprintln!("error: {msg}");
+            }
+            return Ok(1);
+        }
+        Err(IntentError::InvalidIntent(msg)) => {
+            if json {
+                eprintln!("{{\"error\": \"invalid intent: {msg}\"}}");
+            } else {
+                eprintln!("error: invalid intent: {msg}");
+            }
+            return Ok(1);
+        }
+        Err(IntentError::InvalidSeverity(_)) => unreachable!(),
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Architecture Intent Report");
+        println!("Intent file: {}", report.intent_file);
+        println!("Schema version: {}", report.schema_version);
+        println!("Capability: {}", report.capability);
+        println!();
+        println!(
+            "{} declared, {} observed, {} matched, {} drift",
+            report.summary.total_declared,
+            report.summary.total_observed,
+            report.summary.matched,
+            report.summary.drift
+        );
+        println!();
+
+        if !report.deltas.declared_and_present.is_empty() {
+            println!(
+                "Declared and present ({}):",
+                report.deltas.declared_and_present.len()
+            );
+            for m in &report.deltas.declared_and_present {
+                println!("  ✓ {} ({}: {})", m.id, m.kind_id, m.category);
+            }
+            println!();
+        }
+        if !report.deltas.declared_but_missing.is_empty() {
+            println!(
+                "Declared but missing ({}):",
+                report.deltas.declared_but_missing.len()
+            );
+            for d in &report.deltas.declared_but_missing {
+                println!("  ✗ {} ({}: {})", d.id, d.kind_id, d.category);
+            }
+            println!();
+        }
+        if !report.deltas.kind_mismatch.is_empty() {
+            println!("Kind mismatch ({}):", report.deltas.kind_mismatch.len());
+            for km in &report.deltas.kind_mismatch {
+                println!(
+                    "  ~ {} (expected {}, got {})",
+                    km.id, km.expected_kind, km.observed_kind
+                );
+            }
+            println!();
+        }
+        if !report.deltas.observed_undeclared.is_empty() {
+            println!(
+                "Observed but not declared ({}):",
+                report.deltas.observed_undeclared.len()
+            );
+            for o in &report.deltas.observed_undeclared {
+                println!("  ? {} ({}: {})", o.id, o.kind_id, o.category);
+            }
+            println!();
+        }
+    }
+
+    // Exit code: non-zero when drift (DeclaredButMissing | KindMismatch) >= fail_on.
+    // ObservedUndeclared never triggers non-zero alone.
+    let has_drift =
+        !report.deltas.declared_but_missing.is_empty() || !report.deltas.kind_mismatch.is_empty();
+    let exit_code = if has_drift && fail_on == "error" {
+        1
+    } else {
+        0
+    };
+    Ok(exit_code)
 }
 
 fn architecture_coverage_cmd(cwd: Option<PathBuf>, json: bool, ctx: &CliContext) -> Result<i32> {

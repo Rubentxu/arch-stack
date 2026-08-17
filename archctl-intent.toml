@@ -1,0 +1,97 @@
+schemaVersion = "1.0"
+capability = "archctl-bounded-contexts"
+
+[[elements]]
+id = "c4:container:architecture"
+kind = "architecture"
+category = "c4"
+
+[[elements]]
+id = "c4:container:diagram"
+kind = "diagram"
+category = "c4"
+
+[[elements]]
+id = "c4:container:code"
+kind = "code"
+category = "c4"
+
+[[elements]]
+id = "c4:container:view"
+kind = "view"
+category = "c4"
+
+[[elements]]
+id = "c4:container:doctor"
+kind = "doctor"
+category = "c4"
+
+[[elements]]
+id = "c4:container:evidence"
+kind = "evidence"
+category = "c4"
+
+[[elements]]
+id = "c4:container:cli"
+kind = "cli"
+category = "c4"
+
+[[elements]]
+id = "c4:container:cognitive"
+kind = "cognitive"
+category = "c4"
+
+[[elements]]
+id = "c4:container:evaluation"
+kind = "evaluation"
+category = "c4"
+
+[[elements]]
+id = "c4:container:store"
+kind = "store"
+category = "c4"
+
+[[elements]]
+id = "c4:container:render"
+kind = "render"
+category = "c4"
+
+[[elements]]
+id = "c4:container:inventory"
+kind = "inventory"
+category = "c4"
+
+[[elements]]
+id = "c4:container:source"
+kind = "source"
+category = "c4"
+
+[[elements]]
+id = "c4:container:astgrep"
+kind = "astgrep"
+category = "c4"
+
+[[elements]]
+id = "c4:container:graph"
+kind = "graph"
+category = "c4"
+
+[[elements]]
+id = "c4:container:project"
+kind = "project"
+category = "c4"
+
+[[elements]]
+id = "c4:container:telemetry"
+kind = "telemetry"
+category = "c4"
+
+[[relations]]
+predicate = "depends_on"
+source = "c4:container:cli"
+target = "c4:container:architecture"
+
+[[relations]]
+predicate = "depends_on"
+source = "c4:container:diagram"
+target = "c4:container:store"
