@@ -25,6 +25,7 @@ pub mod policy;
 pub mod relevance;
 pub mod report_formats;
 pub mod snapshot;
+pub mod task_context;
 
 // Public re-exports
 pub use coverage::{CoverageError, CoverageReport, coverage};
@@ -38,3 +39,6 @@ pub use relevance::{
 };
 pub use report_formats::{to_junit_xml, to_sarif};
 pub use snapshot::{create, gc, list};
+pub use task_context::{
+    ContextElement, ContextError, ContextRelation, TaskContextReport, compile_task_context,
+};
