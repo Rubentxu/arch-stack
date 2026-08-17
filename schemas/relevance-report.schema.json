@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctl.dev/schemas/relevance-report.schema.json",
+  "title": "Relevance Report",
+  "description": "archctl architecture relevance output (schemaVersion 1.0)",
+  "type": "object",
+  "required": ["schemaVersion", "capability", "query", "elements", "relations", "selectionTrace"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "capability": {
+      "const": "architecture-relevance-mvp"
+    },
+    "query": {
+      "type": "string"
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kindId", "category", "name", "score", "matchType", "hopDistance"],
+        "properties": {
+          "id": { "type": "string" },
+          "kindId": { "type": "string" },
+          "category": { "type": "string" },
+          "name": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "matchType": { "enum": ["exact-id", "name", "expansion"] },
+          "hopDistance": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relationId", "predicateId", "sourceId", "targetId", "score"],
+        "properties": {
+          "relationId": { "type": "string" },
+          "predicateId": { "type": "string" },
+          "sourceId": { "type": "string" },
+          "targetId": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "selectionTrace": {
+      "type": "object",
+      "required": ["seedsMatched", "candidatesScanned", "expansionEdgesFollowed"],
+      "properties": {
+        "seedsMatched": { "type": "integer", "minimum": 0 },
+        "candidatesScanned": { "type": "integer", "minimum": 0 },
+        "expansionEdgesFollowed": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "additionalProperties": false
+}

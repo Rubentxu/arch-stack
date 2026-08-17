@@ -19,6 +19,7 @@ editable = [
     "archctl/src/architecture/explain.rs",
     "archctl/src/architecture/coverage.rs",
     "archctl/src/architecture/policy.rs",
+    "archctl/src/architecture/relevance.rs",
     "archctl/src/architecture/report_formats.rs",
 ]
 
@@ -49,6 +50,12 @@ public_symbols = [
     "matches_selector",
     "to_sarif",
     "to_junit_xml",
+    "relevance",
+    "RelevanceReport",
+    "RelevanceError",
+    "RelevanceOptions",
+    "ScoredElement",
+    "ScoredRelation",
 ]
 
 # Textual invariants that prove the module does what its scope declares.
@@ -79,6 +86,12 @@ must_hold = [
     "pub fn matches_selector(",
     "pub fn to_sarif(",
     "pub fn to_junit_xml(",
+    "pub fn relevance(",
+    "pub struct RelevanceReport",
+    "pub enum RelevanceError",
+    "pub struct RelevanceOptions",
+    "pub struct ScoredElement",
+    "pub struct ScoredRelation",
 ]
 
 # Minimum number of #[test] items in the architecture module.
