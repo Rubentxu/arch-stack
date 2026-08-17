@@ -1,10 +1,19 @@
 //! Integration tests for `archctl architecture observe`.
 //!
-//! Exercises the full CLI command with a real in-memory store seeded via
-//! `execute_raw_cypher_for_test`.
+//! Exercises the in-process API (`observation_claim::observations_and_claims_for_version`)
+//! against a real store seeded via `execute_raw_cypher_for_test`.
+//!
+//! The earlier `Command::new("cargo")`-based tests were removed: the CLI
+//! computes its own `project_dir` from the cwd's source identity, so the
+//! spawned process opens a DIFFERENT store than the test's TempDir.
+//! In-process calls share the same store (pattern used by every P2 test
+//! in this repo).
 
+use archctl::observation_claim::{
+    Observation, ObservationError, compat_claim_from_evidence, observation_from_evidence,
+    observations_and_claims_for_version,
+};
 use archctl::store::{GraphStore, LbugStore};
-use std::process::Command;
 use tempfile::TempDir;
 
 /// Helper: open an in-memory store for testing.
@@ -22,7 +31,6 @@ fn test_store() -> (LbugStore, TempDir) {
 /// multiple calls with the same `version_id`) so a test can register
 /// several evidence rows against one version without panicking.
 fn seed_evidence_for_version(store: &mut LbugStore, ev_id: &str, version_id: &str, status: &str) {
-    // Idempotent element + version via MERGE
     store
         .execute_raw_cypher_for_test(&format!(
             "MERGE (e:Element {{id: 'el:{version_id}'}}) ON CREATE SET e.kind_id = 'container', e.category = 'c4', e.canonical_key = 'el:{version_id}', e.current_name = 'TestEl', e.current_status = 'active', e.current_confidence = 0.9, e.current_version_id = '{version_id}'"
@@ -33,7 +41,6 @@ fn seed_evidence_for_version(store: &mut LbugStore, ev_id: &str, version_id: &st
             "MERGE (v:ElementVersion {{id: '{version_id}'}}) ON CREATE SET v.element_id = 'el:{version_id}', v.name = 'TestEl', v.status = 'active', v.origin = 'ast-grep', v.confidence = 0.9"
         ))
         .expect("seed element version");
-    // Unique evidence per ev_id
     store
         .execute_raw_cypher_for_test(&format!(
             "CREATE (:Evidence {{id: '{ev_id}', kind: 'structural', claim: 'test evidence for {ev_id}', path: 'src/lib.rs', start_line: 10, end_line: 20, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule', props: '{{\"status\":\"{status}\"}}', content_hash: 'sha256:{ev_id}', observed_at: timestamp('2026-08-01T00:00:00Z')}})"
@@ -47,214 +54,77 @@ fn seed_evidence_for_version(store: &mut LbugStore, ev_id: &str, version_id: &st
 }
 
 // ---------------------------------------------------------------------------
-// S8 — happy path with --json
+// S1 — happy path: 2 evidence rows on one version_id
 // ---------------------------------------------------------------------------
 
 #[test]
-fn observe_json_happy_path() {
-    let (mut store, tmp) = test_store();
+fn observe_happy_path_two_observations_one_version() {
+    let (mut store, _tmp) = test_store();
     seed_evidence_for_version(&mut store, "ev:json:1", "vid-json", "accepted");
     seed_evidence_for_version(&mut store, "ev:json:2", "vid-json", "drafted");
 
-    let archctl_bin = std::env::var("ARCHCTL_BIN")
-        .unwrap_or_else(|_| "cargo run --quiet --bin archctl --".to_string());
+    let (observations, claims) = observations_and_claims_for_version(&store, "vid-json").unwrap();
 
-    let output = if archctl_bin.starts_with("cargo") {
-        Command::new("cargo")
-            .args([
-                "run",
-                "--quiet",
-                "--bin",
-                "archctl",
-                "--",
-                "architecture",
-                "observe",
-                "--version-id",
-                "vid-json",
-                "--json",
-                "--cwd",
-            ])
-            .arg(tmp.path())
-            .output()
-            .expect("cargo run failed")
-    } else {
-        Command::new(&archctl_bin)
-            .args([
-                "architecture",
-                "observe",
-                "--version-id",
-                "vid-json",
-                "--json",
-                "--cwd",
-            ])
-            .arg(tmp.path())
-            .output()
-            .expect("archctl run failed")
-    };
+    assert_eq!(observations.len(), 2);
+    assert_eq!(claims.len(), 2);
 
-    assert!(
-        output.status.success(),
-        "observe --json exited non-zero: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_eq!(observations[0].id, "obs:ev:json:1");
+    assert_eq!(observations[1].id, "obs:ev:json:2");
+    assert_eq!(claims[0].id, "clm:compat:ev:json:1");
+    assert_eq!(claims[1].id, "clm:compat:ev:json:2");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    // Parallel arrays + fused=false literal
+    assert!(!claims[0].fused, "claim fused must be false");
+    assert!(!claims[1].fused, "claim fused must be false");
 
-    let observations = parsed["observations"]
-        .as_array()
-        .expect("observations must be array");
-    let claims = parsed["claims"].as_array().expect("claims must be array");
+    // Status mirrors evidence.status
+    assert_eq!(claims[0].status, "accepted");
+    assert_eq!(claims[1].status, "drafted");
 
-    assert_eq!(
-        observations.len(),
-        2,
-        "must have 2 observations for vid-json"
-    );
-    assert_eq!(claims.len(), 2, "must have 2 claims for vid-json");
+    // Confidence defaulted per status
+    assert!((claims[0].confidence - 1.0).abs() < f64::EPSILON);
+    assert!((claims[1].confidence - 0.0).abs() < f64::EPSILON);
 
-    // Parallel arrays: observation[i] maps to claim[i] via derived_from
-    assert_eq!(observations[0]["id"], "obs:ev:json:1");
-    assert_eq!(observations[1]["id"], "obs:ev:json:2");
-    assert_eq!(claims[0]["id"], "clm:compat:ev:json:1");
-    assert_eq!(claims[1]["id"], "clm:compat:ev:json:2");
-    assert!(
-        !claims[0]["fused"].as_bool().unwrap_or(true),
-        "claim fused must be false"
-    );
-    assert!(
-        !claims[1]["fused"].as_bool().unwrap_or(true),
-        "claim fused must be false"
-    );
-    assert_eq!(claims[0]["status"], "accepted");
-    assert_eq!(claims[1]["status"], "drafted");
-    assert!((claims[0]["confidence"].as_f64().unwrap_or(0.0) - 1.0).abs() < f64::EPSILON);
-    assert!((claims[1]["confidence"].as_f64().unwrap_or(1.0) - 0.0).abs() < f64::EPSILON);
+    // Observation ids parse cleanly as JSON too
+    let json = serde_json::to_string(&observations[0]).unwrap();
+    assert!(json.contains("\"id\":\"obs:ev:json:1\""));
 }
 
 // ---------------------------------------------------------------------------
-// S8b — invalid version id exits non-zero
+// S2 — invalid version_id: returns ObservationError::InvalidVersionId
 // ---------------------------------------------------------------------------
 
 #[test]
-fn observe_invalid_version_id_exits_nonzero() {
-    let (mut store, tmp) = test_store();
-    seed_evidence_for_version(&mut store, "ev:valid:1", "v:valid", "accepted");
-
-    let archctl_bin = std::env::var("ARCHCTL_BIN")
-        .unwrap_or_else(|_| "cargo run --quiet --bin archctl --".to_string());
-
-    let output = if archctl_bin.starts_with("cargo") {
-        Command::new("cargo")
-            .args([
-                "run",
-                "--quiet",
-                "--bin",
-                "archctl",
-                "--",
-                "architecture",
-                "observe",
-                "--version-id",
-                "bad;id",
-                "--json",
-                "--cwd",
-            ])
-            .arg(tmp.path())
-            .output()
-            .expect("cargo run failed")
-    } else {
-        Command::new(&archctl_bin)
-            .args([
-                "architecture",
-                "observe",
-                "--version-id",
-                "bad;id",
-                "--json",
-                "--cwd",
-            ])
-            .arg(tmp.path())
-            .output()
-            .expect("archctl run failed")
-    };
-
-    assert!(
-        !output.status.success(),
-        "observe with bad;id must exit non-zero"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("invalid") || stderr.contains("error"),
-        "stderr must mention invalid/error: {stderr}"
-    );
+fn observe_invalid_version_id_errors() {
+    let (store, _tmp) = test_store();
+    let result = observations_and_claims_for_version(&store, "bad;id");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(err, ObservationError::InvalidVersionId(_)));
 }
 
 // ---------------------------------------------------------------------------
-// Empty version returns empty arrays
+// S3 — empty version: returns empty arrays without error
 // ---------------------------------------------------------------------------
 
 #[test]
 fn observe_empty_version_returns_empty() {
-    let (mut store, tmp) = test_store();
+    let (mut store, _tmp) = test_store();
     seed_evidence_for_version(&mut store, "ev:other:1", "v:other", "accepted");
 
-    let archctl_bin = std::env::var("ARCHCTL_BIN")
-        .unwrap_or_else(|_| "cargo run --quiet --bin archctl --".to_string());
+    let (observations, claims) = observations_and_claims_for_version(&store, "vid-empty").unwrap();
 
-    let output = if archctl_bin.starts_with("cargo") {
-        Command::new("cargo")
-            .args([
-                "run",
-                "--quiet",
-                "--bin",
-                "archctl",
-                "--",
-                "architecture",
-                "observe",
-                "--version-id",
-                "vid-empty",
-                "--json",
-                "--cwd",
-            ])
-            .arg(tmp.path())
-            .output()
-            .expect("cargo run failed")
-    } else {
-        Command::new(&archctl_bin)
-            .args([
-                "architecture",
-                "observe",
-                "--version-id",
-                "vid-empty",
-                "--json",
-                "--cwd",
-            ])
-            .arg(tmp.path())
-            .output()
-            .expect("archctl run failed")
-    };
-
-    assert!(
-        output.status.success(),
-        "observe on empty version must exit 0"
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
-
-    assert_eq!(parsed["observations"].as_array().unwrap().len(), 0);
-    assert_eq!(parsed["claims"].as_array().unwrap().len(), 0);
+    assert!(observations.is_empty());
+    assert!(claims.is_empty());
 }
 
 // ---------------------------------------------------------------------------
-// JSON roundtrip: emit Observation + Claim JSON, parse back
+// S4 — JSON roundtrip: Observation + Claim serialise/deserialise losslessly
 // ---------------------------------------------------------------------------
 
 #[test]
 fn json_roundtrip() {
     use archctl::diagram::export_types::EvidenceEntry;
-    use archctl::observation_claim::{compat_claim_from_evidence, observation_from_evidence};
 
     let ev = EvidenceEntry {
         id: "ev:round".to_string(),
@@ -271,18 +141,15 @@ fn json_roundtrip() {
         status: Some("accepted".to_string()),
     };
 
-    let obs = observation_from_evidence(&ev);
+    let obs: Observation = observation_from_evidence(&ev);
     let claim = compat_claim_from_evidence(&ev);
 
-    // Serialize both
     let obs_json = serde_json::to_string(&obs).unwrap();
     let claim_json = serde_json::to_string(&claim).unwrap();
 
-    // Deserialize back as serde_json::Value to confirm valid JSON
     let obs_parsed: serde_json::Value = serde_json::from_str(&obs_json).unwrap();
     let claim_parsed: serde_json::Value = serde_json::from_str(&claim_json).unwrap();
 
-    // Re-serialize to confirm no data loss
     let obs_json2 = serde_json::to_string(&obs_parsed).unwrap();
     let claim_json2 = serde_json::to_string(&claim_parsed).unwrap();
 
