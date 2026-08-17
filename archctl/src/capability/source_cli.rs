@@ -130,5 +130,13 @@ pub fn all() -> Vec<Capability> {
             Availability::Available,
             vec![Provider::new("any", Maturity::Stable)],
         ),
+        Capability::new(
+            "cli.architecture",
+            Category::Cli,
+            Maturity::Stable,
+            true,
+            Availability::Available,
+            vec![Provider::new("any", Maturity::Stable)],
+        ),
     ]
 }
