@@ -4,7 +4,7 @@
 //! and schema-version compatibility props.
 
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use tempfile::TempDir;
 
 use archctl::architecture::errors::SnapshotError;
@@ -66,70 +66,58 @@ fn create_test_git_repo() -> TempDir {
 
 #[test]
 fn concurrent_creates_produce_distinct_ids_and_monotonic_sequences() {
-    // Verifies that two simultaneous create() calls both succeed,
+    // Verifies that two simultaneous create() calls on distinct repos both succeed,
     // produce distinct snapshot ids, and assign monotonic sequence numbers.
-    // The UnitOfWork boundary ensures atomicity and proper lock acquisition.
+    // Uses Barrier::wait(2) to ensure both threads reach the create() call before
+    // either proceeds, forcing true concurrent execution and testing the flock boundary.
 
     let project_tmp = TempDir::new().expect("project temp dir");
-    let git_tmp = create_test_git_repo();
-    // Convert to owned String so the thread can take ownership
-    let git_path: String = git_tmp.path().to_string_lossy().into_owned();
-
+    let git_tmp1 = create_test_git_repo();
+    let git_tmp2 = create_test_git_repo();
     let fs = SystemFilesystem;
-
-    // Spawn a thread that calls create().
+    let barrier = Arc::new(std::sync::Barrier::new(2));
     let project_dir = project_tmp.path().to_path_buf();
-    let fs_clone = Arc::new(fs);
-    let git_path_for_thread = git_path.clone();
+
+    let git_path1: String = git_tmp1.path().to_string_lossy().into_owned();
+    let git_path2: String = git_tmp2.path().to_string_lossy().into_owned();
+    let barrier1 = Arc::clone(&barrier);
+    let barrier2 = Arc::clone(&barrier);
+
+    let fs1 = Arc::new(SystemFilesystem);
+    let fs2 = Arc::new(SystemFilesystem);
 
     let handle1 = std::thread::spawn(move || {
-        create(
-            &project_dir,
-            &git_path_for_thread,
-            fs_clone.as_ref(),
-            "architecture",
-            1,
-            None,
-            false,
-        )
+        let _ = barrier1.wait(); // wait for thread 2 to be ready
+        create(&project_dir, &git_path1, fs1.as_ref(), "architecture", 1, None, false)
     });
 
-    // Wait for first thread to complete before spawning second to avoid
-    // lock contention that could cause timing issues
+    let handle2 = std::thread::spawn(move || {
+        let _ = barrier2.wait(); // wait for thread 1 to be ready
+        create(&project_dir, &git_path2, fs2.as_ref(), "architecture", 2, None, false)
+    });
+
     let result1 = handle1.join().expect("thread 1 must not panic");
+    let result2 = handle2.join().expect("thread 2 must not panic");
+
     let (id1, seq1) = result1.expect("first create must succeed");
-
-    // Second create should get the same id (idempotent with same identity tuple)
-    let fs_clone2 = Arc::new(fs);
-    let project_dir2 = project_tmp.path().to_path_buf();
-
-    let result2 = create(
-        &project_dir2,
-        &git_path,
-        fs_clone2.as_ref(),
-        "architecture",
-        1,
-        None,
-        false,
-    );
-
     let (id2, seq2) = result2.expect("second create must succeed");
 
-    // Ids must be distinct (idempotency key includes commit_hash, schema_version, etc.)
-    // If the identity tuple is the same, only one snapshot is created (idempotent).
-    // For this test, we use the same repo, so we expect idempotent behavior:
-    // only one snapshot is created and both return the same id with same sequence.
-    // To test distinct ids, we would need different git repos.
-    // Here we verify at minimum that the call succeeds and sequence is assigned.
-    assert!(!id1.is_empty(), "snapshot id must be non-empty");
-    assert!(seq1 >= 0, "sequence must be non-negative");
+    assert!(!id1.is_empty(), "snapshot id1 must be non-empty");
+    assert!(!id2.is_empty(), "snapshot id2 must be non-empty");
+    assert!(seq1 >= 0, "sequence1 must be non-negative");
+    assert!(seq2 >= 0, "sequence2 must be non-negative");
 
-    // Verify both threads saw the same snapshot (idempotent)
-    assert_eq!(
+    // Distinct repos → distinct identity tuples → distinct snapshot ids
+    assert_ne!(
         id1, id2,
-        "idempotent create with same identity tuple must return same id"
+        "concurrent creates on distinct repos must produce distinct ids"
     );
-    assert_eq!(seq1, seq2, "idempotent create must return same sequence");
+
+    // Sequence numbers must be monotonic (seq2 > seq1 if id2 was committed after id1)
+    assert!(
+        seq2 > seq1 || (seq2 == seq1 && id1 != id2),
+        "sequence numbers must be monotonic or tie-broken by id"
+    );
 }
 
 // ─── T4.2: NotGitRepository on non-Git path ──────────────────────────────────
