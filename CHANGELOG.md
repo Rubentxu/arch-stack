@@ -53,6 +53,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   snapshots, different commit_hash, different schema_version, different
   extractor_digest) and 4 integration tests in `archctl/tests/architecture_diff.rs`
   (`--json` round-trip, identical diff, invalid id rejection, snapshot-not-found).
+- **P2-04 architecture-coverage MVP** — `archctl/src/architecture/coverage.rs` with
+  `CoverageReport` carrier (schema `coverageReport/1`), `CoverageError
+  { Store }`, and pure `coverage(&dyn DiagramRepository, &dyn Clock)
+  -> Result<CoverageReport>` use case. Four bucket axes: `byConfidence`
+  (high≥0.9/medium≥0.7/low≥0.5/unknown<0.5), `byEvidenceStatus`
+  (accepted/drafted/superseded), `byConflict` (always 0 with warning),
+  `byStaleness` (fresh≤90d/stale>90d). Live-graph scan over Element,
+  SemanticRelation, and Evidence tables. No store writes.
+- **P2-04** — `archctl architecture coverage [--json]` CLI command:
+  scans live graph, computes coverage metrics, prints human summary or
+  JSON `coverageReport/1`. `ArchitectureAction::Coverage` variant added.
+- **P2-04** — `EvidenceEntry.status: Option<String>` added to support
+  coverage metrics; `EvidenceBundle` export filters to accepted evidence
+  only per ADR-005. `manifests/architecture.toml` updated (new `coverage.rs`
+  in editable, `coverage`/`CoverageReport`/`CoverageError` in public_symbols
+  and must_hold).
+- **P2-04** — 6 unit tests in `archctl/src/architecture/coverage.rs`
+  (empty graph, mixed confidence, all high/accepted, drafted evidence,
+  schema/capability invariants, staleness warning) and 5 integration tests
+  in `archctl/tests/architecture_coverage.rs`.
 
 ## [1.49.0] — 2026-08-17
 

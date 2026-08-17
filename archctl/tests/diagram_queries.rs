@@ -100,6 +100,7 @@ fn row_to_evidence_entry(r: Row) -> Option<archctl::diagram::export_types::Evide
         rule_id: str_col(&r, "e.rule_id"),
         content_hash: str_col(&r, "e.content_hash"),
         observed_at: str_col(&r, "e.observed_at"),
+        status: None,
     })
 }
 

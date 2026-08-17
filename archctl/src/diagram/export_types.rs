@@ -71,6 +71,10 @@ pub struct Projection {
 }
 
 /// An evidence entry in the bundle.
+///
+/// Status is included to support coverage metrics. The bundle schema
+/// itself only includes `accepted` evidence per ADR-005; non-accepted
+/// entries are filtered at the export layer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvidenceEntry {
     pub id: String,
@@ -91,6 +95,10 @@ pub struct EvidenceEntry {
     pub content_hash: String,
     #[serde(rename = "observedAt")]
     pub observed_at: String,
+    /// Evidence lifecycle status: "accepted", "drafted", or "superseded".
+    /// None when the status field is absent (legacy rows treated as accepted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// The evidence bundle.

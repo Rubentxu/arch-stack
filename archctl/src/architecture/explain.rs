@@ -411,6 +411,7 @@ mod tests {
             rule_id: "test:rule".to_string(),
             content_hash: "sha256:abc".to_string(),
             observed_at: "2026-08-01T00:00:00Z".to_string(),
+            status: Some("accepted".to_string()),
         }
     }
 

@@ -2631,10 +2631,10 @@ fn row_to_semantic_edge_row(r: Row) -> Result<SemanticEdgeRow> {
 
 fn row_to_evidence_entry(r: Row) -> Option<EvidenceEntry> {
     let props = r.get("e.props").map(cell_to_json_map).unwrap_or_default();
-    let status = props.get("status").and_then(|v| v.as_str()).unwrap_or("");
-    if status != "accepted" {
-        return None;
-    }
+    let status = props
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let str_col = |r: &Row, k: &str| -> String {
         r.get(k).and_then(|c| c.as_str()).unwrap_or("").to_string()
     };
@@ -2652,6 +2652,7 @@ fn row_to_evidence_entry(r: Row) -> Option<EvidenceEntry> {
         rule_id: str_col(&r, "e.rule_id"),
         content_hash: str_col(&r, "e.content_hash"),
         observed_at: str_col(&r, "e.observed_at"),
+        status,
     })
 }
 
