@@ -214,6 +214,7 @@ pub enum ArchitectureAction {
         #[arg(long)]
         cwd: Option<PathBuf>,
         /// Query string (exact element id or free-text).
+        #[arg(long)]
         query: String,
         /// Maximum number of results to return (default: 10).
         #[arg(long)]
