@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **P2-09b backfill timestamp** — el backfill v5 saltaba silenciosamente
+  filas pre-upgrade: lbug no hace implicit cast STRING→TIMESTAMP y el
+  readback round-tripped (`"2026-08-15 0:00:00.0 +00:00:00"`) rompía
+  `timestamp()`. Fix: normalizar con `parse_observed_at` (RFC 3339
+  estricto) + wrap `timestamp()` en las columnas TIMESTAMP
+  (`written_at`), literal en la columna STRING (`observed_at`).
+  Test de regresión con filas pre-upgrade reales.
+
 ### Added
 - **Secret redaction en strict bundles** (ADR-055 fase 2) — scanner
   deny-by-default zero-dep (`archctl/src/diagram/redact.rs`) aplicado en

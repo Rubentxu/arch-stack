@@ -264,6 +264,13 @@ persiste por defecto (`--no-persist` para stdout-only) + `--expire-stale
 timestamp de LadybugDB en `parse_observed_at` (sin él, todo claim persistido
 se marcaba stale).
 
+**P2-09b backfill timestamp CERRADO** (v1.64.0 pendiente de tag): el backfill
+v5 saltaba filas pre-upgrade (lbug no hace implicit cast STRING→TIMESTAMP).
+Fix: `parse_observed_at` + wrap `timestamp()` en columnas TIMESTAMP
+(`written_at`), literal en columnas STRING (`observed_at`). Test de
+regresión con filas pre-upgrade. Eliminado el helper muerto
+`iso_to_lbug_timestamp`.
+
 Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed.
@@ -271,9 +278,6 @@ Candidatos futuros (reopen triggers documentados en Anti-roadmap):
   por ADR-061). Fase 2: pseudonymization de filenames + scanner anti-secretos.
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
-- **P2-09b backfill timestamp workaround** — cambiar `written_at` a STRING
-  o bump lbug (bloquea backfill de filas pre-upgrade; documentado en el
-  archive-report de `wave-3-p2-09-claim-dual-write`).
 - **Fuse-on-write** — persistir fused claims automáticamente desde
   `put_evidence` (best-effort, ADR-049 D4 style); cutoff configurable.
 
