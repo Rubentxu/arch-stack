@@ -334,6 +334,7 @@ export const App: Component = () => {
                   schemaVersion: bundle()!.schemaVersion,
                   loadedAt: bundle()!.loadedAt,
                   rawKind: bundle()!.rawKind,
+                  strict: bundle()!.strict,
                 }
               : driftMode()
                 ? declaredBundle() && actualBundle()
@@ -347,8 +348,10 @@ export const App: Component = () => {
                 : null
           }
           stats={stats()}
-          onFetchSource={ws.fetchSource}
-          onOpenInEditor={ws.openInEditor}
+          onFetchSource={bundle()?.strict === true ? undefined : ws.fetchSource}
+          onOpenInEditor={
+            bundle()?.strict === true ? undefined : ws.openInEditor
+          }
         />
       </main>
 

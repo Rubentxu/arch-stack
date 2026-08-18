@@ -141,6 +141,20 @@ dl.bundle-meta dd, dl.node-meta dd {
   font-family: monospace;
 }
 
+.strict-badge {
+  margin: 0.25rem 0 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  background: var(--bg-elevated, #f0f0f0);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: inline-block;
+}
+
 h3 {
   font-size: 1rem;
   margin: 0 0 0.5rem 0;
