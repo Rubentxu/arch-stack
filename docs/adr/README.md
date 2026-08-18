@@ -39,22 +39,36 @@
 | [ADR-027](ADR-027-evidence-put.md) | Evidence put: identity scheme para hechos sin archivo + separation of concerns — `evidence_id = ev:sem:blake3(kind+claim+source_origin+props)`, `source_origin: UserInput`, `status: drafted`, solo Evidence+SourceArtifact (no Elements) | Aceptado (propuesto 2026-08-04) |
 | [ADR-028](ADR-028-diagram-project.md) | Diagram project: ProjectSelector vs C4Kind + multi-format DSL projection — `ViewKind` enum (C4+UML+behavior), emitters PlantUML/Mermaid/Structurizr, grammar `<kind>:<scope>`, fuente DSL editable, relación con export (viewer-bundle) y render (SVG) | Aceptado (propuesto 2026-08-04) |
 | [ADR-029](ADR-029-c4-component-light.md) | C4 component light — estrategia `components` en `c4-discover`: módulos internos → candidatos `mt.component` con confidence < 1.0, revisión y promoción por el agente (misma filosofía que ADR-026) | Aceptado (propuesto 2026-08-04) |
-| [ADR-016](ADR-016-activegraph-packs-investigacion.md) | Investigación de `activegraph-packs` + 3 bloques de mejoras para `archctl` (B1 evidence graph, B2 manifest+gates, B3 trust-by-origin) | Investigación cerrada, decisiones pendientes |
+| [ADR-016](ADR-016-activegraph-packs-investigacion.md) | Investigación de `activegraph-packs` + 3 bloques de mejoras para `archctl` (B1 evidence graph, B2 manifest+gates, B3 trust-by-origin) | Investigación cerrada — B1 Decidido via [ADR-017 §Schema migration runner](ADR-017-schema-migration-runner.md); B2/B3 Pendiente con Reopen triggers (2026-08-18) |
 | [ADR-032](ADR-032-bench-methodology.md) | Bench methodology — métricas, thresholds del release gate v1.0, FP/FN manual rubric, conteo solo mt.container (M28) | Aceptado (nuevo 2026-08-05) |
 | [ADR-033](ADR-033-archctl-view-embedded-workbench.md) | `archctl view`: workbench embebido como servicio local one-shot — rust-embed + tiny_http, 127.0.0.1, COOP/COEP, stack distribuido como UN producto | Aceptado (nuevo 2026-08-06) |
 | [ADR-034](ADR-034-e2e-coverage-expansion.md) | E2E coverage expansion: install + deploy + render + multi-language — 4 suites versionadas (install_e2e, render_e2e, smoke ampliado, sandbox-e2e) | **Propuesto** (2026-08-06) |
 | [ADR-035](ADR-035-go-call-graph-extraction.md) | Go call-graph extraction — tree-sitter-go para functions y methods | Aceptado (2026-08-06) |
 | [ADR-036](ADR-036-apply-writer-performance.md) | Apply writer performance: transaction + bulk import — D1/D2/D3 | Aceptado (2026-08-06) |
-| [ADR-037](ADR-037-call-graph-language-strategy-consolidation.md) | Call-graph language strategy consolidation — 8 extractors refactorizados | Aceptado (2026-08-07) |
+| [ADR-037](ADR-037-call-graph-language-strategy-consolidation.md) | Call-graph language strategy consolidation — 8 extractores refactorizados | Aceptado (2026-08-07) |
 | [ADR-038](ADR-038-one-product-five-invariants.md) | Un producto, cinco invariantes (arch-stack identity) — supersedes ADR-013 "repositorio separado" | Aceptado (2026-08-09) |
 | [ADR-039](ADR-039-renderer-reality-anti-roadmap.md) | Renderer reality + anti-roadmap — G6 canvas, no WASM/WebGPU/Arrow; deferred decisions con reopen triggers | Aceptado (2026-08-09) |
 | [ADR-040](ADR-040-cognitive-conditional-activation.md) | Cognitive layer conditional activation — ADR-021/022/023 marcados conditional/parcial/diferido | Aceptado (2026-08-09) |
 | [ADR-041](ADR-041-workspace-state-persistence.md) | Workspace state persistence — durable workspace state for `archctl view` | Aceptado (2026-08-10) |
-| [ADR-042](ADR-042-ide-adapter-abstraction.md) | IDE adapter abstraction — multi-IDE plugin target | Propuesto (2026-08-10) |
+| [ADR-042](ADR-042-ide-adapter-abstraction.md) | IDE adapter abstraction — multi-IDE plugin target | **Aceptado — 2026-08-11** (H4 closed en v1.35.0, M75; PR #151) |
+| [ADR-043](ADR-043-modular-hexagonal-boundaries.md) | Límites hexagonales modulares por capacidad — port seams en el grafo canónico | Aceptado — 2026-08-13 (embodied en CliContext v1.43.0 p1-01 + repositories v1.43.0 p1-03) |
+| [ADR-044](ADR-044-persistence-ports-and-raw-query-boundary.md) | Repositorios semánticos y frontera de query raw — `GraphStore::query` reemplazado por puertos tipados | **Aceptado — 2026-08-13** (foundational; **Superseded by**: ADR-045 §Puertos; ADR-059 RawGraphQuery split) |
 | [ADR-045](ADR-045-capability-registry-single-source-of-truth.md) | Capability Registry como fuente única de verdad (P1-08) | Aceptado (2026-08-16) |
-| [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | Propuesto (2026-08-10) |
-| [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | Propuesto (2026-08-10) |
+| [ADR-046](ADR-046-plugin-supply-chain-and-capability-security.md) | Seguridad de plugins y supply chain | **Aceptado (parcial) — 2026-08-13** (shipped: plugin tap M76 PR #152; deferred: capability gating per origin + signed plugins) |
+| [ADR-047](ADR-047-pre-merge-ci-and-post-merge-quality-gates.md) | CI preventiva en PR y evidencia post-merge | Aceptado — 2026-08-13 (embodied en pr.yml + release.yml + verify-local.sh) |
+| [ADR-048](ADR-048-ladybugdb-native-compatibility-boundary.md) | LadybugDB como adapter nativo con matriz de compatibilidad (`archctl doctor --scope storage` con 5-axis envelope) | Aceptado — 2026-08-13 (shipped en v1.42.0, PR #174) |
+| [ADR-049](ADR-049-evidence-observation-claim-confidence-model.md) | Separar Observation, Evidence y Claim — además del modelo Evidence existente | **Aceptado (parcial) — 2026-08-13** (shipped: P2-09a compat carriers v1.58.0; deferred: full schema migration + backfill + dual-write) |
+| [ADR-050](ADR-050-architecture-snapshots-and-git-identity.md) | Snapshots arquitectónicos ligados a identidad Git (`RepositoryIdentity` + `extractor_set_digest`) | Aceptado — 2026-08-13 (shipped en v1.49.0 + v1.50.0, PRs #194 + #196) |
+| [ADR-051](ADR-051-loopback-workbench-session-security.md) | Token de sesión efímero para acciones del workbench | **Deferido — 2026-08-18** (Reopen: disclosed loopback-session hijack vector OR per-session permission scoping requirement) |
+| [ADR-052](ADR-052-architecture-context-compiler.md) | Task Context Compiler para agentes — `archctl architecture context --task <text>` | Aceptado — 2026-08-13 (shipped en v1.57.0, P2-08) |
+| [ADR-053](ADR-053-architecture-diff-as-first-class-capability.md) | Architecture Diff como capability first-class — `archctl architecture diff <id_a> <id_b>` | Aceptado — 2026-08-13 (shipped en v1.51.0, P2-02) |
+| [ADR-054](ADR-054-architecture-policy-and-fitness-functions.md) | Políticas y fitness functions sobre el grafo canónico — 6 reglas (ADR-054) + SARIF/JUnit projectors | Aceptado — 2026-08-13 (shipped en v1.54.0 + v1.55.0, P2-05 + P2-06) |
+| [ADR-055](ADR-055-sanitized-architecture-bundle.md) | Sanitized Architecture Bundle compartible | **Deferido — 2026-08-18** (Reopen: ADR-019 perf budget breach AND ≥1 external-distribution consumer) |
+| [ADR-056](ADR-056-moldable-architecture-workbench.md) | Moldable Architecture Workbench y navegación semántica (LensSpec) — canonical anchor de ROADMAP §H3 entry criteria | **Deferido — 2026-08-18** (Reopen: ≥2 LensSpec-translatable consumers OR measured need; entry criteria en ROADMAP §H3) |
+| [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | **Aceptado — 2026-08-11** (H4 closed en v1.36.0, M73+M76; PR #149 + PR #152) |
+| [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | **Aceptado — 2026-08-11** (H4 closed en v1.36.0, M76; PR #152) |
 | [ADR-059](ADR-059-rawgraphquery-trait-split.md) | RawGraphQuery trait split + SemanticEdgeRepository boundary (P1-04) | Aceptado (2026-08-15) |
+| [ADR-060](ADR-060-architecture-cli-snapshot-surface-deviation.md) | `architecture` CLI surface: drop the `snapshot` intermediate (Path B deviation) | **Aceptado — 2026-08-17** (H4 closed en v1.50.0, p2-02-followup; PR #196, commit `8e6c434`) |
 
 ## Cómo se relacionan
 
