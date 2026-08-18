@@ -1,9 +1,9 @@
 # ADR-042 — IDE adapter abstraction (multi-IDE plugin target)
 
 > **Ciclo:** `m73-distribution-stack-rework` (planning)
-> **Estado:** Propuesto — 2026-08-10
+> **Estado:** Aceptado — 2026-08-11 (H4 closed in v1.35.0, M75; PR #151)
 > **Complementa:** ADR-057 (versioned distribution), ADR-058 (self-update)
-> **Reemplaza:** la hardcoded `default_install_root()` en `archctl/src/stack.rs:18`
+> **Reemplaza:** la hardcoded `default_install_root()` en `archctl/src/stack.rs:18` (file deleted in v1.40.0, M83, commit `c2d65c3`; see STATE.md debt cleanup 2026-08-18)
 
 ## Contexto
 

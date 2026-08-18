@@ -2,23 +2,24 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-16, post-release v1.48.0 (p1-08-capability-registry).
+> Última actualización: 2026-08-18, post-release v1.59.0 (P2-10 intent vs reality MVP)
+> + housekeeping `ed5b6cb` (drop 2 obsolete P1-04 stashes).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | merge commit `bae340a` (PR #191 — p1-08-capability-registry) |
-| Versión | `v1.48.0` (latest tag, post-PR #191) |
-| Tests | 872 Rust tests pasan (`cargo test --features test-fixtures`); clippy clean |
-| Working tree | `docs/state-refresh-v148` (apply phase) |
+| Tip | `ed5b6cb` (housekeeping post-v1.59.0; latest release merge = `313f18b` for v1.59.0) |
+| Versión | `v1.59.0` (latest tag, P2-10) |
+| Tests | baseline `872 @ v1.48.0`; current `cargo test --features test-fixtures --quiet` re-cuenta en cada verify; clippy clean |
+| Working tree | clean (`main`, ahead of `origin/main` by housekeeping `ed5b6cb`) |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | ~41,100 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.48.0; incluye unit tests inline) |
-| LOC tests | ~11,600 (`archctl/tests/**/*.rs`, integration) |
-| LOC benches | ~900 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 (M30–M61 + M69 + M73 + M75 + M76 + M79 + M80b + M81 + M82 + M83 + M32-remediation + p1-08) |
-| Tags | 118 (v0.1.0 → v1.48.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| LOC src | 49,200 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.59.0; incluye unit tests inline) |
+| LOC tests | 14,348 (`archctl/tests/**/*.rs`, integration) |
+| LOC benches | 903 (`archctl/benches/**/*.rs`) |
+| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0, P2-01 → P2-10) — en `sddk/p-38e02210a9f14317/p2-*` |
+| Tags | 130 (v0.1.0 → v1.59.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -82,6 +83,17 @@
 | `v1.47.0` | M32 PR2 | UNWIND bulk import extended to `state_machine` (3 nesting levels) + `c4_discover` writers; ADR-036 amendment (D2 re-ship, D3 deferral). PR #188. **Nota: PR1 (call_graph + class_diagram UNWIND, PR #187) quedó SIN tag — gap `v1.46.0` documentado; CHANGELOG `[1.46.0]` describe su contenido.** |
 | `v1.47.1` | M32 remediation r1 | `class_diagram` version-id mismatch (blake3 compartido) + `apply_common` port bypass (batch helpers → `ElementRepository` port, ADR-059) fixed; cross-writer CURRENT_VERSION regression suite added (PR #189+#190). |
 | `v1.48.0` | p1-08 | CapabilityRegistry: 8 categories, 79 entries; `archctl capabilities --format json\|markdown` + `--check`; bidirectional alignment invariants in `alignment.rs`; generated `docs/CAPABILITIES.md`; staleness gates in `verify-local.sh` + `test-ci-gates.sh`; ADR-045 accepted; call-graph schema enum fix 3→6 langs (PR #191) — Wave 1 items 15+16, Wave 1 completa. |
+| `v1.49.0` | p2-01 | Snapshot metadata MVP: `RepositoryIdentity`, `extractor digest`, `SnapshotRepository`, `archctl architecture snapshot` CLI command (PR #194). |
+| `v1.50.0` | p2-01 follow-up | Address 7 WARNINGs from `p2-01` snapshot MVP (PR #196) — warning surface cleanup. |
+| `v1.51.0` | P2-02 | Architecture diff MVP: pure read-side diff projection (no lbug write), diff schema, `archctl diff` CLI surface. |
+| `v1.52.0` | P2-03 | Explain / provenance MVP — answer "why does this element look this way?" with evidence walk. |
+| `v1.53.0` | P2-04 | Coverage metrics MVP — confidence and evidence coverage across the graph. |
+| `v1.54.0` | P2-05 | Policy metamodel MVP — closed rule set (6 rules per ADR-054): `forbid_dependency`, `require_dependency`, `forbid_cycle`, `max_fanout`, `evidence_required`, `confidence_min`; `archctl architecture policy check [--policy <file>] [--json] [--fail-on ...]`. |
+| `v1.55.0` | P2-06 | Fitness evaluator — SARIF 2.1.0 + JUnit XML output formats; `--format {json,sarif,junit}` (existing `--json` preserved as deprecated alias). |
+| `v1.56.0` | P2-07 | Context relevance engine MVP — `archctl architecture relevance` with deterministic scoring (exact-id/name/canonical_key/multi-token + BFS expansion × confidence decay, ASCII-fold + ES/EN stopword drop). |
+| `v1.57.0` | P2-08 | Task context compiler MVP — `archctl architecture context --task "..." [--budget-tokens N] [--top N] [--json]` with truncation and dangling-relation closure. |
+| `v1.58.0` | P2-09a | Observation / Claim compatibility carriers derived 1:1 from `EvidenceEntry`; `archctl architecture observe --version-id <VID>` read-only projection; preserves existing `Evidence` carrier contract. |
+| `v1.59.0` | P2-10 | Intent vs Reality MVP — `archctl architecture intent check --intent <file>` with 4-class delta (DeclaredAndPresent / DeclaredButMissing / ObservedUndeclared / KindMismatch); TOML intent format; self-dogfood via `archctl-intent.toml` declaring 17 bounded contexts. |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -140,14 +152,28 @@
 - 3 stale "no parameter binding" doc claims (M52)
 - `backend_available()` helper DRY'd (M56, -60 LOC across 5 files)
 
+**Closed in this housekeeping pass** (2026-08-18, post-v1.59.0):
+- **2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped** (WIP from the
+  pre-#181 branch). Their bases (`0b75778`, `63e2200`) are reachable from `main`
+  and the work was already merged via PR #181, then reshaped by `58f5150`
+  (P1-05 RawGraphQuery supertrait), `2731800` (move helpers into
+  `ElementRepository` port), and `24e2eb8`/`3ab707c` (M32 D2 UNWIND bulk
+  import). Re-applying on a fresh branch from `main` produced conflicts in
+  12 files; every conflict was "both sides did the same change, `main` is the
+  cleaner final form". Drop is intentional and irreversible — rederivation
+  lives in those cited commits.
+
 **M32 remediation (closed in v1.47.0/v1.47.1)**:
 - class_diagram UUID mismatch fixed; port bypass corrected; cross-writer `CURRENT_VERSION` regression suite added.
 
 **Accepted debt (per proposal + cycle retrospective)**:
 - **Registry introspection v2**: registry sources are catalog-mirrors, not runtime introspection. Follow-up deferred to registry-introspection-v2 proposal.
-- **POSIX-only symlink**: `stack.rs`-era symlink bootstrap works on POSIX; Windows not supported (documented).
 - **Parallel `Vec<Element>` + `ElementVersion`** (~120 LOC, M32 era): `apply.rs` processes elements in parallel; noted as debt in p1-08 retrospective.
 - **D4 throughput**: measured 96.57 ms/element vs ≤30 ms/element budget (ADR-019); accepted as small-N edge case.
+- *Removed (2026-08-18, post-v1.59.0 refresh)*: "POSIX-only symlink: stack.rs-era
+  symlink bootstrap" — `archctl/src/stack.rs` was deleted in v1.40.0 (commit
+  `c2d65c3 refactor(cli): remove deprecated stack subcommand`, M83); the debt
+  pointed to a file that no longer exists.
 
 **Pending**:
 - **store.rs** (3,540 LOC): biggest file. M63 proposes splitting (still pending).
@@ -182,7 +208,12 @@ Estado de la wave:
    boundary (v1.44.0+v1.44.1, p1-04), UnitOfWork (v1.45.0, p1-05),
    filesystem contracts, doctor/diagram migrations via CliContext, **capability
    registry (v1.48.0, p1-08, PR #191)**.
-3. **Wave 2 (intelligence)** / **Wave 3 (platform)** — pendientes.
+3. **Wave 2 (intelligence)** — **10/10 DONE** (v1.49.0–v1.59.0): snapshot
+   metadata (P2-01), diff (P2-02), explain (P2-03), coverage (P2-04),
+   policy metamodel (P2-05), fitness evaluator (P2-06), context relevance
+   (P2-07), task context (P2-08), observation/claim carriers (P2-09a),
+   intent vs reality (P2-10). All under `archctl architecture ...`.
+4. **Wave 3 (platform)** — pendiente (planning needed).
 
 ## Comandos de verificación
 
@@ -212,11 +243,20 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 ## Próxima acción del usuario
 
-Wave 2 (intelligence) items 17–18:
-- **17 — Snapshot metadata MVP**: attach version/timestamp/capability metadata to
-  graph snapshots for auditability.
-- **18 — Architecture Diff schema/pure diff**: ADR-053 schema for pure
-  diff output (no lbug write); `archctl diff` CLI surface.
+Wave 2 (intelligence) está cerrado (10/10, v1.49.0–v1.59.0). El próximo
+paso es **Wave 3 (platform)**, aún sin roadmap concreto en este archivo.
+Candidatos naturales extraídos de items 19–27 del PR plan original
+(`docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`):
 
-Ver `docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`
-para el plan completo de items 17–27.
+- **19 — Observation/Claim dual-write migration** (P2-09, gated by P2-09a): ya
+  tenemos los carriers compat (P2-09a); full schema + backfill + fusion
+  pendiente si hay consumer real.
+- **20 — Mermaid → SVG render local via `merman`** (M38 ya closed como item 9;
+  cierre efectivo en v1.9.0).
+- **22 — `archctl ide doctor <ide>`** consolidation, sobre la base de v1.35.0
+  (IDE adapters).
+- **27 — Fusion engine / observation ↔ evidence bridge** (would consume P2-09a).
+
+Decidir Wave 3 priorities en un ciclo dedicado (sddk-new) antes de proponer
+cualquier task. Mientras tanto, sigue válido el catálogo de items en
+`docs/arch-stack-proposals-2026-08-13/`.
