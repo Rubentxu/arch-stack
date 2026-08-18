@@ -23,6 +23,9 @@ pub mod selector;
 pub mod validate;
 pub mod view_types;
 
+pub mod redact;
+pub use redact::{redact_bundle, redact_secrets};
+
 // Public re-exports
 pub use apply::{ApplyReport, run_apply};
 pub use assets::icon_for;

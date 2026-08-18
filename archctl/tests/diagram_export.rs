@@ -389,3 +389,89 @@ fn export_strict_checksum_is_deterministic() {
         checksum1, checksum2
     );
 }
+
+// ─── Secret redaction (SCN-037, ADR-055 phase 2) ─────────────────────────────
+
+/// SCN-037: strict export redacts known secret shapes; default export does not.
+#[test]
+fn strict_export_redacts_secrets_default_does_not() {
+    use archctl::store::{GraphStore, LbugStore};
+
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path().join("proj");
+    // Seed in the SAME project dir the CLI resolves (XDG identity hash).
+    let info = archctl::project::resolve_project(&project.to_string_lossy());
+    let mut store = LbugStore::open(&info.project_dir).unwrap();
+    store.init().unwrap();
+    store
+        .execute_raw_cypher_for_test(
+            "MERGE (e:Element {id: 'el:redact'}) ON CREATE SET e.category = 'c4', e.kind_id = 'mt.container', e.canonical_key = 'redact/svc', e.current_name = 'Svc', e.current_status = 'active', e.current_confidence = 0.9, e.current_version_id = 'vid-redact'",
+        )
+        .unwrap();
+    store
+        .execute_raw_cypher_for_test(
+            "MERGE (v:ElementVersion {id: 'vid-redact'}) ON CREATE SET v.element_id = 'el:redact', v.name = 'Svc', v.status = 'active', v.origin = 'ast-grep', v.confidence = 0.9",
+        )
+        .unwrap();
+    // AWS key assembled in parts (GitHub push protection false positive).
+    let aws_key = format!("{}IOSFODNN7EXAMPLE1234", "AKIA");
+    let aws_path = format!("src/aws {aws_key}");
+    store
+        .execute_raw_cypher_for_test(&format!(
+            "CREATE (:Evidence {{id: 'ev:redact:1', kind: 'config', claim: 'endpoint token=abcdefghijklmnop1234567890', path: '{aws_path}', start_line: 1, end_line: 2, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule', props: '{{\"status\":\"accepted\"}}', content_hash: 'sha256:redact', observed_at: '2026-08-01T00:00:00Z'}})"
+        ))
+        .unwrap();
+    store
+        .execute_raw_cypher_for_test(
+            "MATCH (v:ElementVersion {id: 'vid-redact'}), (e:Evidence {id: 'ev:redact:1'}) CREATE (v)-[:SUPPORTED_BY]->(e)",
+        )
+        .unwrap();
+    drop(store);
+
+    let export = |profile: &[&str]| -> String {
+        let out = Command::new(env!("CARGO_BIN_EXE_archctl"))
+            .args(["diagram", "export", "--cwd"])
+            .arg(project.to_str().unwrap())
+            .args(["--json"])
+            .args(profile)
+            .arg("container:*")
+            .output()
+            .expect("export should run");
+        assert!(
+            out.status.success(),
+            "export failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+
+    // Strict: the claim token and the path AWS key are redacted.
+    let strict_json = export(&["--profile", "strict"]);
+    assert!(
+        strict_json.contains("[REDACTED:generic-secret]"),
+        "strict must redact token= assignment: {strict_json}"
+    );
+    assert!(
+        strict_json.contains("[REDACTED:aws-access-key]"),
+        "strict must redact AWS key: {strict_json}"
+    );
+    assert!(
+        !strict_json.contains("abcdefghijklmnop1234567890"),
+        "strict must not leak the secret value"
+    );
+    assert!(
+        !strict_json.contains(&aws_key),
+        "strict must not leak the AWS key"
+    );
+
+    // Default: no redaction (0 regression).
+    let default_json = export(&[]);
+    assert!(
+        default_json.contains("abcdefghijklmnop1234567890"),
+        "default must NOT redact (0 regression)"
+    );
+    assert!(
+        default_json.contains(&aws_key),
+        "default must NOT redact AWS key (0 regression)"
+    );
+}
