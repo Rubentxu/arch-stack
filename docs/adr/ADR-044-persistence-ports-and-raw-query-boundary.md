@@ -1,10 +1,10 @@
 # ADR-044 — Repositorios semánticos y frontera de query raw
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13
+> **Superseded by:** [ADR-045 §Puertos](ADR-045-capability-registry-single-source-of-truth.md); [ADR-059 RawGraphQuery split](ADR-059-rawgraphquery-trait-split.md)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 
