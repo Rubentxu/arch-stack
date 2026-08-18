@@ -140,11 +140,52 @@ fn is_stale_observation(obs: &Observation, now: &str) -> bool {
         // Unparseable `now` — same conservative rule.
         return true;
     };
-    let Ok(obs_dt) = chrono::DateTime::parse_from_rfc3339(&obs.observed_at) else {
+    let Some(obs_dt) = parse_observed_at(&obs.observed_at) else {
         return true;
     };
-    let age = now_dt.with_timezone(&chrono::Utc) - obs_dt.with_timezone(&chrono::Utc);
+    let age = now_dt.with_timezone(&chrono::Utc) - obs_dt;
     age > chrono::Duration::days(STALENESS_CUTOFF_DAYS)
+}
+
+/// Parse an observed-at timestamp into UTC. Accepts RFC 3339 and the
+/// readback format LadybugDB produces for `timestamp()` columns:
+/// `"2026-08-15 0:00:00.0 +00:00:00"` (space separator, unpadded hour,
+/// fractional seconds, offset with seconds). Parsing the lbug format
+/// is required — without it every persisted observation looks stale
+/// (conservative fallback) and the staleness-weighted evaluator is
+/// useless on real data (Item 27 residual discovery).
+fn parse_observed_at(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    // Normalize the lbug readback format into RFC 3339:
+    //   "2026-08-15 0:00:00.0 +00:00:00" → "2026-08-15T00:00:00.0+00:00"
+    let mut parts = s.trim().splitn(3, ' ');
+    let date = parts.next()?;
+    let time = parts.next()?;
+    let offset = parts.next()?;
+    // Pad a single-digit hour: "0:00:00.0" → "00:00:00.0".
+    let time = {
+        let mut t = time.split(':');
+        let hour = t.next()?;
+        let rest: Vec<&str> = t.collect();
+        let padded = if hour.len() == 1 {
+            format!("0{hour}")
+        } else {
+            hour.to_string()
+        };
+        format!("{padded}:{}", rest.join(":"))
+    };
+    // Offset "+00:00:00" → "+00:00" (drop the seconds component).
+    let offset = if offset.len() == 9 && offset.starts_with('+') && offset.ends_with(":00") {
+        offset[..6].to_string()
+    } else {
+        offset.to_string()
+    };
+    let rfc = format!("{date}T{time}{offset}");
+    chrono::DateTime::parse_from_rfc3339(&rfc)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .ok()
 }
 
 /// Normalize a claim text for grouping: trim, collapse whitespace,
@@ -540,6 +581,34 @@ mod tests {
         o.observed_at = "2026-05-02T23:59:59Z".to_string();
         let stale = is_stale_observation(&o, now);
         assert!(stale, "90 days + 1s must be stale");
+    }
+
+    #[test]
+    fn parses_lbug_timestamp_readback_format() {
+        // LadybugDB returns timestamp() columns as
+        // "2026-08-15 0:00:00.0 +00:00:00" — NOT RFC 3339. Without
+        // normalization every persisted observation looks stale
+        // (Item 27 residual discovery: staleness-weighted evaluator
+        // was broken on real data).
+        let parsed = parse_observed_at("2026-08-15 0:00:00.0 +00:00:00");
+        assert!(parsed.is_some(), "lbug readback format must parse");
+        assert_eq!(parsed.unwrap().to_rfc3339(), "2026-08-15T00:00:00+00:00");
+
+        // Midday unpadded + nonzero offset with seconds.
+        let parsed = parse_observed_at("2026-08-15 18:30:00.5 +02:00:00");
+        assert!(parsed.is_some(), "offset with seconds must parse");
+        assert_eq!(
+            parsed.unwrap().to_rfc3339(),
+            "2026-08-15T16:30:00.500+00:00"
+        );
+
+        // RFC 3339 passes through unchanged.
+        let parsed = parse_observed_at("2026-08-15T12:00:00Z");
+        assert!(parsed.is_some(), "RFC 3339 must still parse");
+        assert_eq!(parsed.unwrap().to_rfc3339(), "2026-08-15T12:00:00+00:00");
+
+        // Garbage → None (conservative stale path upstream).
+        assert!(parse_observed_at("not-a-date").is_none());
     }
 
     #[test]

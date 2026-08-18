@@ -264,9 +264,17 @@ pub enum ArchitectureAction {
         /// Output as JSON instead of human-readable.
         #[arg(long)]
         json: bool,
-        /// Persist fused claims to the store (requires v6 migration).
+        /// Do NOT persist fused claims to the store (stdout-only mode).
+        /// Persistence is the default (v6 migration required).
         #[arg(long)]
-        persist: bool,
+        no_persist: bool,
+        /// Delete stale fused claims (90-day cutoff) after fusing.
+        /// Combined with --dry-run it only reports what would be deleted.
+        #[arg(long)]
+        expire_stale: bool,
+        /// With --expire-stale: report stale claims without deleting.
+        #[arg(long)]
+        dry_run: bool,
         /// Fusion strategy: max-member (default) or staleness-weighted.
         #[arg(long, default_value = "max-member")]
         evaluator: String,
@@ -1029,9 +1037,22 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 cwd,
                 version_id,
                 json,
-                persist,
+                no_persist,
+                expire_stale,
+                dry_run,
                 evaluator,
-            } => architecture_fuse_cmd(cwd, &version_id, json, persist, &evaluator, ctx),
+            } => architecture_fuse_cmd(
+                cwd,
+                &version_id,
+                json,
+                FuseOptions {
+                    no_persist,
+                    expire_stale,
+                    dry_run,
+                },
+                &evaluator,
+                ctx,
+            ),
             ArchitectureAction::Intent { action } => architecture_intent_cmd(action, ctx),
         },
         Command::Evidence { action } => match action {
@@ -3078,11 +3099,19 @@ fn architecture_observe_cmd(
     Ok(0)
 }
 
+/// Fuse command options (kept under clippy's 7-arg limit).
+#[derive(Clone, Copy)]
+struct FuseOptions {
+    no_persist: bool,
+    expire_stale: bool,
+    dry_run: bool,
+}
+
 fn architecture_fuse_cmd(
     cwd: Option<PathBuf>,
     version_id: &str,
     json: bool,
-    persist: bool,
+    opts: FuseOptions,
     evaluator_name: &str,
     ctx: &CliContext,
 ) -> Result<i32> {
@@ -3150,13 +3179,38 @@ fn architecture_fuse_cmd(
     let now = ctx.clock.now_rfc3339();
     let fused = fuse_observations_with(&observations, evaluator.as_ref(), &now);
 
-    if persist && let Err(e) = store.put_fused_claims(version_id, &fused, &now) {
-        if json {
-            eprintln!("{{\"error\": \"{e}\"}}");
-        } else {
-            eprintln!("error: {e}");
+    // Persist by default (Item 27 residual: FusedClaims stay in sync with
+    // the dual-write Observation/Claim pipeline). put_fused_claims is a
+    // MERGE upsert — re-runs are idempotent. --no-persist keeps the
+    // previous stdout-only behaviour.
+    let mut persisted = false;
+    if !opts.no_persist {
+        if let Err(e) = store.put_fused_claims(version_id, &fused, &now) {
+            if json {
+                eprintln!("{{\"error\": \"{e}\"}}");
+            } else {
+                eprintln!("error: {e}");
+            }
+            return Ok(1);
         }
-        return Ok(1);
+        persisted = true;
+    }
+
+    // Staleness expiry (Item 27 residual): delete stale claims unless
+    // --dry-run only reports them.
+    let mut expired_count = 0usize;
+    if opts.expire_stale {
+        match expire_stale_claims(store.as_mut(), version_id, opts.dry_run) {
+            Ok(n) => expired_count = n,
+            Err(e) => {
+                if json {
+                    eprintln!("{{\"error\": \"{e}\"}}");
+                } else {
+                    eprintln!("error: {e}");
+                }
+                return Ok(1);
+            }
+        }
     }
 
     if json {
@@ -3165,12 +3219,14 @@ fn architecture_fuse_cmd(
             version_id: &'a str,
             evaluator: &'a str,
             persisted: bool,
+            expired_stale: usize,
             fused_claims: &'a [FusedClaim],
         }
         let report = FuseReport {
             version_id,
             evaluator: evaluator.name(),
-            persisted: persist,
+            persisted,
+            expired_stale: expired_count,
             fused_claims: &fused,
         };
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
@@ -3180,9 +3236,20 @@ fn architecture_fuse_cmd(
         println!(
             "Evaluator: {} {}",
             evaluator.name(),
-            if persist { "(persisted)" } else { "" }
+            if persisted {
+                "(persisted)"
+            } else {
+                "(stdout only)"
+            }
         );
         println!();
+        if opts.expire_stale {
+            println!(
+                "Stale expiry: {} ({} claimed stale)",
+                if opts.dry_run { "dry-run" } else { "deleted" },
+                expired_count
+            );
+        }
         println!("{} fused claim(s)", fused.len());
         for claim in &fused {
             println!(
@@ -3200,6 +3267,38 @@ fn architecture_fuse_cmd(
     }
 
     Ok(0)
+}
+
+/// Delete stale fused claims (90-day cutoff) for a version. With
+/// `dry_run`, reports the count without deleting. Returns the number
+/// of stale claims found (and deleted unless dry-run).
+fn expire_stale_claims(
+    store: &mut dyn crate::store::GraphStore,
+    version_id: &str,
+    dry_run: bool,
+) -> anyhow::Result<usize> {
+    use crate::architecture::fusion::fused_claims_from_rows;
+
+    let rows = match store.read_fused_claim_rows(&[version_id.to_string()]) {
+        Ok(Some(rows)) => rows,
+        // Pre-v6 database (no FusedClaim table): nothing to expire.
+        Ok(None) => return Ok(0),
+        Err(e) => anyhow::bail!("expire_stale_claims: {e}"),
+    };
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let claims = fused_claims_from_rows(&rows, &[]);
+    let stale_ids: Vec<String> = claims
+        .iter()
+        .filter(|c| c.stale)
+        .map(|c| c.id.clone())
+        .collect();
+    if stale_ids.is_empty() || dry_run {
+        return Ok(stale_ids.len());
+    }
+    let deleted = store.delete_fused_claims(version_id, &stale_ids)?;
+    Ok(deleted)
 }
 
 fn architecture_intent_cmd(action: IntentAction, ctx: &CliContext) -> Result<i32> {

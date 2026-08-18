@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Fusion engine residual** (Item 27 follow-up) — fused claims lifecycle:
+  - `architecture fuse` **persists by default** (MERGE upsert idempotente);
+    `--no-persist` preserva el modo stdout-only previo.
+  - `architecture fuse --expire-stale [--dry-run]` — GC de FusedClaims stale
+    (cutoff 90 días, single source con `StalenessWeightedEvaluator`).
+  - Fix: `parse_observed_at` normaliza el formato de timestamps de
+    LadybugDB (`"2026-08-15 0:00:00.0 +00:00:00"`, no RFC 3339) — sin este
+    fix todo claim persistido se marcaba stale y el evaluador
+    staleness-weighted era inútil con datos reales.
 - **Strict ArchBundle export** (Wave 3 Item 28, ADR-055 via ADR-061) —
   `archctl diagram export --profile strict` sanitizes bundles for sharing:
   - `ExportProfile` enum (`default` | `strict`); `manifest.strict: bool` +
