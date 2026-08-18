@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Strict ArchBundle export** (Wave 3 Item 28, ADR-055 via ADR-061) —
+  `archctl diagram export --profile strict` sanitizes bundles for sharing:
+  - `ExportProfile` enum (`default` | `strict`); `manifest.strict: bool` +
+    `manifest.checksum` (SHA-256 over bundle excluding `generatedAt`).
+  - Evidence paths relativized to project root (no absolute filesystem
+    paths leak); strict bundles open in **read-only mode** in archview
+    (badge + disabled source preview / editor handoff).
+  - Schema `diagram-projection.schema.json` v1.1: optional `strict` +
+    `checksum` fields (backward compatible).
 - **Fusion engine follow-ups** (Wave 3 Item 27) — persistence + evaluators + surfacing:
   - `ClaimEvaluator` trait with `MaxMemberEvaluator` (v1, byte-equal) and
     `StalenessWeightedEvaluator` (v2: 90-day cutoff, ×0.5 stale confidence);
