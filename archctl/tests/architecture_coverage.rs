@@ -135,6 +135,88 @@ fn coverage_schema_version_invariant() {
     let report = archctl::architecture::coverage(&store, &archctl::clock::SystemClock)
         .expect("coverage should succeed");
 
-    assert_eq!(report.schema_version, "1.0");
+    assert_eq!(report.schema_version, "1.1");
     assert_eq!(report.capability, "architecture-coverage-mvp");
+}
+
+// ---------------------------------------------------------------------------
+// Fused claims buckets (v6, Wave 3 Item 27 follow-ups)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_fused_claim_buckets() {
+    use archctl::architecture::fusion::FusedClaim;
+    use archctl::store::DiagramRepository;
+
+    let (mut store, _tmp) = test_store();
+    seed_element(&mut store, "c4:container:a", "v:1", 0.95, "c4");
+
+    // Claim A: multi-support (2), fresh.
+    let a = FusedClaim {
+        id: "clm:fused:aaaa".to_string(),
+        kind: "structural".to_string(),
+        statement: "foo exists".to_string(),
+        confidence: 1.0,
+        observation_ids: vec!["obs:ev:a1".to_string(), "obs:ev:a2".to_string()],
+        derived_from: vec!["ev:a1".to_string(), "ev:a2".to_string()],
+        supports: 2,
+        conflicts_with: vec![],
+        status: "accepted".to_string(),
+        stale: false,
+        warnings: vec![],
+    };
+    // Claim B: single-support (1), stale.
+    let b = FusedClaim {
+        id: "clm:fused:bbbb".to_string(),
+        kind: "structural".to_string(),
+        statement: "bar exists".to_string(),
+        confidence: 0.5,
+        observation_ids: vec!["obs:ev:b1".to_string()],
+        derived_from: vec!["ev:b1".to_string()],
+        supports: 1,
+        conflicts_with: vec![],
+        status: "accepted".to_string(),
+        stale: true,
+        warnings: vec![],
+    };
+    store
+        .put_fused_claims("v:1", &[a, b], "2026-08-01T00:00:00Z")
+        .expect("persist fused claims");
+
+    let report = archctl::architecture::coverage(&store, &archctl::clock::SystemClock)
+        .expect("coverage should succeed");
+
+    assert_eq!(report.schema_version, "1.1");
+    assert_eq!(report.by_fused_claims.total, 2);
+    assert_eq!(report.by_fused_claims.by_supports_single, 1);
+    assert_eq!(report.by_fused_claims.by_supports_multi, 1);
+    assert_eq!(report.by_fused_claims.by_conflicts, 0);
+    assert_eq!(report.by_fused_claims.by_staleness_fresh, 1);
+    assert_eq!(report.by_fused_claims.by_staleness_stale, 1);
+    // Invariant: total == single + multi == fresh + stale.
+    assert_eq!(
+        report.by_fused_claims.total,
+        report.by_fused_claims.by_supports_single + report.by_fused_claims.by_supports_multi
+    );
+    assert_eq!(
+        report.by_fused_claims.total,
+        report.by_fused_claims.by_staleness_fresh + report.by_fused_claims.by_staleness_stale
+    );
+}
+
+#[test]
+fn coverage_fused_claims_zero_when_none_persisted() {
+    let (mut store, _tmp) = test_store();
+    seed_element(&mut store, "c4:container:a", "v:1", 0.95, "c4");
+
+    let report = archctl::architecture::coverage(&store, &archctl::clock::SystemClock)
+        .expect("coverage should succeed");
+
+    assert_eq!(report.schema_version, "1.1");
+    assert_eq!(report.by_fused_claims.total, 0);
+    assert_eq!(report.by_fused_claims.by_supports_single, 0);
+    assert_eq!(report.by_fused_claims.by_supports_multi, 0);
+    assert_eq!(report.by_fused_claims.by_conflicts, 0);
+    assert_eq!(report.by_fused_claims.by_staleness_fresh, 0);
+    assert_eq!(report.by_fused_claims.by_staleness_stale, 0);
 }

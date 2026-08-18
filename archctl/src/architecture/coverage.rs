@@ -63,6 +63,23 @@ pub struct StalenessBuckets {
     pub stale: usize,
 }
 
+/// Fused-claim buckets for `byFusedClaims` (v6 persisted claims).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct FusedClaimBuckets {
+    /// Total persisted fused claims across all version-linked subjects.
+    pub total: usize,
+    /// Claims supported by exactly one observation.
+    pub by_supports_single: usize,
+    /// Claims supported by two or more observations.
+    pub by_supports_multi: usize,
+    /// Claims cross-linked through `CONTRADICTS` (conflicts_with non-empty).
+    pub by_conflicts: usize,
+    /// Claims flagged stale at persist time (90-day cutoff).
+    pub by_staleness_fresh: usize,
+    /// Claims NOT flagged stale at persist time.
+    pub by_staleness_stale: usize,
+}
+
 /// The coverage-report/1 carrier — the output of the `coverage` use case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoverageReport {
@@ -99,6 +116,11 @@ pub struct CoverageReport {
     /// Staleness cutoff (MVP default): 90 days before `clock.now_rfc3339()`.
     #[serde(rename = "byStaleness")]
     pub by_staleness: StalenessBuckets,
+
+    /// Persisted fused claims (v6) bucketed by support, conflict and
+    /// staleness. All-zero when no fused claims are persisted.
+    #[serde(rename = "byFusedClaims")]
+    pub by_fused_claims: FusedClaimBuckets,
 
     /// Elements with no version link and no evidence.
     #[serde(rename = "unsubstantiatedCount")]
@@ -289,8 +311,48 @@ pub fn coverage(
         "CONTRADICTED_BY edges not populated by any extractor — conflicted count always 0",
     )];
 
+    // Fused claims (v6): count persisted claims across every
+    // version-linked subject. Zero buckets when nothing is persisted
+    // or the store predates the v6 tables (Ok(None)).
+    let mut by_fused_claims = FusedClaimBuckets::default();
+    {
+        let mut version_ids: Vec<String> = all_version_ids.clone();
+        version_ids.extend(all_rel_version_ids);
+        version_ids.sort();
+        version_ids.dedup();
+        if let Some(rows) = repo
+            .read_fused_claim_rows(&version_ids)
+            .map_err(CoverageError::from)?
+        {
+            let claim_ids: Vec<String> = rows
+                .iter()
+                .filter_map(|r| r.get("f.id").and_then(|c| c.as_str()).map(String::from))
+                .collect();
+            let edges = repo
+                .list_fused_conflict_edges(&claim_ids)
+                .map_err(CoverageError::from)?;
+            let claims = crate::architecture::fusion::fused_claims_from_rows(&rows, &edges);
+            by_fused_claims.total = claims.len();
+            for claim in &claims {
+                if claim.supports > 1 {
+                    by_fused_claims.by_supports_multi += 1;
+                } else {
+                    by_fused_claims.by_supports_single += 1;
+                }
+                if !claim.conflicts_with.is_empty() {
+                    by_fused_claims.by_conflicts += 1;
+                }
+                if claim.stale {
+                    by_fused_claims.by_staleness_stale += 1;
+                } else {
+                    by_fused_claims.by_staleness_fresh += 1;
+                }
+            }
+        }
+    }
+
     Ok(CoverageReport {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         capability: "architecture-coverage-mvp".to_string(),
         total_elements,
         total_relations,
@@ -298,6 +360,7 @@ pub fn coverage(
         by_evidence_status,
         by_conflict,
         by_staleness,
+        by_fused_claims,
         unsubstantiated_count,
         warnings,
     })
@@ -569,7 +632,7 @@ mod tests {
         let repo = FakeRepo::new();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
-        assert_eq!(result.schema_version, "1.0");
+        assert_eq!(result.schema_version, "1.1");
     }
 
     #[test]
