@@ -297,11 +297,13 @@ fn relativize_path(path: &str, project_root: &Path) -> String {
 
 /// Apply strict-mode sanitization to a bundle.
 /// - Paths in evidence entries are relativized to project root
+/// - Secret shapes are redacted (`[REDACTED:<kind>]`, ADR-055 phase 2)
 /// - `manifest.strict` is set to true
 fn sanitize_bundle(bundle: &mut BundleEnvelope, project_root: &Path) {
     for entry in &mut bundle.evidence.evidence {
         entry.path = relativize_path(&entry.path, project_root);
     }
+    crate::diagram::redact::redact_bundle(bundle);
     bundle.manifest.strict = true;
 }
 
