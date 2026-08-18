@@ -1,14 +1,27 @@
-//! Observation / Claim compatibility projection over EvidenceEntry.
+//! Observation / Claim projection over Evidence.
 //!
-//! P2-09a only — additive read-only mapping. P2-09b (persistent
-//! Observation + Claim tables, dual-write, fusion) is deferred.
+//! **P2-09b (Wave 3 Item 19)**: the `(:Observation)` and `(:Claim)`
+//! tables are now persistent (per the v4 migration
+//! `v4-p2-09b-create-obs-clm-tables` and the v5 migration's
+//! backfill hook). The `put_evidence` dual-write seam ensures every
+//! new Evidence also produces one Observation + one compat Claim
+//! row (1:1, idempotent on re-MERGE).
+//!
+//! The canonical read path (`observations_and_claims_for_version`)
+//! prefers the persistent tables when present and falls back to the
+//! P2-09a compatibility derivation (`observation_from_evidence` /
+//! `compat_claim_from_evidence`) for any Evidence rows that don't yet
+//! have a backing Observation — which can only happen for
+//! pre-upgrade databases where the v5 backfill hook hasn't yet
+//! completed (or the user explicitly used the compat path).
 //!
 //! ID convention:
-//! - obs:<evidence_id>   — Observation derived 1:1 from a single EvidenceEntry
-//! - clm:compat:<evidence_id> — compatibility Claim, fused=false, status mirrors
+//! - `obs:<evidence_id>` — canonical Observation; or 1:1 P2-09a
+//!   derivation if the canonical row is missing.
+//! - `clm:compat:<evidence_id>` — compat Claim, fused=false; status
+//!   mirrors EvidenceEntry.status (P2-09a behavior).
 //!
-//! Confidence defaults are COMPATIBILITY ONLY (P2-09b replaces with
-//! real recompute). Mappings:
+//! Confidence defaults (P2-09a behavior preserved for compat claims):
 //! - EvidenceStatus::Accepted → confidence 1.0
 //! - EvidenceStatus::Drafted, Superseded → confidence 0.0
 
