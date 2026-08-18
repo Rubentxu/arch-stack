@@ -98,11 +98,33 @@ impl ClaimEvaluator for MaxMemberEvaluator {
 /// stale when any member observation's `observed_at` is older than
 /// [`STALENESS_CUTOFF_DAYS`] before `now`; stale claims get
 /// confidence × 0.5. Deterministic, order-independent.
-pub struct StalenessWeightedEvaluator;
-
 /// Staleness cutoff in days — same invariant as `architecture
 /// coverage` (`StalenessBuckets`): fresh ≤ 90 days, stale > 90 days.
 pub const STALENESS_CUTOFF_DAYS: i64 = 90;
+
+/// v2 strategy with a configurable staleness cutoff. `Default`
+/// keeps the canonical 90-day window.
+#[derive(Debug, Clone, Copy)]
+pub struct StalenessWeightedEvaluator {
+    /// Fresh window in days; observations older than this are stale.
+    pub cutoff_days: i64,
+}
+
+impl Default for StalenessWeightedEvaluator {
+    fn default() -> Self {
+        Self {
+            cutoff_days: STALENESS_CUTOFF_DAYS,
+        }
+    }
+}
+
+impl StalenessWeightedEvaluator {
+    pub fn new(cutoff_days: i64) -> Self {
+        Self {
+            cutoff_days: cutoff_days.max(1),
+        }
+    }
+}
 
 impl ClaimEvaluator for StalenessWeightedEvaluator {
     fn name(&self) -> &'static str {
@@ -122,7 +144,9 @@ impl ClaimEvaluator for StalenessWeightedEvaluator {
     }
 
     fn stale(&self, members: &[&Observation], now: &str) -> bool {
-        members.iter().any(|o| is_stale_observation(o, now))
+        members
+            .iter()
+            .any(|o| is_stale_observation(o, now, self.cutoff_days))
     }
 }
 
@@ -132,7 +156,7 @@ impl ClaimEvaluator for StalenessWeightedEvaluator {
 /// - Empty `now` disables staleness (nothing to compare against).
 /// - Unparseable `observed_at` is treated as stale (conservative:
 ///   if we cannot prove freshness, flag it).
-fn is_stale_observation(obs: &Observation, now: &str) -> bool {
+fn is_stale_observation(obs: &Observation, now: &str, cutoff_days: i64) -> bool {
     if now.is_empty() {
         return false;
     }
@@ -144,7 +168,7 @@ fn is_stale_observation(obs: &Observation, now: &str) -> bool {
         return true;
     };
     let age = now_dt.with_timezone(&chrono::Utc) - obs_dt;
-    age > chrono::Duration::days(STALENESS_CUTOFF_DAYS)
+    age > chrono::Duration::days(cutoff_days)
 }
 
 /// Parse an observed-at timestamp into UTC. Accepts RFC 3339 and the
@@ -374,6 +398,7 @@ pub fn fuse_observations_with(
 pub fn recompute_fused_for_versions(
     store: &mut dyn crate::store::GraphStore,
     version_ids: &[String],
+    evaluator: &dyn ClaimEvaluator,
 ) -> usize {
     let mut written = 0usize;
     for version_id in version_ids {
@@ -389,7 +414,11 @@ pub fn recompute_fused_for_versions(
         if observations.is_empty() {
             continue;
         }
-        let fused = fuse_observations(&observations);
+        let fused = fuse_observations_with(
+            &observations,
+            evaluator,
+            &crate::clock::Clock::now_rfc3339(&crate::clock::SystemClock),
+        );
         if fused.is_empty() {
             continue;
         }
@@ -633,7 +662,7 @@ mod tests {
         // observed_at exactly 90 days before now → fresh.
         let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
         o.observed_at = "2026-05-03T00:00:00Z".to_string();
-        let stale = is_stale_observation(&o, now);
+        let stale = is_stale_observation(&o, now, STALENESS_CUTOFF_DAYS);
         assert!(!stale, "exactly 90 days must be fresh");
     }
 
@@ -643,8 +672,37 @@ mod tests {
         // observed_at 90 days + 1 second before now → stale.
         let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
         o.observed_at = "2026-05-02T23:59:59Z".to_string();
-        let stale = is_stale_observation(&o, now);
+        let stale = is_stale_observation(&o, now, STALENESS_CUTOFF_DAYS);
         assert!(stale, "90 days + 1s must be stale");
+    }
+
+    #[test]
+    fn staleness_cutoff_configurable() {
+        let now = "2026-08-01T00:00:00Z";
+        // 30-day-old observation: fresh at 90-day cutoff, stale at 7-day.
+        let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        o.observed_at = "2026-07-02T00:00:00Z".to_string();
+        assert!(
+            !is_stale_observation(&o, now, 90),
+            "30 days must be fresh at 90-day cutoff"
+        );
+        assert!(
+            is_stale_observation(&o, now, 7),
+            "30 days must be stale at 7-day cutoff"
+        );
+
+        // Evaluator honours its own cutoff.
+        let evaluator = StalenessWeightedEvaluator::new(7);
+        let members = [&o];
+        assert!(
+            evaluator.stale(&members, now),
+            "evaluator with 7-day cutoff must flag 30-day-old obs"
+        );
+        let default_evaluator = StalenessWeightedEvaluator::default();
+        assert!(
+            !default_evaluator.stale(&members, now),
+            "default evaluator (90d) must keep 30-day-old obs fresh"
+        );
     }
 
     #[test]
@@ -683,7 +741,8 @@ mod tests {
         let mut old = obs("obs:ev:2", "structural", "foo exists", "src/a.rs");
         old.observed_at = "2025-01-01T00:00:00Z".to_string();
 
-        let claims = fuse_observations_with(&[fresh, old], &StalenessWeightedEvaluator, now);
+        let claims =
+            fuse_observations_with(&[fresh, old], &StalenessWeightedEvaluator::default(), now);
         assert_eq!(claims.len(), 1, "same statement still fuses");
         assert!(claims[0].stale, "mixed members → stale claim");
         // MaxMember base is 1.0; stale → × 0.5.
@@ -698,7 +757,7 @@ mod tests {
         let mut b = obs("obs:ev:2", "structural", "foo exists", "src/a.rs");
         b.observed_at = "2026-06-01T00:00:00Z".to_string();
 
-        let claims = fuse_observations_with(&[a, b], &StalenessWeightedEvaluator, now);
+        let claims = fuse_observations_with(&[a, b], &StalenessWeightedEvaluator::default(), now);
         assert!(!claims[0].stale);
         assert!((claims[0].confidence - 1.0).abs() < f64::EPSILON);
     }
@@ -708,14 +767,17 @@ mod tests {
         let now = "2026-08-01T00:00:00Z";
         let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
         o.observed_at = "not-a-timestamp".to_string();
-        assert!(is_stale_observation(&o, now));
+        assert!(is_stale_observation(&o, now, STALENESS_CUTOFF_DAYS));
     }
 
     #[test]
     fn empty_now_disables_staleness() {
         let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
         o.observed_at = "2000-01-01T00:00:00Z".to_string();
-        assert!(!is_stale_observation(&o, ""), "no now → not stale");
+        assert!(
+            !is_stale_observation(&o, "", STALENESS_CUTOFF_DAYS),
+            "no now → not stale"
+        );
     }
 
     #[test]
@@ -725,9 +787,12 @@ mod tests {
         a.observed_at = "2026-07-01T00:00:00Z".to_string();
         let mut b = obs("obs:ev:2", "structural", "foo exists", "src/a.rs");
         b.observed_at = "2025-01-01T00:00:00Z".to_string();
-        let forward =
-            fuse_observations_with(&[a.clone(), b.clone()], &StalenessWeightedEvaluator, now);
-        let backward = fuse_observations_with(&[b, a], &StalenessWeightedEvaluator, now);
+        let forward = fuse_observations_with(
+            &[a.clone(), b.clone()],
+            &StalenessWeightedEvaluator::default(),
+            now,
+        );
+        let backward = fuse_observations_with(&[b, a], &StalenessWeightedEvaluator::default(), now);
         assert_eq!(forward, backward, "v2 must be order-independent");
     }
 }

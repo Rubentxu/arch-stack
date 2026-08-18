@@ -1310,6 +1310,7 @@ fn write_call_edge(
         let _ = crate::architecture::fusion::recompute_fused_for_versions(
             store,
             &[_version_id.to_string()],
+            &crate::architecture::fusion::MaxMemberEvaluator,
         );
     }
 

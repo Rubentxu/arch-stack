@@ -278,6 +278,10 @@ pub enum ArchitectureAction {
         /// Fusion strategy: max-member (default) or staleness-weighted.
         #[arg(long, default_value = "max-member")]
         evaluator: String,
+        /// Staleness cutoff in days for --expire-stale and the
+        /// staleness-weighted evaluator (default: 90).
+        #[arg(long, default_value_t = 90)]
+        cutoff_days: i64,
     },
     /// Check intent declaration against the live graph.
     Intent {
@@ -1041,6 +1045,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 expire_stale,
                 dry_run,
                 evaluator,
+                cutoff_days,
             } => architecture_fuse_cmd(
                 cwd,
                 &version_id,
@@ -1051,6 +1056,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     dry_run,
                 },
                 &evaluator,
+                cutoff_days,
                 ctx,
             ),
             ArchitectureAction::Intent { action } => architecture_intent_cmd(action, ctx),
@@ -3113,6 +3119,7 @@ fn architecture_fuse_cmd(
     json: bool,
     opts: FuseOptions,
     evaluator_name: &str,
+    cutoff_days: i64,
     ctx: &CliContext,
 ) -> Result<i32> {
     use crate::architecture::fusion::{
@@ -3135,7 +3142,7 @@ fn architecture_fuse_cmd(
     // Resolve the fusion strategy before touching the store.
     let evaluator: Box<dyn ClaimEvaluator> = match evaluator_name {
         "max-member" => Box::new(MaxMemberEvaluator),
-        "staleness-weighted" => Box::new(StalenessWeightedEvaluator),
+        "staleness-weighted" => Box::new(StalenessWeightedEvaluator::new(cutoff_days)),
         other => {
             if json {
                 eprintln!(
@@ -3200,7 +3207,7 @@ fn architecture_fuse_cmd(
     // --dry-run only reports them.
     let mut expired_count = 0usize;
     if opts.expire_stale {
-        match expire_stale_claims(store.as_mut(), version_id, opts.dry_run) {
+        match expire_stale_claims(store.as_mut(), version_id, opts.dry_run, cutoff_days) {
             Ok(n) => expired_count = n,
             Err(e) => {
                 if json {
@@ -3269,15 +3276,17 @@ fn architecture_fuse_cmd(
     Ok(0)
 }
 
-/// Delete stale fused claims (90-day cutoff) for a version. With
+/// Delete stale fused claims (configurable cutoff) for a version. With
 /// `dry_run`, reports the count without deleting. Returns the number
 /// of stale claims found (and deleted unless dry-run).
 fn expire_stale_claims(
     store: &mut dyn crate::store::GraphStore,
     version_id: &str,
     dry_run: bool,
+    cutoff_days: i64,
 ) -> anyhow::Result<usize> {
-    use crate::architecture::fusion::fused_claims_from_rows;
+    use crate::architecture::fusion::{ClaimEvaluator, StalenessWeightedEvaluator};
+    use crate::architecture::fusion::{STALENESS_CUTOFF_DAYS, fused_claims_from_rows};
 
     let rows = match store.read_fused_claim_rows(&[version_id.to_string()]) {
         Ok(Some(rows)) => rows,
@@ -3289,11 +3298,36 @@ fn expire_stale_claims(
         return Ok(0);
     }
     let claims = fused_claims_from_rows(&rows, &[]);
-    let stale_ids: Vec<String> = claims
-        .iter()
-        .filter(|c| c.stale)
-        .map(|c| c.id.clone())
-        .collect();
+    // The persisted claim's `stale` flag was computed at write time with
+    // the THEN-active cutoff. With the canonical 90-day cutoff we trust
+    // the stored flag (previous behaviour, fast path); with a custom
+    // --cutoff-days we re-evaluate each claim against the requested
+    // cutoff using the member observations.
+    let stale_ids: Vec<String> = if cutoff_days == STALENESS_CUTOFF_DAYS {
+        claims
+            .iter()
+            .filter(|c| c.stale)
+            .map(|c| c.id.clone())
+            .collect()
+    } else {
+        let evaluator = StalenessWeightedEvaluator::new(cutoff_days);
+        let now = crate::clock::Clock::now_rfc3339(&crate::clock::SystemClock);
+        let mut ids = Vec::new();
+        for claim in &claims {
+            let observations = match crate::observation_claim::observations_and_claims_for_version(
+                store, version_id,
+            ) {
+                Ok((obs, _)) => obs,
+                Err(_) => continue,
+            };
+            let members: Vec<&crate::observation_claim::Observation> =
+                observations.iter().collect();
+            if evaluator.stale(&members, &now) {
+                ids.push(claim.id.clone());
+            }
+        }
+        ids
+    };
     if stale_ids.is_empty() || dry_run {
         return Ok(stale_ids.len());
     }
