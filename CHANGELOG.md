@@ -1,6 +1,12 @@
 ## [Unreleased]
 
 ### Added
+- **Fusion params configurables** (Item 27 follow-up):
+  - `architecture fuse --cutoff-days N` — cutoff de staleness configurable
+    (evaluador staleness-weighted + `--expire-stale`; default 90).
+  - `StalenessWeightedEvaluator` con `new(cutoff_days)` / `Default` (90).
+  - `recompute_fused_for_versions` acepta evaluador (seam usa MaxMember
+    por defecto).
 - **Fuse-on-write** (Item 27 residual) — `recompute_fused_for_versions`
   persiste FusedClaims automáticamente tras cada write de evidencia
   (seams en `c4_discover::write_evidence` y `call_graph`): ya no hace

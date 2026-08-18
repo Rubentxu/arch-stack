@@ -212,3 +212,35 @@ fn lbug_timestamp_readback_format_is_not_rfc3339() {
     // normalize it (see fusion.rs parse_observed_at).
     assert!(chrono::DateTime::parse_from_rfc3339(raw).is_err());
 }
+
+/// F-P6: --cutoff-days governs expire-stale (custom window).
+#[test]
+fn fuse_expire_stale_honors_custom_cutoff() {
+    // observed_at 2026-07-15 (~34 days before now): fresh at 90-day
+    // cutoff, stale at 7-day cutoff.
+    let (_tmp, project) = seed_project("2026-07-15T00:00:00Z", "vid-p6");
+
+    // Default 90-day cutoff: claim stays (fresh).
+    let report90 = run_fuse(
+        &project,
+        "vid-p6",
+        &["--evaluator", "staleness-weighted", "--expire-stale"],
+    );
+    assert_eq!(report90["expired_stale"], serde_json::json!(0));
+    assert_eq!(persisted_claim_count(&project, "vid-p6"), 1);
+
+    // 7-day cutoff: same observations are stale → expired.
+    let report7 = run_fuse(
+        &project,
+        "vid-p6",
+        &[
+            "--evaluator",
+            "staleness-weighted",
+            "--expire-stale",
+            "--cutoff-days",
+            "7",
+        ],
+    );
+    assert_eq!(report7["expired_stale"], serde_json::json!(1));
+    assert_eq!(persisted_claim_count(&project, "vid-p6"), 0);
+}
