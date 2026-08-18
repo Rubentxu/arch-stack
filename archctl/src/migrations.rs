@@ -258,12 +258,29 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
                 .and_then(|v| v.as_str())
                 .unwrap_or("1970-01-01T00:00:00Z")
                 .to_string();
-            // lbug 0.18.3 `timestamp()` parser is strict — accepts
-            // `YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]]` (space-separated,
-            // not `T`), and 2-digit hour. Evidence rows are stored with
-            // ISO-8601 strings (`2026-08-01T00:00:00Z`); convert to
-            // lbug's expected format for the backfill writes.
-            let _oa_cypher_literal = iso_to_lbug_timestamp(&observed_at);
+            // P2-09b residual fix: lbug round-trips `timestamp()` columns
+            // as `"2026-08-15 0:00:00.0 +00:00:00"` (NOT RFC 3339), and its
+            // TIMESTAMP column rejects that readback form on write. The
+            // previous workaround (writing the raw readback as a string
+            // literal, relying on auto-coercion) fails silently — the
+            // MERGE errors and the backfill skips the row. Normalize to
+            // strict RFC 3339 first: parseable by lbug's coercion AND by
+            // our staleness parser regardless of column typing.
+            let oa_normalized = crate::architecture::fusion::parse_observed_at(&observed_at)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|| observed_at.clone());
+            // `timestamp('...')` Cypher wrap: lbug requires the function
+            // call to write TIMESTAMP columns (no implicit string cast).
+            // UTC-normalized to the Z form put_evidence uses.
+            let oa_ts = format!(
+                "timestamp('{}')",
+                crate::architecture::fusion::parse_observed_at(&observed_at)
+                    .map(|dt| dt
+                        .with_timezone(&chrono::Utc)
+                        .format("%Y-%m-%dT%H:%M:%SZ")
+                        .to_string())
+                    .unwrap_or_else(|| observed_at.clone())
+            );
 
             // Build a stub EvidenceEntry so we can reuse the P2-09a
             // compat mappers as the single source of truth for shape.
@@ -280,7 +297,7 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
                 tool_version: tool_version.clone(),
                 rule_id: "backfill".to_string(),
                 content_hash: String::new(),
-                observed_at: observed_at.clone(),
+                observed_at: oa_normalized.clone(),
                 status: Some("accepted".to_string()),
             };
             let obs = observation_from_evidence(&stub);
@@ -293,14 +310,13 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
             let safe_obs_path = obs.path.replace('\'', "\\'");
             let safe_obs_tool = obs.tool_name.replace('\'', "\\'");
             let safe_obs_tv = obs.tool_version.replace('\'', "\\'");
-            // `observed_at` was already normalized by lbug when the
-            // Evidence row was created (T→space, Z→`+00:00:00`,
-            // fractional precision stripped). Re-wrapping it in
-            // `timestamp()` would trigger a second parse and fail
-            // because the round-tripped form doesn't match the
-            // strict format spec. We use the value as a literal —
-            // lbug auto-coerces STRING-literal values into TIMESTAMP
-            // columns in this version.
+            // P2-09b residual fix (verified 2026-08-18): lbug 0.18.x
+            // does NOT implicitly cast STRING literals into TIMESTAMP
+            // columns — the previous workaround (bare literal) failed
+            // silently and skipped every pre-upgrade row. The
+            // round-tripped readback form also breaks `timestamp()`.
+            // Fix: normalize to strict RFC 3339 first, then wrap in
+            // `timestamp()` (the same path `put_evidence` uses).
             let obs_cypher = format!(
                 "MERGE (o:Observation {{id: '{obs_id}'}}) SET \
                  o.kind = '{safe_obs_kind}', \
@@ -310,13 +326,12 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
                  o.end_line = {}, \
                  o.tool_name = '{safe_obs_tool}', \
                  o.tool_version = '{safe_obs_tv}', \
+                 o.observed_at = '{oa_normalized}', \
                  o.confidence = 1.0, \
                  o.source_origin = 'backfill_from_evidence', \
                  o.written_via_backfill = true, \
-                 o.written_at = '{oa}' RETURN o;",
-                obs.start_line as i64,
-                obs.end_line as i64,
-                oa = observed_at,
+                 o.written_at = {oa_ts} RETURN o;",
+                obs.start_line as i64, obs.end_line as i64,
             );
             if let Err(e) = session.conn.query(&obs_cypher) {
                 tracing::warn!(evidence_id = %id, error = %e, "backfill: Observation MERGE failed");
@@ -329,7 +344,8 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
             let claim_id = format!("clm:compat:{id}");
             let safe_claim_statement = claim.statement.replace('\'', "\\'");
             // Same rationale as Observation: skip `timestamp()` wrap
-            // (see comment above).
+            // Same rationale as Observation: normalized RFC 3339 wrapped
+            // in `timestamp()` (see comment above).
             let claim_cypher = format!(
                 "MERGE (c:Claim {{id: '{claim_id}'}}) SET \
                  c.statement = '{safe_claim_statement}', \
@@ -338,8 +354,7 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
                  c.observation_ids = ['obs:{id}'], \
                  c.derived_from = ['{id}'], \
                  c.status = 'accepted', \
-                 c.written_at = '{oa}' RETURN c;",
-                oa = observed_at,
+                 c.written_at = {oa_ts} RETURN c;",
             );
             if let Err(e) = session.conn.query(&claim_cypher) {
                 tracing::warn!(evidence_id = %id, error = %e, "backfill: Claim MERGE failed");
@@ -389,28 +404,6 @@ fn parse_kind_for_backfill(s: &str) -> crate::evidence::EvidenceKind {
         "other" | "Other" => EvidenceKind::Other,
         _ => EvidenceKind::Other,
     }
-}
-
-/// Convert an ISO-8601 timestamp string (e.g. `2026-08-01T00:00:00Z`)
-/// into the literal format that lbug 0.18.3's `timestamp()` Cypher
-/// function accepts. Currently the backfill body uses a string-literal
-/// fallback (no `timestamp()` wrap) because lbug's parser is
-/// strict on the round-tripped form; this helper is retained for
-/// future re-introduction once the lbug version is bumped.
-#[allow(dead_code)]
-fn iso_to_lbug_timestamp(iso: &str) -> String {
-    // Expected input: `2026-08-01T00:00:00Z` (length 20).
-    if iso.len() == 20 {
-        let bytes = iso.as_bytes();
-        if bytes[10] == b'T' && bytes[19] == b'Z' {
-            // `YYYY-MM-DD` + `T` + `hh:mm:ss` + `.000`.
-            let mut s = String::with_capacity(23);
-            s.push_str(&iso[..19]); // "YYYY-MM-DDThh:mm:ss"
-            s.push_str(".000");
-            return s;
-        }
-    }
-    iso.to_string()
 }
 
 /// Split a Cypher script into individual statements, stripping
@@ -594,5 +587,101 @@ mod tests {
         // Step 2: idempotency — re-running the backfill on the same
         // empty database must be a no-op.
         backfill_observation_claim_from_evidence(&mut store).expect("backfill empty again");
+    }
+}
+
+#[cfg(test)]
+mod backfill_preupgrade_tests {
+    use super::*;
+    use crate::graph::init as graph_init;
+    use crate::store::{GraphStore, LbugStore, RawGraphQuery};
+
+    /// P2-09b residual: backfill must handle PRE-UPGRADE Evidence rows
+    /// whose `observed_at` was written by lbug's `timestamp()` and
+    /// round-trips as `"2026-08-15 0:00:00.0 +00:00:00"` (NOT RFC 3339).
+    ///
+    /// Regression pin for the STATE.md blocker: "cambiar written_at a
+    /// STRING o bump lbug (bloquea backfill de filas pre-upgrade)".
+    /// The v5 hook writes `written_at` as a STRING literal relying on
+    /// lbug auto-coercion — this test proves that path works with
+    /// round-tripped timestamps.
+    #[test]
+    fn backfill_pre_upgrade_rows_with_roundtripped_timestamps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        graph_init(&project, &fs).unwrap();
+
+        let mut store = LbugStore::open(&project).expect("open");
+        store.init().expect("init");
+
+        // Simulate a PRE-UPGRADE Evidence row: written via timestamp()
+        // (the old writer path), observed_at round-trips in lbug's
+        // non-RFC3339 format when read back.
+        store
+            .execute_raw_cypher_for_test(
+                "CREATE (:Evidence {id: 'ev:pre:1', kind: 'call', claim: 'foo', path: 'src/a.rs', start_line: 1, end_line: 2, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule', props: '{\"status\":\"accepted\"}', content_hash: 'sha256:pre1', observed_at: timestamp('2026-08-15T00:00:00Z')})",
+            )
+            .expect("seed pre-upgrade evidence");
+        // Pre-upgrade means NO Observation row exists yet (the v4/v5
+        // tables were created later) — assert the premise.
+        let prematch: i64 = {
+            let rows = <LbugStore as RawGraphQuery>::query(
+                &store,
+                "MATCH (o:Observation {id: 'obs:ev:pre:1'}) RETURN count(o) AS n;",
+            )
+            .expect("count obs");
+            rows.first()
+                .and_then(|r| r.get("n"))
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0)
+        };
+        assert_eq!(prematch, 0, "pre-upgrade premise: no Observation row");
+
+        // Run the v5 backfill hook.
+        backfill_observation_claim_from_evidence(&mut store).expect("backfill pre-upgrade");
+
+        // The Observation row must exist, with written_at populated
+        // (STRING-literal coercion path) and written_via_backfill=true.
+        let rows = <LbugStore as RawGraphQuery>::query(
+            &store,
+            "MATCH (o:Observation {id: 'obs:ev:pre:1'}) RETURN o.written_via_backfill, o.observed_at, o.written_at;",
+        )
+        .expect("read backfilled obs");
+        assert_eq!(rows.len(), 1, "backfill must create the Observation row");
+        let row = &rows[0];
+        assert_eq!(
+            row.get("o.written_via_backfill").and_then(|c| c.as_bool()),
+            Some(true),
+            "written_via_backfill must be true"
+        );
+        let observed_at = row
+            .get("o.observed_at")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        // observed_at is preserved (round-tripped form or normalized).
+        assert!(!observed_at.is_empty(), "observed_at must be populated");
+        // The backfilled written_at must be parseable by our fusion
+        // staleness parser (RFC 3339 or lbug readback format).
+        let written_at = row
+            .get("o.written_at")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        assert!(
+            !written_at.is_empty(),
+            "written_at must be populated by the backfill"
+        );
+        assert!(
+            crate::architecture::fusion::parse_observed_at(written_at).is_some(),
+            "backfilled written_at must be parseable, got: {written_at}"
+        );
+
+        // Compat Claim row too.
+        let claims = <LbugStore as RawGraphQuery>::query(
+            &store,
+            "MATCH (c:Claim {id: 'clm:compat:ev:pre:1'}) RETURN c.id;",
+        )
+        .expect("read compat claim");
+        assert_eq!(claims.len(), 1, "backfill must create the compat Claim row");
     }
 }

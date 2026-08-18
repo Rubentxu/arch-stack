@@ -290,7 +290,7 @@ mod tests {
     fn redacts_aws_access_key() {
         // Key id built by concatenation so GitHub push protection does
         // not flag the test literal as a real AWS credential.
-        let key = format!("key={} here", format!("AKIA{}", "IOSFODNN7EXAMPLE1234"));
+        let key = format!("key={} here", ["AKIA", "IOSFODNN7EXAMPLE1234"].concat());
         assert_eq!(redact_secrets(&key), "key=[REDACTED:aws-access-key] here");
     }
 
