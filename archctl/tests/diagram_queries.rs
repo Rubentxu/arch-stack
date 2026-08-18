@@ -292,7 +292,10 @@ impl archctl::store::UnitOfWork for TinyGraphStore {
 // trait per type, and the methods above are already part of the
 // `impl GraphStore for TinyGraphStore` block.
 impl EvidenceOps for TinyGraphStore {
-    fn put_evidence(&mut self, _: &[archctl::evidence::Evidence]) -> anyhow::Result<usize> {
+    fn put_evidence(
+        &mut self,
+        _: &[archctl::evidence::Evidence],
+    ) -> anyhow::Result<archctl::store::PutEvidenceResult> {
         unimplemented!()
     }
     fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> {

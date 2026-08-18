@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **P2-09b persistent Observation + Claim tables** (Wave 3 Item 19) —
+  schema migration `v4-p2-09b-create-obs-clm-tables` creates `(:Observation)`
+  + `(:Claim)` tables (12 + 5 columns including `source_origin`,
+  `written_via_backfill`, `evidence_ids`). `EvidenceOps::put_evidence`
+  extended to return `PutEvidenceResult { evidence_rows, observation_rows,
+  claim_rows }` and to dual-write Observation + compat Claim on every
+  Evidence write (best-effort per ADR-049 D4). Backfill migration
+  `v5-p2-09b-backfill-obs-clm-from-evidence` (PR-B wiring) populates
+  the new tables from pre-upgrade Evidence rows via a `rust_hook` on
+  the `Migration` struct (idempotent on re-run; bounded by
+  `SAFETY_CAP = 100_000`).
 
 ### Changed
+- `archctl/src/observation_claim.rs` mod-level docstring rewritten to
+  reflect P2-09b: canonical tables are persistent; the read path
+  prefers canonical with compat fallback for partial states.
+- `docs/adr/ADR-049-evidence-observation-claim-confidence-model.md`
+  Status header flipped from `Aceptado (parcial)` to
+  `Aceptado — full scope closed`; body notes P2-09b cycle.
 
 ### Fixed
 

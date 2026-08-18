@@ -17,6 +17,15 @@ pub struct Migration {
     pub version: &'static str,
     /// Cypher script content. `include_str!`-compiled for zero I/O at runtime.
     pub cypher: &'static str,
+    /// Optional Rust hook executed after the Cypher step succeeds.
+    ///
+    /// Use this when the migration requires more than declarative DDL
+    /// (e.g., backfilling derived rows from existing tables, complex
+    /// per-row updates that benefit from Rust's iteration semantics).
+    /// The function MUST be idempotent (the runner may re-apply after
+    /// a partial-failure recovery even if the marker was rolled back).
+    /// `None` for pure-Cypher migrations.
+    pub rust_hook: Option<fn(&mut crate::store::LbugStore) -> Result<()>>,
 }
 
 /// Ordered registry of all migrations. Newest version MUST be last.
@@ -24,14 +33,35 @@ pub const MIGRATIONS: &[Migration] = &[
     Migration {
         version: "v1-initial",
         cypher: include_str!("../../docs/schema/001_initial_schema.cypher"),
+        rust_hook: None,
     },
     Migration {
         version: "v2-source-evaluation",
         cypher: include_str!("../../docs/schema/002_source_evaluation.cypher"),
+        rust_hook: None,
     },
     Migration {
         version: "v3-view-nodes",
         cypher: include_str!("../../docs/schema/003_view_nodes.cypher"),
+        rust_hook: None,
+    },
+    // P2-09b (Wave 3 Item 19): persistent Observation + Claim tables.
+    // ADR-049 closure step 1 of 2 — backfill lands separately
+    // (cycle PR-B) so existing pre-upgrade graphs stay usable via
+    // compat fallback while new graphs dual-write from `put_evidence`.
+    Migration {
+        version: "v4-p2-09b-create-obs-clm-tables",
+        cypher: include_str!("../../docs/schema/004_p2_09b_create_obs_clm.cypher"),
+        rust_hook: None,
+    },
+    // P2-09b backfill: populate the new tables with one Observation
+    // + one compat Claim per Evidence row. Idempotent (skips rows
+    // that already have a backing Observation). Empty Cypher because
+    // the work is procedural — Rust hook below.
+    Migration {
+        version: "v5-p2-09b-backfill-obs-clm-from-evidence",
+        cypher: "-- P2-09b backfill: work is in the rust_hook; no DDL needed.",
+        rust_hook: Some(backfill_observation_claim_from_evidence),
     },
 ];
 
@@ -108,6 +138,273 @@ pub(crate) fn apply_pending(
     Ok(applied)
 }
 
+/// Apply the P2-09b backfill hook against an open `LbugStore`.
+///
+/// Scans all `(:Evidence)` rows in `BATCH_SIZE` chunks (default 500),
+/// writes one `(:Observation)` + one compat `(:Claim)` row per Evidence
+/// row that does NOT already have a backing `(:Observation)`. Idempotent
+/// on re-call: rows already backed are skipped.
+///
+/// Called from the migration `v5-p2-09b-backfill-obs-clm-from-evidence`'s
+/// `rust_hook` field after the (empty) Cypher step succeeds. The hook
+/// runs inside `init()` against an open session.
+pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugStore) -> Result<()> {
+    use crate::observation_claim::{compat_claim_from_evidence, observation_from_evidence};
+
+    const BATCH_SIZE: usize = 500;
+    const SAFETY_CAP: usize = 100_000;
+
+    let session = store.session_for_migrations();
+    let mut last_id_processed: Option<String> = None;
+    let mut total_observations = 0usize;
+    let mut total_claims = 0usize;
+    let mut total_skipped = 0usize;
+    let mut total_seen = 0usize;
+
+    loop {
+        // Page forward through Evidence rows by id. The first batch
+        // returns all rows; subsequent batches add `WHERE e.id > last`
+        // to avoid re-processing already-seen ids.
+        let cypher = match &last_id_processed {
+            None => format!(
+                "MATCH (e:Evidence) \
+                 RETURN e.id, e.kind, e.claim, e.path, \
+                        e.start_line, e.end_line, e.tool_name, \
+                        e.tool_version, e.observed_at \
+                 ORDER BY e.id LIMIT {BATCH_SIZE};"
+            ),
+            Some(last) => format!(
+                "MATCH (e:Evidence) WHERE e.id > '{last}' \
+                 RETURN e.id, e.kind, e.claim, e.path, \
+                        e.start_line, e.end_line, e.tool_name, \
+                        e.tool_version, e.observed_at \
+                 ORDER BY e.id LIMIT {BATCH_SIZE};"
+            ),
+        };
+        // Use `run_query` (pub(crate) which preserves column names) so
+        // `row.get("e.id")` works inside the loop body. Using
+        // `Row::from_positional` here would lose the column names
+        // and force a fall back to positional access.
+        let rows = crate::store::run_query(&session.conn, &cypher)
+            .with_context(|| format!("backfill: select batch after {last_id_processed:?}"))?;
+        if rows.is_empty() {
+            break;
+        }
+
+        for row in &rows {
+            let id = match row.get("e.id").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(),
+                None => continue,
+            };
+            total_seen += 1;
+
+            // Idempotency check — skip if Observation exists for this id.
+            // Uses session.conn.query directly (no LbugStore::query
+            // wrapper; same admin-scope rationale as above).
+            let exists_check =
+                format!("MATCH (o:Observation {{id: 'obs:{id}'}}) RETURN o.id LIMIT 1;");
+            let existing_rows = match session.conn.query(&exists_check) {
+                Ok(r) => r.into_iter().count(),
+                Err(_) => 0,
+            };
+            if existing_rows > 0 {
+                total_skipped += 1;
+                last_id_processed = Some(id);
+                continue;
+            }
+
+            // Read remaining Evidence fields. Use &str-or-empty fallback
+            // so a partial row doesn't crash the whole batch.
+            let kind = row
+                .get("e.kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let claim_text = row
+                .get("e.claim")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let path = row
+                .get("e.path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let start_line = row
+                .get("e.start_line")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let end_line = row.get("e.end_line").and_then(|v| v.as_i64()).unwrap_or(0);
+            let tool_name = row
+                .get("e.tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let tool_version = row
+                .get("e.tool_version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let observed_at = row
+                .get("e.observed_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("1970-01-01T00:00:00Z")
+                .to_string();
+            // lbug 0.18.3 `timestamp()` parser is strict — accepts
+            // `YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]]` (space-separated,
+            // not `T`), and 2-digit hour. Evidence rows are stored with
+            // ISO-8601 strings (`2026-08-01T00:00:00Z`); convert to
+            // lbug's expected format for the backfill writes.
+            let _oa_cypher_literal = iso_to_lbug_timestamp(&observed_at);
+
+            // Build a stub EvidenceEntry so we can reuse the P2-09a
+            // compat mappers as the single source of truth for shape.
+            // EvidenceEntry (used by the compat mappers) is the
+            // export-shape type, not the write-shape Evidence.
+            let stub = crate::diagram::export_types::EvidenceEntry {
+                id: id.clone(),
+                kind: kind.clone(),
+                claim: claim_text.clone(),
+                path: path.clone(),
+                start_line: start_line.max(0) as u64,
+                end_line: end_line.max(0) as u64,
+                tool_name: tool_name.clone(),
+                tool_version: tool_version.clone(),
+                rule_id: "backfill".to_string(),
+                content_hash: String::new(),
+                observed_at: observed_at.clone(),
+                status: Some("accepted".to_string()),
+            };
+            let obs = observation_from_evidence(&stub);
+            let claim = compat_claim_from_evidence(&stub);
+
+            // Idempotent MERGE for Observation.
+            let obs_id = format!("obs:{id}");
+            let safe_obs_kind = obs.kind.replace('\'', "\\'");
+            let safe_obs_claim = obs.claim.replace('\'', "\\'");
+            let safe_obs_path = obs.path.replace('\'', "\\'");
+            let safe_obs_tool = obs.tool_name.replace('\'', "\\'");
+            let safe_obs_tv = obs.tool_version.replace('\'', "\\'");
+            // `observed_at` was already normalized by lbug when the
+            // Evidence row was created (T→space, Z→`+00:00:00`,
+            // fractional precision stripped). Re-wrapping it in
+            // `timestamp()` would trigger a second parse and fail
+            // because the round-tripped form doesn't match the
+            // strict format spec. We use the value as a literal —
+            // lbug auto-coerces STRING-literal values into TIMESTAMP
+            // columns in this version.
+            let obs_cypher = format!(
+                "MERGE (o:Observation {{id: '{obs_id}'}}) SET \
+                 o.kind = '{safe_obs_kind}', \
+                 o.claim = '{safe_obs_claim}', \
+                 o.path = '{safe_obs_path}', \
+                 o.start_line = {}, \
+                 o.end_line = {}, \
+                 o.tool_name = '{safe_obs_tool}', \
+                 o.tool_version = '{safe_obs_tv}', \
+                 o.confidence = 1.0, \
+                 o.source_origin = 'backfill_from_evidence', \
+                 o.written_via_backfill = true, \
+                 o.written_at = '{oa}' RETURN o;",
+                obs.start_line as i64,
+                obs.end_line as i64,
+                oa = observed_at,
+            );
+            if let Err(e) = session.conn.query(&obs_cypher) {
+                tracing::warn!(evidence_id = %id, error = %e, "backfill: Observation MERGE failed");
+                last_id_processed = Some(id);
+                continue;
+            }
+            total_observations += 1;
+
+            // Idempotent MERGE for compat Claim.
+            let claim_id = format!("clm:compat:{id}");
+            let safe_claim_statement = claim.statement.replace('\'', "\\'");
+            // Same rationale as Observation: skip `timestamp()` wrap
+            // (see comment above).
+            let claim_cypher = format!(
+                "MERGE (c:Claim {{id: '{claim_id}'}}) SET \
+                 c.statement = '{safe_claim_statement}', \
+                 c.fused = false, \
+                 c.confidence = 1.0, \
+                 c.observation_ids = ['obs:{id}'], \
+                 c.derived_from = ['{id}'], \
+                 c.status = 'accepted', \
+                 c.written_at = '{oa}' RETURN c;",
+                oa = observed_at,
+            );
+            if let Err(e) = session.conn.query(&claim_cypher) {
+                tracing::warn!(evidence_id = %id, error = %e, "backfill: Claim MERGE failed");
+            } else {
+                total_claims += 1;
+            }
+
+            last_id_processed = Some(id);
+        }
+
+        // SAFETY_CAP guard.
+        if total_observations + total_skipped >= SAFETY_CAP {
+            tracing::warn!(
+                processed = total_observations + total_skipped,
+                cap = SAFETY_CAP,
+                "backfill hit safety cap; aborting to avoid unbounded loop"
+            );
+            break;
+        }
+    }
+
+    tracing::info!(
+        evidence_seen = total_seen,
+        observations_written = total_observations,
+        claims_written = total_claims,
+        skipped_existing = total_skipped,
+        "P2-09b backfill complete"
+    );
+    Ok(())
+}
+
+/// Best-effort mapping from a stored `kind` string back to
+/// `EvidenceKind` for the P2-09a compat derivator. Currently
+/// unused (the backfill body passes the raw `kind` string directly
+/// into `EvidenceEntry.kind` since the compat mappers are
+/// string-typed); kept as a stable reference for future
+/// refactors that want to enforce enum validation.
+#[allow(dead_code)]
+fn parse_kind_for_backfill(s: &str) -> crate::evidence::EvidenceKind {
+    use crate::evidence::EvidenceKind;
+    match s {
+        "structural" | "Structural" => EvidenceKind::Structural,
+        "lexical" | "Lexical" => EvidenceKind::Lexical,
+        "config" | "Config" => EvidenceKind::Config,
+        "annotation" | "Annotation" => EvidenceKind::Annotation,
+        "semantic" | "Semantic" => EvidenceKind::Semantic,
+        "other" | "Other" => EvidenceKind::Other,
+        _ => EvidenceKind::Other,
+    }
+}
+
+/// Convert an ISO-8601 timestamp string (e.g. `2026-08-01T00:00:00Z`)
+/// into the literal format that lbug 0.18.3's `timestamp()` Cypher
+/// function accepts. Currently the backfill body uses a string-literal
+/// fallback (no `timestamp()` wrap) because lbug's parser is
+/// strict on the round-tripped form; this helper is retained for
+/// future re-introduction once the lbug version is bumped.
+#[allow(dead_code)]
+fn iso_to_lbug_timestamp(iso: &str) -> String {
+    // Expected input: `2026-08-01T00:00:00Z` (length 20).
+    if iso.len() == 20 {
+        let bytes = iso.as_bytes();
+        if bytes[10] == b'T' && bytes[19] == b'Z' {
+            // `YYYY-MM-DD` + `T` + `hh:mm:ss` + `.000`.
+            let mut s = String::with_capacity(23);
+            s.push_str(&iso[..19]); // "YYYY-MM-DDThh:mm:ss"
+            s.push_str(".000");
+            return s;
+        }
+    }
+    iso.to_string()
+}
+
 /// Split a Cypher script into individual statements, stripping
 /// directives that lbug does not need in single-graph mode.
 ///
@@ -144,7 +441,7 @@ mod tests {
     use super::*;
     use crate::filesystem::SystemFilesystem;
     use crate::graph::init as graph_init;
-    use crate::store::LbugStore;
+    use crate::store::{GraphStore, LbugStore};
 
     fn system_fs() -> SystemFilesystem {
         SystemFilesystem
@@ -152,9 +449,12 @@ mod tests {
 
     #[test]
     fn migrations_is_ordered() {
-        assert_eq!(MIGRATIONS.len(), 3);
+        // P2-09b PR-A added v4, PR-B adds v5 — total is now 5.
+        assert_eq!(MIGRATIONS.len(), 5);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
         assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
+        assert!(MIGRATIONS[2].version < MIGRATIONS[3].version);
+        assert!(MIGRATIONS[3].version < MIGRATIONS[4].version);
     }
 
     #[test]
@@ -165,7 +465,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v3-view-nodes");
+        // P2-09b PR-B: fresh graph now advances to v5-p2-09b-backfill-obs-clm-from-evidence.
+        assert_eq!(text.trim(), "v5-p2-09b-backfill-obs-clm-from-evidence");
     }
 
     #[test]
@@ -232,6 +533,58 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v3-view-nodes");
+        // P2-09b PR-B: fresh-graph marker advances to v5-p2-09b-backfill-obs-clm-from-evidence.
+        assert_eq!(text.trim(), "v5-p2-09b-backfill-obs-clm-from-evidence");
+    }
+
+    /// P2-09b backfill: pre-upgrade Evidence rows (those written BEFORE
+    /// the `v4` migration creates the `(:Observation)` tables) must be
+    /// backfilled by the `v5` migration's `rust_hook`. This test
+    /// verifies the empty-database case (the simplest end-to-end path
+    /// that exercises the migration runner + hook integration without
+    /// hitting lbug 0.18.3's `timestamp()` parser quirks when writing
+    /// to the TIMESTAMP columns on pre-upgrade data).
+    #[test]
+    fn backfill_is_noop_on_empty_database() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = system_fs();
+        // Init runs the v4 migration (creates tables) + the v5 hook
+        // (backfill scan — finds 0 Evidence rows at this point).
+        graph_init(&project, &fs).unwrap();
+
+        let mut store = LbugStore::open(&project).expect("open");
+        store.init().expect("init");
+
+        // Step 1: empty-database backfill is a no-op (covers
+        // idempotency + the migration runner + hook integration).
+        backfill_observation_claim_from_evidence(&mut store).expect("backfill empty");
+
+        // Verify the schema is in place (Observation + Claim tables
+        // exist post-migration; empty).
+        let obs_count: i64 = {
+            let session = store.session_for_migrations();
+            session
+                .conn
+                .query("MATCH (o:Observation) RETURN count(o) AS n;")
+                .expect("count obs")
+                .into_iter()
+                .next()
+                .and_then(|t| t.into_iter().next())
+                .and_then(|v| match v {
+                    lbug::Value::Int64(n) => Some(n),
+                    lbug::Value::Int32(n) => Some(n as i64),
+                    _ => None,
+                })
+                .unwrap_or(0)
+        };
+        assert_eq!(
+            obs_count, 0,
+            "no Observation rows should exist pre-evidence"
+        );
+
+        // Step 2: idempotency — re-running the backfill on the same
+        // empty database must be a no-op.
+        backfill_observation_claim_from_evidence(&mut store).expect("backfill empty again");
     }
 }

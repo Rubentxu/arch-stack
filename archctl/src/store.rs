@@ -70,13 +70,58 @@ use std::collections::HashSet;
 /// and status-filtered queries. Source/evaluation artefact persistence
 /// lives in `SourceOps`; diagram projection persistence lives in `DiagramOps`.
 ///
+/// Outcome of a `put_evidence` call.
+///
+/// Tracks row counts across the canonical (Evidence) + derived
+/// (Observation, compat Claim) surfaces. P2-09a returned a single
+/// `usize` for the Evidence rows; P2-09b (Wave 3 Item 19) extends
+/// the return shape to surface the secondary write counts so
+/// callers can detect partial failures (best-effort semantics per
+/// ADR-049 D4: a failure in Observation/Claim write does NOT roll
+/// back the Evidence write, but is reflected as zero count for the
+/// failed surface).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PutEvidenceResult {
+    /// Number of Evidence rows successfully written.
+    pub evidence_rows: usize,
+    /// Number of Observation rows successfully written (1:1 with
+    /// Evidence when dual-write is enabled; 0 when tables absent
+    /// or best-effort failed).
+    pub observation_rows: usize,
+    /// Number of compat Claim rows successfully written (1:1 with
+    /// Evidence when dual-write is enabled; 0 otherwise).
+    pub claim_rows: usize,
+}
+
+/// Total number of rows written across all surfaces.
+///
+/// Convenience accessor for callers that only care about the
+/// "did anything happen?" question. Computes
+/// `evidence_rows + observation_rows + claim_rows`.
+impl PutEvidenceResult {
+    /// Total rows written across all three surfaces.
+    pub fn total(&self) -> usize {
+        self.evidence_rows + self.observation_rows + self.claim_rows
+    }
+}
+
 /// ISP benefit: a mock that needs only evidence semantics can implement
 /// just this sub-trait instead of the full 16-method `GraphStore`.
 pub trait EvidenceOps: Send + Sync {
     /// Persist a batch of evidence rows. Each row is MERGEd by `id`,
     /// so repeat calls are idempotent (no duplicate rows).
-    /// Returns the number of rows written.
-    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<usize>;
+    ///
+    /// P2-09b (Wave 3 Item 19): when the Observation / Claim tables
+    /// exist (post-P2-09a acceptance), `put_evidence` also writes the
+    /// corresponding `Observation` row (1:1 from the Evidence) and the
+    /// corresponding compat `Claim` row (1:1, fused=false). These
+    /// secondary writes are best-effort per ADR-049 D4: a failure in
+    /// either does NOT roll back the Evidence write — the user's
+    /// primary write happened. The `witnesses` diagnostic is logged
+    /// via `tracing::warn!` and reflected as a non-zero Evidence write
+    /// with zero Observation/Claim write in the returned
+    /// [`PutEvidenceResult`].
+    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<PutEvidenceResult>;
 
     /// List evidence rows. When `path` is `Some(p)`, only rows whose
     /// `e.path` equals `p` are returned. When `None`, the most
@@ -441,6 +486,25 @@ pub trait DiagramRepository: Send + Sync {
         &self,
         version_ids: &[String],
     ) -> Result<Vec<EvidenceEntry>>;
+
+    /// Read canonical `(:Observation)` + `(:Claim)` rows for the given
+    /// version ids when the P2-09b tables exist.
+    ///
+    /// Returns `Ok(None)` when the canonical tables are absent
+    /// (pre-v4 migration database) — the caller falls back to the
+    /// P2-09a compat derivation. The returned `Row`s use column
+    /// names matching the carrier structs
+    /// (`observation_claim::Observation` / `observation_claim::Claim`).
+    ///
+    /// Default implementation returns `Ok(None)`; the `LbugStore`
+    /// adapter overrides when the v4 migration has run.
+    fn read_canonical_observation_claim_rows(
+        &self,
+        version_ids: &[String],
+    ) -> Result<Option<Vec<Row>>> {
+        let _ = version_ids;
+        Ok(None)
+    }
 }
 
 /// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
@@ -797,7 +861,16 @@ impl From<anyhow::Error> for StoreError {
 /// Mirrors `value_to_json` (used by the `query` path) but emits a typed
 /// `Cell` directly, going via `serde_json::Value` for the JSON-wrapped
 /// variants (lbug stores JSON values as `Value::Json(...)`).
-fn lbug_value_to_cell(v: lbug::Value) -> Cell {
+/// Translate a single `lbug::Value` to a `Cell` (M51 prepared-statement path).
+///
+/// Mirrors `value_to_json` (used by the `query` path) but emits a typed
+/// `Cell` directly, going via `serde_json::Value` for the JSON-wrapped
+/// variants (lbug stores JSON values as `Value::Json(...)`).
+///
+/// `pub(crate)` because the migration runner (`src/migrations.rs`) needs
+/// this helper to decode per-row `QueryResult` into `Row`s when iterating
+/// during backfill (PR-B). Other call sites stay inside `store.rs`.
+pub(crate) fn lbug_value_to_cell(v: lbug::Value) -> Cell {
     let json = value_to_json(&v);
     Cell::from(json)
 }
@@ -938,6 +1011,23 @@ impl GraphStore for LbugStore {
             info!("schema already up-to-date");
         } else {
             info!(versions = ?applied, "migrations applied");
+        }
+        // P2-09b: if the v5 backfill migration was just applied, run
+        // its rust_hook now (after Cypher succeeds, before returning).
+        // The hook needs `&mut LbugStore` access (it uses
+        // session_mut_inner), which the apply_pending signature can't
+        // carry, so we invoke hooks here at the integration point.
+        if applied
+            .iter()
+            .any(|v| v == "v5-p2-09b-backfill-obs-clm-from-evidence")
+        {
+            // SAFETY: backfill is idempotent and bounded (safety cap
+            // inside the hook). If it fails the marker has already
+            // advanced, so subsequent init will skip it. Per the
+            // design in the proposal: this is acceptable (per-row
+            // failures are logged, not rolled back).
+            migrations::backfill_observation_claim_from_evidence(self)?;
+            info!("P2-09b backfill hook completed");
         }
         // Also open the store's own session so subsequent operations
         // (stat, put_evidence, query) don't fail with "not initialized".
@@ -1080,14 +1170,21 @@ impl RawGraphQuery for LbugStore {
 }
 
 impl EvidenceOps for LbugStore {
-    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<usize> {
+    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<PutEvidenceResult> {
         use tracing::warn;
 
         if evidence.is_empty() {
-            return Ok(0);
+            return Ok(PutEvidenceResult::default());
         }
         let session = self.session_mut_inner()?;
-        let mut written = 0usize;
+        let mut written_evidence = 0usize;
+        let mut written_observation = 0usize;
+        let mut written_claim = 0usize;
+        // P2-09b: dual-write is currently conditional on the
+        // Observation / Claim tables existing. Pre-migration
+        // databases get best-effort failures (warn-once per process)
+        // and these counters stay 0. Once the migration runs,
+        // the dual-write seam fires successfully.
         for ev in evidence {
             // The caller (evidence::put) is expected to validate
             // identifiers before calling us. If something slipped
@@ -1150,12 +1247,92 @@ impl EvidenceOps for LbugStore {
                 .conn
                 .query(&cypher)
                 .with_context(|| format!("persist evidence {id}"))?;
-            written += 1;
+            written_evidence += 1;
+
+            // P2-09b dual-write: also persist Observation + compat
+            // Claim rows for this Evidence. Per ADR-049 D4 these are
+            // best-effort: if the secondary tables don't yet exist
+            // (pre-migration), the per-table MERGE fails with a
+            // parser error which we absorb. The Evidence write itself
+            // is NOT rolled back — `written_evidence` stays valid.
+            //
+            // OPAQUE_INTENTIONAL: the dual-write seam fires on every
+            // `put_evidence` call, including pre-migration databases.
+            // Pre-migration runs emit a `tracing::warn!` per row;
+            // pre-migration databases don't break the contract.
+            let obs_id = format!("obs:{id}");
+            let claim_id = format!("clm:compat:{id}");
+            let status_lower = format!("{:?}", ev.status).to_lowercase();
+            // Fields aligned 1:1 with `observation_claim::Observation`
+            // (rule_id, content_hash, observed_at) so the canonical
+            // read path reconstructs the struct directly from the row.
+            let safe_rule = crate::graph::validate_identifier(&ev.rule_id)
+                .unwrap_or("backfill")
+                .to_string();
+            let safe_ch = hash_json.replace('\'', "\\'");
+            let safe_oa = ev.observed_at.replace('\'', "\\'");
+            let obs_cypher = format!(
+                "MERGE (o:Observation {{id: '{obs_id}'}}) SET \
+                 o.kind = '{kind}', \
+                 o.claim = '{safe_claim}', \
+                 o.path = '{path}', \
+                 o.start_line = {obs_sl}, \
+                 o.end_line = {obs_el}, \
+                 o.tool_name = '{tool}', \
+                 o.tool_version = '{safe_tv}', \
+                 o.rule_id = '{safe_rule}', \
+                 o.content_hash = '{safe_ch}', \
+                 o.observed_at = '{safe_oa}', \
+                 o.confidence = CASE \
+                     WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
+                 o.source_origin = 'evidence_entry_derivation', \
+                 o.written_via_backfill = false, \
+                 o.written_at = {oa_cypher} RETURN o;",
+                obs_sl = ev.start_line,
+                obs_el = ev.end_line,
+            );
+            let claim_cypher = format!(
+                "MERGE (c:Claim {{id: '{claim_id}'}}) SET \
+                 c.statement = '{safe_claim}', \
+                 c.fused = false, \
+                 c.confidence = CASE \
+                     WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
+                 c.observation_ids = ['{obs_id}'], \
+                 c.derived_from = ['{id}'], \
+                 c.status = '{status_lower}', \
+                 c.written_at = {oa_cypher} RETURN c;",
+            );
+            // Observation write — best-effort per ADR-049 D4. The pre-migration
+            // case (no `:Observation` table yet) surfaces as a Cypher
+            // parse error which we absorb. Future work: gate on
+            // `has_observation_tables()` to silence the warn when
+            // running pre-migration.
+            if session.conn.query(&obs_cypher).is_ok() {
+                written_observation += 1;
+            } else {
+                warn!(
+                    evidence_id = %id,
+                    "Observation dual-write failed (likely tables not yet migrated)."
+                );
+            }
+            // Claim write — same best-effort shape.
+            if session.conn.query(&claim_cypher).is_ok() {
+                written_claim += 1;
+            } else {
+                warn!(
+                    evidence_id = %id,
+                    "Claim dual-write failed (likely tables not yet migrated)."
+                );
+            }
         }
         if evidence.len() > 25 {
             warn!(rows = evidence.len(), "bulk evidence write exceeds 25 rows");
         }
-        Ok(written)
+        Ok(PutEvidenceResult {
+            evidence_rows: written_evidence,
+            observation_rows: written_observation,
+            claim_rows: written_claim,
+        })
     }
 
     fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>> {
@@ -2533,6 +2710,78 @@ impl DiagramRepository for LbugStore {
             .context("list_evidence_for_relation_versions")?;
         Ok(rows.into_iter().filter_map(row_to_evidence_entry).collect())
     }
+
+    fn read_canonical_observation_claim_rows(
+        &self,
+        version_ids: &[String],
+    ) -> Result<Option<Vec<Row>>> {
+        if version_ids.is_empty() {
+            return Ok(Some(vec![]));
+        }
+        // Probe: do the canonical tables exist at all? A pre-v4
+        // database has no `:Observation` table — the probe query
+        // fails and we signal "compat fallback" via Ok(None).
+        let probe =
+            <LbugStore as RawGraphQuery>::query(self, "MATCH (o:Observation) RETURN o.id LIMIT 1;");
+        if probe.is_err() {
+            return Ok(None);
+        }
+        let safe_ids: Result<Vec<_>, _> = version_ids
+            .iter()
+            .map(|id| crate::graph::validate_identifier(id).map(|s| s.to_string()))
+            .collect();
+        let safe_ids = safe_ids.context("read_canonical_observation_claim_rows: id validation")?;
+        let id_list = safe_ids
+            .iter()
+            .map(|id| format!("'{}'", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Canonical read: traverse ElementVersion → Evidence (via
+        // SUPPORTED_BY), then project the 1:1 Observation + Claim
+        // rows by id. We build the `obs:<eid>` / `clm:compat:<eid>`
+        // ids in Rust (lbug 0.18.3 does not support string
+        // concatenation in Cypher predicates reliably).
+        let ev_ids_cypher = format!(
+            "MATCH (ev:ElementVersion)-[r:SUPPORTED_BY]->(e:Evidence) \
+             WHERE ev.id IN [{id_list}] \
+             RETURN e.id AS eid;"
+        );
+        let ev_rows = <LbugStore as RawGraphQuery>::query(self, &ev_ids_cypher)
+            .context("read_canonical_observation_claim_rows: evidence scan")?;
+        if ev_rows.is_empty() {
+            return Ok(Some(vec![]));
+        }
+        let eids: Vec<String> = ev_rows
+            .iter()
+            .filter_map(|r| r.get("eid").and_then(|c| c.as_str()).map(String::from))
+            .collect();
+        let obs_ids: Vec<String> = eids.iter().map(|e| format!("obs:{e}")).collect();
+        let claim_ids: Vec<String> = eids.iter().map(|e| format!("clm:compat:{e}")).collect();
+        let obs_list = obs_ids
+            .iter()
+            .map(|s| format!("'{s}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let claim_list = claim_ids
+            .iter()
+            .map(|s| format!("'{s}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // One row per evidence id: fetch Observation + Claim in a
+        // single Cypher query using two MATCH steps (no string
+        // concatenation needed).
+        let cypher = format!(
+            "MATCH (o:Observation) WHERE o.id IN [{obs_list}] \
+             MATCH (c:Claim) WHERE c.id IN [{claim_list}] \
+             RETURN o.id, o.kind, o.claim, o.path, o.start_line, o.end_line, \
+                    o.tool_name, o.tool_version, o.rule_id, o.content_hash, o.observed_at, \
+                    c.id, c.statement, c.confidence, c.observation_ids, c.derived_from, \
+                    c.fused, c.status;"
+        );
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
+            .context("read_canonical_observation_claim_rows")?;
+        Ok(Some(rows))
+    }
 }
 
 impl SemanticEdgeRepository for LbugStore {
@@ -2809,7 +3058,12 @@ fn value_to_i64(v: &lbug::Value) -> i64 {
     }
 }
 
-fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
+/// Run a Cypher query and return rows with column names preserved
+/// (so `row.get("e.id")` works). Public-crate so the migration
+/// runner (`src/migrations.rs::backfill_observation_claim_from_evidence`)
+/// can decode `(:Evidence)` rows during backfill without re-doing
+/// the per-cell lbug → Cell translation.
+pub(crate) fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
     use crate::row::{Cell, Row};
     use anyhow::Context;
     let result = conn.query(cypher).context("execute query")?;
@@ -2967,8 +3221,15 @@ mod tests {
         };
         let n1 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         let n2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
-        assert_eq!(n1, 1);
-        assert_eq!(n2, 1, "MERGE must not duplicate rows");
+        assert_eq!(n1.evidence_rows, 1);
+        // P2-09b: Observation + Claim tables exist post-migration; dual-write
+        // fires and writes one row of each per Evidence. n2 (idempotent re-MERGE)
+        // must NOT duplicate Observation or Claim.
+        assert_eq!(n1.observation_rows, 1);
+        assert_eq!(n1.claim_rows, 1);
+        assert_eq!(n2.evidence_rows, 1, "MERGE must not duplicate rows");
+        assert_eq!(n2.observation_rows, 1, "MERGE must not duplicate rows");
+        assert_eq!(n2.claim_rows, 1);
 
         let all = store.list_evidence(None).unwrap();
         assert_eq!(all.len(), 1);
@@ -2982,6 +3243,78 @@ mod tests {
 
         let empty = store.list_evidence(Some("nonexistent/path")).unwrap();
         assert_eq!(empty.len(), 0);
+    }
+
+    /// P2-09b dual-write seam: after a successful `put_evidence`,
+    /// the corresponding `Observation` and compat `Claim` rows are
+    /// also persisted (1:1 with the Evidence id). Idempotent on re-MERGE.
+    #[test]
+    fn put_evidence_dual_writes_observation_and_claim() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = Evidence {
+            id: "ev:dual:1".to_string(),
+            kind: EvidenceKind::Structural,
+            claim: "dual-write seam test".to_string(),
+            path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: Some(0),
+            end_byte: Some(4),
+            tool_name: TOOL_NAME.to_string(),
+            tool_version: TOOL_VERSION.to_string(),
+            rule_id: "astgrep:rust:function_item".to_string(),
+            language: "rust".to_string(),
+            observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
+            content_hash: Some("sha256:0".to_string()),
+            text_preview: Some("fn a".to_string()),
+            props: Default::default(),
+            status: EvidenceStatus::Accepted,
+        };
+        let result = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+        assert_eq!(result.evidence_rows, 1);
+        assert_eq!(
+            result.observation_rows, 1,
+            "dual-write seam should fire on Observation"
+        );
+        assert_eq!(
+            result.claim_rows, 1,
+            "dual-write seam should fire on compat Claim"
+        );
+
+        // Re-MERGE: counts unchanged because both Observation + Claim
+        // use primary-key MERGE on `id`.
+        let result2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+        assert_eq!(result2.evidence_rows, 1, "Evidence MERGE no duplicate");
+        assert_eq!(
+            result2.observation_rows, 1,
+            "Observation MERGE no duplicate"
+        );
+        assert_eq!(result2.claim_rows, 1, "Claim MERGE no duplicate");
+
+        // Verify the rows exist via direct Cypher queries (PR-C will exercise
+        // the canonical read path via observations_and_claims_for_version;
+        // here we just confirm the dual-write seam produces rows).
+        let obs_count: u64 = store
+            .query("MATCH (o:Observation) WHERE o.id = 'obs:ev:dual:1' RETURN count(o) AS n;")
+            .unwrap()
+            .into_iter()
+            .next()
+            .and_then(|r| r.get("n").and_then(|c| c.as_i64()))
+            .unwrap_or(0) as u64;
+        assert_eq!(obs_count, 1, "Observation row should exist from dual-write");
+        let claim_count: u64 = store
+            .query("MATCH (c:Claim) WHERE c.id = 'clm:compat:ev:dual:1' RETURN count(c) AS n;")
+            .unwrap()
+            .into_iter()
+            .next()
+            .and_then(|r| r.get("n").and_then(|c| c.as_i64()))
+            .unwrap_or(0) as u64;
+        assert_eq!(claim_count, 1, "Claim row should exist from dual-write");
     }
 
     #[test]

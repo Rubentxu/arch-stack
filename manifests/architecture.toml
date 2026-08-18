@@ -122,9 +122,14 @@ must_hold = [
     "pub enum ContextError",
     "pub struct Observation",
     "pub struct Claim",
-    "pub fn observation_from_evidence(",
-    "pub fn compat_claim_from_evidence(",
-    "pub fn observations_and_claims_for_version(",
+     "pub fn observation_from_evidence(",
+     "pub fn compat_claim_from_evidence(",
+     "pub fn observations_and_claims_for_version(",
+     # P2-09b backfill hook (Wave 3 Item 19). The migration runner
+     # invokes this after the v5 Cypher step; it scans pre-upgrade
+     # Evidence rows and produces one Observation + one compat Claim
+     # per row that lacks a backing canonical Observation.
+     "backfill_observation_claim_from_evidence(",
 ]
 
 # Minimum number of #[test] items in the architecture module.

@@ -485,7 +485,7 @@ pub fn put_with_clock(
         return Ok(0);
     }
     let mut store = crate::store::open_default(project_dir).context("open graph store")?;
-    store.put_evidence(evidence)
+    Ok(store.put_evidence(evidence)?.evidence_rows)
 }
 
 /// High-level use-case: persist evidence along with optional source artifacts
@@ -532,7 +532,7 @@ pub fn put_with_source(
     }
 
     // Step 2: persist evidence rows
-    let written = store.put_evidence(evidence)?;
+    let written = store.put_evidence(evidence)?.evidence_rows;
 
     // Step 3: link each evidence row to each source artifact
     if let Some(srcs) = sources {
@@ -571,7 +571,7 @@ pub fn put(project_dir: &Path, evidence: &[Evidence]) -> Result<usize> {
         return Ok(0);
     }
     let mut store = crate::store::open_default(project_dir).context("open graph store")?;
-    store.put_evidence(evidence)
+    Ok(store.put_evidence(evidence)?.evidence_rows)
 }
 
 #[cfg(test)]

@@ -246,31 +246,32 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 ## Próxima acción del usuario
 
-Wave 2 (intelligence) está cerrado (10/10, v1.49.0–v1.59.0). El próximo
-paso es **Wave 3 (platform)**, aún sin roadmap concreto en este archivo.
+Wave 2 (intelligence) y Wave 3 Item 19 (P2-09b observation/claim dual-write)
+están cerrados. La primera parte de Wave 3 ya está mergeada en `main`
+(commits `221e6dc` para el housekeeping de Wave 2 + el cycle
+`adr-backlog-acceptance`; commits `e342067`, `f57b6b2`, `426189b` en
+PR #211 para el cycle `wave-3-p2-09-claim-dual-write`).
 
-**Candidatos Wave 3** extraídos del PR plan original (filtrados para
-excluir referencias obsoletas — item 20 ya shipped):
+Quedan los siguientes candidatos Wave 3 del PR plan original
+(extraídos de `docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`):
 
-- **19 — Observation/Claim dual-write migration** (P2-09, gated by P2-09a): ya
-  tenemos los carriers compat (P2-09a); full schema + backfill + fusion
-  pendiente si hay consumer real.
 - **22 — `archctl ide doctor <ide>`** consolidation, sobre la base de v1.35.0
   (IDE adapters).
-- **27 — Fusion engine / observation ↔ evidence bridge** (would consume P2-09a).
+- **27 — Fusion engine / observation ↔ evidence bridge** (desbloqueada
+  por P2-09b; consume los carriers canónicos Observation/Claim).
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed (Reopen trigger en Anti-roadmap table).
-- **ADR-055 sanitized architecture bundle** — abre con ADR-019 perf budget
-  breach AND ≥1 external-distribution consumer.
+- **ADR-055 sanitized architecture bundle** — abre con ADR-019 perf
+  budget breach AND ≥1 external-distribution consumer.
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
 
 **Items del PR plan 2026-08-13 ya cerrados en waves previas** (informativo,
 ya no candidatos Wave 3):
+- Item 19 (Observation/Claim dual-write migration) — closed en P2-09b
+  via cycle `wave-3-p2-09-claim-dual-write` (PR #211; commits `e342067` + `f57b6b2` + `426189b`; merge pendiente).
 - Item 20 (Mermaid → SVG local via `merman`, M38) — closed v1.9.0.
-- Items restantes del catálogo 17–27 cubiertos ya sea por Wave 0/1/2 o
-  por Deferrals del Anti-roadmap table.
 
-Decidir Wave 3 priorities en un ciclo dedicado (sddk-new) antes de proponer
-cualquier task. Mientras tanto, sigue válido el catálogo de items en
-`docs/arch-stack-proposals-2026-08-13/`.
+Decidir Wave 3 priorities restantes en un ciclo dedicado (sddk-new) antes
+de proponer cualquier task. Mientras tanto, sigue válido el catálogo de
+items en `docs/arch-stack-proposals-2026-08-13/`.
