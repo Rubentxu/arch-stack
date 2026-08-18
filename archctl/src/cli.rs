@@ -782,6 +782,10 @@ pub enum IdeAction {
     },
     Doctor {
         ide: String,
+        /// Emit a machine-readable JSON envelope instead of the
+        /// human lines. Exit code still encodes health (0/1/2).
+        #[arg(long)]
+        json: bool,
     },
     Remove {
         ide: String,
@@ -1514,20 +1518,21 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 }
                 Ok(0)
             }
-            IdeAction::Doctor { ide } => {
+            IdeAction::Doctor { ide, json } => {
+                use crate::ide::doctor::{check_ide_doctor, render_human, report_exit_code};
                 let adapters = builtin_adapters();
                 let adapter = adapters
                     .iter()
                     .find(|a| a.id() == ide)
                     .ok_or_else(|| anyhow::anyhow!("unknown IDE: {ide}"))?;
-                let presence = adapter.detect()?;
-                println!("{} ({})", adapter.name(), adapter.id());
-                println!("  installed: {}", presence.installed);
-                println!("  config_root: {}", adapter.config_root().display());
-                if let Some(hint) = presence.hint {
-                    println!("  hint: {hint}");
+                let payload = current_stack_payload()?;
+                let report = check_ide_doctor(adapter.as_ref(), &payload)?;
+                if json {
+                    println!("{}", serde_json::to_string(&report)?);
+                } else {
+                    print!("{}", render_human(&report));
                 }
-                Ok(0)
+                Ok(report_exit_code(&report))
             }
             IdeAction::Remove { ide, purge } => {
                 let adapters = builtin_adapters();
@@ -4060,10 +4065,24 @@ mod tests {
             Command::Ide { action } => {
                 assert!(matches!(
                     action,
-                    IdeAction::Doctor { ide } if ide == "claude-code"
+                    IdeAction::Doctor { ide, json: false } if ide == "claude-code"
                 ));
             }
             _ => panic!("expected Ide Doctor command"),
+        }
+    }
+
+    #[test]
+    fn ide_doctor_json_flag_is_parsed() {
+        let cli = Cli::parse_from(["archctl", "ide", "doctor", "opencode", "--json"]);
+        match cli.command {
+            Command::Ide { action } => {
+                assert!(matches!(
+                    action,
+                    IdeAction::Doctor { ide, json: true } if ide == "opencode"
+                ));
+            }
+            _ => panic!("expected Ide Doctor --json command"),
         }
     }
 
