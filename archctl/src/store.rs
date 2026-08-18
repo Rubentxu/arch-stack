@@ -842,7 +842,16 @@ impl From<anyhow::Error> for StoreError {
 /// Mirrors `value_to_json` (used by the `query` path) but emits a typed
 /// `Cell` directly, going via `serde_json::Value` for the JSON-wrapped
 /// variants (lbug stores JSON values as `Value::Json(...)`).
-fn lbug_value_to_cell(v: lbug::Value) -> Cell {
+/// Translate a single `lbug::Value` to a `Cell` (M51 prepared-statement path).
+///
+/// Mirrors `value_to_json` (used by the `query` path) but emits a typed
+/// `Cell` directly, going via `serde_json::Value` for the JSON-wrapped
+/// variants (lbug stores JSON values as `Value::Json(...)`).
+///
+/// `pub(crate)` because the migration runner (`src/migrations.rs`) needs
+/// this helper to decode per-row `QueryResult` into `Row`s when iterating
+/// during backfill (PR-B). Other call sites stay inside `store.rs`.
+pub(crate) fn lbug_value_to_cell(v: lbug::Value) -> Cell {
     let json = value_to_json(&v);
     Cell::from(json)
 }
@@ -2945,7 +2954,12 @@ fn value_to_i64(v: &lbug::Value) -> i64 {
     }
 }
 
-fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
+/// Run a Cypher query and return rows with column names preserved
+/// (so `row.get("e.id")` works). Public-crate so the migration
+/// runner (`src/migrations.rs::backfill_observation_claim_from_evidence`)
+/// can decode `(:Evidence)` rows during backfill without re-doing
+/// the per-cell lbug → Cell translation.
+pub(crate) fn run_query(conn: &lbug::Connection<'_>, cypher: &str) -> Result<Vec<Row>> {
     use crate::row::{Cell, Row};
     use anyhow::Context;
     let result = conn.query(cypher).context("execute query")?;
