@@ -271,6 +271,10 @@ fn write_evidence(
     .context("write_evidence: put_structural_evidence")?;
 
     let _ = EvidenceRepository::link_supported_by(store, version_id, &evidence_id).ok();
+    // Fuse-on-write (Item 27 residual): recompute fused claims for the
+    // affected version. Best-effort — never breaks the discovery run.
+    let _ =
+        crate::architecture::fusion::recompute_fused_for_versions(store, &[version_id.to_string()]);
     let _ = EvidenceRepository::link_extracted_from(store, &evidence_id, sa_id).ok();
     Ok(())
 }

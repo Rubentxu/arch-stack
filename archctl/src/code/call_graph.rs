@@ -1304,6 +1304,15 @@ fn write_call_edge(
     let _ =
         crate::store::EvidenceRepository::link_supported_by(store, _version_id, &evidence_id).ok();
 
+    // Fuse-on-write (Item 27 residual): recompute fused claims for the
+    // affected version. Best-effort — never breaks the extraction.
+    if !_version_id.is_empty() {
+        let _ = crate::architecture::fusion::recompute_fused_for_versions(
+            store,
+            &[_version_id.to_string()],
+        );
+    }
+
     Ok(())
 }
 

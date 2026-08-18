@@ -75,6 +75,7 @@ public_symbols = [
     "StalenessWeightedEvaluator",
     "fuse_observations_with",
     "fused_claims_from_rows",
+    "recompute_fused_for_versions",
     "STALENESS_CUTOFF_DAYS",
     "ScoredElement",
     "ScoredRelation",
