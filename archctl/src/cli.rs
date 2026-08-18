@@ -2422,9 +2422,8 @@ fn diagram_export_cmd(
         anyhow::anyhow!("accepted formats: viewer-bundle, arrows (got: {format})")
     })?;
 
-    let export_profile = ExportProfile::parse(profile).ok_or_else(|| {
-        anyhow::anyhow!("accepted profiles: default, strict (got: {profile})")
-    })?;
+    let export_profile = ExportProfile::parse(profile)
+        .ok_or_else(|| anyhow::anyhow!("accepted profiles: default, strict (got: {profile})"))?;
 
     if !json && output.is_none() && fmt == ExportFormat::ViewerBundle {
         anyhow::bail!(
@@ -2445,12 +2444,18 @@ fn diagram_export_cmd(
             }
 
             // Single-source: build the bundle once, then dispatch to stdout and/or disk.
-            let bundle = crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
+            let mut bundle = crate::diagram::build_bundle(&*store, selector, &*ctx.clock)?;
 
             if json {
                 // Emit the FULL bundle envelope (manifest + projection + evidence
                 // + styles) to stdout as a single JSON document. Agents pipe this
                 // to jq or other tools without writing 5 files.
+                //
+                // When strict profile is set, apply sanitization directly to this
+                // bundle before serialization (run_export handles file-path separately).
+                if export_profile == ExportProfile::Strict {
+                    crate::diagram::apply_strict_profile(&mut bundle, &info.project_dir);
+                }
                 let envelope = crate::diagram::build_export_envelope(&bundle);
                 println!("{}", serde_json::to_string_pretty(&envelope)?);
             }
