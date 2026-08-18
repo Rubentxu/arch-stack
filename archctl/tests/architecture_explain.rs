@@ -278,8 +278,6 @@ fn seed_and_persist_fused_claim(store: &mut LbugStore, version_id: &str) {
 
 #[test]
 fn explain_surfaces_intersecting_fused_claims() {
-    use archctl::store::DiagramRepository;
-
     let (mut store, _tmp) = test_store();
     seed_and_persist_fused_claim(&mut store, "v:orders:1");
 

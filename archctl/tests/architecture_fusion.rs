@@ -346,7 +346,7 @@ fn fused_claims_persist_conflicts_both_directions() {
 
 #[test]
 fn fused_claims_read_absent_version_is_empty() {
-    let (mut store, _tmp) = test_store();
+    let (store, _tmp) = test_store();
     let rows = store
         .read_fused_claim_rows(&["vid-never".to_string()])
         .expect("read");

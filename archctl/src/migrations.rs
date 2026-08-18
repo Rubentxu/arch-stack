@@ -577,7 +577,6 @@ mod tests {
                 .conn
                 .query("MATCH (o:Observation) RETURN count(o) AS n;")
                 .expect("count obs")
-                .into_iter()
                 .next()
                 .and_then(|t| t.into_iter().next())
                 .and_then(|v| match v {
