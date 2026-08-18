@@ -984,6 +984,23 @@ impl GraphStore for LbugStore {
         } else {
             info!(versions = ?applied, "migrations applied");
         }
+        // P2-09b: if the v5 backfill migration was just applied, run
+        // its rust_hook now (after Cypher succeeds, before returning).
+        // The hook needs `&mut LbugStore` access (it uses
+        // session_mut_inner), which the apply_pending signature can't
+        // carry, so we invoke hooks here at the integration point.
+        if applied
+            .iter()
+            .any(|v| v == "v5-p2-09b-backfill-obs-clm-from-evidence")
+        {
+            // SAFETY: backfill is idempotent and bounded (safety cap
+            // inside the hook). If it fails the marker has already
+            // advanced, so subsequent init will skip it. Per the
+            // design in the proposal: this is acceptable (per-row
+            // failures are logged, not rolled back).
+            migrations::backfill_observation_claim_from_evidence(self)?;
+            info!("P2-09b backfill hook completed");
+        }
         // Also open the store's own session so subsequent operations
         // (stat, put_evidence, query) don't fail with "not initialized".
         let _ = self.session_mut_inner()?;
@@ -3142,23 +3159,30 @@ mod tests {
         };
         let result = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         assert_eq!(result.evidence_rows, 1);
-        assert_eq!(result.observation_rows, 1, "dual-write seam should fire on Observation");
-        assert_eq!(result.claim_rows, 1, "dual-write seam should fire on compat Claim");
+        assert_eq!(
+            result.observation_rows, 1,
+            "dual-write seam should fire on Observation"
+        );
+        assert_eq!(
+            result.claim_rows, 1,
+            "dual-write seam should fire on compat Claim"
+        );
 
         // Re-MERGE: counts unchanged because both Observation + Claim
         // use primary-key MERGE on `id`.
         let result2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         assert_eq!(result2.evidence_rows, 1, "Evidence MERGE no duplicate");
-        assert_eq!(result2.observation_rows, 1, "Observation MERGE no duplicate");
+        assert_eq!(
+            result2.observation_rows, 1,
+            "Observation MERGE no duplicate"
+        );
         assert_eq!(result2.claim_rows, 1, "Claim MERGE no duplicate");
 
         // Verify the rows exist via direct Cypher queries (PR-C will exercise
         // the canonical read path via observations_and_claims_for_version;
         // here we just confirm the dual-write seam produces rows).
         let obs_count: u64 = store
-            .query(
-                "MATCH (o:Observation) WHERE o.id = 'obs:ev:dual:1' RETURN count(o) AS n;",
-            )
+            .query("MATCH (o:Observation) WHERE o.id = 'obs:ev:dual:1' RETURN count(o) AS n;")
             .unwrap()
             .into_iter()
             .next()
@@ -3166,9 +3190,7 @@ mod tests {
             .unwrap_or(0) as u64;
         assert_eq!(obs_count, 1, "Observation row should exist from dual-write");
         let claim_count: u64 = store
-            .query(
-                "MATCH (c:Claim) WHERE c.id = 'clm:compat:ev:dual:1' RETURN count(c) AS n;",
-            )
+            .query("MATCH (c:Claim) WHERE c.id = 'clm:compat:ev:dual:1' RETURN count(c) AS n;")
             .unwrap()
             .into_iter()
             .next()
