@@ -140,6 +140,17 @@
 - 3 stale "no parameter binding" doc claims (M52)
 - `backend_available()` helper DRY'd (M56, -60 LOC across 5 files)
 
+**Closed in this housekeeping pass** (2026-08-18, post-v1.59.0):
+- **2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped** (WIP from the
+  pre-#181 branch). Their bases (`0b75778`, `63e2200`) are reachable from `main`
+  and the work was already merged via PR #181, then reshaped by `58f5150`
+  (P1-05 RawGraphQuery supertrait), `2731800` (move helpers into
+  `ElementRepository` port), and `24e2eb8`/`3ab707c` (M32 D2 UNWIND bulk
+  import). Re-applying on a fresh branch from `main` produced conflicts in
+  12 files; every conflict was "both sides did the same change, `main` is the
+  cleaner final form". Drop is intentional and irreversible — rederivation
+  lives in those cited commits.
+
 **M32 remediation (closed in v1.47.0/v1.47.1)**:
 - class_diagram UUID mismatch fixed; port bypass corrected; cross-writer `CURRENT_VERSION` regression suite added.
 
