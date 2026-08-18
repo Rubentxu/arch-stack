@@ -1,10 +1,9 @@
 # ADR-050 — Snapshots arquitectónicos ligados a identidad Git
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13 (shipped as P2-01 Snapshot MVP, v1.49.0, PR #194 + p2-02-followup, v1.50.0, PR #196 — closes 7 WARNINGs from p2-01 verify-report)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 
