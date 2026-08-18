@@ -1133,12 +1133,13 @@ impl EvidenceOps for LbugStore {
         }
         let session = self.session_mut_inner()?;
         let mut written_evidence = 0usize;
-        // P2-09b: dual-write is currently a no-op (Observation/Claim
-        // tables are added by a separate migration, not yet applied).
-        // Once the `:Observation` + `:Claim` tables exist (post-P2-09a
-        // acceptance), this impl will branch to write them in the
-        // same transaction. Until then, observation_rows and
-        // claim_rows stay at 0.
+        let mut written_observation = 0usize;
+        let mut written_claim = 0usize;
+        // P2-09b: dual-write is currently conditional on the
+        // Observation / Claim tables existing. Pre-migration
+        // databases get best-effort failures (warn-once per process)
+        // and these counters stay 0. Once the migration runs,
+        // the dual-write seam fires successfully.
         for ev in evidence {
             // The caller (evidence::put) is expected to validate
             // identifiers before calling us. If something slipped
@@ -1202,14 +1203,77 @@ impl EvidenceOps for LbugStore {
                 .query(&cypher)
                 .with_context(|| format!("persist evidence {id}"))?;
             written_evidence += 1;
+
+            // P2-09b dual-write: also persist Observation + compat
+            // Claim rows for this Evidence. Per ADR-049 D4 these are
+            // best-effort: if the secondary tables don't yet exist
+            // (pre-migration), the per-table MERGE fails with a
+            // parser error which we absorb. The Evidence write itself
+            // is NOT rolled back — `written_evidence` stays valid.
+            //
+            // OPAQUE_INTENTIONAL: the dual-write seam fires on every
+            // `put_evidence` call, including pre-migration databases.
+            // Pre-migration runs emit a `tracing::warn!` per row;
+            // pre-migration databases don't break the contract.
+            let obs_id = format!("obs:{id}");
+            let claim_id = format!("clm:compat:{id}");
+            let status_lower = format!("{:?}", ev.status).to_lowercase();
+            let obs_cypher = format!(
+                "MERGE (o:Observation {{id: '{obs_id}'}}) SET \
+                 o.kind = '{kind}', \
+                 o.claim = '{safe_claim}', \
+                 o.path = '{path}', \
+                 o.start_line = {obs_sl}, \
+                 o.end_line = {obs_el}, \
+                 o.tool_name = '{tool}', \
+                 o.tool_version = '{safe_tv}', \
+                 o.confidence = CASE \
+                     WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
+                 o.source_origin = 'evidence_entry_derivation', \
+                 o.written_via_backfill = false, \
+                 o.written_at = {oa_cypher} RETURN o;",
+                obs_sl = ev.start_line,
+                obs_el = ev.end_line,
+            );
+            let claim_cypher = format!(
+                "MERGE (c:Claim {{id: '{claim_id}'}}) SET \
+                 c.text = '{safe_claim}', \
+                 c.fused = false, \
+                 c.confidence = CASE \
+                     WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
+                 c.evidence_ids = ['{id}'], \
+                 c.written_at = {oa_cypher} RETURN c;",
+            );
+            // Observation write — best-effort per ADR-049 D4. The pre-migration
+            // case (no `:Observation` table yet) surfaces as a Cypher
+            // parse error which we absorb. Future work: gate on
+            // `has_observation_tables()` to silence the warn when
+            // running pre-migration.
+            if session.conn.query(&obs_cypher).is_ok() {
+                written_observation += 1;
+            } else {
+                warn!(
+                    evidence_id = %id,
+                    "Observation dual-write failed (likely tables not yet migrated)."
+                );
+            }
+            // Claim write — same best-effort shape.
+            if session.conn.query(&claim_cypher).is_ok() {
+                written_claim += 1;
+            } else {
+                warn!(
+                    evidence_id = %id,
+                    "Claim dual-write failed (likely tables not yet migrated)."
+                );
+            }
         }
         if evidence.len() > 25 {
             warn!(rows = evidence.len(), "bulk evidence write exceeds 25 rows");
         }
         Ok(PutEvidenceResult {
             evidence_rows: written_evidence,
-            observation_rows: 0, // P2-09b: no-op until tables exist.
-            claim_rows: 0,       // P2-09b: no-op until tables exist.
+            observation_rows: written_observation,
+            claim_rows: written_claim,
         })
     }
 
@@ -3023,11 +3087,14 @@ mod tests {
         let n1 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         let n2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         assert_eq!(n1.evidence_rows, 1);
-        assert_eq!(n1.observation_rows, 0, "P2-09b not landed: dual-write no-op");
-        assert_eq!(n1.claim_rows, 0);
+        // P2-09b: Observation + Claim tables exist post-migration; dual-write
+        // fires and writes one row of each per Evidence. n2 (idempotent re-MERGE)
+        // must NOT duplicate Observation or Claim.
+        assert_eq!(n1.observation_rows, 1);
+        assert_eq!(n1.claim_rows, 1);
         assert_eq!(n2.evidence_rows, 1, "MERGE must not duplicate rows");
-        assert_eq!(n2.observation_rows, 0);
-        assert_eq!(n2.claim_rows, 0);
+        assert_eq!(n2.observation_rows, 1, "MERGE must not duplicate rows");
+        assert_eq!(n2.claim_rows, 1);
 
         let all = store.list_evidence(None).unwrap();
         assert_eq!(all.len(), 1);
@@ -3041,6 +3108,73 @@ mod tests {
 
         let empty = store.list_evidence(Some("nonexistent/path")).unwrap();
         assert_eq!(empty.len(), 0);
+    }
+
+    /// P2-09b dual-write seam: after a successful `put_evidence`,
+    /// the corresponding `Observation` and compat `Claim` rows are
+    /// also persisted (1:1 with the Evidence id). Idempotent on re-MERGE.
+    #[test]
+    fn put_evidence_dual_writes_observation_and_claim() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let ev = Evidence {
+            id: "ev:dual:1".to_string(),
+            kind: EvidenceKind::Structural,
+            claim: "dual-write seam test".to_string(),
+            path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: Some(0),
+            end_byte: Some(4),
+            tool_name: TOOL_NAME.to_string(),
+            tool_version: TOOL_VERSION.to_string(),
+            rule_id: "astgrep:rust:function_item".to_string(),
+            language: "rust".to_string(),
+            observed_at: "2026-07-30T00:00:00Z".to_string(),
+            source_origin: SourceOrigin::UserWorkspace,
+            content_hash: Some("sha256:0".to_string()),
+            text_preview: Some("fn a".to_string()),
+            props: Default::default(),
+            status: EvidenceStatus::Accepted,
+        };
+        let result = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+        assert_eq!(result.evidence_rows, 1);
+        assert_eq!(result.observation_rows, 1, "dual-write seam should fire on Observation");
+        assert_eq!(result.claim_rows, 1, "dual-write seam should fire on compat Claim");
+
+        // Re-MERGE: counts unchanged because both Observation + Claim
+        // use primary-key MERGE on `id`.
+        let result2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+        assert_eq!(result2.evidence_rows, 1, "Evidence MERGE no duplicate");
+        assert_eq!(result2.observation_rows, 1, "Observation MERGE no duplicate");
+        assert_eq!(result2.claim_rows, 1, "Claim MERGE no duplicate");
+
+        // Verify the rows exist via direct Cypher queries (PR-C will exercise
+        // the canonical read path via observations_and_claims_for_version;
+        // here we just confirm the dual-write seam produces rows).
+        let obs_count: u64 = store
+            .query(
+                "MATCH (o:Observation) WHERE o.id = 'obs:ev:dual:1' RETURN count(o) AS n;",
+            )
+            .unwrap()
+            .into_iter()
+            .next()
+            .and_then(|r| r.get("n").and_then(|c| c.as_i64()))
+            .unwrap_or(0) as u64;
+        assert_eq!(obs_count, 1, "Observation row should exist from dual-write");
+        let claim_count: u64 = store
+            .query(
+                "MATCH (c:Claim) WHERE c.id = 'clm:compat:ev:dual:1' RETURN count(c) AS n;",
+            )
+            .unwrap()
+            .into_iter()
+            .next()
+            .and_then(|r| r.get("n").and_then(|c| c.as_i64()))
+            .unwrap_or(0) as u64;
+        assert_eq!(claim_count, 1, "Claim row should exist from dual-write");
     }
 
     #[test]

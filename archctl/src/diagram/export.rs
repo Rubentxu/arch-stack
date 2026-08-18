@@ -770,7 +770,10 @@ mod tests {
 
     // Sub-trait impls (see diagram_queries.rs for rationale).
     impl crate::store::EvidenceOps for MockGraphStore {
-        fn put_evidence(&mut self, _: &[crate::evidence::Evidence]) -> anyhow::Result<crate::store::PutEvidenceResult> {
+        fn put_evidence(
+            &mut self,
+            _: &[crate::evidence::Evidence],
+        ) -> anyhow::Result<crate::store::PutEvidenceResult> {
             unimplemented!()
         }
         fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> {

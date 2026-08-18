@@ -33,6 +33,14 @@ pub const MIGRATIONS: &[Migration] = &[
         version: "v3-view-nodes",
         cypher: include_str!("../../docs/schema/003_view_nodes.cypher"),
     },
+    // P2-09b (Wave 3 Item 19): persistent Observation + Claim tables.
+    // ADR-049 closure step 1 of 2 — backfill lands separately
+    // (cycle PR-B) so existing pre-upgrade graphs stay usable via
+    // compat fallback while new graphs dual-write from `put_evidence`.
+    Migration {
+        version: "v4-p2-09b-create-obs-clm-tables",
+        cypher: include_str!("../../docs/schema/004_p2_09b_create_obs_clm.cypher"),
+    },
 ];
 
 /// Marker filename written to the project root after a successful run.
@@ -152,9 +160,11 @@ mod tests {
 
     #[test]
     fn migrations_is_ordered() {
-        assert_eq!(MIGRATIONS.len(), 3);
+        // P2-09b added v4-p2-09b-create-obs-clm-tables — total is now 4.
+        assert_eq!(MIGRATIONS.len(), 4);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
         assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
+        assert!(MIGRATIONS[2].version < MIGRATIONS[3].version);
     }
 
     #[test]
@@ -165,7 +175,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v3-view-nodes");
+        // P2-09b: fresh graph now advances to v4-p2-09b-create-obs-clm-tables.
+        assert_eq!(text.trim(), "v4-p2-09b-create-obs-clm-tables");
     }
 
     #[test]
@@ -232,6 +243,7 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(text.trim(), "v3-view-nodes");
+        // P2-09b: fresh-graph marker advances to v4-p2-09b-create-obs-clm-tables.
+        assert_eq!(text.trim(), "v4-p2-09b-create-obs-clm-tables");
     }
 }

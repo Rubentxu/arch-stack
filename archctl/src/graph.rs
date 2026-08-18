@@ -346,7 +346,8 @@ mod tests {
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
-        assert_eq!(text.trim(), "v3-view-nodes");
+        // P2-09b: fresh-graph marker advances to v4-p2-09b-create-obs-clm-tables.
+        assert_eq!(text.trim(), "v4-p2-09b-create-obs-clm-tables");
     }
 
     #[test]
