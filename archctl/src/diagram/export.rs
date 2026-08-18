@@ -4,18 +4,19 @@
 //! computes the content hash, and writes the 5-file bundle.
 
 use anyhow::Context;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::clock::Clock;
 use crate::diagram::export_types::{
-    Edge as ExportEdge, EdgeColors, ElementColors, EvidenceBundle, Manifest, Node as ExportNode,
-    Projection, Styles,
+    Edge as ExportEdge, EdgeColors, ElementColors, EvidenceBundle, ExportProfile, Manifest,
+    Node as ExportNode, Projection, Styles,
 };
 use crate::diagram::hash::base_revision;
 use crate::diagram::selector::{ScopeFilter, ViewSelector};
 use crate::filesystem::Filesystem;
 use crate::graph::ElementRow;
 use crate::store::GraphStore;
+use sha2::{Digest, Sha256};
 
 /// Report from a successful export operation.
 #[derive(Debug)]
@@ -212,6 +213,8 @@ pub fn build_bundle(
         element_count: projection.nodes.len(),
         edge_count: projection.edges.len(),
         evidence_count: evidence_entries.len(),
+        strict: false,
+        checksum: None,
     };
 
     // 6. Build styles
@@ -274,6 +277,60 @@ pub fn build_export_envelope(bundle: &BundleEnvelope) -> serde_json::Value {
     })
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Strict profile: sanitization + checksum
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Relativize an absolute path against `project_root`.
+fn relativize_path(path: &str, project_root: &Path) -> String {
+    let abs = PathBuf::from(path);
+    if let Ok(rel) = abs.strip_prefix(project_root) {
+        rel.to_string_lossy().into_owned()
+    } else {
+        // Not under project root — replace with a pseudonym
+        // Keep just the filename for traceability
+        abs.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<external>".to_string())
+    }
+}
+
+/// Apply strict-mode sanitization to a bundle.
+/// - Paths in evidence entries are relativized to project root
+/// - `manifest.strict` is set to true
+fn sanitize_bundle(bundle: &mut BundleEnvelope, project_root: &Path) {
+    for entry in &mut bundle.evidence.evidence {
+        entry.path = relativize_path(&entry.path, project_root);
+    }
+    bundle.manifest.strict = true;
+}
+
+/// Compute SHA-256 checksum over the bundle files (excluding `generatedAt` for determinism).
+/// Returns hex-encoded checksum string.
+fn compute_checksum(bundle: &BundleEnvelope) -> String {
+    let mut hasher = Sha256::new();
+
+    // Canonical JSON without pretty-printing, fields in deterministic order
+    // Exclude generatedAt from checksum for reproducibility
+    let manifest_for_checksum = serde_json::json!({
+        "schemaVersion": bundle.manifest.schema_version,
+        "format": bundle.manifest.format,
+        "viewSelector": bundle.manifest.view_selector,
+        "baseRevision": bundle.manifest.base_revision,
+        "elementCount": bundle.manifest.element_count,
+        "edgeCount": bundle.manifest.edge_count,
+        "evidenceCount": bundle.manifest.evidence_count,
+        "strict": bundle.manifest.strict,
+    });
+
+    hasher.update(manifest_for_checksum.to_string().as_bytes());
+    hasher.update(serde_json::to_string(&bundle.projection).unwrap_or_default().as_bytes());
+    hasher.update(serde_json::to_string(&bundle.evidence).unwrap_or_default().as_bytes());
+    hasher.update(serde_json::to_string(&bundle.styles).unwrap_or_default().as_bytes());
+
+    format!("{:x}", hasher.finalize())
+}
+
 /// Uses `Clock::now_rfc3339()` for `generatedAt` and writes each file
 /// atomically (write-then-rename) for idempotency.
 pub fn run_export(
@@ -282,8 +339,17 @@ pub fn run_export(
     out_dir: &Path,
     clock: &dyn Clock,
     fs: &dyn Filesystem,
+    profile: ExportProfile,
+    project_dir: &Path,
 ) -> anyhow::Result<ExportReport> {
-    let bundle = build_bundle(store, selector, clock)?;
+    let mut bundle = build_bundle(store, selector, clock)?;
+
+    // Apply strict sanitization if requested
+    if profile == ExportProfile::Strict {
+        sanitize_bundle(&mut bundle, project_dir);
+        let checksum = compute_checksum(&bundle);
+        bundle.manifest.checksum = Some(checksum);
+    }
 
     // Write 5 bundle files (atomic: write to tmp, then rename)
     fs.create_dir_all(out_dir)
@@ -1035,7 +1101,7 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
 
-        let report = run_export(&store, "container:orders", &out_dir, &clock, &fs).unwrap();
+        let report = run_export(&store, "container:orders", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out")).unwrap();
 
         // Verify report — container:orders matches only el:1 (canonical_key STARTS WITH 'orders')
         // el:2 has canonical_key='payments' which doesn't match 'orders'
@@ -1097,7 +1163,7 @@ mod tests {
         let out_dir = std::path::PathBuf::from("/out");
 
         // With container:*, should return both containers
-        let report = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+        let report = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out")).unwrap();
         assert_eq!(report.element_count, 2);
 
         // Verify the names
@@ -1125,8 +1191,8 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out2");
 
-        let r1 = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
-        let r2 = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+        let r1 = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out2")).unwrap();
+        let r2 = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out2")).unwrap();
 
         // Both runs succeed and produce same revision (deterministic)
         assert_eq!(r1.manifest.base_revision, r2.manifest.base_revision);
@@ -1140,11 +1206,11 @@ mod tests {
         let out_dir = std::path::PathBuf::from("/out");
 
         // Empty selector
-        let result = run_export(&store, "", &out_dir, &clock, &fs);
+        let result = run_export(&store, "", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out"));
         assert!(result.is_err());
 
         // Unknown kind
-        let result = run_export(&store, "unknown_kind", &out_dir, &clock, &fs);
+        let result = run_export(&store, "unknown_kind", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out"));
         assert!(result.is_err());
     }
 
@@ -1156,7 +1222,7 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
 
-        let report = run_export(&store, "container:*", &out_dir, &clock, &fs).unwrap();
+        let report = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out")).unwrap();
 
         assert!(report.empty, "expected empty=true for zero-element graph");
         assert!(

@@ -444,6 +444,10 @@ pub enum DiagramAction {
         output: Option<PathBuf>,
         #[arg(long)]
         json: bool,
+        /// Export profile: `default` (full bundle) or `strict` (sanitized for sharing).
+        /// Strict mode relativizes paths, adds checksum, and opens as read-only in archview.
+        #[arg(long, default_value = "default")]
+        profile: String,
     },
     Validate {
         #[arg(long)]
@@ -944,7 +948,8 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 format,
                 output,
                 json,
-            } => diagram_export_cmd(cwd, &selector, &format, output, json, ctx),
+                profile,
+            } => diagram_export_cmd(cwd, &selector, &format, output, json, &profile, ctx),
             DiagramAction::Validate {
                 cwd,
                 bundle_dir,
@@ -2408,12 +2413,17 @@ fn diagram_export_cmd(
     format: &str,
     output: Option<PathBuf>,
     json: bool,
+    profile: &str,
     ctx: &CliContext,
 ) -> Result<i32> {
-    use crate::diagram::export_types::ExportFormat;
+    use crate::diagram::export_types::{ExportFormat, ExportProfile};
 
     let fmt = ExportFormat::parse(format).ok_or_else(|| {
         anyhow::anyhow!("accepted formats: viewer-bundle, arrows (got: {format})")
+    })?;
+
+    let export_profile = ExportProfile::parse(profile).ok_or_else(|| {
+        anyhow::anyhow!("accepted profiles: default, strict (got: {profile})")
     })?;
 
     if !json && output.is_none() && fmt == ExportFormat::ViewerBundle {
@@ -2449,8 +2459,15 @@ fn diagram_export_cmd(
                 // File-write mode: emit 5 files using `run_export`. The bundle
                 // is built again internally (queries are idempotent + cached via
                 // graph layer); this keeps `run_export` callable independently.
-                let report =
-                    crate::diagram::run_export(&*store, selector, out_dir, &*ctx.clock, &*ctx.fs)?;
+                let report = crate::diagram::run_export(
+                    &*store,
+                    selector,
+                    out_dir,
+                    &*ctx.clock,
+                    &*ctx.fs,
+                    export_profile,
+                    &info.project_dir,
+                )?;
                 if !json {
                     println!(
                         "Exported {} elements, {} edges, {} evidence to {}",

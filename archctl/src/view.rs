@@ -141,6 +141,8 @@ fn handle_api_export(
         &bundle_dir,
         &crate::clock::SystemClock,
         &*fs,
+        crate::diagram::export_types::ExportProfile::Default,
+        &info.project_dir,
     )
     .context("export failed")?;
 
