@@ -1,10 +1,10 @@
 # ADR-056 — Moldable Architecture Workbench y navegación semántica
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Deferido — 2026-08-18
+> **Reopen trigger:** ≥2 consumers with LensSpec-translatable duplication (entry criterion per [ROADMAP §H3](../ROADMAP.md#h3--moldabilidad-demostrada)) OR a measured need (UAT evidence: ≥3 users reporting the same lens problem, OR perf p99 breach traceable to view-strategy variance).
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 
