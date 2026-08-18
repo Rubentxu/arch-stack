@@ -271,6 +271,10 @@ Fix: `parse_observed_at` + wrap `timestamp()` en columnas TIMESTAMP
 regresión con filas pre-upgrade. Eliminado el helper muerto
 `iso_to_lbug_timestamp`.
 
+**Fusion engine COMPLETO** (v1.65.0 + params v1.66.0 pendiente de tag):
+fuse-on-write desde los extractores + `--cutoff-days` configurable +
+evaluador configurable en el seam. Ya no hace falta `--persist` manual.
+
 Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed.
@@ -278,8 +282,7 @@ Candidatos futuros (reopen triggers documentados en Anti-roadmap):
   por ADR-061). Fase 2: pseudonymization de filenames + scanner anti-secretos.
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
-- **Fuse-on-write** — persistir fused claims automáticamente desde
-  `put_evidence` (best-effort, ADR-049 D4 style); cutoff configurable.
+- **ADR-055 fase 3** — detección por entropía; allowlist por campo.
 
 Sigue válido el catálogo de items en
 `docs/arch-stack-proposals-2026-08-13/`.
