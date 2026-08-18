@@ -1,9 +1,15 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.0.0 ALCANZADO (2026-08-06) — M27 automated thresholds pass, tag v1.0.0 pushed.
-**Versión:** 2.7
-**Fecha:** 9 de agosto de 2026
-**Cambios vs 2.6:** Convergence cycle m69 — ADR-038/039/040 (product identity, renderer reality, cognitive conditional). H0–H3 horizons added. M17–M23 marked as superseded/conditional with redirects. Ver [ADR-038](adr/ADR-038-one-product-five-invariants.md), [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md), [ADR-040](adr/ADR-040-cognitive-conditional-activation.md).
+**Estado:** v1.59.0 ALCANZADO (2026-08-18) — Wave 2 (P2-01 → P2-10) cerrada en PRs #194–#207; housekeeping + ADR backlog acceptance PRs #208+#209 merged.
+**Versión:** 2.8
+**Fecha:** 18 de agosto de 2026
+**Cambios vs 2.7:** Bridge entre el framework Wave 0/1/2/3 (introducido en 2026-08-13 via `docs/arch-stack-proposals-2026-08-13/`) y este documento. Antes de v2.8 el roadmap main no conocía Wave 0/1/2/3 (sólo H0–H3 horizontes + milestones M0–M32 históricos); ahora STATE.md sirve como single source of truth para Wave status y este archivo ancla históricamente. ADR backlog acceptance: 12 ADRs del proposals pack 2026-08-13 (043, 044, 046–056) movidos al canonical; ADR-016 clarificado per-bloque; 3 nuevas deferrals (ADR-051, 055, 056) promueven al Anti-roadmap table. Ver [ADR-038](adr/ADR-038-one-product-five-invariants.md), [ADR-039](adr/ADR-039-renderer-reality-anti-roadmap.md), [ADR-040](adr/ADR-040-cognitive-conditional-activation.md).
+
+> **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
+> pendiente, ver [docs/STATE.md](STATE.md) §"Plan vigente" +
+> "Anti-roadmap" + "Próxima acción del usuario". Este doc se
+> mantiene como anchor histórico (M0–M32, milestones 73–76, H4
+> cerrado).
 
 ---
 
