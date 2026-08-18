@@ -246,32 +246,26 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 ## Próxima acción del usuario
 
-Wave 2 (intelligence) y Wave 3 Item 19 (P2-09b observation/claim dual-write)
-están cerrados. La primera parte de Wave 3 ya está mergeada en `main`
-(commits `221e6dc` para el housekeeping de Wave 2 + el cycle
-`adr-backlog-acceptance`; commits `e342067`, `f57b6b2`, `426189b` en
-PR #211 para el cycle `wave-3-p2-09-claim-dual-write`).
+Wave 3 completo: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine)
+cerrados en `main` (PRs #211/#212/#213, commits `667a706`/`098a96d`/`3365abd`).
+El ciclo `fusion-engine-followups` (PR #214) cierra el loop del Item 27:
+persistencia de fused claims (migración v6 + `--persist`), evaluadores
+pluggables (`--evaluator max-member|staleness-weighted`) y surfacing en
+`architecture explain` (1.1) + `architecture coverage` (byFusedClaims, 1.1).
 
-Quedan los siguientes candidatos Wave 3 del PR plan original
-(extraídos de `docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`):
-
-- **22 — `archctl ide doctor <ide>`** consolidation, sobre la base de v1.35.0
-  (IDE adapters).
-- **27 — Fusion engine / observation ↔ evidence bridge** (desbloqueada
-  por P2-09b; consume los carriers canónicos Observation/Claim).
+Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
-  disclosed (Reopen trigger en Anti-roadmap table).
+  disclosed.
 - **ADR-055 sanitized architecture bundle** — abre con ADR-019 perf
   budget breach AND ≥1 external-distribution consumer.
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
+- **P2-09b backfill timestamp workaround** — cambiar `written_at` a STRING
+  o bump lbug (bloquea backfill de filas pre-upgrade; documentado en el
+  archive-report de `wave-3-p2-09-claim-dual-write`).
+- **Item 27 residual**: persistir fused claims vía dual-write desde
+  `put_evidence` (hoy es `--persist` explícito); staleness expiry
+  (borrado de claims stale) — v1 solo flag.
 
-**Items del PR plan 2026-08-13 ya cerrados en waves previas** (informativo,
-ya no candidatos Wave 3):
-- Item 19 (Observation/Claim dual-write migration) — closed en P2-09b
-  via cycle `wave-3-p2-09-claim-dual-write` (PR #211; commits `e342067` + `f57b6b2` + `426189b`; merge pendiente).
-- Item 20 (Mermaid → SVG local via `merman`, M38) — closed v1.9.0.
-
-Decidir Wave 3 priorities restantes en un ciclo dedicado (sddk-new) antes
-de proponer cualquier task. Mientras tanto, sigue válido el catálogo de
-items en `docs/arch-stack-proposals-2026-08-13/`.
+Sigue válido el catálogo de items en
+`docs/arch-stack-proposals-2026-08-13/`.

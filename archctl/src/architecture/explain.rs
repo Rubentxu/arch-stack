@@ -11,12 +11,16 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::architecture::fusion::{FusedClaim, fused_claims_from_rows};
 use crate::diagram::export_types::EvidenceEntry;
 use crate::graph::RelationRow;
 use crate::store::DiagramRepository;
 
 /// The explain-report/1 carrier — the output of the `explain` use case.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// NOTE: intentionally does not derive `Eq` — the report embeds
+/// `FusedClaim` (which carries an `f64` confidence).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExplainReport {
     /// Schema version of this report format.
     #[serde(rename = "schemaVersion")]
@@ -27,6 +31,13 @@ pub struct ExplainReport {
     pub subject: ExplainSubject,
     /// Provenance chain: evidence entries and substantiation status.
     pub provenance: ExplainProvenance,
+    /// Fused claims backing this subject (v6 persisted claims whose
+    /// derived evidence intersects the subject's evidence). Absent
+    /// when the subject has no version link, when no fused claims are
+    /// persisted, or when none intersect.
+    #[serde(rename = "fusedClaims")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fused_claims: Option<Vec<FusedClaim>>,
     /// Warnings generated during the explain (e.g., missing version link).
     pub warnings: Vec<String>,
 }
@@ -187,8 +198,10 @@ fn build_element_report(
         vec![]
     };
 
+    let fused_claims = fused_claims_for_subject(repo, version_id.as_deref(), &evidence)?;
+
     Ok(ExplainReport {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         capability: "architecture-explain-mvp".to_string(),
         subject: ExplainSubject {
             kind: "element".to_string(),
@@ -200,6 +213,7 @@ fn build_element_report(
             evidence,
             unsubstantiated,
         },
+        fused_claims,
         warnings,
     })
 }
@@ -249,8 +263,10 @@ fn build_relation_report(
         vec![]
     };
 
+    let fused_claims = fused_claims_for_subject(repo, version_id.as_deref(), &evidence)?;
+
     Ok(ExplainReport {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         capability: "architecture-explain-mvp".to_string(),
         subject: ExplainSubject {
             kind: "relation".to_string(),
@@ -262,8 +278,57 @@ fn build_relation_report(
             evidence,
             unsubstantiated,
         },
+        fused_claims,
         warnings,
     })
+}
+
+/// Surface persisted fused claims (v6) that back the given subject
+/// evidence.
+///
+/// Returns `None` when the subject has no version link, when the
+/// store predates the v6 tables, or when no fused claim's
+/// `derived_from` intersects the subject's evidence ids.
+fn fused_claims_for_subject(
+    repo: &dyn DiagramRepository,
+    version_id: Option<&str>,
+    evidence: &[EvidenceEntry],
+) -> Result<Option<Vec<FusedClaim>>, ExplainError> {
+    let Some(vid) = version_id else {
+        return Ok(None);
+    };
+    if evidence.is_empty() {
+        return Ok(None);
+    }
+    let Some(rows) = repo
+        .read_fused_claim_rows(std::slice::from_ref(&vid.to_string()))
+        .map_err(ExplainError::from)?
+    else {
+        // Pre-v6 store: no persisted fused claims.
+        return Ok(None);
+    };
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    let claim_ids: Vec<String> = rows
+        .iter()
+        .filter_map(|r| r.get("f.id").and_then(|c| c.as_str()).map(String::from))
+        .collect();
+    let edges = repo
+        .list_fused_conflict_edges(&claim_ids)
+        .map_err(ExplainError::from)?;
+    let all = fused_claims_from_rows(&rows, &edges);
+    let evidence_ids: std::collections::HashSet<String> =
+        evidence.iter().map(|e| e.id.clone()).collect();
+    let mut backing: Vec<FusedClaim> = all
+        .into_iter()
+        .filter(|c| c.derived_from.iter().any(|eid| evidence_ids.contains(eid)))
+        .collect();
+    if backing.is_empty() {
+        return Ok(None);
+    }
+    backing.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(Some(backing))
 }
 
 #[cfg(test)]
@@ -525,7 +590,7 @@ mod tests {
             .with_element_evidence("v:1", make_evidence("ev:1"));
 
         let result = explain(&repo, "c4:container:orders").unwrap();
-        assert_eq!(result.schema_version, "1.0");
+        assert_eq!(result.schema_version, "1.1");
         assert_eq!(result.capability, "architecture-explain-mvp");
     }
 

@@ -1,4 +1,4 @@
-//! Fusion engine (Wave 3 Item 27).
+//! Fusion engine (Wave 3 Item 27 + follow-ups).
 //!
 //! Aggregates multiple `Observation`s into one `FusedClaim` per
 //! distinct statement — deterministic, order-independent, with
@@ -15,15 +15,21 @@
 //!   0.0 — same membership rule as the compat claims).
 //! - Id: `clm:fused:<blake3(sorted observation_ids)>` —
 //!   content-addressed and order-independent.
+//!
+//! v2 (Item 27 follow-ups): the aggregation strategy is pluggable
+//! via [`ClaimEvaluator`]. `MaxMemberEvaluator` preserves the v1
+//! semantics exactly; `StalenessWeightedEvaluator` applies a 0.5
+//! confidence factor when any member observation is older than the
+//! 90-day staleness cutoff and flags the claim as `stale`.
 
 use crate::observation_claim::Observation;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// A claim produced by fusing multiple observations of the same
 /// statement. Never loses provenance: `observation_ids` and
 /// `derived_from` list every member.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FusedClaim {
     /// `clm:fused:<blake3(sorted observation_ids)>`.
     pub id: String,
@@ -44,7 +50,101 @@ pub struct FusedClaim {
     pub conflicts_with: Vec<String>,
     /// "accepted" when any member evidence is accepted.
     pub status: String,
+    /// True when any member observation is stale (v2 semantics;
+    /// always false under `MaxMemberEvaluator`).
+    pub stale: bool,
     pub warnings: Vec<String>,
+}
+
+/// Fusion strategy for a group of observations asserting the same
+/// statement. Implementations MUST be deterministic and
+/// order-independent (the group members are collected in input order,
+/// so strategies must not depend on that order).
+pub trait ClaimEvaluator: Send + Sync {
+    /// Stable strategy name, used by `architecture fuse --evaluator`.
+    fn name(&self) -> &'static str;
+
+    /// Aggregated confidence for the member observations.
+    fn confidence(&self, members: &[&Observation], now: &str) -> f64;
+
+    /// Whether the fused claim should be flagged stale.
+    ///
+    /// Defaults to `false` — v1 semantics: staleness is not part of
+    /// the aggregation.
+    fn stale(&self, members: &[&Observation], now: &str) -> bool {
+        let _ = (members, now);
+        false
+    }
+}
+
+/// v1 strategy: confidence = max member confidence (accepted → 1.0,
+/// else 0.0; the Observation carrier v1 default is 1.0). Never stale.
+pub struct MaxMemberEvaluator;
+
+impl ClaimEvaluator for MaxMemberEvaluator {
+    fn name(&self) -> &'static str {
+        "max-member"
+    }
+
+    fn confidence(&self, members: &[&Observation], _now: &str) -> f64 {
+        members
+            .iter()
+            .map(|o| observation_confidence(o))
+            .fold(0.0_f64, f64::max)
+    }
+}
+
+/// v2 strategy: max-member confidence scaled by staleness. A claim is
+/// stale when any member observation's `observed_at` is older than
+/// [`STALENESS_CUTOFF_DAYS`] before `now`; stale claims get
+/// confidence × 0.5. Deterministic, order-independent.
+pub struct StalenessWeightedEvaluator;
+
+/// Staleness cutoff in days — same invariant as `architecture
+/// coverage` (`StalenessBuckets`): fresh ≤ 90 days, stale > 90 days.
+pub const STALENESS_CUTOFF_DAYS: i64 = 90;
+
+impl ClaimEvaluator for StalenessWeightedEvaluator {
+    fn name(&self) -> &'static str {
+        "staleness-weighted"
+    }
+
+    fn confidence(&self, members: &[&Observation], now: &str) -> f64 {
+        let base = members
+            .iter()
+            .map(|o| observation_confidence(o))
+            .fold(0.0_f64, f64::max);
+        if self.stale(members, now) {
+            base * 0.5
+        } else {
+            base
+        }
+    }
+
+    fn stale(&self, members: &[&Observation], now: &str) -> bool {
+        members.iter().any(|o| is_stale_observation(o, now))
+    }
+}
+
+/// True when the observation's `observed_at` is older than the
+/// 90-day cutoff relative to `now` (RFC 3339).
+///
+/// - Empty `now` disables staleness (nothing to compare against).
+/// - Unparseable `observed_at` is treated as stale (conservative:
+///   if we cannot prove freshness, flag it).
+fn is_stale_observation(obs: &Observation, now: &str) -> bool {
+    if now.is_empty() {
+        return false;
+    }
+    let Ok(now_dt) = chrono::DateTime::parse_from_rfc3339(now) else {
+        // Unparseable `now` — same conservative rule.
+        return true;
+    };
+    let Ok(obs_dt) = chrono::DateTime::parse_from_rfc3339(&obs.observed_at) else {
+        return true;
+    };
+    let age = now_dt.with_timezone(&chrono::Utc) - obs_dt.with_timezone(&chrono::Utc);
+    age > chrono::Duration::days(STALENESS_CUTOFF_DAYS)
 }
 
 /// Normalize a claim text for grouping: trim, collapse whitespace,
@@ -93,12 +193,28 @@ fn fused_id(observation_ids: &[String]) -> String {
     format!("clm:fused:{}", digest.to_hex())
 }
 
-/// Aggregate observations into fused claims.
+/// Aggregate observations into fused claims using the v1
+/// (`MaxMemberEvaluator`) strategy.
 ///
 /// Deterministic: input order does not matter (groups are
 /// BTreeMap-ordered; ids are sorted before hashing). Empty input
 /// yields an empty vector.
 pub fn fuse_observations(observations: &[Observation]) -> Vec<FusedClaim> {
+    fuse_observations_with(observations, &MaxMemberEvaluator, "")
+}
+
+/// Aggregate observations into fused claims with an explicit
+/// evaluation strategy.
+///
+/// Deterministic: input order does not matter (groups are
+/// BTreeMap-ordered; ids are sorted before hashing). Empty input
+/// yields an empty vector. `now` is an RFC 3339 timestamp consumed by
+/// staleness-aware evaluators (ignored by `MaxMemberEvaluator`).
+pub fn fuse_observations_with(
+    observations: &[Observation],
+    evaluator: &dyn ClaimEvaluator,
+    now: &str,
+) -> Vec<FusedClaim> {
     if observations.is_empty() {
         return vec![];
     }
@@ -127,10 +243,9 @@ pub fn fuse_observations(observations: &[Observation]) -> Vec<FusedClaim> {
         derived_from.sort();
         derived_from.dedup();
 
-        let confidence = members
-            .iter()
-            .map(|o| observation_confidence(o))
-            .fold(0.0_f64, f64::max);
+        let member_refs: Vec<&Observation> = members.to_vec();
+        let confidence = evaluator.confidence(&member_refs, now);
+        let stale = evaluator.stale(&member_refs, now);
 
         // Status: accepted if any member observation's evidence is
         // accepted (v1: always true per the confidence rule).
@@ -150,6 +265,7 @@ pub fn fuse_observations(observations: &[Observation]) -> Vec<FusedClaim> {
             supports: members.len(),
             conflicts_with: Vec::new(),
             status: status.to_string(),
+            stale,
             warnings: Vec::new(),
         });
     }
@@ -198,6 +314,78 @@ pub fn fuse_observations(observations: &[Observation]) -> Vec<FusedClaim> {
         }
     }
 
+    claims
+}
+
+/// Reconstruct `FusedClaim`s from raw rows produced by
+/// `DiagramRepository::read_fused_claim_rows` plus the conflict edges
+/// produced by `DiagramRepository::list_fused_conflict_edges`.
+///
+/// Column names: `f.id, f.kind, f.statement, f.confidence,
+/// f.supports, f.status, f.stale, f.observation_ids,
+/// f.derived_from, f.version_id`.
+pub fn fused_claims_from_rows(
+    rows: &[crate::row::Row],
+    conflict_edges: &[(String, String)],
+) -> Vec<FusedClaim> {
+    let mut claims: Vec<FusedClaim> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let str_col = |k: &str| {
+            row.get(k)
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
+        let id = str_col("f.id");
+        if id.is_empty() {
+            continue;
+        }
+        let list_col = |k: &str| -> Vec<String> {
+            row.get(k)
+                .and_then(|c| c.as_list())
+                .map(|cells| {
+                    cells
+                        .iter()
+                        .filter_map(|c| c.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let mut conflicts: Vec<String> = conflict_edges
+            .iter()
+            .filter(|(from, _)| *from == id)
+            .map(|(_, to)| to.clone())
+            .collect();
+        conflicts.sort();
+        conflicts.dedup();
+        let mut warnings = Vec::new();
+        if !conflicts.is_empty() {
+            warnings.push(format!("conflict_with: {}", conflicts.join(", ")));
+        }
+        claims.push(FusedClaim {
+            id,
+            kind: str_col("f.kind"),
+            statement: str_col("f.statement"),
+            confidence: row
+                .get("f.confidence")
+                .and_then(|c| c.as_f64())
+                .unwrap_or(0.0),
+            observation_ids: list_col("f.observation_ids"),
+            derived_from: list_col("f.derived_from"),
+            supports: row
+                .get("f.supports")
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0)
+                .max(0) as usize,
+            conflicts_with: conflicts,
+            status: str_col("f.status"),
+            stale: row
+                .get("f.stale")
+                .and_then(|c| c.as_bool())
+                .unwrap_or(false),
+            warnings,
+        });
+    }
     claims
 }
 
@@ -318,5 +506,95 @@ mod tests {
         let r2 = fuse_observations(&[b, a]);
         assert_eq!(r1[0].id, r2[0].id, "id must be order-independent");
         assert!(r1[0].id.starts_with("clm:fused:"));
+    }
+
+    #[test]
+    fn fuse_observations_matches_max_member_evaluator() {
+        // v1 delegation: fuse_observations == fuse_observations_with(MaxMember).
+        let input = vec![
+            obs("obs:ev:1", "structural", "foo exists", "src/a.rs"),
+            obs("obs:ev:2", "lexical", "bar", "src/b.rs"),
+        ];
+        let via_v1 = fuse_observations(&input);
+        let via_trait = fuse_observations_with(&input, &MaxMemberEvaluator, "");
+        assert_eq!(via_v1, via_trait, "v1 semantics must be preserved");
+        assert!(via_v1.iter().all(|c| !c.stale), "v1 never stale");
+        assert_eq!(MaxMemberEvaluator.name(), "max-member");
+    }
+
+    #[test]
+    fn staleness_cutoff_boundary_fresh_at_exactly_90_days() {
+        let now = "2026-08-01T00:00:00Z";
+        // observed_at exactly 90 days before now → fresh.
+        let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        o.observed_at = "2026-05-03T00:00:00Z".to_string();
+        let stale = is_stale_observation(&o, now);
+        assert!(!stale, "exactly 90 days must be fresh");
+    }
+
+    #[test]
+    fn staleness_cutoff_boundary_stale_after_90_days() {
+        let now = "2026-08-01T00:00:00Z";
+        // observed_at 90 days + 1 second before now → stale.
+        let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        o.observed_at = "2026-05-02T23:59:59Z".to_string();
+        let stale = is_stale_observation(&o, now);
+        assert!(stale, "90 days + 1s must be stale");
+    }
+
+    #[test]
+    fn staleness_weighted_halves_confidence_on_stale_member() {
+        let now = "2026-08-01T00:00:00Z";
+        let mut fresh = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        fresh.observed_at = "2026-07-01T00:00:00Z".to_string();
+        let mut old = obs("obs:ev:2", "structural", "foo exists", "src/a.rs");
+        old.observed_at = "2025-01-01T00:00:00Z".to_string();
+
+        let claims = fuse_observations_with(&[fresh, old], &StalenessWeightedEvaluator, now);
+        assert_eq!(claims.len(), 1, "same statement still fuses");
+        assert!(claims[0].stale, "mixed members → stale claim");
+        // MaxMember base is 1.0; stale → × 0.5.
+        assert!((claims[0].confidence - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn staleness_weighted_all_fresh_keeps_full_confidence() {
+        let now = "2026-08-01T00:00:00Z";
+        let mut a = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        a.observed_at = "2026-07-01T00:00:00Z".to_string();
+        let mut b = obs("obs:ev:2", "structural", "foo exists", "src/a.rs");
+        b.observed_at = "2026-06-01T00:00:00Z".to_string();
+
+        let claims = fuse_observations_with(&[a, b], &StalenessWeightedEvaluator, now);
+        assert!(!claims[0].stale);
+        assert!((claims[0].confidence - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn unparseable_observed_at_is_conservatively_stale() {
+        let now = "2026-08-01T00:00:00Z";
+        let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        o.observed_at = "not-a-timestamp".to_string();
+        assert!(is_stale_observation(&o, now));
+    }
+
+    #[test]
+    fn empty_now_disables_staleness() {
+        let mut o = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        o.observed_at = "2000-01-01T00:00:00Z".to_string();
+        assert!(!is_stale_observation(&o, ""), "no now → not stale");
+    }
+
+    #[test]
+    fn evaluator_order_independence_with_staleness() {
+        let now = "2026-08-01T00:00:00Z";
+        let mut a = obs("obs:ev:1", "structural", "foo exists", "src/a.rs");
+        a.observed_at = "2026-07-01T00:00:00Z".to_string();
+        let mut b = obs("obs:ev:2", "structural", "foo exists", "src/a.rs");
+        b.observed_at = "2025-01-01T00:00:00Z".to_string();
+        let forward =
+            fuse_observations_with(&[a.clone(), b.clone()], &StalenessWeightedEvaluator, now);
+        let backward = fuse_observations_with(&[b, a], &StalenessWeightedEvaluator, now);
+        assert_eq!(forward, backward, "v2 must be order-independent");
     }
 }

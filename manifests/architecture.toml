@@ -26,6 +26,10 @@ editable = [
     "archctl/src/architecture/report_formats.rs",
     "archctl/src/architecture/task_context.rs",
     "archctl/src/observation_claim.rs",
+    # P2-09b backfill hook lives in the migration runner (ADR-017);
+    # it is architecture-domain logic (Observation/Claim backfill),
+    # so the file is part of this scope's contract surface.
+    "archctl/src/migrations.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -66,6 +70,12 @@ public_symbols = [
     "RelevanceOptions",
     "fuse_observations",
     "FusedClaim",
+    "ClaimEvaluator",
+    "MaxMemberEvaluator",
+    "StalenessWeightedEvaluator",
+    "fuse_observations_with",
+    "fused_claims_from_rows",
+    "STALENESS_CUTOFF_DAYS",
     "ScoredElement",
     "ScoredRelation",
     "compile_task_context",
@@ -120,6 +130,11 @@ must_hold = [
     "pub struct RelevanceOptions",
     "pub fn fuse_observations(",
     "pub struct FusedClaim",
+    "pub trait ClaimEvaluator",
+    "pub struct MaxMemberEvaluator",
+    "pub struct StalenessWeightedEvaluator",
+    "pub fn fuse_observations_with(",
+    "pub fn fused_claims_from_rows(",
     "pub struct ScoredElement",
     "pub struct ScoredRelation",
     "pub fn compile_task_context(",
