@@ -1,6 +1,13 @@
 ## [Unreleased]
 
 ### Added
+- **Secret redaction fase 3** (ADR-055) — detección por entropía:
+  tokens alfanuméricos ≥ 32 chars con Shannon entropy ≥ 4.0 bits/char
+  se redactan como `[REDACTED:high-entropy]` (API keys custom sin
+  prefijo conocido). Hashes hex (blake3/sha256 ≈ 3.3 bits/char) e
+  identificadores cortos sobreviven. Allowlist de campos documentada
+  en `redact.rs` (strings escaneados vs numéricos/hashes/timestamps
+  seguros por construcción).
 - **Fusion params configurables** (Item 27 follow-up):
   - `architecture fuse --cutoff-days N` — cutoff de staleness configurable
     (evaluador staleness-weighted + `--expire-stale`; default 90).
