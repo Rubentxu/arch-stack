@@ -88,7 +88,7 @@ fn explain_element_json_happy_path() {
 
     let report = archctl::architecture::explain(&store, "c4:container:orders").unwrap();
 
-    assert_eq!(report.schema_version, "1.0");
+    assert_eq!(report.schema_version, "1.1");
     assert_eq!(report.capability, "architecture-explain-mvp");
     assert_eq!(report.subject.kind, "element");
     assert_eq!(report.subject.id, "c4:container:orders");
@@ -112,7 +112,7 @@ fn explain_relation_json_happy_path() {
 
     let report = archctl::architecture::explain(&store, "rel:orders-payment").unwrap();
 
-    assert_eq!(report.schema_version, "1.0");
+    assert_eq!(report.schema_version, "1.1");
     assert_eq!(report.capability, "architecture-explain-mvp");
     assert_eq!(report.subject.kind, "relation");
     assert_eq!(report.subject.id, "rel:orders-payment");
@@ -249,4 +249,113 @@ fn explain_null_version_id_yields_unsubstantiated_with_warning() {
             .iter()
             .any(|w| w.contains("no current version"))
     );
+}
+
+// ---------------------------------------------------------------------------
+// Fused claims surfacing (v6, Wave 3 Item 27 follow-ups)
+// ---------------------------------------------------------------------------
+
+/// Seed element + evidence + Observation row, then persist fused claims
+/// derived from that evidence via `put_fused_claims`.
+fn seed_and_persist_fused_claim(store: &mut LbugStore, version_id: &str) {
+    use archctl::architecture::fusion::fuse_observations;
+    use archctl::observation_claim::observations_and_claims_for_version;
+    use archctl::store::DiagramRepository;
+
+    seed_element_with_evidence(store, "c4:container:orders", version_id);
+    store
+        .execute_raw_cypher_for_test(&format!(
+            "CREATE (:Observation {{id: 'obs:ev:{version_id}', kind: 'structural', claim: 'test evidence', path: 'src/lib.rs', observed_at: '2026-08-01T00:00:00Z'}})"
+        ))
+        .expect("seed observation");
+    let (observations, _) = observations_and_claims_for_version(store, version_id).unwrap();
+    let fused = fuse_observations(&observations);
+    assert_eq!(fused.len(), 1);
+    store
+        .put_fused_claims(version_id, &fused, "2026-08-01T00:00:00Z")
+        .expect("persist fused claims");
+}
+
+#[test]
+fn explain_surfaces_intersecting_fused_claims() {
+    use archctl::store::DiagramRepository;
+
+    let (mut store, _tmp) = test_store();
+    seed_and_persist_fused_claim(&mut store, "v:orders:1");
+
+    let report = archctl::architecture::explain(&store, "c4:container:orders").unwrap();
+
+    let fused = report.fused_claims.expect("fused claims present");
+    assert_eq!(fused.len(), 1, "one intersecting fused claim");
+    assert_eq!(fused[0].derived_from, vec!["ev:v:orders:1".to_string()]);
+    assert!(fused[0].id.starts_with("clm:fused:"));
+    assert_eq!(report.schema_version, "1.1");
+}
+
+#[test]
+fn explain_omits_non_intersecting_fused_claims() {
+    use archctl::architecture::fusion::FusedClaim;
+    use archctl::store::DiagramRepository;
+
+    let (mut store, _tmp) = test_store();
+    seed_element_with_evidence(&mut store, "c4:container:orders", "v:orders:1");
+
+    // Persist a fused claim whose evidence is NOT the subject's.
+    let claim = FusedClaim {
+        id: "clm:fused:deadbeef".to_string(),
+        kind: "structural".to_string(),
+        statement: "unrelated claim".to_string(),
+        confidence: 1.0,
+        observation_ids: vec!["obs:ev:other".to_string()],
+        derived_from: vec!["ev:other".to_string()],
+        supports: 1,
+        conflicts_with: vec![],
+        status: "accepted".to_string(),
+        stale: false,
+        warnings: vec![],
+    };
+    store
+        .put_fused_claims("v:orders:1", &[claim], "2026-08-01T00:00:00Z")
+        .expect("persist unrelated claim");
+
+    let report = archctl::architecture::explain(&store, "c4:container:orders").unwrap();
+    assert!(
+        report.fused_claims.is_none(),
+        "no intersecting claim → None"
+    );
+}
+
+#[test]
+fn explain_fused_claims_absent_without_version_link() {
+    use archctl::architecture::fusion::FusedClaim;
+    use archctl::store::DiagramRepository;
+
+    let (mut store, _tmp) = test_store();
+    seed_element_with_evidence(&mut store, "c4:container:orders", "v:orders:1");
+    let claim = FusedClaim {
+        id: "clm:fused:beef".to_string(),
+        kind: "structural".to_string(),
+        statement: "x".to_string(),
+        confidence: 1.0,
+        observation_ids: vec!["obs:ev:v:orders:1".to_string()],
+        derived_from: vec!["ev:v:orders:1".to_string()],
+        supports: 1,
+        conflicts_with: vec![],
+        status: "accepted".to_string(),
+        stale: false,
+        warnings: vec![],
+    };
+    store
+        .put_fused_claims("v:orders:1", &[claim], "2026-08-01T00:00:00Z")
+        .expect("persist claim");
+
+    // Re-point the element to an empty version id (no version link).
+    store
+        .execute_raw_cypher_for_test(
+            "MATCH (e:Element {id: 'c4:container:orders'}) SET e.current_version_id = ''",
+        )
+        .expect("unlink version");
+
+    let report = archctl::architecture::explain(&store, "c4:container:orders").unwrap();
+    assert!(report.fused_claims.is_none(), "no version link → None");
 }

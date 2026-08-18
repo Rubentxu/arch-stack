@@ -23,13 +23,13 @@
 //! 90-day staleness cutoff and flags the claim as `stale`.
 
 use crate::observation_claim::Observation;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// A claim produced by fusing multiple observations of the same
 /// statement. Never loses provenance: `observation_ids` and
 /// `derived_from` list every member.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FusedClaim {
     /// `clm:fused:<blake3(sorted observation_ids)>`.
     pub id: String,
