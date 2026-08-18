@@ -1,4 +1,4 @@
-//! Secret redaction for strict export profiles (ADR-055 phase 2).
+//! Secret redaction for strict export profiles (ADR-055).
 //!
 //! Deny-by-default scanner: known secret shapes embedded in bundle
 //! string fields are replaced with `[REDACTED:<kind>]` before a
@@ -6,8 +6,28 @@
 //! same output), zero dependencies (no regex crate — matching is
 //! manual substring scanning with context validation).
 //!
+//! Detection layers (ADR-055 phases):
+//! - Phase 2: known patterns — AWS AKIA, GitHub/Slack tokens, private
+//!   keys, JWTs, URLs with credentials, generic assignments.
+//! - Phase 3: entropy heuristic — alphanumeric tokens ≥ 32 chars with
+//!   Shannon entropy ≥ 4.0 bits/char are redacted as
+//!   `[REDACTED:high-entropy]` (catches custom API keys with no known
+//!   prefix). Hex hashes (blake3/sha256 ≈ 3.3 bits/char) and short
+//!   identifiers survive.
+//!
+//! Field allowlist (what `redact_bundle` scans): every STRING field of
+//! the bundle — manifest.view_selector, node name/description/
+//! canonical_key/label_override, edge id/source/target/predicate/label,
+//! evidence id/kind/claim/path/tool_name/tool_version/rule_id/
+//! content_hash. NOT scanned (safe by construction): numeric fields
+//! (start_line/end_line/confidence/x/y), hashes already validated by
+//! schema pattern (baseRevision blake3, content_hash), timestamps
+//! (generatedAt/observedAt). Evidence paths are relativized BEFORE
+//! redaction (Item 28) so both protections compose.
+//!
 //! Deliberate limits (documented in ADR-055):
-//! - Pattern-based only. Entropy/heuristic detection is phase 3.
+//! - Heuristic only — entropy is a bar, not a proof; exotic secrets
+//!   below the bars leak by design (conservative false-negative).
 //! - Only strict bundles are scanned (`--profile strict`); the
 //!   default profile never redacts (0 regression).
 //! - Source bytes are not scanned because they are not part of a
@@ -111,7 +131,75 @@ const PATTERNS: &[(&str, Finder)] = &[
     ("jwt", find_jwt),
     ("url-credentials", find_url_credentials),
     ("generic-secret", find_generic_secret),
+    ("high-entropy", find_high_entropy),
 ];
+
+/// Minimum token length for the entropy heuristic. Short tokens are
+/// too common to be meaningful (e.g. a 24-char hex id has ~3.3
+/// bits/char and would never pass the 4.0 bar anyway, but keep the
+/// length gate explicit).
+const ENTROPY_MIN_LEN: usize = 32;
+/// Shannon entropy bar (bits per char). Random-looking secrets (API
+/// keys, tokens without a known prefix) usually sit at 4.0–5.5;
+/// hex ids and base32 identifiers sit below ~3.5.
+const ENTROPY_MIN_BITS: f64 = 4.0;
+
+/// Entropy heuristic (ADR-055 phase 3): any alphanumeric token of
+/// ≥ [`ENTROPY_MIN_LEN`] chars with Shannon entropy ≥
+/// [`ENTROPY_MIN_BITS`] bits/char is treated as a secret. Catches
+/// API keys and tokens with no known prefix. Deliberately
+/// conservative (long + high entropy only) to avoid false positives
+/// on hashes (hex ≈ 3.3 bits/char) and long identifiers.
+fn find_high_entropy(text: &str) -> Option<(usize, usize)> {
+    let mut start = 0usize;
+    let mut in_token = false;
+    let mut token_start = 0usize;
+    for (i, c) in text.char_indices() {
+        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            if !in_token {
+                in_token = true;
+                token_start = i;
+            }
+        } else if in_token {
+            let end = i;
+            if end - token_start >= ENTROPY_MIN_LEN
+                && shannon_entropy(&text[token_start..end]) >= ENTROPY_MIN_BITS
+            {
+                return Some((token_start, end));
+            }
+            in_token = false;
+            start = i;
+        }
+    }
+    if in_token {
+        let end = text.len();
+        if end - token_start >= ENTROPY_MIN_LEN
+            && shannon_entropy(&text[token_start..end]) >= ENTROPY_MIN_BITS
+        {
+            return Some((token_start, end));
+        }
+    }
+    let _ = start;
+    None
+}
+
+/// Shannon entropy of a token in bits per character.
+fn shannon_entropy(s: &str) -> f64 {
+    let mut counts: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+    let mut total = 0usize;
+    for c in s.chars() {
+        *counts.entry(c).or_insert(0) += 1;
+        total += 1;
+    }
+    if total == 0 {
+        return 0.0;
+    }
+    let t = total as f64;
+    counts.values().fold(0.0, |acc, &n| {
+        let p = n as f64 / t;
+        acc - p * p.log2()
+    })
+}
 
 /// `-----BEGIN ... PRIVATE KEY-----` … `-----END ... PRIVATE KEY-----`
 /// Redacts the whole block (header + body + footer).
@@ -362,5 +450,47 @@ mod tests {
     fn plain_text_passes_through() {
         let text = "the quick brown fox jumps over the lazy dog";
         assert_eq!(redact_secrets(text), text);
+    }
+}
+
+#[cfg(test)]
+mod entropy_tests {
+    use super::*;
+
+    /// High-entropy base64url-looking token (no known prefix) → redacted.
+    #[test]
+    fn redacts_high_entropy_token() {
+        let token = "aZ9xQ7mK2vN8pL4cR6tW1yE3uI5oA0sD";
+        assert!(token.len() >= ENTROPY_MIN_LEN);
+        let redacted = redact_secrets(&format!("key {token} end"));
+        assert!(
+            redacted.contains("[REDACTED:high-entropy]"),
+            "high-entropy token must be redacted, got: {redacted}"
+        );
+        assert!(!redacted.contains(token), "token must not leak");
+    }
+
+    /// Hex blake3/sha256 ids are NOT redacted by the entropy heuristic
+    /// (hex entropy ≈ 3.3 bits/char < 4.0 bar) — identifiers survive.
+    #[test]
+    fn hex_hashes_survive_entropy_heuristic() {
+        let hash = "blake3:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        let redacted = redact_secrets(hash);
+        assert_eq!(redacted, hash, "hex hashes must NOT be redacted");
+    }
+
+    /// Short tokens are never redacted by entropy.
+    #[test]
+    fn short_tokens_survive() {
+        let text = "the quick brown fox 1234567890abcdef";
+        assert_eq!(redact_secrets(text), text);
+    }
+
+    /// Determinism of the entropy heuristic.
+    #[test]
+    fn entropy_heuristic_is_deterministic() {
+        let token = "kD8mP2xQ9vN4cL6rT1wY5uI3oA7sE0zB";
+        let input = format!("prefix-{token}-suffix");
+        assert_eq!(redact_secrets(&input), redact_secrets(&input));
     }
 }
