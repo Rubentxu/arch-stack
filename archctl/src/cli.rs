@@ -254,6 +254,17 @@ pub enum ArchitectureAction {
         #[arg(long)]
         json: bool,
     },
+    /// Fuse observations of a version into aggregated claims.
+    Fuse {
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Version id whose observations are fused.
+        #[arg(long)]
+        version_id: String,
+        /// Output as JSON instead of human-readable.
+        #[arg(long)]
+        json: bool,
+    },
     /// Check intent declaration against the live graph.
     Intent {
         #[command(subcommand)]
@@ -1003,6 +1014,11 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 version_id,
                 json,
             } => architecture_observe_cmd(cwd, &version_id, json, ctx),
+            ArchitectureAction::Fuse {
+                cwd,
+                version_id,
+                json,
+            } => architecture_fuse_cmd(cwd, &version_id, json, ctx),
             ArchitectureAction::Intent { action } => architecture_intent_cmd(action, ctx),
         },
         Command::Evidence { action } => match action {
@@ -3026,6 +3042,87 @@ fn architecture_observe_cmd(
             // This should never happen — parallel arrays guarantee same length
             println!();
             println!("⚠ internal error: observation/claim array length mismatch");
+        }
+    }
+
+    Ok(0)
+}
+
+fn architecture_fuse_cmd(
+    cwd: Option<PathBuf>,
+    version_id: &str,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    use crate::architecture::fusion::{FusedClaim, fuse_observations};
+
+    let cwd = ctx.resolve_cwd(cwd.as_ref());
+
+    // Validate version_id before touching the store.
+    if let Err(e) = crate::graph::validate_identifier(version_id) {
+        if json {
+            eprintln!("{{\"error\": \"invalid version id: {version_id}\", \"details\": \"{e}\"}}");
+        } else {
+            eprintln!("error: invalid version id: {version_id} — {e}");
+        }
+        return Ok(1);
+    }
+
+    let info = resolve_project(&cwd.to_string_lossy());
+    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+
+    let (observations, _claims) =
+        match crate::observation_claim::observations_and_claims_for_version(&*store, version_id) {
+            Ok(pair) => pair,
+            Err(crate::observation_claim::ObservationError::Store(msg)) => {
+                if json {
+                    eprintln!("{{\"error\": \"{msg}\"}}");
+                } else {
+                    eprintln!("error: {msg}");
+                }
+                return Ok(1);
+            }
+            Err(crate::observation_claim::ObservationError::InvalidVersionId(msg)) => {
+                if json {
+                    eprintln!(
+                        "{{\"error\": \"invalid version id: {version_id}\", \"details\": \"{msg}\"}}"
+                    );
+                } else {
+                    eprintln!("error: invalid version id: {version_id} — {msg}");
+                }
+                return Ok(1);
+            }
+        };
+
+    let fused = fuse_observations(&observations);
+
+    if json {
+        #[derive(serde::Serialize)]
+        struct FuseReport<'a> {
+            version_id: &'a str,
+            fused_claims: &'a [FusedClaim],
+        }
+        let report = FuseReport {
+            version_id,
+            fused_claims: &fused,
+        };
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        println!("Architecture Fuse Report");
+        println!("Version: {version_id}");
+        println!();
+        println!("{} fused claim(s)", fused.len());
+        for claim in &fused {
+            println!(
+                "  {}  supports={}  confidence={}  conflicts={}",
+                claim.id,
+                claim.supports,
+                claim.confidence,
+                claim.conflicts_with.len()
+            );
+            for warning in &claim.warnings {
+                println!("    ⚠ {warning}");
+            }
         }
     }
 
