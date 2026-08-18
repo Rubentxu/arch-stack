@@ -154,7 +154,10 @@ fn is_stale_observation(obs: &Observation, now: &str) -> bool {
 /// is required — without it every persisted observation looks stale
 /// (conservative fallback) and the staleness-weighted evaluator is
 /// useless on real data (Item 27 residual discovery).
-fn parse_observed_at(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+///
+/// `pub(crate)` so migration backfill tests can pin the written_at
+/// contract (P2-09b residual).
+pub(crate) fn parse_observed_at(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Some(dt.with_timezone(&chrono::Utc));
     }
