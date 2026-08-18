@@ -780,20 +780,20 @@ Baseline: `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 
 ## ADRs
 
-- [`adr/ADR-043-modular-hexagonal-boundaries.md`](adr/ADR-043-modular-hexagonal-boundaries.md)
-- [`adr/ADR-044-persistence-ports-and-raw-query-boundary.md`](adr/ADR-044-persistence-ports-and-raw-query-boundary.md)
-- [`adr/ADR-045-capability-registry-single-source-of-truth.md`](adr/ADR-045-capability-registry-single-source-of-truth.md)
-- [`adr/ADR-046-plugin-supply-chain-and-capability-security.md`](adr/ADR-046-plugin-supply-chain-and-capability-security.md)
-- [`adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md`](adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md)
-- [`adr/ADR-048-ladybugdb-native-compatibility-boundary.md`](adr/ADR-048-ladybugdb-native-compatibility-boundary.md)
-- [`adr/ADR-049-evidence-observation-claim-confidence-model.md`](adr/ADR-049-evidence-observation-claim-confidence-model.md)
-- [`adr/ADR-050-architecture-snapshots-and-git-identity.md`](adr/ADR-050-architecture-snapshots-and-git-identity.md)
-- [`adr/ADR-051-loopback-workbench-session-security.md`](adr/ADR-051-loopback-workbench-session-security.md)
-- [`adr/ADR-052-architecture-context-compiler.md`](adr/ADR-052-architecture-context-compiler.md)
-- [`adr/ADR-053-architecture-diff-as-first-class-capability.md`](adr/ADR-053-architecture-diff-as-first-class-capability.md)
-- [`adr/ADR-054-architecture-policy-and-fitness-functions.md`](adr/ADR-054-architecture-policy-and-fitness-functions.md)
-- [`adr/ADR-055-sanitized-architecture-bundle.md`](adr/ADR-055-sanitized-architecture-bundle.md)
-- [`adr/ADR-056-moldable-architecture-workbench.md`](adr/ADR-056-moldable-architecture-workbench.md)
+- [`../adr/ADR-043-modular-hexagonal-boundaries.md`](../adr/ADR-043-modular-hexagonal-boundaries.md)
+- [`../adr/ADR-044-persistence-ports-and-raw-query-boundary.md`](../adr/ADR-044-persistence-ports-and-raw-query-boundary.md)
+- [`../adr/ADR-045-capability-registry-single-source-of-truth.md`](../adr/ADR-045-capability-registry-single-source-of-truth.md)
+- [`../adr/ADR-046-plugin-supply-chain-and-capability-security.md`](../adr/ADR-046-plugin-supply-chain-and-capability-security.md)
+- [`../adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md`](../adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md)
+- [`../adr/ADR-048-ladybugdb-native-compatibility-boundary.md`](../adr/ADR-048-ladybugdb-native-compatibility-boundary.md)
+- [`../adr/ADR-049-evidence-observation-claim-confidence-model.md`](../adr/ADR-049-evidence-observation-claim-confidence-model.md)
+- [`../adr/ADR-050-architecture-snapshots-and-git-identity.md`](../adr/ADR-050-architecture-snapshots-and-git-identity.md)
+- [`../adr/ADR-051-loopback-workbench-session-security.md`](../adr/ADR-051-loopback-workbench-session-security.md)
+- [`../adr/ADR-052-architecture-context-compiler.md`](../adr/ADR-052-architecture-context-compiler.md)
+- [`../adr/ADR-053-architecture-diff-as-first-class-capability.md`](../adr/ADR-053-architecture-diff-as-first-class-capability.md)
+- [`../adr/ADR-054-architecture-policy-and-fitness-functions.md`](../adr/ADR-054-architecture-policy-and-fitness-functions.md)
+- [`../adr/ADR-055-sanitized-architecture-bundle.md`](../adr/ADR-055-sanitized-architecture-bundle.md)
+- [`../adr/ADR-056-moldable-architecture-workbench.md`](../adr/ADR-056-moldable-architecture-workbench.md)
 
 ## Specs
 
@@ -916,7 +916,7 @@ RAG genérico, microservicios ni una carrera por soportar decenas de renderers.
 
 ---
 
-<!-- SOURCE: adr/ADR-043-modular-hexagonal-boundaries.md -->
+<!-- SOURCE: ../adr/ADR-043-modular-hexagonal-boundaries.md -->
 
 # ADR-043 — Límites hexagonales modulares por capacidad
 
@@ -1003,7 +1003,7 @@ C) reescritura: riesgo inaceptable.
 
 ---
 
-<!-- SOURCE: adr/ADR-044-persistence-ports-and-raw-query-boundary.md -->
+<!-- SOURCE: ../adr/ADR-044-persistence-ports-and-raw-query-boundary.md -->
 
 # ADR-044 — Repositorios semánticos y frontera de query raw
 
@@ -1084,7 +1084,7 @@ C) CQRS/event sourcing: exceso.
 
 ---
 
-<!-- SOURCE: adr/ADR-045-capability-registry-single-source-of-truth.md -->
+<!-- SOURCE: ../adr/ADR-045-capability-registry-single-source-of-truth.md -->
 
 # ADR-045 — Capability Registry como fuente única de verdad
 
@@ -1162,7 +1162,7 @@ C) YAML-only: posible, pero el core debe conservar typing.
 
 ---
 
-<!-- SOURCE: adr/ADR-046-plugin-supply-chain-and-capability-security.md -->
+<!-- SOURCE: ../adr/ADR-046-plugin-supply-chain-and-capability-security.md -->
 
 # ADR-046 — Seguridad de plugins y supply chain
 
@@ -1240,7 +1240,7 @@ C) firma GPG obligatoria en P0: puede bloquear adopción.
 
 ---
 
-<!-- SOURCE: adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md -->
+<!-- SOURCE: ../adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md -->
 
 # ADR-047 — CI preventiva en PR y evidencia post-merge
 
@@ -1313,7 +1313,7 @@ C) merge queue desde día 1: opcional posterior.
 
 ---
 
-<!-- SOURCE: adr/ADR-048-ladybugdb-native-compatibility-boundary.md -->
+<!-- SOURCE: ../adr/ADR-048-ladybugdb-native-compatibility-boundary.md -->
 
 # ADR-048 — LadybugDB como adapter nativo con matriz de compatibilidad
 
@@ -1392,7 +1392,7 @@ Cargo.toml, store.rs, DATA-MODEL-LADYBUGDB, release, ADR-005/010.
 
 ---
 
-<!-- SOURCE: adr/ADR-049-evidence-observation-claim-confidence-model.md -->
+<!-- SOURCE: ../adr/ADR-049-evidence-observation-claim-confidence-model.md -->
 
 # ADR-049 — Separar Observation, Evidence y Claim
 
@@ -1470,7 +1470,7 @@ evidence.rs, metamodel-core.json, ADR-005/009/027.
 
 ---
 
-<!-- SOURCE: adr/ADR-050-architecture-snapshots-and-git-identity.md -->
+<!-- SOURCE: ../adr/ADR-050-architecture-snapshots-and-git-identity.md -->
 
 # ADR-050 — Snapshots arquitectónicos ligados a identidad Git
 
@@ -1540,7 +1540,7 @@ identity.rs, xdg.rs, cognitive/delta.rs, ADR-004/008.
 
 ---
 
-<!-- SOURCE: adr/ADR-051-loopback-workbench-session-security.md -->
+<!-- SOURCE: ../adr/ADR-051-loopback-workbench-session-security.md -->
 
 # ADR-051 — Token de sesión efímero para acciones del workbench
 
@@ -1611,7 +1611,7 @@ view.rs, view/source.rs, view/editor.rs, ADR-033.
 
 ---
 
-<!-- SOURCE: adr/ADR-052-architecture-context-compiler.md -->
+<!-- SOURCE: ../adr/ADR-052-architecture-context-compiler.md -->
 
 # ADR-052 — Task Context Compiler para agentes
 
@@ -1690,7 +1690,7 @@ cognitive/context.rs, cognitive/mcp, ImpactView, ADR-021.
 
 ---
 
-<!-- SOURCE: adr/ADR-053-architecture-diff-as-first-class-capability.md -->
+<!-- SOURCE: ../adr/ADR-053-architecture-diff-as-first-class-capability.md -->
 
 # ADR-053 — Architecture Diff como capability first-class
 
@@ -1767,7 +1767,7 @@ cognitive/delta.rs, DriftView, ImpactView, ADR-050.
 
 ---
 
-<!-- SOURCE: adr/ADR-054-architecture-policy-and-fitness-functions.md -->
+<!-- SOURCE: ../adr/ADR-054-architecture-policy-and-fitness-functions.md -->
 
 # ADR-054 — Políticas y fitness functions sobre el grafo canónico
 
@@ -1850,7 +1850,7 @@ cognitive/policy, selectors, ADR-038/047.
 
 ---
 
-<!-- SOURCE: adr/ADR-055-sanitized-architecture-bundle.md -->
+<!-- SOURCE: ../adr/ADR-055-sanitized-architecture-bundle.md -->
 
 # ADR-055 — Sanitized Architecture Bundle compartible
 
@@ -1923,7 +1923,7 @@ projection bundle, evidence model, ADR-004/049.
 
 ---
 
-<!-- SOURCE: adr/ADR-056-moldable-architecture-workbench.md -->
+<!-- SOURCE: ../adr/ADR-056-moldable-architecture-workbench.md -->
 
 # ADR-056 — Moldable Architecture Workbench y navegación semántica
 

@@ -81,72 +81,72 @@
       "sha256": "d21a935821cacc3975dca758703378bdf1143a0c36b51a5da3808b94c04d6df6"
     },
     {
-      "path": "adr/ADR-043-modular-hexagonal-boundaries.md",
+      "path": "../adr/ADR-043-modular-hexagonal-boundaries.md",
       "bytes": 2681,
       "sha256": "9f6caba60086797472d99bd890ffdeef90e87130c73e294764a4633dbc9e4cd2"
     },
     {
-      "path": "adr/ADR-044-persistence-ports-and-raw-query-boundary.md",
+      "path": "../adr/ADR-044-persistence-ports-and-raw-query-boundary.md",
       "bytes": 2413,
       "sha256": "87a51be4c56267fd67f6c4a4f5c04efb08f5cb1c2ec24da35460a739f9fd7f8c"
     },
     {
-      "path": "adr/ADR-045-capability-registry-single-source-of-truth.md",
+      "path": "../adr/ADR-045-capability-registry-single-source-of-truth.md",
       "bytes": 2288,
       "sha256": "0ab81d49bce6a171c5254426620592cb77cd9fcebb6ca29dbac440f71c32007a"
     },
     {
-      "path": "adr/ADR-046-plugin-supply-chain-and-capability-security.md",
+      "path": "../adr/ADR-046-plugin-supply-chain-and-capability-security.md",
       "bytes": 2381,
       "sha256": "b48bcb123528e758c298f225e289422333f8729e064811948dae60737401740c"
     },
     {
-      "path": "adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md",
+      "path": "../adr/ADR-047-pre-merge-ci-and-post-merge-quality-gates.md",
       "bytes": 2038,
       "sha256": "b217304e228d0a3d7800441c350e5370851d169f54a1db925706b0fcf10574b6"
     },
     {
-      "path": "adr/ADR-048-ladybugdb-native-compatibility-boundary.md",
+      "path": "../adr/ADR-048-ladybugdb-native-compatibility-boundary.md",
       "bytes": 2249,
       "sha256": "7bf341e12acab5d669c119ceee03d36b105a892ad00d1f139b66654adb85fb63"
     },
     {
-      "path": "adr/ADR-049-evidence-observation-claim-confidence-model.md",
+      "path": "../adr/ADR-049-evidence-observation-claim-confidence-model.md",
       "bytes": 2182,
       "sha256": "32abcc45b4278f3b2d74b843de15c7fdbad63289381ea8eb56d1ac631c5a5ec8"
     },
     {
-      "path": "adr/ADR-050-architecture-snapshots-and-git-identity.md",
+      "path": "../adr/ADR-050-architecture-snapshots-and-git-identity.md",
       "bytes": 1921,
       "sha256": "88fa03de300be3381c741f2ce4993408d4dde76731ca128b0a52ff2177bcfba9"
     },
     {
-      "path": "adr/ADR-051-loopback-workbench-session-security.md",
+      "path": "../adr/ADR-051-loopback-workbench-session-security.md",
       "bytes": 1824,
       "sha256": "82c80520d77853e9b8911ee9a76ff94b35228863a66d55cf4b3874c9d0246fab"
     },
     {
-      "path": "adr/ADR-052-architecture-context-compiler.md",
+      "path": "../adr/ADR-052-architecture-context-compiler.md",
       "bytes": 2213,
       "sha256": "7466301f4dcff003cfc0b69d3882622c3566b0e8975fb87159f830fa35755a93"
     },
     {
-      "path": "adr/ADR-053-architecture-diff-as-first-class-capability.md",
+      "path": "../adr/ADR-053-architecture-diff-as-first-class-capability.md",
       "bytes": 2046,
       "sha256": "fec31d2953ebcbb78be4e605dfe291891eff98c917608aca2112cf60003382b9"
     },
     {
-      "path": "adr/ADR-054-architecture-policy-and-fitness-functions.md",
+      "path": "../adr/ADR-054-architecture-policy-and-fitness-functions.md",
       "bytes": 2091,
       "sha256": "de587cac7ba823a903c79f120cc64b6a4c0688f3625e8b194252ad06f372088a"
     },
     {
-      "path": "adr/ADR-055-sanitized-architecture-bundle.md",
+      "path": "../adr/ADR-055-sanitized-architecture-bundle.md",
       "bytes": 1897,
       "sha256": "5a5644942a067c7a8550b710167747a0d4a34ed9a77f474f7d4df70501b8db6e"
     },
     {
-      "path": "adr/ADR-056-moldable-architecture-workbench.md",
+      "path": "../adr/ADR-056-moldable-architecture-workbench.md",
       "bytes": 2033,
       "sha256": "c55c0a4db1e570d88ec426bd19e52839cd689be08ec2e44deb3446f0e9f35046"
     },
