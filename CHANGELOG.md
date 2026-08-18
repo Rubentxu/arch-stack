@@ -1,46 +1,8 @@
-# Changelog
-
-All notable changes to `archctl` are documented here. The format is
-loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/).
-
 ## [Unreleased]
 
-### Fixed
-- **P2-09b backfill timestamp** — el backfill v5 saltaba silenciosamente
-  filas pre-upgrade: lbug no hace implicit cast STRING→TIMESTAMP y el
-  readback round-tripped (`"2026-08-15 0:00:00.0 +00:00:00"`) rompía
-  `timestamp()`. Fix: normalizar con `parse_observed_at` (RFC 3339
-  estricto) + wrap `timestamp()` en las columnas TIMESTAMP
-  (`written_at`), literal en la columna STRING (`observed_at`).
-  Test de regresión con filas pre-upgrade reales.
+## [1.60.0] — 2026-08-18
 
 ### Added
-- **Secret redaction en strict bundles** (ADR-055 fase 2) — scanner
-  deny-by-default zero-dep (`archctl/src/diagram/redact.rs`) aplicado en
-  `--profile strict`: AWS access keys (AKIA…), GitHub/Slack tokens,
-  private keys (BEGIN…PRIVATE KEY), JWTs, URLs con credenciales y
-  asignaciones genéricas (`api_key=`/`token=`/`secret=`/`password=`)
-  se reemplazan por `[REDACTED:<kind>]`. El default profile no redacta
-  nada (0 regression). Determinista (mismo input → mismo output).
-- **Fusion engine residual** (Item 27 follow-up) — fused claims lifecycle:
-  - `architecture fuse` **persists by default** (MERGE upsert idempotente);
-    `--no-persist` preserva el modo stdout-only previo.
-  - `architecture fuse --expire-stale [--dry-run]` — GC de FusedClaims stale
-    (cutoff 90 días, single source con `StalenessWeightedEvaluator`).
-  - Fix: `parse_observed_at` normaliza el formato de timestamps de
-    LadybugDB (`"2026-08-15 0:00:00.0 +00:00:00"`, no RFC 3339) — sin este
-    fix todo claim persistido se marcaba stale y el evaluador
-    staleness-weighted era inútil con datos reales.
-- **Strict ArchBundle export** (Wave 3 Item 28, ADR-055 via ADR-061) —
-  `archctl diagram export --profile strict` sanitizes bundles for sharing:
-  - `ExportProfile` enum (`default` | `strict`); `manifest.strict: bool` +
-    `manifest.checksum` (SHA-256 over bundle excluding `generatedAt`).
-  - Evidence paths relativized to project root (no absolute filesystem
-    paths leak); strict bundles open in **read-only mode** in archview
-    (badge + disabled source preview / editor handoff).
-  - Schema `diagram-projection.schema.json` v1.1: optional `strict` +
-    `checksum` fields (backward compatible).
 - **Fusion engine follow-ups** (Wave 3 Item 27) — persistence + evaluators + surfacing:
   - `ClaimEvaluator` trait with `MaxMemberEvaluator` (v1, byte-equal) and
     `StalenessWeightedEvaluator` (v2: 90-day cutoff, ×0.5 stale confidence);
@@ -71,6 +33,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `Aceptado — full scope closed`; body notes P2-09b cycle.
 
 ### Fixed
+
+## [1.61.0] — 2026-08-18
+
+### Added
+- **Strict ArchBundle export** (Wave 3 Item 28, ADR-055 via ADR-061) —
+  `archctl diagram export --profile strict` sanitizes bundles for sharing:
+  - `ExportProfile` enum (`default` | `strict`); `manifest.strict: bool` +
+    `manifest.checksum` (SHA-256 over bundle excluding `generatedAt`).
+  - Evidence paths relativized to project root (no absolute filesystem
+    paths leak); strict bundles open in **read-only mode** in archview
+    (badge + disabled source preview / editor handoff).
+  - Schema `diagram-projection.schema.json` v1.1: optional `strict` +
+    `checksum` fields (backward compatible).
+
+## [1.62.0] — 2026-08-18
+
+### Added
+- **Fusion engine residual** (Item 27 follow-up) — fused claims lifecycle:
+  - `architecture fuse` **persists by default** (MERGE upsert idempotente);
+    `--no-persist` preserva el modo stdout-only previo.
+  - `architecture fuse --expire-stale [--dry-run]` — GC de FusedClaims stale
+    (cutoff 90 días, single source con `StalenessWeightedEvaluator`).
+  - Fix: `parse_observed_at` normaliza el formato de timestamps de
+    LadybugDB (`"2026-08-15 0:00:00.0 +00:00:00"`, no RFC 3339) — sin este
+    fix todo claim persistido se marcaba stale y el evaluador
+    staleness-weighted era inútil con datos reales.
+
+## [1.63.0] — 2026-08-18
+
+### Added
+- **Secret redaction en strict bundles** (ADR-055 fase 2) — scanner
+  deny-by-default zero-dep (`archctl/src/diagram/redact.rs`) aplicado en
+  `--profile strict`: AWS access keys (AKIA…), GitHub/Slack tokens,
+  private keys (BEGIN…PRIVATE KEY), JWTs, URLs con credenciales y
+  asignaciones genéricas (`api_key=`/`token=`/`secret=`/`password=`)
+  se reemplazan por `[REDACTED:<kind>]`. El default profile no redacta
+  nada (0 regression). Determinista (mismo input → mismo output).
+
+## [1.64.0] — 2026-08-18
+
+### Fixed
+- **P2-09b backfill timestamp** — el backfill v5 saltaba silenciosamente
+  filas pre-upgrade: lbug no hace implicit cast STRING→TIMESTAMP y el
+  readback round-tripped (`"2026-08-15 0:00:00.0 +00:00:00"`) rompía
+  `timestamp()`. Fix: normalizar con `parse_observed_at` (RFC 3339
+  estricto) + wrap `timestamp()` en las columnas TIMESTAMP
+  (`written_at`), literal en la columna STRING (`observed_at`).
+  Test de regresión con filas pre-upgrade reales.
 
 ## [1.59.0] — 2026-08-18
 
