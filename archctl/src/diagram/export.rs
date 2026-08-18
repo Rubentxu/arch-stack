@@ -305,6 +305,15 @@ fn sanitize_bundle(bundle: &mut BundleEnvelope, project_root: &Path) {
     bundle.manifest.strict = true;
 }
 
+/// Public entry point for applying strict export profile to a bundle.
+/// Exported so the CLI can apply strict sanitization to the JSON output path
+/// (which bypasses `run_export`).
+pub fn apply_strict_profile(bundle: &mut BundleEnvelope, project_root: &Path) {
+    sanitize_bundle(bundle, project_root);
+    let checksum = compute_checksum(bundle);
+    bundle.manifest.checksum = Some(checksum);
+}
+
 /// Compute SHA-256 checksum over the bundle files (excluding `generatedAt` for determinism).
 /// Returns hex-encoded checksum string.
 fn compute_checksum(bundle: &BundleEnvelope) -> String {
@@ -324,9 +333,21 @@ fn compute_checksum(bundle: &BundleEnvelope) -> String {
     });
 
     hasher.update(manifest_for_checksum.to_string().as_bytes());
-    hasher.update(serde_json::to_string(&bundle.projection).unwrap_or_default().as_bytes());
-    hasher.update(serde_json::to_string(&bundle.evidence).unwrap_or_default().as_bytes());
-    hasher.update(serde_json::to_string(&bundle.styles).unwrap_or_default().as_bytes());
+    hasher.update(
+        serde_json::to_string(&bundle.projection)
+            .unwrap_or_default()
+            .as_bytes(),
+    );
+    hasher.update(
+        serde_json::to_string(&bundle.evidence)
+            .unwrap_or_default()
+            .as_bytes(),
+    );
+    hasher.update(
+        serde_json::to_string(&bundle.styles)
+            .unwrap_or_default()
+            .as_bytes(),
+    );
 
     format!("{:x}", hasher.finalize())
 }
@@ -1101,7 +1122,16 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
 
-        let report = run_export(&store, "container:orders", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out")).unwrap();
+        let report = run_export(
+            &store,
+            "container:orders",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out"),
+        )
+        .unwrap();
 
         // Verify report — container:orders matches only el:1 (canonical_key STARTS WITH 'orders')
         // el:2 has canonical_key='payments' which doesn't match 'orders'
@@ -1163,7 +1193,16 @@ mod tests {
         let out_dir = std::path::PathBuf::from("/out");
 
         // With container:*, should return both containers
-        let report = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out")).unwrap();
+        let report = run_export(
+            &store,
+            "container:*",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out"),
+        )
+        .unwrap();
         assert_eq!(report.element_count, 2);
 
         // Verify the names
@@ -1191,8 +1230,26 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out2");
 
-        let r1 = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out2")).unwrap();
-        let r2 = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out2")).unwrap();
+        let r1 = run_export(
+            &store,
+            "container:*",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out2"),
+        )
+        .unwrap();
+        let r2 = run_export(
+            &store,
+            "container:*",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out2"),
+        )
+        .unwrap();
 
         // Both runs succeed and produce same revision (deterministic)
         assert_eq!(r1.manifest.base_revision, r2.manifest.base_revision);
@@ -1206,11 +1263,27 @@ mod tests {
         let out_dir = std::path::PathBuf::from("/out");
 
         // Empty selector
-        let result = run_export(&store, "", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out"));
+        let result = run_export(
+            &store,
+            "",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out"),
+        );
         assert!(result.is_err());
 
         // Unknown kind
-        let result = run_export(&store, "unknown_kind", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out"));
+        let result = run_export(
+            &store,
+            "unknown_kind",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out"),
+        );
         assert!(result.is_err());
     }
 
@@ -1222,7 +1295,16 @@ mod tests {
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
 
-        let report = run_export(&store, "container:*", &out_dir, &clock, &fs, ExportProfile::Default, std::path::Path::new("/out")).unwrap();
+        let report = run_export(
+            &store,
+            "container:*",
+            &out_dir,
+            &clock,
+            &fs,
+            ExportProfile::Default,
+            std::path::Path::new("/out"),
+        )
+        .unwrap();
 
         assert!(report.empty, "expected empty=true for zero-element graph");
         assert!(

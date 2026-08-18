@@ -2,8 +2,11 @@
 //
 // SCN-030: Export with no project graph → exits non-zero with clear error.
 // SCN-031: Export with invalid --output (parent not writable) → exits non-zero.
-// SCN-032: Deterministic export — running twice produces byte-identical JSON.
+// SCC-032: Deterministic export — running twice produces byte-identical JSON.
 // SCN-033: Golden bundle regression — export matches checked-in golden file.
+// SCN-034: --profile strict emits manifest.strict=true and checksum field.
+// SCN-035: --profile default emits manifest.strict=false and no checksum field.
+// SCN-036: --profile strict checksum is a valid SHA-256 hex string.
 
 use std::fs;
 use std::path::Path;
@@ -265,5 +268,124 @@ fn export_bundle_envelope_structurally_valid() {
         manifest_count, projection_count,
         "manifest.elementCount ({}) must match projection.nodes length ({})",
         manifest_count, projection_count
+    );
+}
+
+// ─── Strict profile (SCN-034, SCN-035, SCN-036) ─────────────────────────────────
+
+/// SCN-034: --profile strict emits manifest.strict=true and a checksum field.
+#[test]
+fn export_strict_profile_sets_manifest_strict_true() {
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
+
+    let output = Command::new("cargo")
+        .args(["run", "--quiet", "--"])
+        .args(["diagram", "export", "--cwd"])
+        .arg(fixture_dir.to_str().unwrap())
+        .args(["--json", "--profile", "strict", "container:*"])
+        .output()
+        .expect("strict export should succeed");
+
+    assert!(
+        output.status.success(),
+        "strict export failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let bundle: serde_json::Value =
+        serde_json::from_str(&json_str).expect("export output must be valid JSON");
+
+    // manifest.strict must be true in strict mode
+    assert_eq!(
+        bundle["manifest"]["strict"].as_bool(),
+        Some(true),
+        "manifest.strict must be true when --profile strict is set"
+    );
+
+    // manifest.checksum must be present and be a 64-char hex string (SHA-256)
+    let checksum = bundle["manifest"]["checksum"]
+        .as_str()
+        .expect("manifest.checksum must be present in strict mode");
+    assert_eq!(
+        checksum.len(),
+        64,
+        "checksum must be 64 hex characters (SHA-256), got {}",
+        checksum.len()
+    );
+    assert!(
+        checksum.chars().all(|c| c.is_ascii_hexdigit()),
+        "checksum must be ASCII hex digits, got: {}",
+        checksum
+    );
+}
+
+/// SCN-035: --profile default (or absent) emits manifest.strict=false and no checksum.
+#[test]
+fn export_default_profile_has_no_strict_or_checksum() {
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
+
+    let output = Command::new("cargo")
+        .args(["run", "--quiet", "--"])
+        .args(["diagram", "export", "--cwd"])
+        .arg(fixture_dir.to_str().unwrap())
+        .args(["--json", "container:*"])
+        .output()
+        .expect("default export should succeed");
+
+    assert!(
+        output.status.success(),
+        "default export failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let bundle: serde_json::Value =
+        serde_json::from_str(&json_str).expect("export output must be valid JSON");
+
+    // manifest.strict must be false (or absent, both are acceptable)
+    let strict_val = &bundle["manifest"]["strict"];
+    assert!(
+        strict_val.is_null() || strict_val.as_bool() == Some(false),
+        "manifest.strict must be false or absent in default mode, got: {}",
+        strict_val
+    );
+
+    // manifest.checksum must be absent (strict profile only)
+    assert!(
+        bundle["manifest"]["checksum"].is_null(),
+        "manifest.checksum must not be present in default mode"
+    );
+}
+
+/// SCN-036: --profile strict checksum is deterministic (same inputs → same checksum).
+#[test]
+fn export_strict_checksum_is_deterministic() {
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
+
+    let run_export = || {
+        let output = Command::new("cargo")
+            .args(["run", "--quiet", "--"])
+            .args(["diagram", "export", "--cwd"])
+            .arg(fixture_dir.to_str().unwrap())
+            .args(["--json", "--profile", "strict", "container:*"])
+            .output()
+            .expect("strict export should succeed");
+        assert!(output.status.success());
+        let bundle: serde_json::Value =
+            serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("valid JSON");
+        bundle["manifest"]["checksum"]
+            .as_str()
+            .expect("checksum must be present in strict mode")
+            .to_string()
+    };
+
+    let checksum1 = run_export();
+    let checksum2 = run_export();
+
+    assert_eq!(
+        checksum1, checksum2,
+        "strict export checksum must be deterministic (ignoring generatedAt), got {} and {}",
+        checksum1, checksum2
     );
 }
