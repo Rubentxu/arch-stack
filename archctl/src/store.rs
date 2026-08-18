@@ -541,6 +541,17 @@ pub trait DiagramRepository: Send + Sync {
         let _ = claim_ids;
         Ok(vec![])
     }
+
+    /// Delete the given fused claims (by id) for a version. Used by
+    /// `architecture fuse --expire-stale` (Item 27 residual). Returns
+    /// the number of rows deleted.
+    ///
+    /// Default implementation rejects the delete (read-only
+    /// repositories / pre-v6 databases).
+    fn delete_fused_claims(&mut self, version_id: &str, claim_ids: &[String]) -> Result<usize> {
+        let _ = (version_id, claim_ids);
+        anyhow::bail!("delete_fused_claims: not supported by this repository")
+    }
 }
 
 /// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
@@ -2941,6 +2952,33 @@ impl DiagramRepository for LbugStore {
         let rows =
             <LbugStore as RawGraphQuery>::query(self, &cypher).context("read_fused_claim_rows")?;
         Ok(Some(rows))
+    }
+
+    fn delete_fused_claims(&mut self, version_id: &str, claim_ids: &[String]) -> Result<usize> {
+        crate::graph::validate_identifier(version_id)
+            .with_context(|| format!("delete_fused_claims: invalid version id {version_id}"))?;
+        if claim_ids.is_empty() {
+            return Ok(0);
+        }
+        let safe_ids: Result<Vec<_>, _> = claim_ids
+            .iter()
+            .map(|id| crate::graph::validate_identifier(id).map(|s| s.to_string()))
+            .collect();
+        let safe_ids = safe_ids.context("delete_fused_claims: id validation")?;
+        let id_list = safe_ids
+            .iter()
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // DETACH DELETE removes the node plus its FUSED_FROM/CONTRADICTS
+        // edges in one statement (lbug semantics, same pattern as
+        // delete_snapshots). No RETURN after DELETE — lbug rejects it.
+        let cypher = format!("MATCH (f:FusedClaim) WHERE f.id IN [{id_list}] DETACH DELETE f;");
+        let session = self.session_mut_inner()?;
+        session.conn.query(&cypher).with_context(|| {
+            format!("delete_fused_claims: delete failed for version {version_id}")
+        })?;
+        Ok(safe_ids.len())
     }
 
     fn list_fused_conflict_edges(&self, claim_ids: &[String]) -> Result<Vec<(String, String)>> {
