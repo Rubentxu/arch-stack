@@ -1,10 +1,9 @@
 # ADR-047 — CI preventiva en PR y evidencia post-merge
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13 (embodied in `.github/workflows/pr.yml` pre-merge fast gate + `.github/workflows/release.yml` post-merge quality gate + `scripts/verify-local.sh` local-first cheap mode)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 

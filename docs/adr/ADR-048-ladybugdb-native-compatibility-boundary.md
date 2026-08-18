@@ -1,10 +1,9 @@
 # ADR-048 — LadybugDB como adapter nativo con matriz de compatibilidad
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13 (shipped as `archctl doctor --scope storage [--json]`, v1.42.0, PR #174; 5-axis JSON envelope `archctlVersion` + `lbugCrateVersion` + `native` + `targetCompilerStdlib` + `findings[]`)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 

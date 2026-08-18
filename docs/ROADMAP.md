@@ -59,6 +59,7 @@ Entregable: LensSpec introducido solo cuando hay evidencia real de necesidad.
 - **Entry criteria**: LensSpec NO se añade a menos que (a) 2+ consumidores repitan la misma lógica de traducción, o (b) una necesidad medida (UAT evidence, perf budget breach) demande abstracción.
 - **Reversibilidad**: cláusula de rollback documentada en el ADR si consumers < 2.
 - **Verificación**: ADR gate bloquea PRs que añaden LensSpec sin evidencia.
+- **Canonical anchor**: [ADR-056 — Moldable Architecture Workbench y navegación semántica](adr/ADR-056-moldable-architecture-workbench.md) (Deferido — 2026-08-18 con los entry criteria de §H3 documentados como Reopen trigger del ADR).
 
 ### H4 — Distribución & ciclo de vida del CLI (asdf-inspired)
 
@@ -1265,6 +1266,16 @@ Incluye:
 `ADR-015` y `ADR-018` están referenciados en `docs/STATE.md` y
 `docs/ROADMAP.md` §"Cambios SDD completados" pero nunca se escribieron
 como ficheros en `docs/adr/`. Decisión: **no escribir retroactivamente**.
+
+> Update 2026-08-18 (cycle `adr-backlog-acceptance`): el audit doc
+> §M2 ya documenta estas dos referencias (ver el texto enlazado de
+> `docs/audits/2026-08-01-archctl-adr-vs-impl.md:130-135`). Las refs
+> aquí son **deliberadamente preservadas** como artefacto histórico
+> — no reconstruimos el ADR-015 ni el ADR-018. ADR-015 está
+> consolidado en `archctl/src/clock.rs` + `archctl/src/environment.rs`
+> + `archctl/src/filesystem.rs` (puertos Clock/Environment/Filesystem).
+> ADR-018 eliminado por planning de `m9-archctl-export-apply`
+> (coherence-report.md:196). Ver también el §M2 fix-up del audit doc.
 
 Razones:
 

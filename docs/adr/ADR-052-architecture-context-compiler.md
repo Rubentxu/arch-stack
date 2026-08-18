@@ -1,10 +1,9 @@
 # ADR-052 — Task Context Compiler para agentes
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13 (shipped as P2-08 Task Context Compiler, v1.57.0; `archctl architecture context --task <text> [--budget-tokens N] [--top N] [--json]`)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 

@@ -1,10 +1,10 @@
 # ADR-055 — Sanitized Architecture Bundle compartible
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Deferido — 2026-08-18
+> **Reopen trigger:** ADR-019 perf budget breach (bundle >10MB) AND ≥1 external-distribution consumer (third-party renderer or shared audit export) requesting redacted form. Default off per ADR-011 (no public renderer by default).
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 

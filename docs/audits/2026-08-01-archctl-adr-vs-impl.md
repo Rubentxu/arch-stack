@@ -127,12 +127,16 @@ client.post(&url).body(body).send()?;  // POST a kroki sin opt-in
 
 **Fix**: mover a `docs/adr/ADR-016-activegraph-packs-investigacion.md` o fusionar con ADR-017 (migration runner, que sí implementó B1).
 
+**Resolution (2026-08-18):** ADR-016 ya fue relocalizado a `docs/adr/ADR-016-activegraph-packs-investigacion.md` por commit `fe66349 docs(roadmap): M3+M1+M2 audit fixes` (2026-08-02). Adicionalmente, en 2026-08-18 (cycle `adr-backlog-acceptance`) se reescribió el Status header per-bloque: B1 = Decidido via [ADR-017](ADR-017-schema-migration-runner.md); B2/B3 = Pendiente con reopen triggers. Esta finding queda cerrada.
+
 #### M2. ADR-015 y ADR-018 — referencias huérfanas
 
 - `ADR-015` (Ports faltantes Clock/Environment/Filesystem) referenciado en `docs/STATE.md` (snapshot histórico). Nunca se escribió como ADR separado — los ports Clock y Environment se implementaron en commits posteriores; Filesystem en `refactor-1b-filesystem-port`. La decisión está consolidada implícitamente.
 - `ADR-018` referenciado en `docs/ROADMAP.md:454` ("ADR-018 eliminado"). Nunca se escribió — fue propuesto y descartado.
 
 **Fix**: o escribir los ADRs retroactivamente como histórico, o actualizar los docs para reflejar que fueron rolled-up into otros ADRs.
+
+**Resolution (2026-08-18):** decisión tomada y documentada en `docs/ROADMAP.md:1262` ("Decisión sobre ADR-015 / ADR-018"): **no escribir retroactivamente**. ADR-015 está consolidado en `archctl/src/clock.rs`, `archctl/src/environment.rs`, `archctl/src/filesystem.rs`. ADR-018 fue eliminado en el planning de `m9-archctl-export-apply` (ver `sddk/m9-archctl-export-apply/coherence-report.md:196`). Esta finding queda cerrada con la nota per-cycle-2026-08-18 en sddk/adr-backlog-acceptance.
 
 #### M3. ROADMAP cycle table (línea 290) desactualizada
 

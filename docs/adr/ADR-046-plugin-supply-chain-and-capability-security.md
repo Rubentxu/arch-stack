@@ -1,10 +1,11 @@
 # ADR-046 — Seguridad de plugins y supply chain
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado (parcial) — 2026-08-13
+> **Acceptance scope (shipped):** plugin tap model via M76 (v1.36.0, PR #152); `archctl plugin install <author>/<plugin>@<version>` con SHA256 verify.
+> **Acceptance scope (deferred):** capability gating per plugin origin (B2), signed-plugin attestation path (B3), per-plugin permission scopes beyond `permissions.yaml` baseline.
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 

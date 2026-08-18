@@ -133,6 +133,9 @@
 | Rust/WASM compute layer | Deferred | ≥2 third-party consumers needing shared compute |
 | Apache Arrow | Deferred | Bundle size >10MB AND JSON parsing bottleneck measured |
 | cosmos.gl (>100k nodos) | Deferred | Node count >100k AND G6 canvas FPS <30 |
+| [ADR-051](adr/ADR-051-loopback-workbench-session-security.md) loopback workbench session security | Deferred (ADR-051 accepted with Deferido 2026-08-18) | ≥1 disclosed loopback-session hijack vector (CVE or reproducible PoC) OR feature parity claim requiring per-session permission scoping |
+| [ADR-055](adr/ADR-055-sanitized-architecture-bundle.md) sanitized architecture bundle | Deferred (ADR-055 accepted with Deferido 2026-08-18) | ADR-019 perf budget breach (bundle >10MB) AND ≥1 external-distribution consumer (third-party renderer / shared audit export) requesting redacted form |
+| [ADR-056](adr/ADR-056-moldable-architecture-workbench.md) moldable architecture workbench (LensSpec) | Deferred (ADR-056 accepted with Deferido 2026-08-18; canonical anchor of ROADMAP §H3) | ≥2 consumers with LensSpec-translatable duplication OR a measured need (≥3 users reporting the same lens problem OR perf p99 breach traceable to view-strategy variance) |
 | SceneGraph abstraction | Deferred | ≥3 view types need shared scene model |
 | WIT Plugin SDK | Deferred | ≥1 third-party consumer registered |
 | Event sourcing/replay | Deferred | Temporal diff is shipped requirement |
@@ -245,17 +248,28 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 Wave 2 (intelligence) está cerrado (10/10, v1.49.0–v1.59.0). El próximo
 paso es **Wave 3 (platform)**, aún sin roadmap concreto en este archivo.
-Candidatos naturales extraídos de items 19–27 del PR plan original
-(`docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`):
+
+**Candidatos Wave 3** extraídos del PR plan original (filtrados para
+excluir referencias obsoletas — item 20 ya shipped):
 
 - **19 — Observation/Claim dual-write migration** (P2-09, gated by P2-09a): ya
   tenemos los carriers compat (P2-09a); full schema + backfill + fusion
   pendiente si hay consumer real.
-- **20 — Mermaid → SVG render local via `merman`** (M38 ya closed como item 9;
-  cierre efectivo en v1.9.0).
 - **22 — `archctl ide doctor <ide>`** consolidation, sobre la base de v1.35.0
   (IDE adapters).
 - **27 — Fusion engine / observation ↔ evidence bridge** (would consume P2-09a).
+- **ADR-051 loopback session security** — abre solo con hijack vector
+  disclosed (Reopen trigger en Anti-roadmap table).
+- **ADR-055 sanitized architecture bundle** — abre con ADR-019 perf budget
+  breach AND ≥1 external-distribution consumer.
+- **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
+  explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
+
+**Items del PR plan 2026-08-13 ya cerrados en waves previas** (informativo,
+ya no candidatos Wave 3):
+- Item 20 (Mermaid → SVG local via `merman`, M38) — closed v1.9.0.
+- Items restantes del catálogo 17–27 cubiertos ya sea por Wave 0/1/2 o
+  por Deferrals del Anti-roadmap table.
 
 Decidir Wave 3 priorities en un ciclo dedicado (sddk-new) antes de proponer
 cualquier task. Mientras tanto, sigue válido el catálogo de items en

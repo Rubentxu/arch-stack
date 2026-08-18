@@ -1,10 +1,11 @@
 # ADR-049 — Separar Observation, Evidence y Claim
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado (parcial) — 2026-08-13
+> **Acceptance scope (shipped):** Observation/Claim compatibility carriers 1:1 from `EvidenceEntry` (v1.58.0, P2-09a); `archctl architecture observe --version-id <VID>` read-only projection; existing `Evidence` carrier contract preserved.
+> **Acceptance scope (deferred):** full schema migration + backfill + Observation/Evidence Claim fusion; only when a real consumer (UAT evidence) requires dual-write or fusion pipeline.
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 
