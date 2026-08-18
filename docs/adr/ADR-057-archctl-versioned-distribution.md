@@ -1,7 +1,7 @@
 # ADR-057 — `archctl` como CLI versionado distribuible (asdf-inspired)
 
 > **Ciclo:** `m73-distribution-stack-rework` (planning)
-> **Estado:** Propuesto — 2026-08-10
+> **Estado:** Aceptado — 2026-08-11 (H4 closed in v1.36.0, M73+M76; PR #149 + PR #152)
 > **Complementa:** ADR-033 (embedded workbench), ADR-038 (one product, five invariants), ADR-039 (anti-roadmap)
 > **Inspira en:** asdf-vm plugin system (100% shell + git repos con `bin/list-all`, `bin/download`, `bin/install`)
 

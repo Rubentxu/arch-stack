@@ -1,7 +1,7 @@
 # ADR-060 — `architecture` CLI surface: drop the `snapshot` intermediate (Path B deviation)
 
 > **Cycle:** `p-38e02210a9f14317/p2-02-followup`
-> **Status:** Draft (spec phase, pending apply-phase acceptance)
+> **Status:** Aceptado — 2026-08-17 (H4 closed in v1.50.0, p2-02-followup; PR #196; commit `8e6c434`)
 > **Date:** 2026-08-17
 > **Baseline:** `f34fee0` (feat/p2-02-followup HEAD)
 > **Resolves:** p2-01 WARNING #1 (CLI surface deviation in `verify-report.md:97`)

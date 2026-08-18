@@ -1,7 +1,7 @@
 # ADR-058 — Self-update via GitHub Releases (binarios pre-compilados)
 
 > **Ciclo:** `m73-distribution-stack-rework` (planning)
-> **Estado:** Propuesto — 2026-08-10
+> **Estado:** Aceptado — 2026-08-11 (H4 closed in v1.36.0, M76; PR #152)
 > **Complementa:** ADR-057 (versioned distribution)
 > **Aplica a:** `archctl self update` / `archctl self install`
 
