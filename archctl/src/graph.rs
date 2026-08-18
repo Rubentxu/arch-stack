@@ -346,8 +346,8 @@ mod tests {
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
-        // P2-09b PR-B: fresh-graph marker advances to v5-p2-09b-backfill-obs-clm-from-evidence.
-        assert_eq!(text.trim(), "v5-p2-09b-backfill-obs-clm-from-evidence");
+        // Fusion follow-ups: fresh-graph marker advances to v6-fusion-persistence.
+        assert_eq!(text.trim(), "v6-fusion-persistence");
     }
 
     #[test]

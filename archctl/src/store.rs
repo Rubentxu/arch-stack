@@ -505,6 +505,42 @@ pub trait DiagramRepository: Send + Sync {
         let _ = version_ids;
         Ok(None)
     }
+
+    /// Persist fused claims for a version (v6 migration). Idempotent:
+    /// MERGE by claim id; `FUSED_FROM` edges per member observation
+    /// (best-effort — the backing `:Observation` row may be absent on
+    /// compat-only derivations); `CONTRADICTS` edges both directions.
+    /// `now` is the RFC 3339 write timestamp (STRING column, per the
+    /// P2-09b lbug timestamp() strictness gotcha).
+    ///
+    /// Default implementation rejects the write (read-only
+    /// repositories / pre-v6 databases).
+    fn put_fused_claims(
+        &mut self,
+        version_id: &str,
+        claims: &[crate::architecture::fusion::FusedClaim],
+        now: &str,
+    ) -> Result<()> {
+        let _ = (version_id, claims, now);
+        anyhow::bail!("put_fused_claims: not supported by this repository")
+    }
+
+    /// Read canonical `(:FusedClaim)` rows for the given version ids
+    /// when the v6 tables exist. Returns `Ok(None)` when the tables
+    /// are absent (pre-v6 database) — the caller falls back to
+    /// in-memory fusion. Column names match
+    /// `architecture::fusion::FusedClaim` fields (`f.*`).
+    fn read_fused_claim_rows(&self, version_ids: &[String]) -> Result<Option<Vec<Row>>> {
+        let _ = version_ids;
+        Ok(None)
+    }
+
+    /// Read `CONTRADICTS` edges among the given claim ids as
+    /// `(from_id, to_id)` pairs (raw edges; the caller maps them).
+    fn list_fused_conflict_edges(&self, claim_ids: &[String]) -> Result<Vec<(String, String)>> {
+        let _ = claim_ids;
+        Ok(vec![])
+    }
 }
 
 /// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
@@ -2781,6 +2817,161 @@ impl DiagramRepository for LbugStore {
         let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
             .context("read_canonical_observation_claim_rows")?;
         Ok(Some(rows))
+    }
+
+    fn put_fused_claims(
+        &mut self,
+        version_id: &str,
+        claims: &[crate::architecture::fusion::FusedClaim],
+        now: &str,
+    ) -> Result<()> {
+        crate::graph::validate_identifier(version_id)
+            .with_context(|| format!("put_fused_claims: invalid version id {version_id}"))?;
+        let session = self.session_mut_inner()?;
+        let safe_now = escape_cypher_string(now);
+        // Pass 1: upsert all claim nodes (MERGE with node-only pattern —
+        // lbug 0.18.3 cannot MERGE a relationship whose endpoint pattern
+        // carries a property map: it tries to CREATE the endpoint node
+        // and violates the primary key).
+        for claim in claims {
+            let id = escape_cypher_string(&claim.id);
+            let kind = escape_cypher_string(&claim.kind);
+            let statement = escape_cypher_string(&claim.statement);
+            let status = escape_cypher_string(&claim.status);
+            let obs_list = claim
+                .observation_ids
+                .iter()
+                .map(|s| format!("'{}'", escape_cypher_string(s)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let derived_list = claim
+                .derived_from
+                .iter()
+                .map(|s| format!("'{}'", escape_cypher_string(s)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let cypher = format!(
+                "MERGE (f:FusedClaim {{id: '{id}'}}) SET \
+                 f.kind = '{kind}', \
+                 f.statement = '{statement}', \
+                 f.confidence = {confidence}, \
+                 f.supports = {supports}, \
+                 f.status = '{status}', \
+                 f.stale = {stale}, \
+                 f.observation_ids = [{obs_list}], \
+                 f.derived_from = [{derived_list}], \
+                 f.version_id = '{version_id}', \
+                 f.written_at = '{safe_now}' RETURN f;",
+                confidence = claim.confidence,
+                supports = claim.supports,
+                stale = claim.stale,
+            );
+            session
+                .conn
+                .query(&cypher)
+                .with_context(|| format!("persist fused claim {}", claim.id))?;
+        }
+        // Pass 2: edges — endpoints are MATCHed first, then the
+        // relationship is MERGEd (all claim nodes exist by now).
+        for claim in claims {
+            let id = escape_cypher_string(&claim.id);
+            // FUSED_FROM edges — best-effort: the member `:Observation`
+            // row may be absent (compat-only derivation pre-backfill).
+            // The observation_ids array column still carries the
+            // provenance, so a failed edge loses no data.
+            for obs_id in &claim.observation_ids {
+                let obs_esc = escape_cypher_string(obs_id);
+                let edge = format!(
+                    "MATCH (o:Observation {{id: '{obs_esc}'}}) \
+                     MATCH (f:FusedClaim {{id: '{id}'}}) \
+                     MERGE (f)-[:FUSED_FROM]->(o);"
+                );
+                if session.conn.query(&edge).is_err() {
+                    warn!(
+                        claim_id = %claim.id,
+                        observation_id = %obs_id,
+                        "FUSED_FROM edge failed (member Observation row absent)"
+                    );
+                }
+            }
+
+            // CONTRADICTS edges — both directions, MERGE-gated.
+            for other_id in &claim.conflicts_with {
+                let other_esc = escape_cypher_string(other_id);
+                let edge = format!(
+                    "MATCH (f:FusedClaim {{id: '{id}'}}) \
+                     MATCH (g:FusedClaim {{id: '{other_esc}'}}) \
+                     MERGE (f)-[:CONTRADICTS]->(g);"
+                );
+                session.conn.query(&edge).with_context(|| {
+                    format!("persist CONTRADICTS edge {} -> {}", claim.id, other_id)
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_fused_claim_rows(&self, version_ids: &[String]) -> Result<Option<Vec<Row>>> {
+        if version_ids.is_empty() {
+            return Ok(Some(vec![]));
+        }
+        // Probe: does the v6 table exist? A pre-v6 database has no
+        // `:FusedClaim` table — the probe query fails and we signal
+        // "in-memory fallback" via Ok(None).
+        let probe =
+            <LbugStore as RawGraphQuery>::query(self, "MATCH (f:FusedClaim) RETURN f.id LIMIT 1;");
+        if probe.is_err() {
+            return Ok(None);
+        }
+        let safe_ids: Result<Vec<_>, _> = version_ids
+            .iter()
+            .map(|id| crate::graph::validate_identifier(id).map(|s| s.to_string()))
+            .collect();
+        let safe_ids = safe_ids.context("read_fused_claim_rows: id validation")?;
+        let id_list = safe_ids
+            .iter()
+            .map(|id| format!("'{}'", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cypher = format!(
+            "MATCH (f:FusedClaim) WHERE f.version_id IN [{id_list}] \
+             RETURN f.id, f.kind, f.statement, f.confidence, f.supports, f.status, f.stale, \
+                    f.observation_ids, f.derived_from, f.version_id;"
+        );
+        let rows =
+            <LbugStore as RawGraphQuery>::query(self, &cypher).context("read_fused_claim_rows")?;
+        Ok(Some(rows))
+    }
+
+    fn list_fused_conflict_edges(&self, claim_ids: &[String]) -> Result<Vec<(String, String)>> {
+        if claim_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        // Claim ids are `clm:fused:<hex>` — escape quotes, do not
+        // validate (':' is rejected by validate_identifier).
+        let id_list = claim_ids
+            .iter()
+            .map(|id| format!("'{}'", escape_cypher_string(id)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cypher = format!(
+            "MATCH (a:FusedClaim)-[:CONTRADICTS]->(b:FusedClaim) \
+             WHERE a.id IN [{id_list}] \
+             RETURN a.id AS from_id, b.id AS to_id;"
+        );
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
+            .context("list_fused_conflict_edges")?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| {
+                let from = r
+                    .get("from_id")
+                    .and_then(|c| c.as_str())
+                    .map(String::from)?;
+                let to = r.get("to_id").and_then(|c| c.as_str()).map(String::from)?;
+                Some((from, to))
+            })
+            .collect())
     }
 }
 

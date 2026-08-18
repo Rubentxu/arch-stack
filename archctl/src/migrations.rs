@@ -63,6 +63,14 @@ pub const MIGRATIONS: &[Migration] = &[
         cypher: "-- P2-09b backfill: work is in the rust_hook; no DDL needed.",
         rust_hook: Some(backfill_observation_claim_from_evidence),
     },
+    // Wave 3 Item 27 follow-ups: persist fused claims so read-side
+    // use cases (explain, coverage) can surface them. written_at is
+    // STRING per the P2-09b lbug timestamp() strictness gotcha.
+    Migration {
+        version: "v6-fusion-persistence",
+        cypher: include_str!("../../docs/schema/006_fusion_persistence.cypher"),
+        rust_hook: None,
+    },
 ];
 
 /// Marker filename written to the project root after a successful run.
@@ -449,12 +457,13 @@ mod tests {
 
     #[test]
     fn migrations_is_ordered() {
-        // P2-09b PR-A added v4, PR-B adds v5 — total is now 5.
-        assert_eq!(MIGRATIONS.len(), 5);
+        // P2-09b PR-A added v4, PR-B adds v5; fusion follow-ups add v6.
+        assert_eq!(MIGRATIONS.len(), 6);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
         assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
         assert!(MIGRATIONS[2].version < MIGRATIONS[3].version);
         assert!(MIGRATIONS[3].version < MIGRATIONS[4].version);
+        assert!(MIGRATIONS[4].version < MIGRATIONS[5].version);
     }
 
     #[test]
@@ -465,8 +474,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // P2-09b PR-B: fresh graph now advances to v5-p2-09b-backfill-obs-clm-from-evidence.
-        assert_eq!(text.trim(), "v5-p2-09b-backfill-obs-clm-from-evidence");
+        // Fresh graph advances to v6-fusion-persistence.
+        assert_eq!(text.trim(), "v6-fusion-persistence");
     }
 
     #[test]
@@ -533,8 +542,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // P2-09b PR-B: fresh-graph marker advances to v5-p2-09b-backfill-obs-clm-from-evidence.
-        assert_eq!(text.trim(), "v5-p2-09b-backfill-obs-clm-from-evidence");
+        // Fusion follow-ups: fresh-graph marker advances to v6-fusion-persistence.
+        assert_eq!(text.trim(), "v6-fusion-persistence");
     }
 
     /// P2-09b backfill: pre-upgrade Evidence rows (those written BEFORE
