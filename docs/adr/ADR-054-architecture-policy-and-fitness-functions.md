@@ -1,10 +1,9 @@
 # ADR-054 — Políticas y fitness functions sobre el grafo canónico
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13 (shipped as P2-05 Policy Metamodel v1.54.0 + P2-06 Fitness Evaluator v1.55.0; 6 closed rules per ADR-054 + SARIF 2.1.0 + JUnit XML output formats; `archctl architecture policy check [--policy <file>] [--fail-on ...]`)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 
