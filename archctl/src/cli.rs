@@ -264,6 +264,12 @@ pub enum ArchitectureAction {
         /// Output as JSON instead of human-readable.
         #[arg(long)]
         json: bool,
+        /// Persist fused claims to the store (requires v6 migration).
+        #[arg(long)]
+        persist: bool,
+        /// Fusion strategy: max-member (default) or staleness-weighted.
+        #[arg(long, default_value = "max-member")]
+        evaluator: String,
     },
     /// Check intent declaration against the live graph.
     Intent {
@@ -1018,7 +1024,9 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 cwd,
                 version_id,
                 json,
-            } => architecture_fuse_cmd(cwd, &version_id, json, ctx),
+                persist,
+                evaluator,
+            } => architecture_fuse_cmd(cwd, &version_id, json, persist, &evaluator, ctx),
             ArchitectureAction::Intent { action } => architecture_intent_cmd(action, ctx),
         },
         Command::Evidence { action } => match action {
@@ -3052,9 +3060,14 @@ fn architecture_fuse_cmd(
     cwd: Option<PathBuf>,
     version_id: &str,
     json: bool,
+    persist: bool,
+    evaluator_name: &str,
     ctx: &CliContext,
 ) -> Result<i32> {
-    use crate::architecture::fusion::{FusedClaim, fuse_observations};
+    use crate::architecture::fusion::{
+        ClaimEvaluator, FusedClaim, MaxMemberEvaluator, StalenessWeightedEvaluator,
+        fuse_observations_with,
+    };
 
     let cwd = ctx.resolve_cwd(cwd.as_ref());
 
@@ -3068,8 +3081,26 @@ fn architecture_fuse_cmd(
         return Ok(1);
     }
 
+    // Resolve the fusion strategy before touching the store.
+    let evaluator: Box<dyn ClaimEvaluator> = match evaluator_name {
+        "max-member" => Box::new(MaxMemberEvaluator),
+        "staleness-weighted" => Box::new(StalenessWeightedEvaluator),
+        other => {
+            if json {
+                eprintln!(
+                    "{{\"error\": \"unknown evaluator: {other}\", \"valid\": [\"max-member\", \"staleness-weighted\"]}}"
+                );
+            } else {
+                eprintln!(
+                    "error: unknown evaluator: {other} — valid: max-member, staleness-weighted"
+                );
+            }
+            return Ok(1);
+        }
+    };
+
     let info = resolve_project(&cwd.to_string_lossy());
-    let store = ctx.store_factory.open_and_init(&info.project_dir)?;
+    let mut store = ctx.store_factory.open_and_init(&info.project_dir)?;
 
     let (observations, _claims) =
         match crate::observation_claim::observations_and_claims_for_version(&*store, version_id) {
@@ -3094,31 +3125,51 @@ fn architecture_fuse_cmd(
             }
         };
 
-    let fused = fuse_observations(&observations);
+    let now = ctx.clock.now_rfc3339();
+    let fused = fuse_observations_with(&observations, evaluator.as_ref(), &now);
+
+    if persist && let Err(e) = store.put_fused_claims(version_id, &fused, &now) {
+        if json {
+            eprintln!("{{\"error\": \"{e}\"}}");
+        } else {
+            eprintln!("error: {e}");
+        }
+        return Ok(1);
+    }
 
     if json {
         #[derive(serde::Serialize)]
         struct FuseReport<'a> {
             version_id: &'a str,
+            evaluator: &'a str,
+            persisted: bool,
             fused_claims: &'a [FusedClaim],
         }
         let report = FuseReport {
             version_id,
+            evaluator: evaluator.name(),
+            persisted: persist,
             fused_claims: &fused,
         };
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     } else {
         println!("Architecture Fuse Report");
         println!("Version: {version_id}");
+        println!(
+            "Evaluator: {} {}",
+            evaluator.name(),
+            if persist { "(persisted)" } else { "" }
+        );
         println!();
         println!("{} fused claim(s)", fused.len());
         for claim in &fused {
             println!(
-                "  {}  supports={}  confidence={}  conflicts={}",
+                "  {}  supports={}  confidence={}  conflicts={}  stale={}",
                 claim.id,
                 claim.supports,
                 claim.confidence,
-                claim.conflicts_with.len()
+                claim.conflicts_with.len(),
+                claim.stale
             );
             for warning in &claim.warnings {
                 println!("    ⚠ {warning}");
