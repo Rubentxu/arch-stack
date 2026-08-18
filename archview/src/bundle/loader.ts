@@ -149,6 +149,14 @@ export function normalizeBundle(
     nodes,
     edges,
     rawKind,
+    // Item 28: strict bundles open in read-only mode (no source preview,
+    // no editor handoff). Only true when manifest.strict === true;
+    // absent or false → undefined (regular editable bundle).
+    strict:
+      rawKind === "c4" &&
+      (raw.manifest as Record<string, unknown> | undefined)?.strict === true
+        ? true
+        : undefined,
     interactions,
     evidence,
     styles,

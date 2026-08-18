@@ -25,6 +25,8 @@ export interface SidebarProps {
     schemaVersion: string;
     loadedAt: string;
     rawKind: string;
+    /** True when the bundle was exported with `--profile strict`. */
+    strict?: boolean;
   } | null;
   stats?: SidebarStats;
   /** Wired by App via `useWorkspaceState()` — fetch + open-editor handlers. */
@@ -40,6 +42,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <Show when={props.bundleMeta}>
           {(meta) => (
             <dl class="bundle-meta">
+              <Show when={meta().strict === true}>
+                <div class="strict-badge" role="status">
+                  read-only · strict bundle
+                </div>
+              </Show>
               <dt>source</dt>
               <dd>{meta().source}</dd>
               <dt>schemaVersion</dt>

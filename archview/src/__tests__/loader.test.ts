@@ -85,7 +85,9 @@ describe("bundle loader", () => {
         { id: "fn:caller", name: "caller", kind: "function", language: "rust" },
         { id: "fn:callee", name: "callee", kind: "function", language: "rust" },
       ],
-      edges: [{ id: "e1", source: "fn:caller", target: "fn:callee", kind: "calls" }],
+      edges: [
+        { id: "e1", source: "fn:caller", target: "fn:callee", kind: "calls" },
+      ],
     };
     const bundle = normalizeBundle(raw, "test");
     expect(bundle.rawKind).toBe("call-graph");
