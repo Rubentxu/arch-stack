@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### Added
+- **Fuse-on-write** (Item 27 residual) — `recompute_fused_for_versions`
+  persiste FusedClaims automáticamente tras cada write de evidencia
+  (seams en `c4_discover::write_evidence` y `call_graph`): ya no hace
+  falta `architecture fuse --persist` manual para mantener el layer de
+  fusion sincronizado. Best-effort (ADR-049 D4), idempotente, con
+  limpieza de claims superseded (los ids cambian al crecer el set de
+  observaciones). `manifest.diagram.toml`/`architecture.toml`:
+  `recompute_fused_for_versions` declarado.
+
 ## [1.60.0] — 2026-08-18
 
 ### Added

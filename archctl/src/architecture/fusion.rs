@@ -361,6 +361,67 @@ pub fn fuse_observations_with(
     claims
 }
 
+/// Fuse-on-write (Item 27 residual): recompute and persist fused claims
+/// for the given versions. Best-effort per ADR-049 D4 — failures are
+/// absorbed with `tracing::warn!` and never break the caller (an
+/// extractor writing evidence).
+///
+/// Claim ids are derived from the observation set, so incremental
+/// writes produce NEW ids: this helper ALSO deletes previously
+/// persisted claims of the version that are no longer part of the
+/// recomputed result (superseded ids), keeping the FusedClaim table
+/// consistent with the current observations.
+pub fn recompute_fused_for_versions(
+    store: &mut dyn crate::store::GraphStore,
+    version_ids: &[String],
+) -> usize {
+    let mut written = 0usize;
+    for version_id in version_ids {
+        let observations = match crate::observation_claim::observations_and_claims_for_version(
+            store, version_id,
+        ) {
+            Ok((obs, _)) => obs,
+            Err(e) => {
+                tracing::warn!(version_id = %version_id, error = %e, "fuse-on-write: skip");
+                continue;
+            }
+        };
+        if observations.is_empty() {
+            continue;
+        }
+        let fused = fuse_observations(&observations);
+        if fused.is_empty() {
+            continue;
+        }
+        let now = crate::clock::Clock::now_rfc3339(&crate::clock::SystemClock);
+        if let Err(e) = store.put_fused_claims(version_id, &fused, &now) {
+            tracing::warn!(version_id = %version_id, error = %e, "fuse-on-write: persist failed");
+            continue;
+        }
+        written += fused.len();
+
+        // Superseded-claim cleanup: claim ids change when the
+        // observation set grows, so previous ids for this version are
+        // stale. Delete the ones no longer in the recomputed result.
+        if let Ok(Some(rows)) = store.read_fused_claim_rows(std::slice::from_ref(version_id)) {
+            let new_ids: std::collections::HashSet<&str> =
+                fused.iter().map(|c| c.id.as_str()).collect();
+            let stale_ids: Vec<String> =
+                crate::architecture::fusion::fused_claims_from_rows(&rows, &[])
+                    .iter()
+                    .filter(|c| !new_ids.contains(c.id.as_str()))
+                    .map(|c| c.id.clone())
+                    .collect();
+            if !stale_ids.is_empty()
+                && let Err(e) = store.delete_fused_claims(version_id, &stale_ids)
+            {
+                tracing::warn!(version_id = %version_id, error = %e, "fuse-on-write: cleanup failed");
+            }
+        }
+    }
+    written
+}
+
 /// Reconstruct `FusedClaim`s from raw rows produced by
 /// `DiagramRepository::read_fused_claim_rows` plus the conflict edges
 /// produced by `DiagramRepository::list_fused_conflict_edges`.

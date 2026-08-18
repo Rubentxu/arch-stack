@@ -19,7 +19,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use archctl::store::{GraphStore, LbugStore, RawGraphQuery};
+use archctl::store::{DiagramRepository, GraphStore, LbugStore, RawGraphQuery};
 
 /// Extension trait to execute raw writes for testing transaction scenarios.
 /// Mirrors the pattern from code_call_graph.rs §RawWrite.
@@ -1232,4 +1232,96 @@ fn c4_discover_apply_unwind_bulk_correctness() {
             "idempotent re-apply: no duplicate evidence"
         );
     }
+}
+
+// ─── Fuse-on-write (Item 27 residual) ─────────────────────────────────────────
+
+/// After `c4_discover::apply` writes evidence for a version, fused
+/// claims for that version must exist in the store WITHOUT running
+/// `architecture fuse --persist` (the seam in write_evidence
+/// recomputes them best-effort).
+#[test]
+fn apply_writes_fused_claims_without_manual_fuse() {
+    use archctl::code::c4_discover::{
+        Container, DiscoverReport, Evidence, EvidenceKind, ProjectMeta,
+    };
+
+    let tmp = TempDir::new().unwrap();
+    let project = tmp.path();
+
+    let report = DiscoverReport {
+        schema_version: "1.0".to_string(),
+        project: ProjectMeta {
+            root: project.display().to_string(),
+            files_scanned: 1,
+            languages: BTreeMap::new(),
+            duration_ms: 1,
+        },
+        discovered: vec![Container {
+            canonical_key: "fuse-on-write-svc".to_string(),
+            name: "fuse-on-write-svc".to_string(),
+            strategy: "inject".to_string(),
+            confidence: 0.9,
+            merged_from: vec!["inject".to_string()],
+            evidences: vec![
+                Evidence {
+                    content_hash: String::new(),
+                    file: "src/lib.rs".to_string(),
+                    line: 5,
+                    kind: EvidenceKind::Structural,
+                    text: "fuse on write claims".to_string(),
+                },
+                Evidence {
+                    content_hash: String::new(),
+                    file: "src/lib.rs".to_string(),
+                    line: 6,
+                    kind: EvidenceKind::Structural,
+                    text: "fuse on write claims".to_string(),
+                },
+            ],
+        }],
+        errors: vec![],
+    };
+
+    let fs = archctl::filesystem::MemoryFilesystem::new();
+    let r = archctl::code::c4_discover::apply(project, &report, &fs).expect("apply");
+    assert_eq!(r.elements_written, 1);
+
+    // apply() opens the store directly at the project dir (NOT the XDG
+    // resolved dir) — mirror that here.
+    let mut store = LbugStore::open(project).unwrap();
+    store.init().unwrap();
+
+    // Find the ElementVersion ids linked to the container.
+    let version_rows = <LbugStore as RawGraphQuery>::query(
+        &store,
+        "MATCH (e:Element {canonical_key: 'fuse-on-write-svc'})-[:CURRENT_VERSION]->(v:ElementVersion) RETURN v.id;",
+    )
+    .expect("list versions");
+    assert!(
+        !version_rows.is_empty(),
+        "container must have at least one version"
+    );
+    let version_id = version_rows[0]
+        .get("v.id")
+        .and_then(|c| c.as_str())
+        .expect("version id")
+        .to_string();
+
+    // Fused claims must already be persisted (fuse-on-write seam).
+    let claims = store
+        .read_fused_claim_rows(std::slice::from_ref(&version_id))
+        .expect("read fused claims");
+    let claims = claims.expect("v6 tables present (init ran migrations)");
+    assert!(
+        !claims.is_empty(),
+        "fused claims must exist after apply without manual fuse (version {version_id})"
+    );
+
+    // The two identical statements fused into ONE claim.
+    assert_eq!(
+        claims.len(),
+        1,
+        "two identical observations must fuse into one claim"
+    );
 }
