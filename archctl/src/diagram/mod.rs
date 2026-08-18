@@ -27,7 +27,10 @@ pub mod view_types;
 pub use apply::{ApplyReport, run_apply};
 pub use assets::icon_for;
 pub use changeset_types::{CHANGESET_COMMAND_TYPES, ChangeSet, Command};
-pub use export::{BundleEnvelope, ExportReport, build_bundle, build_export_envelope, run_export};
+pub use export::{
+    BundleEnvelope, ExportReport, apply_strict_profile, build_bundle, build_export_envelope,
+    run_export,
+};
 pub use hash::base_revision;
 pub use project::{OutputFormat, ProjectReport, project_dsl};
 pub use project_selector::{ProjectSelector, ScopeFilter, ViewKind};
