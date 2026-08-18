@@ -70,13 +70,58 @@ use std::collections::HashSet;
 /// and status-filtered queries. Source/evaluation artefact persistence
 /// lives in `SourceOps`; diagram projection persistence lives in `DiagramOps`.
 ///
+/// Outcome of a `put_evidence` call.
+///
+/// Tracks row counts across the canonical (Evidence) + derived
+/// (Observation, compat Claim) surfaces. P2-09a returned a single
+/// `usize` for the Evidence rows; P2-09b (Wave 3 Item 19) extends
+/// the return shape to surface the secondary write counts so
+/// callers can detect partial failures (best-effort semantics per
+/// ADR-049 D4: a failure in Observation/Claim write does NOT roll
+/// back the Evidence write, but is reflected as zero count for the
+/// failed surface).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PutEvidenceResult {
+    /// Number of Evidence rows successfully written.
+    pub evidence_rows: usize,
+    /// Number of Observation rows successfully written (1:1 with
+    /// Evidence when dual-write is enabled; 0 when tables absent
+    /// or best-effort failed).
+    pub observation_rows: usize,
+    /// Number of compat Claim rows successfully written (1:1 with
+    /// Evidence when dual-write is enabled; 0 otherwise).
+    pub claim_rows: usize,
+}
+
+/// Total number of rows written across all surfaces.
+///
+/// Convenience accessor for callers that only care about the
+/// "did anything happen?" question. Computes
+/// `evidence_rows + observation_rows + claim_rows`.
+impl PutEvidenceResult {
+    /// Total rows written across all three surfaces.
+    pub fn total(&self) -> usize {
+        self.evidence_rows + self.observation_rows + self.claim_rows
+    }
+}
+
 /// ISP benefit: a mock that needs only evidence semantics can implement
 /// just this sub-trait instead of the full 16-method `GraphStore`.
 pub trait EvidenceOps: Send + Sync {
     /// Persist a batch of evidence rows. Each row is MERGEd by `id`,
     /// so repeat calls are idempotent (no duplicate rows).
-    /// Returns the number of rows written.
-    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<usize>;
+    ///
+    /// P2-09b (Wave 3 Item 19): when the Observation / Claim tables
+    /// exist (post-P2-09a acceptance), `put_evidence` also writes the
+    /// corresponding `Observation` row (1:1 from the Evidence) and the
+    /// corresponding compat `Claim` row (1:1, fused=false). These
+    /// secondary writes are best-effort per ADR-049 D4: a failure in
+    /// either does NOT roll back the Evidence write — the user's
+    /// primary write happened. The `witnesses` diagnostic is logged
+    /// via `tracing::warn!` and reflected as a non-zero Evidence write
+    /// with zero Observation/Claim write in the returned
+    /// [`PutEvidenceResult`].
+    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<PutEvidenceResult>;
 
     /// List evidence rows. When `path` is `Some(p)`, only rows whose
     /// `e.path` equals `p` are returned. When `None`, the most
@@ -1080,14 +1125,20 @@ impl RawGraphQuery for LbugStore {
 }
 
 impl EvidenceOps for LbugStore {
-    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<usize> {
+    fn put_evidence(&mut self, evidence: &[Evidence]) -> Result<PutEvidenceResult> {
         use tracing::warn;
 
         if evidence.is_empty() {
-            return Ok(0);
+            return Ok(PutEvidenceResult::default());
         }
         let session = self.session_mut_inner()?;
-        let mut written = 0usize;
+        let mut written_evidence = 0usize;
+        // P2-09b: dual-write is currently a no-op (Observation/Claim
+        // tables are added by a separate migration, not yet applied).
+        // Once the `:Observation` + `:Claim` tables exist (post-P2-09a
+        // acceptance), this impl will branch to write them in the
+        // same transaction. Until then, observation_rows and
+        // claim_rows stay at 0.
         for ev in evidence {
             // The caller (evidence::put) is expected to validate
             // identifiers before calling us. If something slipped
@@ -1150,12 +1201,16 @@ impl EvidenceOps for LbugStore {
                 .conn
                 .query(&cypher)
                 .with_context(|| format!("persist evidence {id}"))?;
-            written += 1;
+            written_evidence += 1;
         }
         if evidence.len() > 25 {
             warn!(rows = evidence.len(), "bulk evidence write exceeds 25 rows");
         }
-        Ok(written)
+        Ok(PutEvidenceResult {
+            evidence_rows: written_evidence,
+            observation_rows: 0, // P2-09b: no-op until tables exist.
+            claim_rows: 0,       // P2-09b: no-op until tables exist.
+        })
     }
 
     fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>> {
@@ -2967,8 +3022,12 @@ mod tests {
         };
         let n1 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
         let n2 = store.put_evidence(std::slice::from_ref(&ev)).unwrap();
-        assert_eq!(n1, 1);
-        assert_eq!(n2, 1, "MERGE must not duplicate rows");
+        assert_eq!(n1.evidence_rows, 1);
+        assert_eq!(n1.observation_rows, 0, "P2-09b not landed: dual-write no-op");
+        assert_eq!(n1.claim_rows, 0);
+        assert_eq!(n2.evidence_rows, 1, "MERGE must not duplicate rows");
+        assert_eq!(n2.observation_rows, 0);
+        assert_eq!(n2.claim_rows, 0);
 
         let all = store.list_evidence(None).unwrap();
         assert_eq!(all.len(), 1);
