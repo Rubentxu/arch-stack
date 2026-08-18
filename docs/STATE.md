@@ -134,7 +134,7 @@
 | Apache Arrow | Deferred | Bundle size >10MB AND JSON parsing bottleneck measured |
 | cosmos.gl (>100k nodos) | Deferred | Node count >100k AND G6 canvas FPS <30 |
 | [ADR-051](adr/ADR-051-loopback-workbench-session-security.md) loopback workbench session security | Deferred (ADR-051 accepted with Deferido 2026-08-18) | ≥1 disclosed loopback-session hijack vector (CVE or reproducible PoC) OR feature parity claim requiring per-session permission scoping |
-| [ADR-055](adr/ADR-055-sanitized-architecture-bundle.md) sanitized architecture bundle | Deferred (ADR-055 accepted with Deferido 2026-08-18) | ADR-019 perf budget breach (bundle >10MB) AND ≥1 external-distribution consumer (third-party renderer / shared audit export) requesting redacted form |
+| [ADR-055](adr/ADR-055-sanitized-architecture-bundle.md) sanitized architecture bundle | **Abierto** (reopened 2026-08-18 por ADR-061) | Trigger actualizado: ≥1 stakeholder (interno o externo) necesitando compartir sin código fuente |
 | [ADR-056](adr/ADR-056-moldable-architecture-workbench.md) moldable architecture workbench (LensSpec) | Deferred (ADR-056 accepted with Deferido 2026-08-18; canonical anchor of ROADMAP §H3) | ≥2 consumers with LensSpec-translatable duplication OR a measured need (≥3 users reporting the same lens problem OR perf p99 breach traceable to view-strategy variance) |
 | SceneGraph abstraction | Deferred | ≥3 view types need shared scene model |
 | WIT Plugin SDK | Deferred | ≥1 third-party consumer registered |
@@ -256,8 +256,9 @@ pluggables (`--evaluator max-member|staleness-weighted`) y surfacing en
 Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed.
-- **ADR-055 sanitized architecture bundle** — abre con ADR-019 perf
-  budget breach AND ≥1 external-distribution consumer.
+- **ADR-055 sanitized architecture bundle** — **ABIERTO** (reopened 2026-08-18
+  por ADR-061). Trigger actualizado: ≥1 stakeholder necesitando compartir sin
+  código fuente. **Item 28 (Wave 3 strict ArchBundle) desbloqueado.**
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
 - **P2-09b backfill timestamp workaround** — cambiar `written_at` a STRING
