@@ -64,9 +64,9 @@ La decisión debe depender de:
 
 ## Argumentos para reabrir ADR-055
 
-### 1. El trigger "external consumer" es una定义 demasiado estrecha
+### 1. El trigger "external consumer" es una definición demasiado estrecha
 
-"Unternehmen's external distribution consumer" excluye:
+Excluye:
 - Auditores internos que revisan la arquitectura de un proyecto
 - Consultores externos bajo NDA que necesitan solo el grafo de arquitectura
 - Stakeholders no-técnicos que revisan diagramas sin código fuente
