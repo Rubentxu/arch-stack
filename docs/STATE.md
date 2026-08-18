@@ -253,20 +253,29 @@ persistencia de fused claims (migración v6 + `--persist`), evaluadores
 pluggables (`--evaluator max-member|staleness-weighted`) y surfacing en
 `architecture explain` (1.1) + `architecture coverage` (byFusedClaims, 1.1).
 
+**Item 28 (strict ArchBundle) CERRADO** (v1.61.0, 2026-08-18): `--profile strict`
+en `diagram export` (paths relativos, checksum SHA-256, manifest.strict) +
+archview read-only para strict bundles. ADR-055 sigue OPEN para fase 2
+(pseudonymization, anti-secretos scanner).
+
+**Item 27 residual CERRADO** (v1.62.0 pendiente de tag): `architecture fuse`
+persiste por defecto (`--no-persist` para stdout-only) + `--expire-stale
+[--dry-run]` para GC de claims stale. Fix incluido: parseo del formato de
+timestamp de LadybugDB en `parse_observed_at` (sin él, todo claim persistido
+se marcaba stale).
+
 Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed.
 - **ADR-055 sanitized architecture bundle** — **ABIERTO** (reopened 2026-08-18
-  por ADR-061). Trigger actualizado: ≥1 stakeholder necesitando compartir sin
-  código fuente. **Item 28 (Wave 3 strict ArchBundle) desbloqueado.**
+  por ADR-061). Fase 2: pseudonymization de filenames + scanner anti-secretos.
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
 - **P2-09b backfill timestamp workaround** — cambiar `written_at` a STRING
   o bump lbug (bloquea backfill de filas pre-upgrade; documentado en el
   archive-report de `wave-3-p2-09-claim-dual-write`).
-- **Item 27 residual**: persistir fused claims vía dual-write desde
-  `put_evidence` (hoy es `--persist` explícito); staleness expiry
-  (borrado de claims stale) — v1 solo flag.
+- **Fuse-on-write** — persistir fused claims automáticamente desde
+  `put_evidence` (best-effort, ADR-049 D4 style); cutoff configurable.
 
 Sigue válido el catálogo de items en
 `docs/arch-stack-proposals-2026-08-13/`.
