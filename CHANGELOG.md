@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [1.59.0] — 2026-08-18
+
+### Added
 - **P2-10 intent vs reality MVP** — `archctl/src/architecture/intent.rs` with
   `IntentDeclaration`, `DeclaredElement`, `DeclaredRelation`, `IntentDelta`,
   `IntentReport`, `IntentError`, and pure `check_intent(&dyn DiagramRepository,
@@ -30,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   editable; check_intent, IntentDeclaration, IntentError, IntentReport,
   load_intent in public_symbols and must_hold). `manifests/cli.toml` updated
   (IntentAction in must_hold).
+
+## [1.58.0] — 2026-08-17
+
+### Added
 - **P2-09a observation/claim carriers MVP** — `archctl/src/observation_claim.rs`
   with `Observation` and `Claim` carriers, `observation_from_evidence()`,
   `compat_claim_from_evidence()`, and
@@ -51,6 +63,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `manifests/cli.toml` updated (ArchitectureAction::Observe in public_symbols
   and must_hold). Unit tests S1–S9 in observation_claim.rs; integration tests
   S8, S8b, empty version in `archctl/tests/observation_claim.rs`.
+
+## [1.57.0] — 2026-08-17
+
+### Added
+- **P2-08 task context compiler MVP** — `archctl/src/architecture/task_context.rs`
+  with `TaskContextReport` carrier (schema `task-context/1`, schemaVersion
+  `1.0`, capability `architecture-task-context-mvp`), `BudgetInfo`,
+  `ContextElement`, `ContextRelation`, `ContextError { EmptyTask, InvalidBudget,
+  Store }`, and pure `compile_task_context(&dyn DiagramRepository, &str,
+  budget_tokens, top) -> Result<TaskContextReport, ContextError>` use case.
+  Delegates to P2-07 `relevance()` for ranking, enriches with evidence via
+  `list_evidence_for_versions`, packs elements under budget (token estimate
+  serialized_json_len / 4, ceiling division), relation closure (drops dangling
+  endpoints). Sort: (score DESC, id ASC) for elements, (sourceId ASC,
+  targetId ASC, predicateId ASC) for relations. Determinism: BTreeMap + sorted
+  Vec — byte-equal JSON across runs. 9 unit tests in task_context.rs.
+  `manifests/architecture.toml` updated (task_context.rs in editable;
+  compile_task_context, TaskContextReport, ContextElement, ContextRelation,
+  ContextError in public_symbols and must_hold).
+- **P2-08** — `archctl architecture context --task <text> [--budget-tokens N]
+  [--top N] [--json]` CLI command: opens project store, calls
+  `compile_task_context()`, prints JSON (`TaskContextReport`) or human summary.
+  Defaults: `--budget-tokens 4000`, `--top 10`. Exit 0 on success (incl.
+  empty results), exit 1 on `ContextError`. `schemas/task-context.schema.json`
+  shipped. No new Cargo dependencies.
+- **P2-08** — `archctl/tests/architecture_task_context.rs` integration tests:
+  S1 happy path with evidence, S2 budget truncation, S3 relation closure
+  (dangling dropped), S4 empty/whitespace task → EmptyTask, S5 budget 0 →
+  InvalidBudget, S6 empty graph → empty report exit 0, S7 JSON valid +
+  human readable, S8 evidence per retained element, S9 schema validates
+  report. No new Cargo dependencies.
+
+## [1.56.0] — 2026-08-17
+
+### Added
+- **P2-07 context relevance engine MVP** — `archctl/src/architecture/relevance.rs`
+  with `RelevanceReport` carrier (schema `relevance-report/1`, schemaVersion
+  `1.0`, capability `architecture-relevance-mvp`), `RelevanceOptions { top,
+  max_hops }`, `RelevanceError { EmptyQuery, Store }`, and pure
+  `relevance(&dyn DiagramRepository, &str, &RelevanceOptions) -> RelevanceReport`
+  use case. Scoring: exact-id → 1.0 × max(0.1, confidence); name/canonical_key
+  substring (case-insensitive, ASCII-folded) → 0.8 × max(0.1, confidence);
+  multi-token → proportional; BFS expansion 0.5^hop × confidence; relations
+  0.5 × min(srcScore, tgtScore) when source/target in shortlist. Sort (score
+  DESC, id ASC). ASCII-fold: ñ→n, á→a, é→e, í→i, ó→o, ú→u, ü→u. Stopword
+  drop (EN+ES). `manifests/architecture.toml` updated (relevance.rs in
+  editable; relevance symbols in public_symbols and must_hold).
+- **P2-07** — `archctl architecture relevance --query <text> [--top N]
+  [--max-hops N] [--json]` CLI command: opens project store, calls
+  `relevance()`, prints JSON (`RelevanceReport`) or human shortlist.
+  Exit 0 on success (incl. empty results), exit 1 on `RelevanceError`.
+  `schemas/relevance-report.schema.json` shipped. No new Cargo dependencies.
+
+## [1.55.0] — 2026-08-17
+
+### Added
+- **P2-06 fitness evaluator** — `archctl/src/architecture/report_formats.rs`
+  with `to_sarif(&PolicyReport) -> SarifLog` projector (SARIF 2.1.0) and
+  `to_junit_xml(&PolicyReport) -> String` projector (JUnit XML). Severity
+  mapping: `Error → "error"`, `Warning → "warning"`, `Info → "note"`.
+  SARIF output: `archctl://graph/<subject.id>` URI per violation. JUnit
+  output: `<testsuites>` root with `tests/failures/skipped` attributes,
+  `<testcase classname="<rule>" name="<subject.id>">` per violation,
+  `<failure>` for error/warning, `<skipped/>` for info. Hand-rolled XML
+  (no external crate). 7 unit tests in `report_formats.rs` and 7
+  integration tests in `archctl/tests/architecture_policy_report_formats.rs`.
+- **P2-06** — `archctl architecture policy check --format {json,sarif,junit}`
+  CLI flag (`PolicyReportFormat` enum: `Json`, `Sarif`, `Junit`). Existing
+  `--json` flag preserved as deprecated alias for `--format json`. Output
+  via projectors in `architecture_policy_check_cmd`. `manifests/architecture.toml`
+  updated (report_formats.rs in editable; `to_sarif`/`to_junit_xml` in
+  public_symbols and must_hold).
+
+## [1.54.0] — 2026-08-17
+
+### Added
 - **P2-05 architecture-policy MVP** — `archctl/src/architecture/policy.rs` with
   the ADR-054 closed rule set (6 rules): `forbid_dependency`,
   `require_dependency`, `forbid_cycle` (iterative Tarjan SCC), `max_fanout`,
@@ -67,71 +155,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   read, validates `--fail-on`, evaluates over the live graph, prints human
   summary or JSON `architecturePolicyReport/1`. Exit 1 when any remaining
   violation severity >= the `--fail-on` threshold (default `error`).
- - **P2-05** — 47 unit tests in `archctl/src/architecture/policy.rs` and 6
-   integration tests in `archctl/tests/architecture_policy.rs` (S1–S5 +
-   confidence_min). `manifests/architecture.toml` updated (policy.rs in
-   editable; policy symbols in public_symbols and must_hold).
- - **P2-06 fitness evaluator** — `archctl/src/architecture/report_formats.rs`
-   with `to_sarif(&PolicyReport) -> SarifLog` projector (SARIF 2.1.0) and
-   `to_junit_xml(&PolicyReport) -> String` projector (JUnit XML). Severity
-   mapping: `Error → "error"`, `Warning → "warning"`, `Info → "note"`.
-   SARIF output: `archctl://graph/<subject.id>` URI per violation. JUnit
-   output: `<testsuites>` root with `tests/failures/skipped` attributes,
-   `<testcase classname="<rule>" name="<subject.id>">` per violation,
-   `<failure>` for error/warning, `<skipped/>` for info. Hand-rolled XML
-   (no external crate). 7 unit tests in `report_formats.rs` and 7
-   integration tests in `archctl/tests/architecture_policy_report_formats.rs`.
-  - **P2-06** — `archctl architecture policy check --format {json,sarif,junit}`
-   CLI flag (`PolicyReportFormat` enum: `Json`, `Sarif`, `Junit`). Existing
-   `--json` flag preserved as deprecated alias for `--format json`. Output
-   via projectors in `architecture_policy_check_cmd`. `manifests/architecture.toml`
-   updated (report_formats.rs in editable; `to_sarif`/`to_junit_xml` in
-   public_symbols and must_hold).
-  - **P2-07 context relevance engine MVP** — `archctl/src/architecture/relevance.rs`
-   with `RelevanceReport` carrier (schema `relevance-report/1`, schemaVersion
-   `1.0`, capability `architecture-relevance-mvp`), `RelevanceOptions { top,
-   max_hops }`, `RelevanceError { EmptyQuery, Store }`, and pure
-   `relevance(&dyn DiagramRepository, &str, &RelevanceOptions) -> RelevanceReport`
-   use case. Scoring: exact-id → 1.0 × max(0.1, confidence); name/canonical_key
-   substring (case-insensitive, ASCII-folded) → 0.8 × max(0.1, confidence);
-   multi-token → proportional; BFS expansion 0.5^hop × confidence; relations
-   0.5 × min(srcScore, tgtScore) when source/target in shortlist. Sort (score
-   DESC, id ASC). ASCII-fold: ñ→n, á→a, é→e, í→i, ó→o, ú→u, ü→u. Stopword
-   drop (EN+ES). `manifests/architecture.toml` updated (relevance.rs in
-   editable; relevance symbols in public_symbols and must_hold).
-  - **P2-07** — `archctl architecture relevance --query <text> [--top N] [--max-hops N]
-   [--json]` CLI command: opens project store, calls `relevance()`, prints
-   JSON (`RelevanceReport`) or human shortlist. Exit 0 on success (incl. empty
-   results), exit 1 on `RelevanceError`. `schemas/relevance-report.schema.json`
-   shipped. No new Cargo dependencies.
-  - **P2-08 task context compiler MVP** — `archctl/src/architecture/task_context.rs`
-   with `TaskContextReport` carrier (schema `task-context/1`, schemaVersion
-   `1.0`, capability `architecture-task-context-mvp`), `BudgetInfo`,
-   `ContextElement`, `ContextRelation`, `ContextError { EmptyTask, InvalidBudget,
-   Store }`, and pure `compile_task_context(&dyn DiagramRepository, &str,
-   budget_tokens, top) -> Result<TaskContextReport, ContextError>` use case.
-   Delegates to P2-07 `relevance()` for ranking, enriches with evidence via
-   `list_evidence_for_versions`, packs elements under budget (token estimate
-   serialized_json_len / 4, ceiling division), relation closure (drops dangling
-   endpoints). Sort: (score DESC, id ASC) for elements, (sourceId ASC,
-   targetId ASC, predicateId ASC) for relations. Determinism: BTreeMap + sorted
-   Vec — byte-equal JSON across runs. 9 unit tests in task_context.rs.
-   `manifests/architecture.toml` updated (task_context.rs in editable;
-   compile_task_context, TaskContextReport, ContextElement, ContextRelation,
-   ContextError in public_symbols and must_hold).
-  - **P2-08** — `archctl architecture context --task <text> [--budget-tokens N]
-   [--top N] [--json]` CLI command: opens project store, calls
-   `compile_task_context()`, prints JSON (`TaskContextReport`) or human summary.
-   Defaults: `--budget-tokens 4000`, `--top 10`. Exit 0 on success (incl.
-   empty results), exit 1 on `ContextError`. `schemas/task-context.schema.json`
-   shipped. No new Cargo dependencies.
-  - **P2-08** — `archctl/tests/architecture_task_context.rs` integration tests:
-   S1 happy path with evidence, S2 budget truncation, S3 relation closure
-   (dangling dropped), S4 empty/whitespace task → EmptyTask, S5 budget 0 →
-   InvalidBudget, S6 empty graph → empty report exit 0, S7 JSON valid +
-   human readable, S8 evidence per retained element, S9 schema validates
-   report. No new Cargo dependencies.
-  - **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
+- **P2-05** — 47 unit tests in `archctl/src/architecture/policy.rs` and 6
+  integration tests in `archctl/tests/architecture_policy.rs` (S1–S5 +
+  confidence_min). `manifests/architecture.toml` updated (policy.rs in
+  editable; policy symbols in public_symbols and must_hold).
+
+## [1.53.0] — 2026-08-17
+
+### Added
+- **P2-04 architecture-coverage MVP** — `archctl/src/architecture/coverage.rs` with
+  `CoverageReport` carrier (schema `coverageReport/1`), `CoverageError
+  { Store }`, and pure `coverage(&dyn DiagramRepository, &dyn Clock)
+  -> Result<CoverageReport>` use case. Four bucket axes: `byConfidence`
+  (high≥0.9/medium≥0.7/low≥0.5/unknown<0.5), `byEvidenceStatus`
+  (accepted/drafted/superseded), `byConflict` (always 0 with warning),
+  `byStaleness` (fresh≤90d/stale>90d). Live-graph scan over Element,
+  SemanticRelation, and Evidence tables. No store writes.
+- **P2-04** — `archctl architecture coverage [--json]` CLI command:
+  scans live graph, computes coverage metrics, prints human summary or
+  JSON `coverageReport/1`. `ArchitectureAction::Coverage` variant added.
+- **P2-04** — `EvidenceEntry.status: Option<String>` added to support
+  coverage metrics; `EvidenceBundle` export filters to accepted evidence
+  only per ADR-005. `manifests/architecture.toml` updated (new `coverage.rs`
+  in editable, `coverage`/`CoverageReport`/`CoverageError` in public_symbols
+  and must_hold).
+- **P2-04** — 6 unit tests in `archctl/src/architecture/coverage.rs`
+  (empty graph, mixed confidence, all high/accepted, drafted evidence,
+  schema/capability invariants, staleness warning) and 5 integration tests
+  in `archctl/tests/architecture_coverage.rs`.
+
+## [1.52.0] — 2026-08-17
+
+### Added
+- **P2-03 architecture-explain MVP** — `archctl/src/architecture/explain.rs` with
   `ExplainReport` carrier (schema `explain-report/1`), `ExplainError
   { SubjectNotFound, RelationNotFound, Store }`, and pure
   `explain(&dyn DiagramRepository, &str) -> ExplainReport` use case.
@@ -157,6 +213,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `DiagramRepository::read_relation_by_id` and
   `DiagramRepository::list_evidence_for_relation_versions` added to store.rs
   trait and `LbugStore` implementation.
+
+## [1.51.0] — 2026-08-17
+
+### Added
 - **P2-02 architecture-diff MVP** — `archctl/src/architecture/diff.rs` with
   `ArchitectureDiffReport` carrier (schema `architecture-diff-report/1`),
   `DiffError { InvalidIdentifier, SnapshotNotFound }`, and pure
@@ -177,26 +237,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   snapshots, different commit_hash, different schema_version, different
   extractor_digest) and 4 integration tests in `archctl/tests/architecture_diff.rs`
   (`--json` round-trip, identical diff, invalid id rejection, snapshot-not-found).
-- **P2-04 architecture-coverage MVP** — `archctl/src/architecture/coverage.rs` with
-  `CoverageReport` carrier (schema `coverageReport/1`), `CoverageError
-  { Store }`, and pure `coverage(&dyn DiagramRepository, &dyn Clock)
-  -> Result<CoverageReport>` use case. Four bucket axes: `byConfidence`
-  (high≥0.9/medium≥0.7/low≥0.5/unknown<0.5), `byEvidenceStatus`
-  (accepted/drafted/superseded), `byConflict` (always 0 with warning),
-  `byStaleness` (fresh≤90d/stale>90d). Live-graph scan over Element,
-  SemanticRelation, and Evidence tables. No store writes.
-- **P2-04** — `archctl architecture coverage [--json]` CLI command:
-  scans live graph, computes coverage metrics, prints human summary or
-  JSON `coverageReport/1`. `ArchitectureAction::Coverage` variant added.
-- **P2-04** — `EvidenceEntry.status: Option<String>` added to support
-  coverage metrics; `EvidenceBundle` export filters to accepted evidence
-  only per ADR-005. `manifests/architecture.toml` updated (new `coverage.rs`
-  in editable, `coverage`/`CoverageReport`/`CoverageError` in public_symbols
-  and must_hold).
-- **P2-04** — 6 unit tests in `archctl/src/architecture/coverage.rs`
-  (empty graph, mixed confidence, all high/accepted, drafted evidence,
-  schema/capability invariants, staleness warning) and 5 integration tests
-  in `archctl/tests/architecture_coverage.rs`.
+
+## [1.50.0] — 2026-08-17
+
+### Added
+- **p2-01 follow-up** — closes 7 WARNINGs from `p2-01` verify-report (commit
+  `8e6c434`, PR #196; squash-merged `feat/p2-02-followup`). Cycle
+  `p-38e02210a9f14317/p2-02-followup`. 12 files touched (471 insertions,
+  56 deletions); 666/666 tests + 2 new regression tests; verify
+  PASS_WITH_WARNINGS; debt-verify PASS_WITH_WARNINGS. Highlights:
+  `manifests/cli.toml` `ArchitectureAction` registered (closes WARNING #3);
+  `archctl architecture` capability entry regenerated `docs/CAPABILITIES.md`
+  (closes WARNING #2); new spec
+  `docs/specs/architecture-cli-snapshot-surface-deviation.md`; new fixture
+  `archctl/tests/fixtures/capability_markdown_golden.txt`; CLI surface
+  extended (`archctl/src/cli.rs` +28 lines, `archctl/src/capability/source_cli.rs`
+  +8 lines); cross-feature sequence id uniqueness regression test
+  (closes WARNING #4 + WARNING #7); renderer/IDE bump stability regression
+  test (closes WARNING #6); `archctl/src/identity.rs` `find_deepest_commit`
+  semantics tightened (closes WARNING #8); `--dry-run` default-true +
+  `--keep-last` clamp 1..=1000 (closes WARNING #10); spec
+  `docs/specs/architecture-snapshots.md` clarified.
+
 
 ## [1.49.0] — 2026-08-17
 
