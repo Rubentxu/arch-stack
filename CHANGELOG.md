@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Secret redaction en strict bundles** (ADR-055 fase 2) — scanner
+  deny-by-default zero-dep (`archctl/src/diagram/redact.rs`) aplicado en
+  `--profile strict`: AWS access keys (AKIA…), GitHub/Slack tokens,
+  private keys (BEGIN…PRIVATE KEY), JWTs, URLs con credenciales y
+  asignaciones genéricas (`api_key=`/`token=`/`secret=`/`password=`)
+  se reemplazan por `[REDACTED:<kind>]`. El default profile no redacta
+  nada (0 regression). Determinista (mismo input → mismo output).
 - **Fusion engine residual** (Item 27 follow-up) — fused claims lifecycle:
   - `architecture fuse` **persists by default** (MERGE upsert idempotente);
     `--no-persist` preserva el modo stdout-only previo.

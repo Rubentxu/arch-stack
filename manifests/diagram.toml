@@ -51,6 +51,8 @@ public_symbols = [
   "build_bundle",
   "build_export_envelope",
   "apply_strict_profile",
+  "redact_secrets",
+  "redact_bundle",
   "BundleEnvelope",
   "ExportProfile",
   "ExportReport",
