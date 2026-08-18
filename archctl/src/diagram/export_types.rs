@@ -152,6 +152,14 @@ pub struct Manifest {
     pub edge_count: usize,
     #[serde(rename = "evidenceCount")]
     pub evidence_count: usize,
+    /// True when the bundle was exported with `--profile strict`.
+    /// Strict bundles open in read-only mode in archview.
+    #[serde(default, skip_serializing_if = "is_false_bool")]
+    pub strict: bool,
+    /// SHA-256 checksum of the bundle bytes (excluding `generatedAt` for determinism).
+    /// Present only in strict mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
 }
 
 #[cfg(test)]
@@ -268,6 +276,28 @@ impl ExportFormat {
         match s.to_ascii_lowercase().as_str() {
             "viewer-bundle" => Some(Self::ViewerBundle),
             "arrows" => Some(Self::Arrows),
+            _ => None,
+        }
+    }
+}
+
+/// Export profile for `archctl diagram export --profile strict`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExportProfile {
+    /// Default export: full bundle with all metadata including absolute paths.
+    #[default]
+    Default,
+    /// Strict export: sanitized for sharing. Absolute paths relativized,
+    /// checksums generated, evidence filtered.
+    Strict,
+}
+
+impl ExportProfile {
+    /// Parse a string into an `ExportProfile`.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "default" => Some(Self::Default),
+            "strict" => Some(Self::Strict),
             _ => None,
         }
     }
