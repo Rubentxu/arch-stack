@@ -1,6 +1,6 @@
 # ADR-061 — Reconsiderar ADR-055: Sanitized Architecture Bundle como Feature de Seguridad
 
-> **Estado:** Propuesto — 2026-08-18
+> **Estado:** Aceptado — 2026-08-18
 > **Supersedes**: ADR-055 (reconsideración)
 > **Baseline**: `main@ed5b6cb` (v1.59.0)
 > **Ámbito**: Desbloqueo de Item 28 Wave 3 (strict ArchBundle)
@@ -139,4 +139,4 @@ Igual que ADR-055 original:
 
 ## Changelog
 
-- 2026-08-18 | proposed | ADR-061 creado para reconsiderar ADR-055 triggers y desbloquear Item 28 Wave 3
+- 2026-08-18 | accepted | Triggers aceptados; ADR-055 reopened; Item 28 Wave 3 desbloqueado
