@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Fusion engine follow-ups** (Wave 3 Item 27) — persistence + evaluators + surfacing:
+  - `ClaimEvaluator` trait with `MaxMemberEvaluator` (v1, byte-equal) and
+    `StalenessWeightedEvaluator` (v2: 90-day cutoff, ×0.5 stale confidence);
+    `FusedClaim.stale` flag; `fuse_observations_with`.
+  - Schema migration `v6-fusion-persistence` creates `(:FusedClaim)` +
+    `CONTRADICTS` + `FUSED_FROM` tables; `architecture fuse --persist`
+    materializes claims idempotently; `--evaluator` selects strategy.
+  - `architecture explain` surfaces intersecting fused claims (report 1.1);
+    `architecture coverage` adds `byFusedClaims` buckets (report 1.1).
 - **P2-09b persistent Observation + Claim tables** (Wave 3 Item 19) —
   schema migration `v4-p2-09b-create-obs-clm-tables` creates `(:Observation)`
   + `(:Claim)` tables (12 + 5 columns including `source_origin`,

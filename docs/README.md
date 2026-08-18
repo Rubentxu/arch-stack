@@ -99,6 +99,7 @@ flowchart LR
 - [`ADR-038`](adr/ADR-038-one-product-five-invariants.md): un producto, cinco invariantes (arch-stack identity).
 - [`ADR-039`](adr/ADR-039-renderer-reality-anti-roadmap.md): renderer reality + anti-roadmap.
 - [`ADR-040`](adr/ADR-040-cognitive-conditional-activation.md): cognitive layer conditional activation.
+- [`ADR-060`](adr/ADR-060-architecture-cli-snapshot-surface-deviation.md): `architecture` CLI surface: drop the `snapshot` intermediate (Path B deviation).
 
 ### Esquema
 
