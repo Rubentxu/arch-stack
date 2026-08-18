@@ -1,10 +1,9 @@
 # ADR-043 — Límites hexagonales modulares por capacidad
 
-> **Estado:** Propuesto — 2026-08-13
+> **Estado:** Aceptado — 2026-08-13 (embodied in current port seams: `CliContext` composition root v1.43.0 p1-01, `repository` ports v1.43.0 p1-03, `store.rs` GraphStore/Cypher-boundary discipline)
 > **Baseline de auditoría:** `main@518bb79d4c87a491fc901d54441de15e72c40bc2`
 > **Ámbito:** consolidación arquitectónica posterior a v1.41
 > **Propietario de decisión:** maintainers de Arch Stack
-> **Naturaleza:** propuesta; este documento no modifica por sí mismo el repositorio
 
 ## Contexto
 
