@@ -486,6 +486,25 @@ pub trait DiagramRepository: Send + Sync {
         &self,
         version_ids: &[String],
     ) -> Result<Vec<EvidenceEntry>>;
+
+    /// Read canonical `(:Observation)` + `(:Claim)` rows for the given
+    /// version ids when the P2-09b tables exist.
+    ///
+    /// Returns `Ok(None)` when the canonical tables are absent
+    /// (pre-v4 migration database) — the caller falls back to the
+    /// P2-09a compat derivation. The returned `Row`s use column
+    /// names matching the carrier structs
+    /// (`observation_claim::Observation` / `observation_claim::Claim`).
+    ///
+    /// Default implementation returns `Ok(None)`; the `LbugStore`
+    /// adapter overrides when the v4 migration has run.
+    fn read_canonical_observation_claim_rows(
+        &self,
+        version_ids: &[String],
+    ) -> Result<Option<Vec<Row>>> {
+        let _ = version_ids;
+        Ok(None)
+    }
 }
 
 /// Snapshot metadata port (P2-01). Exposes create/list/update/GC operations
@@ -1244,6 +1263,14 @@ impl EvidenceOps for LbugStore {
             let obs_id = format!("obs:{id}");
             let claim_id = format!("clm:compat:{id}");
             let status_lower = format!("{:?}", ev.status).to_lowercase();
+            // Fields aligned 1:1 with `observation_claim::Observation`
+            // (rule_id, content_hash, observed_at) so the canonical
+            // read path reconstructs the struct directly from the row.
+            let safe_rule = crate::graph::validate_identifier(&ev.rule_id)
+                .unwrap_or("backfill")
+                .to_string();
+            let safe_ch = hash_json.replace('\'', "\\'");
+            let safe_oa = ev.observed_at.replace('\'', "\\'");
             let obs_cypher = format!(
                 "MERGE (o:Observation {{id: '{obs_id}'}}) SET \
                  o.kind = '{kind}', \
@@ -1253,6 +1280,9 @@ impl EvidenceOps for LbugStore {
                  o.end_line = {obs_el}, \
                  o.tool_name = '{tool}', \
                  o.tool_version = '{safe_tv}', \
+                 o.rule_id = '{safe_rule}', \
+                 o.content_hash = '{safe_ch}', \
+                 o.observed_at = '{safe_oa}', \
                  o.confidence = CASE \
                      WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
                  o.source_origin = 'evidence_entry_derivation', \
@@ -1263,11 +1293,13 @@ impl EvidenceOps for LbugStore {
             );
             let claim_cypher = format!(
                 "MERGE (c:Claim {{id: '{claim_id}'}}) SET \
-                 c.text = '{safe_claim}', \
+                 c.statement = '{safe_claim}', \
                  c.fused = false, \
                  c.confidence = CASE \
                      WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
-                 c.evidence_ids = ['{id}'], \
+                 c.observation_ids = ['{obs_id}'], \
+                 c.derived_from = ['{id}'], \
+                 c.status = '{status_lower}', \
                  c.written_at = {oa_cypher} RETURN c;",
             );
             // Observation write — best-effort per ADR-049 D4. The pre-migration
@@ -2677,6 +2709,78 @@ impl DiagramRepository for LbugStore {
         let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
             .context("list_evidence_for_relation_versions")?;
         Ok(rows.into_iter().filter_map(row_to_evidence_entry).collect())
+    }
+
+    fn read_canonical_observation_claim_rows(
+        &self,
+        version_ids: &[String],
+    ) -> Result<Option<Vec<Row>>> {
+        if version_ids.is_empty() {
+            return Ok(Some(vec![]));
+        }
+        // Probe: do the canonical tables exist at all? A pre-v4
+        // database has no `:Observation` table — the probe query
+        // fails and we signal "compat fallback" via Ok(None).
+        let probe =
+            <LbugStore as RawGraphQuery>::query(self, "MATCH (o:Observation) RETURN o.id LIMIT 1;");
+        if probe.is_err() {
+            return Ok(None);
+        }
+        let safe_ids: Result<Vec<_>, _> = version_ids
+            .iter()
+            .map(|id| crate::graph::validate_identifier(id).map(|s| s.to_string()))
+            .collect();
+        let safe_ids = safe_ids.context("read_canonical_observation_claim_rows: id validation")?;
+        let id_list = safe_ids
+            .iter()
+            .map(|id| format!("'{}'", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Canonical read: traverse ElementVersion → Evidence (via
+        // SUPPORTED_BY), then project the 1:1 Observation + Claim
+        // rows by id. We build the `obs:<eid>` / `clm:compat:<eid>`
+        // ids in Rust (lbug 0.18.3 does not support string
+        // concatenation in Cypher predicates reliably).
+        let ev_ids_cypher = format!(
+            "MATCH (ev:ElementVersion)-[r:SUPPORTED_BY]->(e:Evidence) \
+             WHERE ev.id IN [{id_list}] \
+             RETURN e.id AS eid;"
+        );
+        let ev_rows = <LbugStore as RawGraphQuery>::query(self, &ev_ids_cypher)
+            .context("read_canonical_observation_claim_rows: evidence scan")?;
+        if ev_rows.is_empty() {
+            return Ok(Some(vec![]));
+        }
+        let eids: Vec<String> = ev_rows
+            .iter()
+            .filter_map(|r| r.get("eid").and_then(|c| c.as_str()).map(String::from))
+            .collect();
+        let obs_ids: Vec<String> = eids.iter().map(|e| format!("obs:{e}")).collect();
+        let claim_ids: Vec<String> = eids.iter().map(|e| format!("clm:compat:{e}")).collect();
+        let obs_list = obs_ids
+            .iter()
+            .map(|s| format!("'{s}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let claim_list = claim_ids
+            .iter()
+            .map(|s| format!("'{s}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // One row per evidence id: fetch Observation + Claim in a
+        // single Cypher query using two MATCH steps (no string
+        // concatenation needed).
+        let cypher = format!(
+            "MATCH (o:Observation) WHERE o.id IN [{obs_list}] \
+             MATCH (c:Claim) WHERE c.id IN [{claim_list}] \
+             RETURN o.id, o.kind, o.claim, o.path, o.start_line, o.end_line, \
+                    o.tool_name, o.tool_version, o.rule_id, o.content_hash, o.observed_at, \
+                    c.id, c.statement, c.confidence, c.observation_ids, c.derived_from, \
+                    c.fused, c.status;"
+        );
+        let rows = <LbugStore as RawGraphQuery>::query(self, &cypher)
+            .context("read_canonical_observation_claim_rows")?;
+        Ok(Some(rows))
     }
 }
 

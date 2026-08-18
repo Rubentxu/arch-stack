@@ -10,6 +10,12 @@
 -- - `(:Claim)` compat rows exist per Evidence id (1:1, namespaced
 --   `clm:compat:<evidence_id>`, fused=false).
 --
+-- Column names mirror the public carrier structs in
+-- `archctl/src/observation_claim.rs` (Observation: rule_id,
+-- content_hash, observed_at; Claim: statement, observation_ids,
+-- derived_from, status) so the canonical read path can reconstruct
+-- the structs 1:1 from row values.
+--
 -- ADR-049 (Evidence/Observation/Claim/Confidence model) closes its
 -- `Aceptado (parcial)` once both tables are populated.
 --
@@ -26,6 +32,9 @@ CREATE NODE TABLE Observation (
     end_line INT64,
     tool_name STRING,
     tool_version STRING,
+    rule_id STRING,
+    content_hash STRING,
+    observed_at STRING,
     confidence DOUBLE,
     source_origin STRING,
     written_via_backfill BOOLEAN,
@@ -34,9 +43,11 @@ CREATE NODE TABLE Observation (
 
 CREATE NODE TABLE Claim (
     id STRING PRIMARY KEY,
-    text STRING,
+    statement STRING,
     fused BOOLEAN,
     confidence DOUBLE,
-    evidence_ids STRING[],
+    observation_ids STRING[],
+    derived_from STRING[],
+    status STRING,
     written_at TIMESTAMP
 );

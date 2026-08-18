@@ -156,3 +156,173 @@ fn json_roundtrip() {
     assert_eq!(obs_json, obs_json2, "Observation must roundtrip losslessly");
     assert_eq!(claim_json, claim_json2, "Claim must roundtrip losslessly");
 }
+
+// ---------------------------------------------------------------------------
+// S-C1 — canonical read path: dual-write seam produces Observation +
+// Claim rows that the canonical reader returns (post-v4 migration).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn canonical_read_returns_dual_written_observation_and_claim() {
+    use archctl::evidence::{Evidence, EvidenceKind, EvidenceStatus, SourceOrigin};
+    use archctl::store::EvidenceOps;
+
+    let (mut store, _tmp) = test_store();
+
+    // put_evidence triggers the P2-09b dual-write seam: it writes the
+    // Evidence row AND the corresponding Observation + compat Claim
+    // rows (canonical tables exist because test_store() ran init(),
+    // which applies the v4 migration).
+    let ev = Evidence {
+        id: "ev:canonical:1".to_string(),
+        kind: EvidenceKind::Structural,
+        claim: "canonical read test".to_string(),
+        path: "src/lib.rs".to_string(),
+        start_line: 5,
+        end_line: 9,
+        start_byte: Some(0),
+        end_byte: Some(4),
+        tool_name: "ast-grep".to_string(),
+        tool_version: "0.1".to_string(),
+        rule_id: "test:canonical".to_string(),
+        language: "rust".to_string(),
+        observed_at: "2026-08-01T00:00:00Z".to_string(),
+        source_origin: SourceOrigin::UserWorkspace,
+        content_hash: Some("sha256:canonical".to_string()),
+        text_preview: Some("fn a".to_string()),
+        props: Default::default(),
+        status: EvidenceStatus::Accepted,
+    };
+    let result = store
+        .put_evidence(std::slice::from_ref(&ev))
+        .expect("put_evidence");
+    assert_eq!(result.evidence_rows, 1);
+    assert_eq!(
+        result.observation_rows, 1,
+        "dual-write must create Observation"
+    );
+    assert_eq!(result.claim_rows, 1, "dual-write must create Claim");
+
+    // Wire the ElementVersion → Evidence link so the canonical read
+    // (and list_evidence_for_versions) can find this version's rows.
+    store
+        .execute_raw_cypher_for_test(
+            "MERGE (v:ElementVersion {id: 'vid-canonical'}) ON CREATE SET v.element_id = 'el:canonical', v.name = 'Canonical', v.status = 'active', v.origin = 'ast-grep', v.confidence = 0.9",
+        )
+        .expect("seed version");
+    store
+        .execute_raw_cypher_for_test(
+            "MATCH (v:ElementVersion {id: 'vid-canonical'}), (e:Evidence {id: 'ev:canonical:1'}) CREATE (v)-[:SUPPORTED_BY]->(e)",
+        )
+        .expect("link version to evidence");
+
+    let (observations, claims) =
+        observations_and_claims_for_version(&store, "vid-canonical").expect("read");
+
+    assert_eq!(observations.len(), 1, "one Observation per Evidence");
+    assert_eq!(claims.len(), 1, "one compat Claim per Evidence");
+
+    // Canonical Observation carries the fields copied from Evidence
+    // at dual-write time (including rule_id / content_hash / observed_at).
+    let obs = &observations[0];
+    assert_eq!(obs.id, "obs:ev:canonical:1");
+    assert_eq!(obs.kind, "structural");
+    assert_eq!(obs.claim, "canonical read test");
+    assert_eq!(obs.rule_id, "test:canonical");
+    assert_eq!(obs.content_hash, "\"sha256:canonical\"");
+    assert_eq!(obs.observed_at, "2026-08-01T00:00:00Z");
+
+    // Canonical Claim carries statement / observation_ids / derived_from / status.
+    let claim = &claims[0];
+    assert_eq!(claim.id, "clm:compat:ev:canonical:1");
+    assert_eq!(claim.statement, "canonical read test");
+    assert_eq!(
+        claim.observation_ids,
+        vec!["obs:ev:canonical:1".to_string()]
+    );
+    assert_eq!(claim.derived_from, vec!["ev:canonical:1".to_string()]);
+    assert_eq!(claim.status, "accepted");
+    assert!(!claim.fused);
+    assert!((claim.confidence - 1.0).abs() < f64::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// S-C2 — mixed state: pre-upgrade Evidence (no Observation row) falls
+// back to compat derivation; dual-written Evidence uses canonical.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mixed_state_merges_canonical_and_compat_per_evidence() {
+    use archctl::evidence::{Evidence, EvidenceKind, EvidenceStatus, SourceOrigin};
+    use archctl::store::EvidenceOps;
+
+    let (mut store, _tmp) = test_store();
+
+    // Row 1: dual-written (canonical Observation + Claim exist).
+    let ev1 = Evidence {
+        id: "ev:mixed:1".to_string(),
+        kind: EvidenceKind::Structural,
+        claim: "dual-written row".to_string(),
+        path: "src/a.rs".to_string(),
+        start_line: 1,
+        end_line: 2,
+        start_byte: None,
+        end_byte: None,
+        tool_name: "ast-grep".to_string(),
+        tool_version: "0.1".to_string(),
+        rule_id: "test:rule1".to_string(),
+        language: "rust".to_string(),
+        observed_at: "2026-08-01T00:00:00Z".to_string(),
+        source_origin: SourceOrigin::UserWorkspace,
+        content_hash: Some("sha256:mixed1".to_string()),
+        text_preview: None,
+        props: Default::default(),
+        status: EvidenceStatus::Accepted,
+    };
+    store
+        .put_evidence(std::slice::from_ref(&ev1))
+        .expect("put_evidence 1");
+
+    // Row 2: pre-upgrade (raw CREATE — no canonical Observation).
+    store
+        .execute_raw_cypher_for_test(
+            "CREATE (:Evidence {id: 'ev:mixed:2', kind: 'lexical', claim: 'pre-upgrade row', path: 'src/b.rs', start_line: 10, end_line: 12, tool_name: 'ast-grep', tool_version: '0.1', rule_id: 'test:rule2', props: '{\"status\":\"drafted\"}', content_hash: 'sha256:mixed2', observed_at: timestamp('2026-08-01T00:00:00Z')})",
+        )
+        .expect("seed raw evidence 2");
+
+    // Wire both to the same version.
+    store
+        .execute_raw_cypher_for_test(
+            "MERGE (v:ElementVersion {id: 'vid-mixed'}) ON CREATE SET v.element_id = 'el:mixed', v.name = 'Mixed', v.status = 'active', v.origin = 'ast-grep', v.confidence = 0.9",
+        )
+        .expect("seed version");
+    store
+        .execute_raw_cypher_for_test(
+            "MATCH (v:ElementVersion {id: 'vid-mixed'}), (e:Evidence) WHERE e.id IN ['ev:mixed:1', 'ev:mixed:2'] CREATE (v)-[:SUPPORTED_BY]->(e)",
+        )
+        .expect("link both");
+
+    let (observations, claims) =
+        observations_and_claims_for_version(&store, "vid-mixed").expect("read");
+
+    // Both evidence rows surface.
+    assert_eq!(observations.len(), 2);
+    assert_eq!(claims.len(), 2);
+
+    // Canonical row for ev:mixed:1 carries the dual-written fields.
+    let obs1 = observations
+        .iter()
+        .find(|o| o.id == "obs:ev:mixed:1")
+        .expect("obs1");
+    assert_eq!(obs1.rule_id, "test:rule1");
+    assert_eq!(obs1.content_hash, "\"sha256:mixed1\"");
+
+    // Compat-derived row for ev:mixed:2 (no canonical Observation —
+    // the compat fallback fires; status drafted → confidence 0.0).
+    let claim2 = claims
+        .iter()
+        .find(|c| c.id == "clm:compat:ev:mixed:2")
+        .expect("claim2");
+    assert_eq!(claim2.status, "drafted");
+    assert!((claim2.confidence - 0.0).abs() < f64::EPSILON);
+}

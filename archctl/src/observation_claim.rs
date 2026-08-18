@@ -168,12 +168,153 @@ pub fn observations_and_claims_for_version(
     // Validate id (use crate::graph::validate_identifier)
     crate::graph::validate_identifier(version_id)
         .map_err(|e| ObservationError::InvalidVersionId(e.to_string()))?;
+
+    // Evidence is always the base set (source of truth for what
+    // belongs to this version).
     let evidence = repo
         .list_evidence_for_versions(std::slice::from_ref(&version_id.to_string()))
         .map_err(|e| ObservationError::Store(e.to_string()))?;
-    let observations: Vec<Observation> = evidence.iter().map(observation_from_evidence).collect();
-    let claims: Vec<Claim> = evidence.iter().map(compat_claim_from_evidence).collect();
+
+    // P2-09b canonical path: when the `:Observation` / `:Claim`
+    // tables exist (post-v4 migration), read the persisted rows.
+    // Merge per-evidence: canonical where present, P2-09a compat
+    // derivation where missing (pre-upgrade row not yet backfilled).
+    let canonical = repo
+        .read_canonical_observation_claim_rows(std::slice::from_ref(&version_id.to_string()))
+        .map_err(|e| ObservationError::Store(e.to_string()))?;
+
+    // Index canonical rows by evidence id (strip the `obs:` /
+    // `clm:compat:` id prefixes).
+    let mut canonical_obs: std::collections::HashMap<String, Observation> =
+        std::collections::HashMap::new();
+    let mut canonical_claims: std::collections::HashMap<String, Claim> =
+        std::collections::HashMap::new();
+    if let Some(rows) = canonical {
+        for row in &rows {
+            if let Some(obs) = row_to_observation(row)
+                && let Some(evid) = obs.id.strip_prefix("obs:")
+            {
+                canonical_obs.insert(evid.to_string(), obs);
+            }
+            if let Some(claim) = row_to_claim(row) {
+                // The compat claim's id is `clm:compat:<evidence_id>`.
+                let key = claim
+                    .id
+                    .strip_prefix("clm:compat:")
+                    .map(String::from)
+                    .or_else(|| claim.derived_from.first().cloned());
+                if let Some(evid) = key {
+                    canonical_claims.insert(evid, claim);
+                }
+            }
+        }
+    }
+
+    // Per-evidence merge: canonical row when available, compat
+    // derivation otherwise.
+    let mut observations = Vec::with_capacity(evidence.len());
+    let mut claims = Vec::with_capacity(evidence.len());
+    for ev in &evidence {
+        observations.push(
+            canonical_obs
+                .get(&ev.id)
+                .cloned()
+                .unwrap_or_else(|| observation_from_evidence(ev)),
+        );
+        claims.push(
+            canonical_claims
+                .get(&ev.id)
+                .cloned()
+                .unwrap_or_else(|| compat_claim_from_evidence(ev)),
+        );
+    }
     Ok((observations, claims))
+}
+
+/// Reconstruct a canonical `Observation` from a row produced by
+/// `DiagramRepository::read_canonical_observation_claim_rows`.
+///
+/// Column names: `o.id, o.kind, o.claim, o.path, o.start_line,
+/// o.end_line, o.tool_name, o.tool_version, o.rule_id,
+/// o.content_hash, o.observed_at`.
+fn row_to_observation(row: &crate::row::Row) -> Option<Observation> {
+    let str_col = |k: &str| {
+        row.get(k)
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let id = str_col("o.id");
+    if id.is_empty() {
+        return None;
+    }
+    Some(Observation {
+        id,
+        kind: str_col("o.kind"),
+        claim: str_col("o.claim"),
+        path: str_col("o.path"),
+        start_line: row
+            .get("o.start_line")
+            .and_then(|c| c.as_i64())
+            .unwrap_or(0)
+            .max(0) as u64,
+        end_line: row
+            .get("o.end_line")
+            .and_then(|c| c.as_i64())
+            .unwrap_or(0)
+            .max(0) as u64,
+        tool_name: str_col("o.tool_name"),
+        tool_version: str_col("o.tool_version"),
+        rule_id: str_col("o.rule_id"),
+        content_hash: str_col("o.content_hash"),
+        observed_at: str_col("o.observed_at"),
+    })
+}
+
+/// Reconstruct a canonical `Claim` from a row produced by
+/// `DiagramRepository::read_canonical_observation_claim_rows`.
+///
+/// Column names: `c.id, c.statement, c.confidence, c.observation_ids,
+/// c.derived_from, c.fused, c.status`.
+fn row_to_claim(row: &crate::row::Row) -> Option<Claim> {
+    let str_col = |k: &str| {
+        row.get(k)
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let id = str_col("c.id");
+    if id.is_empty() {
+        return None;
+    }
+    let list_col = |k: &str| -> Vec<String> {
+        row.get(k)
+            .and_then(|c| c.as_list())
+            .map(|cells| {
+                cells
+                    .iter()
+                    .filter_map(|c| c.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    Some(Claim {
+        id,
+        statement: str_col("c.statement"),
+        confidence: row
+            .get("c.confidence")
+            .and_then(|c| c.as_f64())
+            .unwrap_or(0.0),
+        observation_ids: list_col("c.observation_ids"),
+        derived_from: list_col("c.derived_from"),
+        fused: row
+            .get("c.fused")
+            .and_then(|c| c.as_bool())
+            .unwrap_or(false),
+        status: str_col("c.status"),
+        // Canonical rows carry no compat-mode warning.
+        warnings: Vec::new(),
+    })
 }
 
 // ---------------------------------------------------------------------------
