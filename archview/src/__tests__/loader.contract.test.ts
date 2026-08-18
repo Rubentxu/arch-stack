@@ -61,7 +61,9 @@ const CONTRACT_FIXTURE = {
 
 describe("contract alignment — executable bundle (D4)", () => {
   it("normalizeBundle does not throw on schema-valid fixture", () => {
-    expect(() => normalizeBundle(CONTRACT_FIXTURE, "contract-fixture")).not.toThrow();
+    expect(() =>
+      normalizeBundle(CONTRACT_FIXTURE, "contract-fixture"),
+    ).not.toThrow();
   });
 
   it("nodes.length > 0 after normalization", () => {

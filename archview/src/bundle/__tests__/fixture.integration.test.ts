@@ -77,4 +77,25 @@ describe("viewer-bundle fixture integration (R6)", () => {
     const api = bundle.nodes.find((n) => n.id === "c4:container:api")!;
     expect(api.meta?.evidenceRefs).toEqual(["ev:1"]);
   });
+
+  it("propagates manifest.strict → read-only mode (Item 28)", () => {
+    // Regular bundle (fixture manifest has no strict field) → undefined.
+    const regular = normalizeBundle(
+      assembleBundle(),
+      "fixture://viewer-bundle",
+    );
+    expect(regular.strict).toBeUndefined();
+
+    // Strict bundle → true. Non-C4 shapes never set strict.
+    const strictRaw = assembleBundle();
+    (strictRaw.manifest as Record<string, unknown>).strict = true;
+    const strict = normalizeBundle(strictRaw, "fixture://viewer-bundle");
+    expect(strict.strict).toBe(true);
+
+    // Explicit strict:false behaves like absent → undefined.
+    const nonStrictRaw = assembleBundle();
+    (nonStrictRaw.manifest as Record<string, unknown>).strict = false;
+    const nonStrict = normalizeBundle(nonStrictRaw, "fixture://viewer-bundle");
+    expect(nonStrict.strict).toBeUndefined();
+  });
 });

@@ -71,6 +71,14 @@ export interface RendererBundle {
   /** Bundle shape that produced this normalized bundle. */
   rawKind: "call-graph" | "sequence" | "class-diagram" | "c4" | "unknown";
   /**
+   * True when the bundle was exported with `archctl diagram export
+   * --profile strict` (sanitized for sharing). Strict bundles are
+   * opened in read-only mode: source preview and editor handoff are
+   * disabled (evidence paths are relative and may not resolve).
+   * Only populated for `rawKind === "c4"`.
+   */
+  strict?: boolean;
+  /**
    * Original interactions, only populated for `rawKind === "sequence"`.
    * SequenceView uses this to render lifelines + arrows in time order.
    */
