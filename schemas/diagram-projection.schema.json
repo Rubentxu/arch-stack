@@ -49,6 +49,15 @@
         "evidenceCount": {
           "type": "integer",
           "minimum": 0
+        },
+        "strict": {
+          "type": "boolean",
+          "default": false
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 hex digest. Present only when strict=true."
         }
       }
     },
