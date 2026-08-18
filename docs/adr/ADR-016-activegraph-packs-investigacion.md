@@ -1,7 +1,10 @@
 # ADR-016 — Encaje de `activegraph-packs` en `archctl`
 
-**Estado:** Investigación cerrada. Decisiones pendientes.
-**Fecha:** 30 de julio de 2026.
+**Estado:** Investigación cerrada. Decisiones por bloque:
+- **B1 (Evidence graph model — Source → Evidence → ...):** Decidido y embodied en [ADR-017 §Schema migration runner](ADR-017-schema-migration-runner.md) (que a su vez implementa el B1 source/eval types via `archctl/src/migrations.rs`). Ver también P2-09a compat carriers (v1.58.0).
+- **B2 (Manifest + content_hash + static gates por scope):** Pendiente. Reopen trigger: ≥1 scope con gate estático rompiendo en CI real OR per-scope manifest-versioning requerido por Wave 3.
+- **B3 (Trust-by-origin en extractor — `archctl::evidence::extract`, `archctl::tsg`):** Pendiente. Reopen trigger: ≥1 disclosed extractor origin-confusion CVE OR ≥1 UAT report demostrando que `validate_identifier` no es suficiente.
+**Fecha:** 30 de julio de 2026 (investigación original); 2026-08-18 (Status clarification).
 **Investigado:** `https://github.com/yoheinakajima/activegraph-packs` rev `main`
 (143 commits, 28 packs, 9 docs, Apache-2.0).
 **Fuente única consolidada:** [docs/STATE.md](STATE.md) describe el estado de
