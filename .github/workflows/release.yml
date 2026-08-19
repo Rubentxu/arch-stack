@@ -96,7 +96,10 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # Must match local dev (v11.9.0): pnpm 9 misreads
+          # archview/pnpm-workspace.yaml (allowBuilds-only config) as a
+          # workspace root and fails with "packages field missing or empty".
+          version: 11
 
       - name: Setup Node
         uses: actions/setup-node@v4
