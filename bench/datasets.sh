@@ -23,6 +23,7 @@ datasets.sh — Manage archctl-bench dataset caches
 
 USAGE:
   bench/datasets.sh [--clone <name>] [--clone-all] [--validate] [--list] [--purge]
+                    [--populate-self-dogfood]
 
 ENV:
   DATASETS_FILE  path to datasets.toml (default: bench/datasets.toml)
@@ -130,6 +131,37 @@ purge() {
   echo "Done."
 }
 
+# Populate the self-dogfood dataset (archctl) by rsyncing the local
+# checkout into $CACHE_DIR/archctl, skipping git/target/node_modules so
+# the call-graph extractor can walk a clean source tree. Required before
+# smoke-matrix.sh rust archctl.
+#
+# Usage:
+#   bench/datasets.sh --populate-self-dogfood
+populate_self_dogfood() {
+  local target="$CACHE_DIR/archctl"
+  local src="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  if [[ ! -d "$src/archctl" ]]; then
+    echo "Error: archctl source not found at $src/archctl" >&2
+    exit 1
+  fi
+  if ! command -v rsync >/dev/null; then
+    echo "Error: rsync required for --populate-self-dogfood" >&2
+    exit 1
+  fi
+  mkdir -p "$target"
+  rsync -a --delete \
+    --exclude='.git/' \
+    --exclude='target/' \
+    --exclude='node_modules/' \
+    --exclude='dist/' \
+    --exclude='sddk/' \
+    --exclude='docs/reports/' \
+    --exclude='docs/sessions/' \
+    "$src/" "$target/"
+  echo "[populated] $target (HEAD source, no .git/target)"
+}
+
 # Parse CLI
 case "${1:-}" in
   --clone) clone_one "$2" "$(parse_datasets | grep -F "$2|" | head -1 | cut -d'|' -f2)" ;;
@@ -137,6 +169,7 @@ case "${1:-}" in
   --validate) validate ;;
   --list) list_datasets ;;
   --purge) purge ;;
+  --populate-self-dogfood) populate_self_dogfood ;;
   -h|--help|'') usage ;;
   *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
 esac

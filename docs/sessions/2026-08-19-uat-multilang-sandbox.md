@@ -50,8 +50,11 @@ el plan por fases.
 Capacidades por lenguaje (de `docs/CAPABILITIES.md` + datasets):
 `c4-discover` = cargo/npm strategies (rust, ts, js) · `call-graph` = rust, ts,
 python, go, java, kotlin · `class-diagram` = rust, ts, python, java ·
-`state-machine` = kotlin · `sequence` = sobre datos call-graph (mismos
-lenguajes) · `export/validate/strict` = repos C4 (rust, ts, js).
+`state-machine` = rust, ts, python (NO kotlin, no Java — la matriz
+original decía "kotlin" pero el código solo soporta 3 variantes; ver
+`archctl/src/code/state_machine.rs::Language`) · `sequence` = sobre datos
+call-graph (mismos lenguajes) · `export/validate/strict` = repos C4
+(rust, ts, js).
 
 | Repo (lang) | c4-discover → accept → explain → coverage | export + validate | strict + redaction | call-graph | class-diagram | sequence |
 |---|---|---|---|---|---|---|
@@ -65,7 +68,7 @@ lenguajes) · `export/validate/strict` = repos C4 (rust, ts, js).
 | echo (go) | — | — | — | ✓ | — | ✓ |
 | requests (python) | — | — | — | ✓ | ✓ | ✓ |
 | javapoet (java) | — | — | — | ✓ | ✓ | ✓ |
-| mockk (kotlin) | — | — | — | ✓ | — | ✓ (+state-machine) |
+| mockk (kotlin) | — | — | — | ✓ | — | ✓ |
 
 **Criterios de aceptación por celda**:
 

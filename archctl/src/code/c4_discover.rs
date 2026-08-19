@@ -411,8 +411,21 @@ pub fn apply(
         .map(|(element, metatype)| (element.id.clone(), metatype.clone()))
         .collect();
     if !of_type_pairs.is_empty() {
+        // Show a sample id on failure so the operator can localise a bad
+        // OF_TYPE pair without having to reproduce against the original
+        // source tree (vueuse 2026-08-19: c4 id with `@` slipped past the
+        // graph validate and masked the real cause under "batch_link_of_type").
+        let sample_id = of_type_pairs
+            .first()
+            .map(|(id, _)| id.clone())
+            .unwrap_or_default();
         ElementRepository::batch_link_of_type(s, &of_type_pairs)
-            .context("c4_discover batch_link_of_type")?;
+            .with_context(|| {
+                format!(
+                    "c4_discover batch_link_of_type (sample_id={sample_id:?}, n={})",
+                    of_type_pairs.len()
+                )
+            })?;
     }
 
     // ── Phase 4: Evidence writes (kept as-is, per-evidence loop inside tx) ────

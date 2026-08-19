@@ -246,7 +246,7 @@ fi
 # 9.2 call-graph sobre repo Go (soportado desde M30) -> extracción real,
 # rápida. El apply-path Go se cubre en smoke_go_apply_fixture (fixture
 # pequeño); el apply del repo completo es lento por writer perf (M32).
-if [[ -d /datasets/labstack ]]; then
+if [[ -d /datasets/labstack/echo ]]; then
   F=$(archctl code call-graph --cwd /datasets/labstack/echo --json 2>/dev/null | jq ".project.filesScanned")
   [ "${F:-0}" -gt 0 ] || { echo "NO_ERR92"; exit 1; }
 fi

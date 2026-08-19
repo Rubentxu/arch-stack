@@ -89,6 +89,31 @@ if ! command -v cargo >/dev/null 2>&1; then
     echo "verify-local: cargo not found; install Rust via rustup" >&2
     exit 2
 fi
+# Resolve the archctl binary path: prefer $ARCHCTL_BIN env, then the
+# cargo target-dir declared in ~/.cargo/config.toml (global override),
+# then the legacy in-tree target. The in-tree path is stale on machines
+# that set `target-dir` globally (the host's `archctl/target/release/`
+# is an outdated v1.45.0 build that lies about capabilities). See
+# docs/STATE.md "Known issues".
+CARGO_TARGET_DIR_FROM_CONFIG=""
+if [ -f "$HOME/.cargo/config.toml" ] && command -v python3 >/dev/null 2>&1; then
+    CARGO_TARGET_DIR_FROM_CONFIG=$(python3 -c "
+import sys, re
+try:
+    text = open('$HOME/.cargo/config.toml').read()
+except OSError:
+    sys.exit(0)
+m = re.search(r'^target-dir\s*=\s*\"([^\"]+)\"', text, re.M)
+if m: print(m.group(1))
+")
+fi
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${CARGO_TARGET_DIR_FROM_CONFIG:-${REPO_ROOT}/archctl/target}}"
+ARCHCTL_REAL="${ARCHCTL_BIN:-${CARGO_TARGET_DIR}/release/archctl}"
+if [ ! -x "$ARCHCTL_REAL" ]; then
+    echo "verify-local: archctl binary not found at $ARCHCTL_REAL" >&2
+    echo "  hint: cargo build --release, or set ARCHCTL_BIN to the right path" >&2
+    exit 2
+fi
 if [ "$MODE" = "full" ]; then
     if ! command -v pnpm >/dev/null 2>&1; then
         echo "verify-local: pnpm not found; required for --full web gates" >&2
@@ -104,7 +129,7 @@ fi
     run_gate cargo fmt --check
     # Doctor mirrors the CI step: build release, then run from repo root.
     run_gate cargo build --quiet --release
-    run_gate "$REPO_ROOT/archctl/target/release/archctl" doctor --scopes code --cwd "$REPO_ROOT"
+    run_gate "$ARCHCTL_REAL" doctor --scopes code --cwd "$REPO_ROOT"
 )
 
 # ---- dependency fitness ratchet (P1-09, report-only with baseline) ---------
@@ -114,7 +139,7 @@ run_gate "$REPO_ROOT/scripts/check-dep-fitness.sh"
 # Regenerate markdown to a temp file and diff against the committed docs/CAPABILITIES.md.
 # The binary uses the process cwd; run from repo root so docs/CAPABILITIES.md resolves.
 run_gate bash -c '
-    archctl/target/release/archctl capabilities --format markdown > /tmp/capabilities_fresh.md || exit 1
+    '"$ARCHCTL_REAL"' capabilities --format markdown > /tmp/capabilities_fresh.md || exit 1
     diff -q docs/CAPABILITIES.md /tmp/capabilities_fresh.md || { echo "verify-local: docs/CAPABILITIES.md is stale. Run: archctl capabilities --format markdown > docs/CAPABILITIES.md"; exit 1; }
 '
 
@@ -151,7 +176,7 @@ if [ "$MODE" = "full" ]; then
 
     # ---- E2E suites (M29, ADR-034) -------------------------------------------
     # Install E2E: always (no external deps beyond the release binary).
-    run_gate "$REPO_ROOT/e2e/install_e2e.sh" --bin "$REPO_ROOT/archctl/target/release/archctl"
+    run_gate "$REPO_ROOT/e2e/install_e2e.sh" --bin "$ARCHCTL_REAL"
     # Render E2E: only when playwright is available.
     if python3 -c "import playwright" 2>/dev/null; then
         run_gate python3 "$REPO_ROOT/e2e/render_e2e.py" --samples-only
