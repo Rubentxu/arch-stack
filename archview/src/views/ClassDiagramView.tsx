@@ -52,8 +52,8 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
   onMount(() => {
     renderer = new GraphRenderer({
       container: containerRef,
-      width: containerRef.clientWidth || 800,
-      height: containerRef.clientHeight || 600,
+      width: containerRef?.clientWidth || 800,
+      height: containerRef?.clientHeight || 600,
       layout: {
         type: "dagre",
         rankdir: "LR",
