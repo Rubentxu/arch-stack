@@ -459,8 +459,8 @@ pub trait EvaluationRepository: Send + Sync {
     fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()>;
 }
 
-/// Diagram read port (P1-03). Replaces the four `format!("MATCH … RETURN …")`
-/// blocks in `diagram::queries` with typed reads that return owned domain
+/// Diagram read port (P1-03). Replaces the former `diagram::queries` free
+/// functions (removed in v1.69.0) with typed reads that return owned domain
 /// structs.
 pub trait DiagramRepository: Send + Sync {
     fn list_elements(

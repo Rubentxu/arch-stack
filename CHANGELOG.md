@@ -1,3 +1,18 @@
+## [1.69.0] — 2026-08-19
+
+### Removed
+- **Deprecated API sweep** (deuda D2 de la auditoría 2026-08-19):
+  - `archctl::diagram::queries` module eliminado — los re-exports
+    `ElementRow`/`SemanticEdgeRow`/`VersionPropsRow` (deprecated desde
+    1.43.0) se importan ahora desde `archctl::graph::` (13 call sites
+    migrados: project/*, e2e tests).
+  - `evidence::extract_with_system_clock` (deprecated desde 0.2.0) —
+    usar `extract(..., clock)`.
+  - `evidence::put` (deprecated desde 0.2.0) — usar
+    `put_with_clock(..., clock)`.
+  - `manifests/diagram.toml` y `manifests/evidence.toml` actualizados.
+  - Breaking change — semver minor (precedente v1.40.0 stack removal).
+
 ## [1.68.0] — 2026-08-19
 
 ### Added

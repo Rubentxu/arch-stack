@@ -9,7 +9,7 @@
 
 use archctl::diagram::project::mermaid::project as project_mermaid;
 use archctl::diagram::project_selector::ProjectSelector;
-use archctl::diagram::queries::{ElementRow, SemanticEdgeRow};
+use archctl::graph::{ElementRow, SemanticEdgeRow};
 use archctl::render::mermaid as render_mermaid;
 
 fn make_element(id: &str, kind: &str, name: &str, category: &str) -> ElementRow {

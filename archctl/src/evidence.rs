@@ -286,34 +286,6 @@ pub fn extract(
     })
 }
 
-/// Backwards-compatible shim that uses the production `SystemClock`.
-///
-/// New call sites should use [`extract_with_clock`] and inject a
-/// clock — that is the only path that lets tests assert on the
-/// `observed_at` field without `chrono::Utc::now()` race conditions.
-#[deprecated(
-    since = "0.2.0",
-    note = "use `extract(..., clock)` and inject a Clock; this shim uses SystemClock"
-)]
-pub fn extract_with_system_clock(
-    root: &Path,
-    lang: Lang,
-    pattern_src: &str,
-    claim: &str,
-    kind: EvidenceKind,
-    fs: &dyn Filesystem,
-) -> Result<ExtractionResult> {
-    extract(
-        root,
-        lang,
-        pattern_src,
-        claim,
-        kind,
-        &crate::clock::SystemClock,
-        fs,
-    )
-}
-
 fn evidence_from_match<D: Doc>(
     lang: Lang,
     rel_path: &str,
@@ -552,26 +524,6 @@ pub fn put_with_source(
     }
 
     Ok(written)
-}
-
-/// Backwards-compatible shim that omits the `clock` parameter.
-///
-/// New code should use [`put_with_clock`] for symmetry with
-/// [`extract`]. Today the shim and the canonical function are
-/// behaviourally identical — the clock only matters at extraction
-/// time, not at persistence time — but keeping the parameter in the
-/// signature prevents callers from accidentally bypassing the
-/// hexagonal clock port in the future.
-#[deprecated(
-    since = "0.2.0",
-    note = "use `put_with_clock(..., clock)` for consistency with the Clock port"
-)]
-pub fn put(project_dir: &Path, evidence: &[Evidence]) -> Result<usize> {
-    if evidence.is_empty() {
-        return Ok(0);
-    }
-    let mut store = crate::store::open_default(project_dir).context("open graph store")?;
-    Ok(store.put_evidence(evidence)?.evidence_rows)
 }
 
 #[cfg(test)]

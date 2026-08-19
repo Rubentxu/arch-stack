@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use archctl::diagram::project::OutputFormat;
 use archctl::diagram::project::project_dsl;
 use archctl::diagram::project_selector::ProjectSelector;
-use archctl::diagram::queries::{ElementRow, SemanticEdgeRow};
+use archctl::graph::{ElementRow, SemanticEdgeRow};
 use archctl::store::{GraphStore, LbugStore};
 
 // ──────────────────────────────────────────────────────────────────────────────

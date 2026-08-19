@@ -17,7 +17,6 @@ pub mod export_types;
 pub mod hash;
 pub mod project;
 pub mod project_selector;
-pub mod queries;
 pub mod schema_embed;
 pub mod selector;
 pub mod validate;

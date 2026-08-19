@@ -13,7 +13,7 @@
 
 use archctl::diagram::project::plantuml::project as project_plantuml;
 use archctl::diagram::project_selector::ProjectSelector;
-use archctl::diagram::queries::{ElementRow, SemanticEdgeRow};
+use archctl::graph::{ElementRow, SemanticEdgeRow};
 use archctl::render::plantuml as render_plantuml;
 
 fn make_element(id: &str, kind: &str, name: &str, category: &str) -> ElementRow {

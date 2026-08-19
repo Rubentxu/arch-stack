@@ -33,8 +33,6 @@ public_symbols = [
   "EvidenceStatus",
   "ExtractionResult",
   "extract",
-  "extract_with_system_clock",
-  "put",
   "put_with_clock",
   "put_with_source",
   "default_for_origin",
@@ -50,7 +48,7 @@ public_symbols = [
 # satisfy a stale contract.
 must_hold = [
   "pub fn extract(",
-  "pub fn put(",
+  "pub fn put_with_clock(",
   "pub struct Evidence",
   "pub enum EvidenceKind",
   "pub enum EvidenceStatus",
