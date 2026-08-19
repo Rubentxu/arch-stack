@@ -22,6 +22,7 @@ import {
 } from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import { GraphRenderer } from "../renderer/g6";
+import { LR_LAYERED } from "../renderer/layout-presets";
 import {
   buildPackageEdges,
   detectCycles,
@@ -94,13 +95,8 @@ export const PackageView: Component<PackageViewProps> = (props) => {
       container: containerRef,
       width: containerRef?.clientWidth || 800,
       height: containerRef?.clientHeight || 600,
-      layout: {
-        type: "dagre",
-        rankdir: "LR",
-        align: "UL",
-        nodesep: 40,
-        ranksep: 60,
-      },
+      // M19: ELK layered in Web Worker, left-to-right.
+      layoutOptions: LR_LAYERED,
       onNodeClick: (id) => {
         props.onSelect(id);
       },

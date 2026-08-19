@@ -27,6 +27,7 @@ import {
 } from "solid-js";
 import type { GraphBundle, GraphNode } from "../bundle/loader";
 import { GraphRenderer } from "../renderer/g6";
+import { TB_LAYERED } from "../renderer/layout-presets";
 import { diffElements, driftCounts, type ElementDiff } from "./DriftGraph";
 
 export interface DriftViewProps {
@@ -84,13 +85,8 @@ export const DriftView: Component<DriftViewProps> = (props) => {
       container: containerRef,
       width: containerRef?.clientWidth || 800,
       height: containerRef?.clientHeight || 600,
-      layout: {
-        type: "dagre",
-        rankdir: "TB",
-        align: "UL",
-        nodesep: 30,
-        ranksep: 60,
-      },
+      // M19: ELK layered in Web Worker, top-to-bottom.
+      layoutOptions: TB_LAYERED,
       onNodeClick: (id) => {
         props.onSelect(id);
       },

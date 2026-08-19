@@ -27,6 +27,7 @@ import {
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import type { SidebarStats } from "../components/Sidebar";
 import { GraphRenderer } from "../renderer/g6";
+import { LR_LAYERED } from "../renderer/layout-presets";
 import {
   computeImpact,
   impactCount as countImpact,
@@ -116,13 +117,8 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
       container: containerRef,
       width: containerRef?.clientWidth || 800,
       height: containerRef?.clientHeight || 600,
-      layout: {
-        type: "dagre",
-        rankdir: "LR",
-        align: "UL",
-        nodesep: 30,
-        ranksep: 80,
-      },
+      // M19: ELK layered in Web Worker, left-to-right.
+      layoutOptions: LR_LAYERED,
       onNodeClick: (id) => {
         setFocusId(id);
         props.onSelect(id);
