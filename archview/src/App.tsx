@@ -172,11 +172,27 @@ export const App: Component = () => {
       <header class="topbar">
         <h1>archview</h1>
         <nav class="bundle-loader">
-          <For each={SAMPLE_BUNDLES}>
-            {(s) => (
-              <button onClick={() => void handleLoad(s.url)}>{s.label}</button>
-            )}
-          </For>
+          {/* M17.C2 / F1: 7 sample buttons used to take ~700px and
+              pushed the nav history off-screen. A single <select>
+              reclaims the width. Loading fires on change so there
+              is no extra click. */}
+          <select
+            class="sample-select"
+            disabled={driftMode()}
+            onChange={(e) => {
+              const url = e.currentTarget.value;
+              if (url) void handleLoad(url);
+              // Reset to placeholder so the same sample can be re-loaded
+              // (otherwise selecting the current value is a no-op).
+              e.currentTarget.value = "";
+            }}
+            aria-label="Open a sample bundle"
+          >
+            <option value="">Open sample…</option>
+            <For each={SAMPLE_BUNDLES}>
+              {(s) => <option value={s.url}>{s.label}</option>}
+            </For>
+          </select>
           <input
             type="text"
             placeholder={

@@ -189,8 +189,21 @@ afterEach(() => {
   loadBundleMock.mockClear();
 });
 
+/**
+ * Pick a sample from the `<select>` (M17.C2 / F1). The select
+ * fires `onChange` with the bundle URL, so we synthesise a
+ * change event with the matching value and then dispatch the
+ * standard `change` event so SolidJS picks it up.
+ */
 function loadSample(label: string) {
-  fireEvent.click(screen.getByRole("button", { name: label }));
+  const select = screen.getByLabelText(
+    /open a sample bundle/i,
+  ) as HTMLSelectElement;
+  const option = [...select.options].find((o) => o.text === label);
+  if (!option) {
+    throw new Error(`sample option not found: ${label}`);
+  }
+  fireEvent.change(select, { target: { value: option.value } });
 }
 
 async function loadUrl(url: string) {
