@@ -1,3 +1,28 @@
+## [1.70.0] — 2026-08-19
+
+### Fixed
+- **UAT multi-lenguaje smoke fixes** (axum-rust + echo-go en sandbox
+  Podman, 2026-08-19):
+  - **Canonical keys con `@`** (closures Rust, `closure@53`): los ids
+    `cg:<key>` fallaban `validate_identifier` y `call-graph --apply`
+    abortaba. `graph::sanitize_identifier` aplicado en 13 sitios
+    (call-graph, class-diagram, sequence, state-machine) + test.
+  - **`store::batch_link_of_type`** tragaba errores con `let _` —
+    links OF_TYPE se perdían en silencio. Ahora propaga con contexto.
+  - **`EvidenceEntry.status`** ausente de
+    `schemas/diagram-projection.schema.json` — `diagram validate`
+    fallaba tras `evidence accept`. Schema 1.1.0 → 1.1.1.
+  - **`parse_from_selector`** solo reconocía `rust:`/`typescript:`/
+    `python:` — `sequence --from <canonical_key>` de go/java/kotlin
+    caía a `ByName`. Añadidos `go:`/`java:`/`kotlin:`/`javascript:`
+    + 2 tests.
+  - **Categoría `code` ausente** de los whitelists de relevance/
+    coverage/explain — repos go/java/kotlin (solo call-graph) no
+    aparecían. Añadida + routing `cg:`/`cd:` en explain.
+- Añadidos `bench/smoke-matrix.sh` + `bench/build-in-sandbox.sh`
+  (harness UAT sandbox) y doc de sesión
+  `docs/sessions/2026-08-19-uat-multilang-sandbox.md`.
+
 ## [1.69.0] — 2026-08-19
 
 ### Removed

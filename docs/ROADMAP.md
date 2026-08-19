@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.68.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) vía ADR-062; restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
-**Versión:** 2.10
+**Estado:** v1.70.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX) vía ADR-062; UAT smoke fixes multi-lenguaje (axum/echo) v1.70.0; restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
+**Versión:** 2.11
 **Fecha:** 19 de agosto de 2026
-**Cambios vs 2.9:** ADR-062 reconsidera ADR-056 en alcance parcial (precedente ADR-061): pasos 1–3 de su estrategia de migración sin LensSpec. Cycle log row para `wave-3-workbench-ux` (v1.68.0). ADR-056 → Aceptado (parcial).
+**Cambios vs 2.10:** Cycle log rows para `d2-deprecated-sweep` (v1.69.0) y `uat-smoke-fixes` (v1.70.0, PR #245): 5 bugs de producto UAT multi-lenguaje (sanitize canonical keys, OF_TYPE propagation, schema 1.1.1, sequence lang prefixes, categoría `code`).
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
@@ -978,6 +978,8 @@ Incluye:
 | `fusion-params` | `feat/fusion-params` (merged via PR #228) | `ab5e9ba` | **Cerrado** ✅ · tag `v1.66.0` · `--cutoff-days` + StalenessWeightedEvaluator::new + evaluador en seam |
 | `adr055-phase3-entropy` | `feat/adr055-phase3-entropy` (merged via PR #229) | `2ee1107` | **Cerrado** ✅ · tag `v1.67.0` · detección por entropía Shannon ≥4.0 bits/char + allowlist — **ADR-055 CERRADO** |
 | `wave-3-workbench-ux` | `feat/wave-3-workbench-ux` (merged via PR #231, squash `f9d76df`) | `f9d76df` | **Cerrado** ✅ · tag `v1.68.0` · ADR-062 (reconsideración ADR-056 alcance parcial, items 31–33): NavigationTarget + pila de navegación (breadcrumbs, back/forward), action palette (copy id, zoom C4, explain vía `GET /api/explain`, relations), semantic zoom Context↔Container↔Component por re-export — sin LensSpec (P3-05 sigue deferida; nivel "Code" con reopen trigger propio) · strict bundles degradan explain · fixes pre-existentes: flock flakiness diagram_export (serialización mutex) + version drift ADR-038 (1.68.0) · verify: archview 147 tests + archctl 1107 tests + clippy/fmt/doctor + verify-local PASS · debt-verify PASS_WITH_WARNINGS (0/0/0, 2 LOW) · A-lite, fallback-path (delegación sddk-* rota) |
+| `d2-deprecated-sweep` | `feat/d2-deprecated-sweep` (PR #235) | `11628e1` | **Cerrado** ✅ · tag `v1.69.0` · barrido deprecated (deuda D2 auditoría): `diagram::queries` eliminado (13 call sites → `crate::graph`), `evidence::put` + `extract_with_system_clock` eliminados, manifests sync · release pipeline reparado (PRs #236–#244: archview embed, runners, tag handling, SHA256SUMS) + self-update D5 |
+| `uat-smoke-fixes` | `feat/uat-smoke-fixes` (merged via PR #245, squash `8a150d6`) | `8a150d6` | **Cerrado** ✅ · tag `v1.70.0` · UAT multi-lenguaje (smoke axum-rust + echo-go en sandbox Podman): 5 bugs de producto — `sanitize_identifier` para canonical keys con `@` (13 sitios), `batch_link_of_type` propaga errores (OF_TYPE silenciosos), schema 1.1.1 (`EvidenceEntry.status`), prefixes go/java/kotlin/javascript en `parse_from_selector`, categoría `code` en relevance/coverage/explain · harness `bench/smoke-matrix.sh` + `bench/build-in-sandbox.sh` · validación: 54 binarios de test ok, clippy -D warnings, fmt, doctor 6 scopes 0 findings · nota: rel_id no-ASCII en class-diagram latente |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
