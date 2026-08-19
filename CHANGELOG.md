@@ -1,3 +1,16 @@
+## [1.73.0] — 2026-08-19
+
+### Fixed
+- **Sprint de consistencia post-UAT** (PR #252): `verify-local.sh` apuntaba
+  al binario stale `archctl/target/release/archctl` (v1.45.0 vs el real en
+  `~/.cargo/config.toml`); `bench/datasets.sh --populate-self-dogfood`
+  falta para que el smoke del repo archctl funcione sin rsync manual;
+  `smoke-matrix.sh accept_cell` pasaba vacuo con 0 evidences (falso
+  positivo); `human_loop_sandbox.sh` Fase 9.2 path check ignoraba
+  `/datasets/labstack/echo`; `c4_discover batch_link_of_type` error
+  ocultaba el id culpable; doc de sesión decía `state-machine = kotlin`
+  cuando el código solo soporta rust/typescript/python.
+
 ## [1.72.0] — 2026-08-19
 
 ### Fixed
