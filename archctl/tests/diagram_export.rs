@@ -13,6 +13,12 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
+/// Tests that export from the shared `tests/fixtures/class-diagram` project
+/// resolve to ONE XDG store (single-writer flock, ADR-010). Parallel
+/// subprocesses on that store collide ("another archctl process is running
+/// for this project"), so those tests serialize on a process-local mutex.
+static FIXTURE_EXPORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// SCN-030: Export from a directory with no .lbug graph database → exits non-zero.
 /// We use a temp directory that has no lbug database, so `store::open_default` fails.
 #[test]
@@ -213,6 +219,7 @@ fn export_deterministic_twice_byte_identical() {
 /// categories which are the only valid `diagram export` selectors.
 #[test]
 fn export_bundle_envelope_structurally_valid() {
+    let _guard = FIXTURE_EXPORT_LOCK.lock().unwrap();
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
 
     // Export with a valid C4 selector (container:*). Result is empty because
@@ -276,6 +283,7 @@ fn export_bundle_envelope_structurally_valid() {
 /// SCN-034: --profile strict emits manifest.strict=true and a checksum field.
 #[test]
 fn export_strict_profile_sets_manifest_strict_true() {
+    let _guard = FIXTURE_EXPORT_LOCK.lock().unwrap();
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
 
     let output = Command::new("cargo")
@@ -323,6 +331,7 @@ fn export_strict_profile_sets_manifest_strict_true() {
 /// SCN-035: --profile default (or absent) emits manifest.strict=false and no checksum.
 #[test]
 fn export_default_profile_has_no_strict_or_checksum() {
+    let _guard = FIXTURE_EXPORT_LOCK.lock().unwrap();
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
 
     let output = Command::new("cargo")
@@ -361,6 +370,7 @@ fn export_default_profile_has_no_strict_or_checksum() {
 /// SCN-036: --profile strict checksum is deterministic (same inputs → same checksum).
 #[test]
 fn export_strict_checksum_is_deterministic() {
+    let _guard = FIXTURE_EXPORT_LOCK.lock().unwrap();
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/class-diagram");
 
     let run_export = || {
