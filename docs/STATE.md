@@ -2,24 +2,24 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-18, post-release v1.59.0 (P2-10 intent vs reality MVP)
-> + housekeeping `ed5b6cb` (drop 2 obsolete P1-04 stashes).
+> Última actualización: 2026-08-19, post-release v1.67.0 (cierre Wave 3 items 19/22/27/28+29,
+> ADR-055 fases 1–3, CHANGELOG formalizado v1.60.0–v1.67.0).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `ed5b6cb` (housekeeping post-v1.59.0; latest release merge = `313f18b` for v1.59.0) |
-| Versión | `v1.59.0` (latest tag, P2-10) |
-| Tests | baseline `872 @ v1.48.0`; current `cargo test --features test-fixtures --quiet` re-cuenta en cada verify; clippy clean |
-| Working tree | clean (`main`, ahead of `origin/main` by housekeeping `ed5b6cb`) |
+| Tip | `331902a` (merge local de `2ee1107` PR #229; árboles idénticos, GitHub main en `2ee1107`) |
+| Versión | `v1.67.0` (latest tag, ADR-055 fase 3) |
+| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); re-cuenta en cada verify; clippy clean |
+| Working tree | clean (`main`); tags v1.65.0–v1.67.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | 49,200 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.59.0; incluye unit tests inline) |
-| LOC tests | 14,348 (`archctl/tests/**/*.rs`, integration) |
+| LOC src | 52,576 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.67.0; incluye unit tests inline) |
+| LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0, P2-01 → P2-10) — en `sddk/p-38e02210a9f14317/p2-*` |
-| Tags | 130 (v0.1.0 → v1.59.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
+| Tags | 138 (v0.1.0 → v1.67.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -94,6 +94,15 @@
 | `v1.57.0` | P2-08 | Task context compiler MVP — `archctl architecture context --task "..." [--budget-tokens N] [--top N] [--json]` with truncation and dangling-relation closure. |
 | `v1.58.0` | P2-09a | Observation / Claim compatibility carriers derived 1:1 from `EvidenceEntry`; `archctl architecture observe --version-id <VID>` read-only projection; preserves existing `Evidence` carrier contract. |
 | `v1.59.0` | P2-10 | Intent vs Reality MVP — `archctl architecture intent check --intent <file>` with 4-class delta (DeclaredAndPresent / DeclaredButMissing / ObservedUndeclared / KindMismatch); TOML intent format; self-dogfood via `archctl-intent.toml` declaring 17 bounded contexts. |
+| `v1.60.0` | fusion-engine-followups | Item 27 follow-ups: persistencia FusedClaims (migración v6), `ClaimEvaluator` (MaxMember + StalenessWeighted), `--persist`/`--evaluator`, explain 1.1 + coverage 1.1 (PR #214). |
+| `v1.61.0` | item-28-strict-archbundle | `--profile strict` en `diagram export` (paths relativos, checksum SHA-256, `manifest.strict`) + archview read-only para strict bundles (Item 29) — ADR-055 reopened via ADR-061 (PRs #215–#222). |
+| `v1.62.0` | item-27-residual | Fuse persiste por defecto (`--no-persist` opt-out) + `--expire-stale` GC + fix `parse_observed_at` (PR #223). |
+| `v1.63.0` | adr055-phase2-secret-scanner | `redact.rs` zero-dep: AWS/GitHub/Slack/JWT/private-key/URL/credenciales genéricas → `[REDACTED:<kind>]` (PR #224). |
+| `v1.64.0` | p2-09b-backfill-timestamp | Fix backfill v5 (filas pre-upgrade): normalizar `parse_observed_at` + wrap `timestamp()` (PR #225). |
+| (docs) | changelog-formal | CHANGELOG secciones por release v1.60.0–v1.64.0 (PR #226). |
+| `v1.65.0` | fuse-on-write | `recompute_fused_for_versions` persiste tras cada write de evidencia (seams `c4_discover`/`call_graph`) + limpieza de superseded (PR #227). |
+| `v1.66.0` | fusion-params | `--cutoff-days` configurable + `StalenessWeightedEvaluator::new` + evaluador configurable en seam (PR #228). |
+| `v1.67.0` | adr055-phase3-entropy | Detección por entropía Shannon (≥4.0 bits/char, len ≥32) + allowlist documentada (PR #229). **ADR-055 CERRADO** (fases 1–3). |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -134,7 +143,6 @@
 | Apache Arrow | Deferred | Bundle size >10MB AND JSON parsing bottleneck measured |
 | cosmos.gl (>100k nodos) | Deferred | Node count >100k AND G6 canvas FPS <30 |
 | [ADR-051](adr/ADR-051-loopback-workbench-session-security.md) loopback workbench session security | Deferred (ADR-051 accepted with Deferido 2026-08-18) | ≥1 disclosed loopback-session hijack vector (CVE or reproducible PoC) OR feature parity claim requiring per-session permission scoping |
-| [ADR-055](adr/ADR-055-sanitized-architecture-bundle.md) sanitized architecture bundle | **Abierto** (reopened 2026-08-18 por ADR-061) | Trigger actualizado: ≥1 stakeholder (interno o externo) necesitando compartir sin código fuente |
 | [ADR-056](adr/ADR-056-moldable-architecture-workbench.md) moldable architecture workbench (LensSpec) | Deferred (ADR-056 accepted with Deferido 2026-08-18; canonical anchor of ROADMAP §H3) | ≥2 consumers with LensSpec-translatable duplication OR a measured need (≥3 users reporting the same lens problem OR perf p99 breach traceable to view-strategy variance) |
 | SceneGraph abstraction | Deferred | ≥3 view types need shared scene model |
 | WIT Plugin SDK | Deferred | ≥1 third-party consumer registered |
@@ -216,7 +224,7 @@ Estado de la wave:
    policy metamodel (P2-05), fitness evaluator (P2-06), context relevance
    (P2-07), task context (P2-08), observation/claim carriers (P2-09a),
    intent vs reality (P2-10). All under `archctl architecture ...`.
-4. **Wave 3 (platform)** — pendiente (planning needed).
+4. **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine) y 28+29 (strict ArchBundle + archview read-only) CERRADOS v1.60.0–v1.67.0; restantes 30–34 (session token, NavigationTarget, action palette, semantic zoom, lens recommendation) pendientes.
 
 ## Comandos de verificación
 
@@ -246,43 +254,35 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 ## Próxima acción del usuario
 
-Wave 3 completo: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine)
-cerrados en `main` (PRs #211/#212/#213, commits `667a706`/`098a96d`/`3365abd`).
-El ciclo `fusion-engine-followups` (PR #214) cierra el loop del Item 27:
-persistencia de fused claims (migración v6 + `--persist`), evaluadores
-pluggables (`--evaluator max-member|staleness-weighted`) y surfacing en
-`architecture explain` (1.1) + `architecture coverage` (byFusedClaims, 1.1).
+Wave 3 parcial CERRADO: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion
+engine) y 28+29 (strict ArchBundle + archview read-only) — v1.60.0 a
+v1.67.0, todos taggeados (tags v1.65.0–v1.67.0 verificados en origin,
+2026-08-19). CHANGELOG formalizado con secciones por release.
 
-**Item 28 (strict ArchBundle) CERRADO** (v1.61.0, 2026-08-18): `--profile strict`
-en `diagram export` (paths relativos, checksum SHA-256, manifest.strict) +
-archview read-only para strict bundles. ADR-055 sigue OPEN para fase 2
-(pseudonymization, anti-secretos scanner).
+**ADR-055 CERRADO** (2026-08-18): fase 1 strict bundle (v1.61.0), fase 2
+scanner anti-secretos (v1.63.0), fase 3 entropía Shannon (v1.67.0).
+Out-of-scope documentado: report de redacciones, cutoff por proyecto (XDG).
 
-**Item 27 residual CERRADO** (v1.62.0 pendiente de tag): `architecture fuse`
-persiste por defecto (`--no-persist` para stdout-only) + `--expire-stale
-[--dry-run]` para GC de claims stale. Fix incluido: parseo del formato de
-timestamp de LadybugDB en `parse_observed_at` (sin él, todo claim persistido
-se marcaba stale).
+**Fusion engine COMPLETO** (v1.62.0–v1.66.0): persiste por defecto,
+`--expire-stale`, fuse-on-write desde extractores, `--cutoff-days` y
+evaluador configurable en el seam.
 
-**P2-09b backfill timestamp CERRADO** (v1.64.0 pendiente de tag): el backfill
-v5 saltaba filas pre-upgrade (lbug no hace implicit cast STRING→TIMESTAMP).
-Fix: `parse_observed_at` + wrap `timestamp()` en columnas TIMESTAMP
-(`written_at`), literal en columnas STRING (`observed_at`). Test de
-regresión con filas pre-upgrade. Eliminado el helper muerto
-`iso_to_lbug_timestamp`.
-
-**Fusion engine COMPLETO** (v1.65.0 + params v1.66.0 pendiente de tag):
-fuse-on-write desde los extractores + `--cutoff-days` configurable +
-evaluador configurable en el seam. Ya no hace falta `--persist` manual.
+Restante Wave 3 (catálogo `docs/arch-stack-proposals-2026-08-13/`):
+items 30–34 — session token, cross-view NavigationTarget, action palette,
+semantic zoom, lens recommendation experiment (solapa con ADR-056).
 
 Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed.
-- **ADR-055 sanitized architecture bundle** — **ABIERTO** (reopened 2026-08-18
-  por ADR-061). Fase 2: pseudonymization de filenames + scanner anti-secretos.
 - **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
   explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
-- **ADR-055 fase 3** — detección por entropía; allowlist por campo.
+- **B2/B3 ADR-016** — pendientes con reopen triggers en
+  `docs/adr/ADR-016-activegraph-packs-investigacion.md`.
+
+Pendientes menores out-of-scope:
+- Report de redacciones en strict bundles.
+- Persistir cutoff de staleness por proyecto (XDG).
+- Bump lbug (implicit cast STRING→TIMESTAMP o workaround documentado).
 
 Sigue válido el catálogo de items en
 `docs/arch-stack-proposals-2026-08-13/`.

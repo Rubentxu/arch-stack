@@ -1,6 +1,6 @@
 # ADR-055 — Sanitized Architecture Bundle compartible
 
-> **Estado:** Abierto — 2026-08-18 (reabierto por ADR-061)
+> **Estado:** Cerrado — 2026-08-18 (implementado: fase 1 strict bundle v1.61.0, fase 2 scanner anti-secretos v1.63.0, fase 3 entropía Shannon v1.67.0)
 > **Superseded by**: ADR-061 (reconsideración de triggers)
 > **Reopen trigger (original)**: ADR-019 perf budget breach (bundle >10MB) AND ≥1 external-distribution consumer requesting redacted form. **Este trigger ha sido reemplazado.**
 > **Reopen trigger (nuevo)**: ≥1 stakeholder (interno o externo) que necesite compartir arquitectura sin código fuente. Ver ADR-061 para justificación.
