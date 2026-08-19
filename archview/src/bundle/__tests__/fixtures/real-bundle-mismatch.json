@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "root": "tests/fixtures/class-diagram",
+    "filesScanned": 3,
+    "languages": {
+      "python": 1,
+      "rust": 1,
+      "typescript": 1
+    }
+  },
+  "nodes": [
+    {
+      "canonical_key": "python:python_sample.py:class:Base1:3",
+      "kind": "class",
+      "language": "python",
+      "file": "python_sample.py",
+      "line": 3,
+      "name": "Base1",
+      "members": [
+        {
+          "name": "__init__",
+          "member_kind": "def",
+          "signature": "def __init__ (self, value: int) : self.value = value",
+          "line": 4
+        }
+      ],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "python:python_sample.py:class:Derived:13",
+      "kind": "class",
+      "language": "python",
+      "file": "python_sample.py",
+      "line": 13,
+      "name": "Derived",
+      "members": [
+        {
+          "name": "__init__",
+          "member_kind": "def",
+          "signature": "def __init__ (self, value: int, label: str) : Base1.__init__(self, value)\n    Base2.__init__(self, label)",
+          "line": 14
+        }
+      ],
+      "confidence": 0.9
+    },
+    {
+      "canonical_key": "python:python_sample.py:class:Base2:8",
+      "kind": "class",
+      "language": "python",
+      "file": "python_sample.py",
+      "line": 8,
+      "name": "Base2",
+      "members": [
+        {
+          "name": "__init__",
+          "member_kind": "def",
+          "signature": "def __init__ (self, label: str) : self.label = label",
+          "line": 9
+        }
+      ],
+      "confidence": 0.9
+    }
+  ],
+  "edges": [
+    {
+      "canonical_key": "python:python_sample.py:python:python_sample.py:class:Derived:13\u2192extends\u2192python:python_sample.py:class:Base1:0:13",
+      "source": "python:python_sample.py:class:Derived:13",
+      "target": "python:python_sample.py:class:Base1:0",
+      "predicate": "extends",
+      "file": "python_sample.py",
+      "line": 13,
+      "confidence": 0.85
+    },
+    {
+      "canonical_key": "python:python_sample.py:python:python_sample.py:class:Derived:13\u2192extends\u2192python:python_sample.py:class:Base2:0:13",
+      "source": "python:python_sample.py:class:Derived:13",
+      "target": "python:python_sample.py:class:Base2:0",
+      "predicate": "extends",
+      "file": "python_sample.py",
+      "line": 13,
+      "confidence": 0.85
+    }
+  ],
+  "errors": []
+}
