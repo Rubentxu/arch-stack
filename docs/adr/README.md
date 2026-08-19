@@ -63,12 +63,13 @@
 | [ADR-052](ADR-052-architecture-context-compiler.md) | Task Context Compiler para agentes — `archctl architecture context --task <text>` | Aceptado — 2026-08-13 (shipped en v1.57.0, P2-08) |
 | [ADR-053](ADR-053-architecture-diff-as-first-class-capability.md) | Architecture Diff como capability first-class — `archctl architecture diff <id_a> <id_b>` | Aceptado — 2026-08-13 (shipped en v1.51.0, P2-02) |
 | [ADR-054](ADR-054-architecture-policy-and-fitness-functions.md) | Políticas y fitness functions sobre el grafo canónico — 6 reglas (ADR-054) + SARIF/JUnit projectors | Aceptado — 2026-08-13 (shipped en v1.54.0 + v1.55.0, P2-05 + P2-06) |
-| [ADR-055](ADR-055-sanitized-architecture-bundle.md) | Sanitized Architecture Bundle compartible | **Deferido — 2026-08-18** (Reopen: ADR-019 perf budget breach AND ≥1 external-distribution consumer) |
+| [ADR-055](ADR-055-sanitized-architecture-bundle.md) | Sanitized Architecture Bundle compartible | **Cerrado — 2026-08-18** (fase 1 strict v1.61.0, fase 2 scanner v1.63.0, fase 3 entropía v1.67.0; reabierto por ADR-061) |
 | [ADR-056](ADR-056-moldable-architecture-workbench.md) | Moldable Architecture Workbench y navegación semántica (LensSpec) — canonical anchor de ROADMAP §H3 entry criteria | **Deferido — 2026-08-18** (Reopen: ≥2 LensSpec-translatable consumers OR measured need; entry criteria en ROADMAP §H3) |
 | [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | **Aceptado — 2026-08-11** (H4 closed en v1.36.0, M73+M76; PR #149 + PR #152) |
 | [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | **Aceptado — 2026-08-11** (H4 closed en v1.36.0, M76; PR #152) |
 | [ADR-059](ADR-059-rawgraphquery-trait-split.md) | RawGraphQuery trait split + SemanticEdgeRepository boundary (P1-04) | Aceptado (2026-08-15) |
 | [ADR-060](ADR-060-architecture-cli-snapshot-surface-deviation.md) | `architecture` CLI surface: drop the `snapshot` intermediate (Path B deviation) | **Aceptado — 2026-08-17** (H4 closed en v1.50.0, p2-02-followup; PR #196, commit `8e6c434`) |
+| [ADR-061](ADR-061-reconsider-adr-055-sanitized-bundle.md) | Reconsideración de ADR-055: Sanitized Architecture Bundle como feature de seguridad (desbloquea Item 28 Wave 3) | **Aceptado — 2026-08-18** (ADR-055 reopened; PRs #215–#216) |
 
 ## Cómo se relacionan
 
