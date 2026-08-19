@@ -190,16 +190,9 @@ jobs:
           EOF
           cat dist/migration-manifest.json
 
-      - name: Generate SHA256SUMS
-        if: ${{ steps.probe.outcome != 'failure' }}
-        run: |
-          cd dist
-          sha256sum \
-              archctl-*.tar.gz \
-              archctl-assets-${{ env.TAG_NAME }}.tar.gz \
-              migration-manifest.json \
-              > SHA256SUMS
-          cat SHA256SUMS
+      # SHA256SUMS is generated in publish_release over the staged assets:
+      # per-platform sums cannot work (each matrix job only sees its own
+      # tarball and download-artifact merge overwrites the file).
 
       - name: Upload artifacts
         if: ${{ steps.probe.outcome != 'failure' }}
@@ -209,7 +202,6 @@ jobs:
           path: |
             dist/archctl-${{ matrix.target }}.tar.gz
             dist/archctl-assets-${{ env.TAG_NAME }}.tar.gz
-            dist/SHA256SUMS
             dist/migration-manifest.json
 
   # ---------------------------------------------------------------------------
@@ -242,9 +234,14 @@ jobs:
           mkdir -p staging
           find artifacts -name "archctl-*.tar.gz" -exec cp -t staging {} +
           find artifacts -name "archctl-assets-${{ env.TAG_NAME }}.tar.gz" -exec cp -t staging {} +
-          find artifacts -name "SHA256SUMS" -exec cp -t staging {} +
           find artifacts -name "migration-manifest.json" -exec cp -t staging {} +
           ls -lh staging/
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd staging
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
