@@ -2,18 +2,17 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-19, post-release v1.74.0 (sprint M17 del
-> rediseño del workbench archview: 4 PRs #255 #256 #257 #258 — G6 sobre
-> 7 vistas, design system OKLCH/Inter/primitives, loader fixes para
-> bundles reales, topbar collapse + token-driven G6 labels).
+> Última actualización: 2026-08-19, post-release v1.75.0 (M18 semantic-zoom
+> pill bar para C4: filter global por nivel con pills + localStorage
+> persistencia + sample multi-nivel para demo).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `38f12bc` (PR #258 squash — Sprint C2 topbar + G6 labels) |
-| Versión | `v1.74.0` (latest tag, sprint M17 workbench redesign) |
+| Tip | `fd7a371` (PR #260 squash — M18 semantic-zoom pill bar) |
+| Versión | `v1.75.0` (latest tag, M18 C4 semantic zoom) |
 | Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); re-cuenta en cada verify; clippy clean |
 | Working tree | clean (`main`); tags v1.65.0–v1.69.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
@@ -21,7 +20,7 @@
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 145 (v0.1.0 → v1.74.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Tags | 146 (v0.1.0 → v1.75.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -112,6 +111,7 @@
 | `v1.72.0` | uat-vueuse-pnpm | Detección de workspaces pnpm + sanitización de ids C4 (PR #249): NpmWorkspace parsea pnpm-workspace.yaml y expande globs `/*` (scoped + exclusiones `!`); components ignora dirs ocultos; ids `c4:container:@vueuse/core` sanitizados. Vueuse: 12 containers, export container:* = 12 nodes. |
 | `v1.73.0` | uat-consistency-sprint | Sprint de consistencia post-UAT (PR #252): verify-local.sh ahora usa el binario real vía `CARGO_TARGET_DIR`/config.toml · bench/datasets.sh --populate-self-dogfood rsyncea el checkout local al cache · smoke-matrix.sh accept_cell falla con 0 evidences (gate no-vacuo) · e2e/human_loop_sandbox.sh Fase 9.2 path check correcto · c4_discover batch_link_of_type error incluye sample_id · doc state-machine corregido (rust/typescript/python, no kotlin). |
 | `v1.74.0` | m17-workbench-redesign | Rediseño del workbench archview (4 PRs apilados #255→#256→#257→#258, sprint M17): Sprint A reescribe las 7 vistas (C4/CallGraph/ClassDiagram/Sequence/Impact/Package/Drift) sobre `@antv/g6 ^5.0.50` con dagre layouts, único punto de render y de decode; Sprint B introduce design system unificado (Inter Variable, OKLCH tokens con clamp+rem, light mode override, primitives Button/EmptyState/Tag reusables); Sprint C arregla el loader para bundles reales (EndpointIndex resuelve mismatch `:line-of-declaration` vs `:line-of-reference` del `gold.json`, wall-clock fallback para `loadedAt`); Sprint C2 colapsa el topbar saturado (7 sample buttons → `<select>`) y tokeniza G6 labels (`--g6-label-font-size: var(--fs-sm)` con `readCssVarNumber` para resolver `clamp()` correctamente). 160/160 tests, 0 lint errors, build OK. |
+| `v1.75.0` | m18-c4-semantic-zoom | Semantic-zoom pill bar para C4 view (PR #260, M18): barra de pills sobre el canvas (`All levels` + 1 por nivel C4 con ≥1 nodo, badge de conteo) que filtra el visible set globalmente. Re-click o `All levels` toggle off. Persistencia en localStorage `archview.c4.lastLevel`. Helpers nuevos en `C4Graph.ts` (`nodesAtLevel`, `levelCounts`, `visibleNodesWithLevel`); UI con tokens del design system. Sample multi-nivel `c4-semantic-zoom.json` (3+4+5 nodes, 14 edges) entra en `SAMPLE_BUNDLES`. 173/173 tests, 0 lint errors, build OK. |
 
 ## Capacidades shipped (v0.x — historical)
 

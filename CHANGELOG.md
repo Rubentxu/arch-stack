@@ -1,3 +1,39 @@
+## [1.75.0] — 2026-08-19
+
+### Added
+- **Semantic-zoom pill bar for C4 view** (PR #260, M18): el modelo C4
+  tiene 4 niveles (Context / Container / Component / Code); M17.1 añadió
+  drill-down por click pero faltaba el filtro global. Ahora `C4View`
+  renderiza una barra de pills (`<nav class="c4-level-pills">`) sobre
+  el canvas con `All levels` + 1 pill por nivel C4 con ≥1 nodo en el
+  bundle, con badge de conteo. Click filtra el visible set a ese nivel
+  globalmente (drill-down queda suprimido mientras hay pill activa);
+  re-click o `All levels` toggle off. El último nivel elegido persiste
+  en `localStorage.archview.c4.lastLevel` y se restaura al mount.
+  Helpers nuevos en `C4Graph.ts`: `nodesAtLevel(nodes, level)`,
+  `levelCounts(nodes)` (omite niveles vacíos y out-of-band), y
+  `visibleNodesWithLevel(nodes, level, focusId)` que compone: el
+  filter gana cuando está set, drill-down si no. UI con tokens del
+  design system (`--accent`, `--accent-on`, `--bg-elev`, `--bg-2`,
+  `--dur-fast`, `--ease-out`); el badge usa `tabular-nums` y
+  `color-mix` para el estado activo. 4 screenshots de verificación
+  en `/tmp/opencode/m18-semantic-zoom/`.
+
+### Changed
+- **Sample C4 multi-nivel para demos**: `archview/public/samples/c4-semantic-zoom.json`
+  (3 context + 4 container + 5 component nodes, 14 edges) entra en
+  `SAMPLE_BUNDLES` con el label `Sample C4 semantic zoom (3 levels)`
+  para que la feature sea visible out-of-the-box (los samples
+  existentes son level-1).
+
+### Fixed
+- **`localStorage` shim en tests C4View**: el jsdom del proyecto
+  expone `localStorage` como objeto plano sin métodos. Los tests
+  instalan un shim Storage-like en `beforeEach` para que la
+  semántica de persistencia sea real. El propio `C4View` ya se
+  defendía (guard contra `typeof getItem !== "function"`), pero los
+  tests necesitan semántica real para aserciones de round-trip.
+
 ## [1.74.0] — 2026-08-19
 
 ### Added
