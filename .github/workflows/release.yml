@@ -69,12 +69,12 @@ jobs:
             target: aarch64-unknown-linux-gnu
             os: linux
             archive: tar.gz
-          # macOS Intel — Tier 1 (Rosetta cross-compile on arm64 runner).
-          - label: macos-x86_64
-            runner: macos-14
-            target: x86_64-apple-darwin
-            os: macos
-            archive: tar.gz
+          # macOS Intel: DROPPED from releases (2026-08-19). lbug 0.18.3 has
+          # no prebuilt x86_64-apple-darwin asset (build.rs download 404s)
+          # and its bundled C++ source fails on the runner toolchain
+          # (`std::atomic_ref`). Same upstream-constraint class as the musl
+          # drop of v1.37.2. Reopen: lbug upstream ships the prebuilt or
+          # fixes the source build.
           # macOS Apple Silicon — Tier 1.
           - label: macos-aarch64
             runner: macos-14
@@ -278,10 +278,13 @@ jobs:
             |---|---|
             | Linux x86_64 | `archctl-${{ env.TAG_NAME }}-linux-x86_64.tar.gz` |
             | Linux aarch64 | `archctl-${{ env.TAG_NAME }}-linux-aarch64.tar.gz` |
-            | macOS x86_64 | `archctl-${{ env.TAG_NAME }}-macos-x86_64.tar.gz` (absent when the ADR-048 probe fails) |
             | macOS Apple Silicon | `archctl-${{ env.TAG_NAME }}-macos-aarch64.tar.gz` (absent when the ADR-048 probe fails) |
             | Assets (skills/agents/plugins) | `archctl-assets-${{ env.TAG_NAME }}.tar.gz` |
             | Migration manifest | `migration-manifest.json` |
+
+            > macOS Intel is not published: lbug 0.18.3 has no prebuilt
+            > x86_64-apple-darwin asset and its source build fails upstream
+            > (see workflow matrix note).
 
             ### Per ADR-040/041
 
