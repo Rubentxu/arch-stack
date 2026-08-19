@@ -69,18 +69,14 @@ jobs:
             target: aarch64-unknown-linux-gnu
             os: linux
             archive: tar.gz
-          # macOS Intel: DROPPED from releases (2026-08-19). lbug 0.18.3 has
-          # no prebuilt x86_64-apple-darwin asset (build.rs download 404s)
-          # and its bundled C++ source fails on the runner toolchain
-          # (`std::atomic_ref`). Same upstream-constraint class as the musl
-          # drop of v1.37.2. Reopen: lbug upstream ships the prebuilt or
-          # fixes the source build.
-          # macOS Apple Silicon — Tier 1.
-          - label: macos-aarch64
-            runner: macos-14
-            target: aarch64-apple-darwin
-            os: macos
-            archive: tar.gz
+          # macOS: DROPPED from releases (2026-08-19). lbug 0.18.3 has no
+          # prebuilt darwin assets (build.rs download 404s for both
+          # x86_64-apple-darwin and aarch64-apple-darwin) and its bundled
+          # C++ source fails on runner toolchains (`std::atomic_ref`);
+          # the ADR-048 storage probe confirms the native breakage
+          # independently. Same upstream-constraint class as the musl
+          # drop of v1.37.2. Reopen: lbug upstream ships darwin prebuilts
+          # or fixes the source build AND the ADR-048 probe passes.
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -151,11 +147,6 @@ jobs:
       - name: Run storage compatibility probe (ADR-048 Tier-1 gate)
         id: probe
         working-directory: archctl
-        # lbug 0.18.3's native macOS library fails the fresh-CRUD probe;
-        # the gate must still BLOCK the broken macOS binary, but not the
-        # whole release: continue-on-error lets the job skip artifact
-        # upload below instead (linux stays blocking).
-        continue-on-error: ${{ matrix.os == 'macos' }}
         run: |
           set -euo pipefail
           TMP=$(mktemp -d)
@@ -278,13 +269,12 @@ jobs:
             |---|---|
             | Linux x86_64 | `archctl-${{ env.TAG_NAME }}-linux-x86_64.tar.gz` |
             | Linux aarch64 | `archctl-${{ env.TAG_NAME }}-linux-aarch64.tar.gz` |
-            | macOS Apple Silicon | `archctl-${{ env.TAG_NAME }}-macos-aarch64.tar.gz` (absent when the ADR-048 probe fails) |
             | Assets (skills/agents/plugins) | `archctl-assets-${{ env.TAG_NAME }}.tar.gz` |
             | Migration manifest | `migration-manifest.json` |
 
-            > macOS Intel is not published: lbug 0.18.3 has no prebuilt
-            > x86_64-apple-darwin asset and its source build fails upstream
-            > (see workflow matrix note).
+            > macOS is not published: lbug 0.18.3 has no prebuilt darwin
+            > assets and its source build fails upstream (see workflow
+            > matrix note). Reopen when upstream fixes lbug.
 
             ### Per ADR-040/041
 
