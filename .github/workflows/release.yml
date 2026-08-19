@@ -222,6 +222,12 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag commit (target_commitish must be a branch/SHA)
+        id: resolve
+        run: echo "sha=$(git rev-list -n 1 '${{ inputs.tag || github.ref_name }}')" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -243,8 +249,10 @@ jobs:
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: "${{ env.TAG_NAME }}"
+          # Raw expression (not env): env context is unreliable inside
+          # action `with:` blocks for this action.
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: "${{ inputs.tag || github.ref_name }}"
           body: |
             ## ${{ env.TAG_NAME }}
 
@@ -287,4 +295,4 @@ jobs:
           files: |
             staging/*
           fail_on_unmatched_files: false
-          target_commitish: ${{ env.TAG_NAME }}
+          target_commitish: ${{ steps.resolve.outputs.sha }}
