@@ -1,3 +1,45 @@
+## [1.77.0] — 2026-08-20
+
+### Added
+- **`<VirtualList>` design-system primitive** (PR #264, M20): a
+  fixed-height virtualized list primitive en
+  `archview/src/components/primitives/VirtualList.tsx`. Renders solo
+  el visible window + overscan (~10-18 filas), no la lista entera.
+  Usa Solid's `<For>` con `keyExtractor` para identidad estable de
+  filas en scroll. 1000 items == ~15 DOM rows == coste constante de
+  reflow. 6 tests unit + 2 tests de integración cubren rendering,
+  scroll, overscan, items vacíos, list semantics, y escalado a 10k
+  items.
+- **Sample sintético C4 stress** (`public/samples/c4-stress-200.json`):
+  318 nodos / 1015 edges con un hub `system:core` que recibe 100
+  edges entrantes. Regenerable via
+  `scripts/generate-stress-sample.mjs`. Sirve como reproducer de
+  perf para C4View + Sidebar; el sample 1k+ (que stresses G6 canvas
+  paint, no DOM) no se commitea — se regenera cuando G6 culling
+  esté en sitio.
+
+### Changed
+- **C4View relations footer** (`archview/src/views/C4View.tsx`):
+  el `<ul>` que renderizaba TODOS los `visibleEdges()` ahora usa
+  `<VirtualList>` con `itemHeight=24`, `height=180`, `overscan=5`.
+  Un bundle de 1015 edges pasa de 1015 `<li>` en el DOM a ~12
+  siempre, con scroll interno del virtualizer para llegar al resto.
+- **Sidebar relations list** (`archview/src/components/Sidebar.tsx`):
+  el `<ul>` que renderizaba `relationsFor(selectedNode, edges)`
+  ahora usa `<VirtualList>` con `itemHeight=28`, `height=220`,
+  `overscan=4`. Un hub con 1k+ relations aguanta sin que el DOM
+  explote.
+- **`SAMPLE_BUNDLES`**: añadido el sample C4 stress.
+
+### Performance
+- **C4 relations footer con 1015 edges**: 1015 → ~12 DOM rows
+  (factor ~85x). Reflow durante pan/zoom ya no atraviesa la lista.
+- **Sidebar relations con 1k edges en un hub**: 1k → ~12 DOM rows.
+- **Hallazgo de la medición Playwright**: el bottleneck para bundles
+  de 1k+ nodos es G6 canvas paint, NO DOM. El VirtualList es
+  defense-in-depth. Próximo sprint: configurar G6 culling / LOD
+  para que 1k+ nodos rendericen sin bloquear el main thread.
+
 ## [1.76.0] — 2026-08-19
 
 ### Added
