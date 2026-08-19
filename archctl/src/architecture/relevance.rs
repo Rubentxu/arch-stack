@@ -247,14 +247,14 @@ pub fn relevance(
 
     // Load all elements from target categories
     let mut all_elements: Vec<crate::graph::ElementRow> = Vec::new();
-    for category in &["c4", "uml", "behavior"] {
+    for category in &["c4", "uml", "behavior", "code"] {
         let elems = repo.list_elements(category, None, None)?;
         all_elements.extend(elems);
     }
 
     // Load all semantic edges
     let mut all_edges: Vec<crate::graph::SemanticEdgeRow> = Vec::new();
-    for category in &["c4", "uml", "behavior"] {
+    for category in &["c4", "uml", "behavior", "code"] {
         let edges = repo.list_semantic_edges(category)?;
         all_edges.extend(edges);
     }

@@ -2709,9 +2709,21 @@ fn parse_from_selector(s: &str) -> Result<crate::code::sequence::FromSelector, S
             line,
         })
     } else if s.contains("::")
-        || (s.starts_with("rust:") || s.starts_with("typescript:") || s.starts_with("python:"))
+        || [
+            "rust:",
+            "typescript:",
+            "javascript:",
+            "python:",
+            "go:",
+            "java:",
+            "kotlin:",
+        ]
+        .iter()
+        .any(|prefix| s.starts_with(prefix))
     {
-        // Looks like a canonical key: "rust:src/lib.rs:foo:42"
+        // Looks like a canonical key: "<lang>:<file>:<name>[:<line>]".
+        // UAT smoke 2026-08-19: go:/java:/kotlin: prefixes were missing
+        // (sequence --from <canonical_key> fell back to ByName).
         Ok(FromSelector::ByCanonicalKey {
             canonical_key: s.to_string(),
         })
@@ -4460,5 +4472,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn parse_from_selector_recognizes_all_language_canonical_keys() {
+        use crate::code::sequence::FromSelector;
+
+        for key in [
+            "rust:src/lib.rs:foo:42",
+            "typescript:src/app.ts:render:10",
+            "go:bind.go:BindPathValues:44",
+            "java:com/example/Main.java:main:5",
+            "kotlin:Main.kt:main:3",
+            "rust:src/main.rs:closure@53:53",
+        ] {
+            let parsed = parse_from_selector(key).unwrap();
+            assert!(
+                matches!(parsed, FromSelector::ByCanonicalKey { .. }),
+                "expected ByCanonicalKey for {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_from_selector_still_treats_plain_names_as_by_name() {
+        use crate::code::sequence::FromSelector;
+
+        assert!(matches!(
+            parse_from_selector("boxed").unwrap(),
+            FromSelector::ByName { .. }
+        ));
+        assert!(matches!(
+            parse_from_selector("file:src/main.rs:42").unwrap(),
+            FromSelector::ByFileLine { .. }
+        ));
     }
 }

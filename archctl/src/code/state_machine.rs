@@ -1147,7 +1147,10 @@ pub fn apply(
     let mut transition_edges: Vec<TransitionEdge> = Vec::new();
 
     for machine in &report.machines {
-        let machine_id = format!("sm:{}", machine.canonical_key);
+        let machine_id = format!(
+            "sm:{}",
+            crate::graph::sanitize_identifier(&machine.canonical_key)
+        );
 
         if !existing_keys.contains(&machine.canonical_key) {
             let version_id = format!(

@@ -1419,7 +1419,7 @@ pub fn apply(
             }
         }
         elements.push(crate::graph::Element {
-            id: format!("cd:{}", n.canonical_key),
+            id: format!("cd:{}", crate::graph::sanitize_identifier(&n.canonical_key)),
             kind_id: kind_id.to_string(),
             category: "uml".to_string(),
             canonical_key: n.canonical_key.clone(),
@@ -1430,7 +1430,7 @@ pub fn apply(
         });
         element_versions.push(crate::graph::ElementVersion {
             id: version_id,
-            element_id: format!("cd:{}", n.canonical_key),
+            element_id: format!("cd:{}", crate::graph::sanitize_identifier(&n.canonical_key)),
             name: n.name.clone(),
             status: "active".to_string(),
             origin: "class-diagram".to_string(),
@@ -1456,8 +1456,8 @@ pub fn apply(
             ClassEdgeKind::Composes => "uml.composition",
         };
 
-        let source_id = format!("cd:{}", edge.source);
-        let target_id = format!("cd:{}", edge.target);
+        let source_id = format!("cd:{}", crate::graph::sanitize_identifier(&edge.source));
+        let target_id = format!("cd:{}", crate::graph::sanitize_identifier(&edge.target));
         let rel_id = format!("cd:{}→{}", edge.source, edge.target);
 
         let mut rel_props = serde_json::Map::new();

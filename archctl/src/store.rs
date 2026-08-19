@@ -2485,7 +2485,11 @@ impl ElementRepository for LbugStore {
                  WHERE mt IS NOT NULL \
                  MERGE (e)-[:OF_TYPE]->(mt);"
             );
-            let _ = session.conn.query(&cypher);
+            // NOTE: previously `let _ =` swallowed query errors — silent
+            // OF_TYPE link loss (found during UAT smoke 2026-08-19).
+            session.conn.query(&cypher).with_context(|| {
+                format!("OF_TYPE link failed for {element_id} -> {metatype_id}")
+            })?;
         }
         Ok(pairs.len())
     }

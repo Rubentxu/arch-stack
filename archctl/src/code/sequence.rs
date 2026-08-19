@@ -160,7 +160,7 @@ pub fn project_sequence_with_store(
         // relationship table that carries props including message_kind).
         // NOTE: write_call_edge matches source by Element.id = 'cg:{canonical_key}',
         // so we use id here for consistency (both id and canonical_key are set on the element).
-        let src_id = format!("cg:{}", node_key);
+        let src_id = format!("cg:{}", crate::graph::sanitize_identifier(&node_key));
         let cypher = format!(
             "MATCH (src:Element {{id: '{src_id}'}})-[r:SEMANTIC_EDGE]->(tgt:Element) \
              RETURN tgt.canonical_key AS receiver, tgt.current_name AS receiver_name, \
@@ -340,7 +340,7 @@ mod tests {
     fn seed_function_node(store: &mut LbugStore, ck: &str, name: &str) {
         use crate::store::ElementRepository;
         let element = crate::graph::Element {
-            id: format!("cg:{ck}"),
+            id: format!("cg:{}", crate::graph::sanitize_identifier(ck)),
             kind_id: "code.function".to_string(),
             category: "code".to_string(),
             canonical_key: ck.to_string(),
@@ -378,8 +378,8 @@ mod tests {
         // This bypasses the name-resolution logic of link_call_edge_with_resolution.
         let _ = SemanticEdgeRepository::link_semantic_edge(
             store,
-            &format!("cg:{caller}"), // src element id
-            &format!("cg:{callee}"), // tgt element id
+            &format!("cg:{}", crate::graph::sanitize_identifier(caller)), // src element id
+            &format!("cg:{}", crate::graph::sanitize_identifier(callee)), // tgt element id
             &rel_id,
             "code.calls",
             &rel_props,

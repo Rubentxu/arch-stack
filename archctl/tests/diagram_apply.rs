@@ -678,10 +678,10 @@ fn build_bundle_propagates_view_member_cosmetics() {
 
     let bundle = build_bundle(&store, diagram_id, &clock).expect("build_bundle must succeed");
 
-    // schema version must be 1.1.0
+    // schema version must be 1.1.1
     assert_eq!(
-        bundle.manifest.schema_version, "1.1.0",
-        "M81: manifest schemaVersion must be 1.1.0"
+        bundle.manifest.schema_version, "1.1.1",
+        "manifest schemaVersion must be 1.1.1"
     );
 
     // Find the node for el:api
