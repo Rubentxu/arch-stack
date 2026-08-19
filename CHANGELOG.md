@@ -1,3 +1,64 @@
+## [1.74.0] — 2026-08-19
+
+### Added
+- **Sprint A — render all views as G6 graphs** (PR #255, M17.1):
+  `C4View`, `CallGraphView`, `ClassDiagramView`, `SequenceView`,
+  `ImpactView`, `PackageView`, `DriftView` reescritas con `@antv/g6 ^5.0.50`
+  sobre `dagre` (top-bottom/left-right). Reemplaza los antiguos
+  canvas/DOM por grafos interactivos (pan, zoom, hover, click-to-select)
+  con un único punto de render (`src/renderer/g6.ts`) y un único punto
+  de decode (`src/bundle/loader.ts`). `renderer/g6.ts` con DEFAULT_NODE_STYLE
+  (radius, fill desde `--bg-elev`, stroke, label) y DEFAULT_EDGE_STYLE
+  compartidos por las 7 vistas. Helpers `c4Layout()`, `flowLayout()`,
+  `radialLayout()` con `autoFit: "view"`. Validado con 8 capturas
+  Playwright en `/tmp/opencode/m17-screenshots/`.
+- **Sprint B — design system unificado** (PR #256, M17.B): Inter Variable
+  via `@fontsource-variable/inter ^5.3.0`; OKLCH design tokens en
+  `src/styles/tokens.css` (palette `bg-0/1/2/3`, `fg-0/1/2/3`,
+  `accent`, `border-0/1`, escala `--fs-xs/sm/base/lg/xl/2xl` con
+  `clamp()`, spacing `--sp-1..10`, radius `--r-sm/md/lg`, shadow
+  `--sh-xs/sm/md/lg`, motion `--dur-fast/base/slow` + `--ease-out`);
+  light mode override via `@media (prefers-color-scheme: light)`;
+  primitives reutilizables en `src/components/primitives/`:
+  `<Button variant="primary|secondary|ghost" size="sm|md|lg">`,
+  `<EmptyState icon title body action>`, `<Tag tone="default|context|
+  container|component|ok|warn|err|info">`. `App.tsx` ahora usa
+  `<EmptyState>` para el empty canvas. `Design.md` commiteado como
+  contrato del sprint. Capturas dark+light en `/tmp/opencode/m17b-screenshots/`.
+
+### Changed
+- **Sprint C — loader fixes for real bundles** (PR #257, M17.C): el
+  `loader.ts` ganaba un `EndpointIndex` con tres keys (`byId`,
+  `byIdNoLine`, `byName`) para resolver endpoints de aristas que
+  vienen con `:line-of-reference` cuando el `canonical_key` del nodo
+  termina en `:line-of-declaration` (el bug de `gold.json` en
+  `archctl/tests/fixtures/class-diagram/` que rompía el render de
+  bundles reales no-C4). `loadedAt` ahora usa wall-clock como fallback
+  cuando el bundle no tiene `manifest.generatedAt` (los bundles de
+  fixtures reales no la tienen). R2 preservado: un regression test
+  confirma que el C4 canónico sigue usando `manifest.generatedAt`.
+  4 tests nuevos en `src/bundle/__tests__/real-bundle-mismatch.test.ts`
+  + fixture `real-bundle-mismatch.json` (3 nodes / 2 edges del
+  `gold.json` real).
+- **Sprint C2 — topbar collapse + G6 label sizing** (PR #258,
+  M17.C2 / F1 + F5 del dogfood report): 7 sample buttons saturaban
+  el topbar a 1440px (breadcrumb y nav history se cortaban) →
+  reemplazados por un `<select class="sample-select">` con caret
+  SVG inline, auto-load on `change`, value reset al placeholder.
+  Disabled en drift mode. G6 labels hardcoded a 11px (saltos
+  visuales con la escala `--fs-sm` del design system) → nuevo token
+  `--g6-label-font-size: var(--fs-sm)` + `--g6-node-size: 14` en
+  `tokens.css`; nueva helper `readCssVarNumber` en `renderer/g6.ts`
+  que crea un probe element (`div.style.fontSize = var(...)`) y lee
+  `getComputedStyle().fontSize` para resolver correctamente
+  `clamp()` / `rem` / `em` (la antigua `readCssVar` hacía
+  `Number.parseFloat("clamp(12px, 0.78rem, 13px)")` que da NaN).
+  F4 (label collision en C4 container) queda implícitamente resuelto
+  por F5. `App.navigation.test.tsx` actualizado: el helper `loadSample`
+  ahora dispara `change` sobre el `<select>` en lugar de `click`
+  sobre el botón (contrato idéntico). 160/160 tests, 0 lint errors
+  (3 warnings pre-existentes aceptados).
+
 ## [1.73.0] — 2026-08-19
 
 ### Fixed
