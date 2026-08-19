@@ -1,0 +1,72 @@
+[
+  {
+    "criterion_id": "c1",
+    "name": "empty-state topbar + canvas message",
+    "model": "llamacpp/Fara1.5-9B",
+    "endpoint": "http://localhost:8082/v1/chat/completions",
+    "screenshot": "/tmp/opencode/cua-screenshots/01_empty_state.png",
+    "status": "ok",
+    "finish_reason": "length",
+    "completion_tokens": 200,
+    "prompt_tokens": 1100,
+    "elapsed_s": 8.4,
+    "content": "FAIL\nThe topbar shows only 6 sample-loader buttons (missing 'Sample C4 context'), and the main area displays the message as plain text rather than under a `.empty-canvas` class.\n</think>\n\nFAIL\nThe topbar shows only 6 sample-loader buttons (missing 'Sample C4 context'), and the main area displays the message as plain text rather than under a `.empty-canvas` class.\n</think>\n\nFAIL\nThe topbar shows only 6 sample-loader buttons (missing 'Sample C4 context'), and the main area displays the message as plain text rather than under a `.empty-canvas` class.\n</think>\n\nFAIL\nThe topbar shows only 6 sample-loader buttons (missing 'Sample C4 context'), and the main area",
+    "reasoning_content": "FAIL\nThe topbar shows only 6 sample-loader buttons (missing 'Sample C4 context'), and the main area displays the message as plain text rather than under a `.empty-canvas` class.\n"
+  },
+  {
+    "criterion_id": "c2",
+    "name": "C4 levels (Context 1 + Container 3) rendered hierarchically",
+    "model": "llamacpp/Fara1.5-9B",
+    "endpoint": "http://localhost:8082/v1/chat/completions",
+    "screenshot": "/tmp/opencode/cua-screenshots/02_bundle_loaded.png",
+    "status": "ok",
+    "finish_reason": "length",
+    "completion_tokens": 200,
+    "prompt_tokens": 1113,
+    "elapsed_s": 6.6,
+    "content": "FAIL\nThe page includes a Relations section with relation entries, so the requirement of no evidence/relations sections is not met.\n</think>\n\nFAIL\nThe screenshot shows a Relations section with relation entries, which violates the requirement that there be no evidence/relations sections.\n</think>\n\nFAIL\nThe page includes a Relations section with relation entries, so the requirement of no evidence/relations sections is not met.\n</think>\n\nFAIL\nThe screenshot shows a Relations section with relation entries, which violates the requirement that there be no evidence/relations sections.\n</think>\n\nFAIL\nThe page includes a Relations section with relation entries, so the requirement of no evidence/relations sections is not met.\n</think>\n\nFAIL\nThe screenshot shows a Relations section with relation entries, which violates the requirement that there be no evidence/relations sections.\n</think>\n\nFAIL\n",
+    "reasoning_content": "FAIL\nThe screenshot shows a 'Relations' section with relation entries, which violates the requirement that there be no evidence/relations sections.\n"
+  },
+  {
+    "criterion_id": "c3",
+    "name": "Sidebar opens with Bundle metadata + node-detail header on selection",
+    "model": "llamacpp/Fara1.5-9B",
+    "endpoint": "http://localhost:8082/v1/chat/completions",
+    "screenshot": "/tmp/opencode/cua-screenshots/03_container_selected.png",
+    "status": "ok",
+    "finish_reason": "length",
+    "completion_tokens": 200,
+    "prompt_tokens": 1126,
+    "elapsed_s": 9.2,
+    "content": "Pass or fail? FAIL\nJustification: The screenshot shows the bundle metadata, but it does not show a `sidebar-header` with `<h2>Bundle</h2>` or a `sidebar-selection` area containing a `.node-detail` with `<h3>archctl</h3>`; moreover, `ACTIONS` and `EVIDENCE` sections are visible, so the expected layout is not present.\n</think>\n\nFAIL\nThe screenshot shows the bundle metadata, but it does not show",
+    "reasoning_content": "FAIL\nThe right-side panel shows a BUNDLE section with the required metadata, but there is no visible `sidebar-header`/`<h2>Bundle</h2>` or a `sidebar-selection` area containing a `.node-detail` with an `<h3>archctl</h3>`; instead, the visible node detail is for `archctl` in the main panel and the sidebar also shows `ACTIONS` and `EVIDENCE` sections.\n"
+  },
+  {
+    "criterion_id": "c4",
+    "name": "drill-in sidebar: kind = context + L1 badge, description, Actions, Evidence (empty), Relations (no relations for this node)",
+    "model": "llamacpp/Fara1.5-9B",
+    "endpoint": "http://localhost:8082/v1/chat/completions",
+    "screenshot": "/tmp/opencode/cua-screenshots/04_drill_down.png",
+    "status": "ok",
+    "finish_reason": "stop",
+    "completion_tokens": 99,
+    "prompt_tokens": 1197,
+    "elapsed_s": 5.3,
+    "content": "",
+    "reasoning_content": "The screenshot shows the node detail panel for 'archctl' with 'kind' rendered as 'context' plus an 'L1' badge, the description text starting with 'CLI sidecar that emits architecture bundles', the Actions section with 'copy id', 'zoom in', and 'explain', an empty Evidence list, the Relations section showing 'no relations for this node', and the breadcrumb 'All systems \u203a archctl'. All specified elements are visible and match the expectation.\nPASS\n"
+  },
+  {
+    "criterion_id": "c5",
+    "name": "history back arrow returns to the bundle-loaded state",
+    "model": "llamacpp/Fara1.5-9B",
+    "endpoint": "http://localhost:8082/v1/chat/completions",
+    "screenshot": "/tmp/opencode/cua-screenshots/05_back.png",
+    "status": "ok",
+    "finish_reason": "length",
+    "completion_tokens": 200,
+    "prompt_tokens": 1128,
+    "elapsed_s": 6.4,
+    "content": "",
+    "reasoning_content": "The screenshot shows the '\u2190' button in the top-right navigation bar, and it appears active (not greyed out), indicating it is enabled.\nPASS\nThe '\u2190' button is enabled, as shown by its active (non-disabled) appearance in the top-right navigation bar.\n```\nPASS\nThe '\u2190' button is enabled, as shown by its active (non-disabled) appearance in the top-right navigation bar.\n```\n```\nPASS\nThe '\u2190' button is enabled, as shown by its active (non-disabled) appearance in the top-right navigation bar.\n```\n```\nPAS"
+  }
+]

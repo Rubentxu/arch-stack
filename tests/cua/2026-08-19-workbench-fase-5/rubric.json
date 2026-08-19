@@ -1,0 +1,72 @@
+{
+  "feature_slug": "workbench-fase-5",
+  "feature_title": "archctl view Fase 5 — interactive C4 workbench",
+  "context": "Static visual regression of the M17.1 C4 hierarchical workbench after loading the c4-container sample bundle. The workbench uses c4-container.json (1 Context + 3 Containers) and renders levels Context/Container with a Sidebar (Bundle metadata + node detail + Actions + Evidence + Relations). Renderer: archview/src/{App.tsx,views/C4View.tsx,components/Sidebar.tsx}; screenshots: Playwright at /tmp/opencode/cua-screenshots/.",
+  "criteria": [
+    {
+      "id": "c1",
+      "name": "empty-state topbar + canvas message",
+      "description": "With no bundle loaded, the topbar exposes the seven sample buttons (one per kind, including 'Sample C4 container (archctl)') plus a bundle-URL text input and a 'drift mode' toggle. The main area shows an empty-canvas message",
+      "screenshot_path": "/tmp/opencode/cua-screenshots/01_empty_state.png",
+      "expected": "Topbar has an <h1> with 'archview' text, exactly 7 sample-loader buttons (labels include 'Sample C4 container (archctl)' and 'Sample C4 context'), an empty <input> with placeholder 'bundle URL (file://… or http://…)', a 'drift mode' button, and a disabled '←' back arrow. Below the topbar the main column renders the literal text 'Load a bundle from the top bar to start exploring.' under a `.empty-canvas` class. No sidebar selection (no `.node-detail` block)."
+    },
+    {
+      "id": "c2",
+      "name": "C4 levels (Context 1 + Container 3) rendered hierarchically",
+      "description": "After clicking 'Sample C4 container (archctl)', the C4View renders the four-node bundle as two grouped levels under a 'All systems' breadcrumb, with the '▸ drill in' hint on the archctl Context node",
+      "screenshot_path": "/tmp/opencode/cua-screenshots/02_bundle_loaded.png",
+      "expected": "The `.c4-view` container shows a `.c4-breadcrumb` with a 'All systems' button (enabled). Two `.c4-level` blocks are visible: `c4-level-1` with heading 'Context (1)' and exactly one `.c4-element` button named 'archctl' that has a `.c4-drill-hint` with the text '▸ drill in'; `c4-level-2` with heading 'Container (3)' and three element buttons named 'CLI', 'LadybugDB Store', 'Manifest Gates'. No sidebar selection (no `.node-detail` block). No evidence/relations sections."
+    },
+    {
+      "id": "c3",
+      "name": "Sidebar opens with Bundle metadata + node-detail header on selection",
+      "description": "After clicking the 'archctl' Context element, the sidebar appears with the Bundle metadata <dl> and a node-detail header (h3 with the element label); the description/actions evidence/relations sections are not yet rendered or are mid-render",
+      "screenshot_path": "/tmp/opencode/cua-screenshots/03_container_selected.png",
+      "expected": "An `<aside class='sidebar'>` is visible. Its `<header class='sidebar-header'>` contains an `<h2>Bundle</h2>` and a `<dl class='bundle-meta'>` with rows 'source' (e.g. '/samples/c4-container.json'), 'schemaVersion' ('1.0.0'), 'rawKind' ('c4'), 'loadedAt' (ISO date '2026-08-03T...'). The '.sidebar-selection' area shows a partial '.node-detail' with an `<h3>` containing the text 'archctl'. No `Actions` <h4>, no `Evidence` <h4> visible in the same frame."
+    },
+    {
+      "id": "c4",
+      "name": "drill-in sidebar: kind = context + L1 badge, description, Actions, Evidence (empty), Relations (no relations for this node)",
+      "description": "After drilling into the 'archctl' system, the sidebar renders the full node-detail with kind tag, description, an Actions row with three buttons, an empty Evidence list, and a Relations list that prints the literal message 'no relations for this node'",
+      "screenshot_path": "/tmp/opencode/cua-screenshots/04_drill_down.png",
+      "expected": "Inside `.sidebar-selection > .node-detail`, the `<h3>` reads 'archctl'. The `<dl class='node-meta'>` row for 'kind' shows the literal text 'context' immediately followed by a `.level-tag` span containing 'L1' (rendered visually as 'context' + 'L1' badge, NOT as the literal string 'contextL1'). The 'description' row shows a `<dd class='multiline'>` whose text starts with 'CLI sidecar that emits architecture bundles'. An `<h4>Actions</h4>` header is followed by three buttons labelled 'copy id', 'zoom in', and 'explain'. An `<h4>Evidence</h4>` header is followed by an EMPTY `<ul class='evidence-list'>` (no `<li>` items). An `<h4>Relations</h4>` header is followed by a `<p class='muted'>` with the exact text 'no relations for this node'. The `.c4-breadcrumb` shows 'All systems › archctl'."
+    },
+    {
+      "id": "c5",
+      "name": "history back arrow returns to the bundle-loaded state",
+      "description": "After clicking the '←' back arrow in the nav-history toolbar, the workbench drops the sidebar selection and returns to the C4 levels view (Context 1 + Container 3) with the breadcrumb reset to 'All systems'",
+      "screenshot_path": "/tmp/opencode/cua-screenshots/05_back.png",
+      "expected": "The '←' button is now enabled (it was disabled in c1). The `.c4-view` shows the same two `.c4-level` blocks as c2: 'Context (1)' with 'archctl' (drill-in hint visible) and 'Container (3)' with 'CLI', 'LadybugDB Store', 'Manifest Gates'. The `.c4-breadcrumb` shows only 'All systems' (no '› archctl' suffix). The sidebar is empty (no `.node-detail` block; the selection was cleared). The `.breadcrumbs` list in the topbar navigation-history contains two entries (the c4-container load and the prior entry) with the first one marked as the active breadcrumb."
+    }
+  ],
+  "metadata": {
+    "asset_paths": [
+      "/tmp/opencode/cua-screenshots/01_empty_state.png",
+      "/tmp/opencode/cua-screenshots/02_bundle_loaded.png",
+      "/tmp/opencode/cua-screenshots/03_container_selected.png",
+      "/tmp/opencode/cua-screenshots/04_drill_down.png",
+      "/tmp/opencode/cua-screenshots/05_back.png"
+    ],
+    "source_doc": "e2e/HUMAN_LOOP_TEST.md Fase 5",
+    "created_at": "2026-08-19T00:00:00Z",
+    "grounded_in": [
+      "archctl/src/view.rs (handle_api_export + serve_static)",
+      "archview/src/App.tsx (SAMPLE_BUNDLES, nav-history, C4 dispatch)",
+      "archview/src/views/C4View.tsx (levelLabel, drill in hint, All systems breadcrumb)",
+      "archview/src/components/Sidebar.tsx (Bundle/sidebar-header, node-detail, Actions, Evidence, Relations, 'no relations for this node')",
+      "archview/src/bundle/loader.ts (c4NodeToNode: kind = n.type, level = c4LevelForType)",
+      "archview/src/views/C4Graph.ts (visibleNodesForFocus, groupNodesByLevel)",
+      "archview/src/lib/navigation.ts (NavStack push/back/forward, ADR-062)",
+      "archctl/assets-view/samples/c4-container.json (1 system:archctl + 3 containers: CLI, lbug, manifests)"
+    ],
+    "inconsistencies_found": [
+      "Paradiam shift: Fase 5 describes a graph canvas (drag/zoom/click on nodes); the actual M17.1 UI is a hierarchical C4 view (levels Context/Container/Component rendered as <ul> lists). GraphView still exists for non-C4 bundles.",
+      "Bundle loading: Fase 5 says 'paste http://127.0.0.1:18777/api/export'; without --cwd that endpoint returns {empty:true, warning:'no project_dir configured'}. The human workflow is the 7 SAMPLE_BUNDLES buttons.",
+      "kind=contextL1 is rendered as TWO elements (text 'context' + L1 badge), never the literal string 'contextL1'.",
+      "'▸ drill in' is a hint label, not a clickable target — the click on the row does both select and drill-in.",
+      "Sidebar strings are English ('Actions', 'Evidence', 'Relations', 'no relations for this node'); Fase 5 is in Spanish.",
+      "Check 5.7 (console sin errores rojos) is not verifiable from static screenshots — out of scope for the rubric.",
+      "c4-container.json has evidenceCount:0; Fase 5 evidence check needs a real project (mini-redis) after c4-discover --apply, not the sample."
+    ]
+  }
+}
