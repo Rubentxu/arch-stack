@@ -1,3 +1,42 @@
+## [1.76.0] — 2026-08-19
+
+### Added
+- **ELK layered layout in Web Worker** (PR #262, M19): el renderer
+  archview ahora delega el layout a ELK.js (elkjs 0.12) corriendo
+  en un Web Worker. `archview/src/renderer/layout-client.ts` envuelve
+  `new ELK({ workerUrl })` (Vite resuelve el asset del worker vía
+  `?url`); `archview/src/renderer/layout-presets.ts` define los
+  presets ELK (TB_LAYERED, LR_LAYERED, RL_LAYERED) que sustituyen
+  los configs dagre built-in de G6 que estaban en cada vista.
+  `archview/src/renderer/preset-layout.ts` registra un custom G6
+  layout `preset` (no-op) que respeta las posiciones pre-calculadas
+  — el renderer las embebe como `style.x`/`style.y` y G6 las lee
+  del modelo. 4 archivos nuevos + 1 refactor de `g6.ts` + 7 vistas
+  actualizadas (CallGraphView, C4View, ClassDiagramView, DriftView,
+  ImpactView, PackageView, SequenceView). 184/184 tests pass,
+  lint 0 errors, 7/7 vistas verificadas con Playwright.
+
+### Changed
+- **`renderer.setData` ahora es internamente async**:
+  calcula layout via `LayoutService`, embebe posiciones, push a G6.
+  La firma externa sigue siendo `void` (los call sites no se
+  tocan), pero internamente serializamos con un `renderChain` y
+  un generation counter para evitar race conditions en doble-click
+  rápido. `setLayout` re-corre el servicio con nuevas opciones.
+- **DI seam en `RendererOptions`**: `layoutOptions` (ELK options)
+  y `layoutService` (interfaz inyectable, default = ELK real).
+  Tests usan un stub para evitar `Worker` en jsdom.
+- **Todas las 7 vistas**: `layout: { type: "dagre", ... }` →
+  `layoutOptions: TB_LAYERED` o `LR_LAYERED`. `CallGraphView`'s
+  direction toggle (LR/RL para callers/callees) pasa opciones ELK
+  equivalentes (`LR_LAYERED`/`RL_LAYERED`).
+
+### Performance
+- **Off-main-thread layout**: con dagre in-process, un C4 grande
+  congelaba el canvas ~200ms durante el layout. Con ELK en worker
+  el layout es invisible al usuario; el main thread queda libre
+  para pan/zoom y drag.
+
 ## [1.75.0] — 2026-08-19
 
 ### Added
