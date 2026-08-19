@@ -1,3 +1,35 @@
+## [1.68.0] — 2026-08-19
+
+### Added
+- **Workbench UX parcial** (ADR-062, Wave 3 items 31–33) — cross-view
+  identity, action palette y semantic zoom C4 en archview:
+  - `NavigationTarget` + pila de navegación inmutable (breadcrumbs,
+    back/forward, push con truncado de forward) en
+    `archview/src/lib/navigation.ts` — pura, sin imports (S1/S2/S5/S11/S12).
+  - Action palette por nodo en el Sidebar: copy id, zoom in/out C4
+    (re-export vía `/api/export?selector=` existente), explain y lista de
+    relations (aristas del bundle filtradas por nodo).
+  - Zoom preserva identidad: el elemento canónico queda seleccionado en el
+    bundle destino.
+  - `GET /api/explain?id=<element|rel:*>` en `archctl view` — adapter fino
+    sobre el use case puro `architecture::explain` (v1.52.0). Errores: 400
+    id inválido, 404 no encontrado, 409 sin project_dir, 500 store.
+  - Strict bundles degradan: explain oculto (el receptor no tiene store);
+    copy id y zoom C4 siguen disponibles (S13).
+- **ADR-062** — reconsideración de ADR-056 en alcance parcial (precedente
+  ADR-061): pasos 1–3 de su estrategia de migración sin LensSpec; P3-05
+  lens recommendation sigue deferida; nivel "Code" con reopen trigger
+  propio.
+
+### Fixed
+- **Flock flakiness en `diagram_export`** (pre-existente): cuatro tests
+  exportaban desde el fixture compartido `class-diagram` (una sola store
+  XDG, ADR-010) y colisionaban en paralelo. Serializados con mutex
+  estático (test-only).
+- **Version drift** (pre-existente): `archctl` 1.59.0 → 1.68.0 y
+  `archview` 1.37.2 → 1.68.0 — los ciclos v1.60–v1.67 no bumpearon el
+  workspace (ADR-038 sync restaurada).
+
 ## [1.67.0] — 2026-08-18
 
 ### Added

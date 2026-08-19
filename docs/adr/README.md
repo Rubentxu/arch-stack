@@ -70,6 +70,7 @@
 | [ADR-059](ADR-059-rawgraphquery-trait-split.md) | RawGraphQuery trait split + SemanticEdgeRepository boundary (P1-04) | Aceptado (2026-08-15) |
 | [ADR-060](ADR-060-architecture-cli-snapshot-surface-deviation.md) | `architecture` CLI surface: drop the `snapshot` intermediate (Path B deviation) | **Aceptado — 2026-08-17** (H4 closed en v1.50.0, p2-02-followup; PR #196, commit `8e6c434`) |
 | [ADR-061](ADR-061-reconsider-adr-055-sanitized-bundle.md) | Reconsideración de ADR-055: Sanitized Architecture Bundle como feature de seguridad (desbloquea Item 28 Wave 3) | **Aceptado — 2026-08-18** (ADR-055 reopened; PRs #215–#216) |
+| [ADR-062](ADR-062-reconsider-adr-056-workbench-ux.md) | Reconsideración de ADR-056: Workbench UX parcial (items 31–33: cross-view identity, action palette, semantic zoom C4) sin LensSpec; P3-05 sigue deferida | **Aceptado — 2026-08-19** (desbloquea `wave-3-workbench-ux`) |
 
 ## Cómo se relacionan
 

@@ -71,6 +71,44 @@ export function __setFetchForTests(impl: FetchLike | null): void {
   fetchImpl = impl ?? ((...args) => fetch(...args));
 }
 
+// ---- Explain action (ADR-062, /api/explain) ------------------------------
+
+/** Minimal explain subject shape for the action palette. */
+export interface ExplainSubjectLite {
+  kind: string;
+  id: string;
+  statement: string;
+  versionId?: string;
+}
+
+/** Shape of the explain-report/1 carrier returned by `archctl view`. */
+export interface ExplainResult {
+  schemaVersion: string;
+  capability: string;
+  subject: ExplainSubjectLite;
+  provenance: {
+    evidence: Array<Record<string, unknown>>;
+    unsubstantiated: boolean;
+  };
+  fusedClaims?: Array<Record<string, unknown>>;
+  warnings: string[];
+}
+
+/**
+ * Ask the backend to explain the evidence chain backing a graph subject.
+ * Only meaningful when `archctl view` runs with a configured project_dir
+ * (the receiver of a strict bundle has no store — App hides the action).
+ */
+export async function explainElement(id: string): Promise<ExplainResult> {
+  const params = new URLSearchParams({ id });
+  const res = await fetchImpl(`/api/explain?${params.toString()}`);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`GET /api/explain → ${res.status}: ${detail}`);
+  }
+  return (await res.json()) as ExplainResult;
+}
+
 export function useWorkspaceState(): UseWorkspaceStateResult {
   const [workspace, setLocal] = createSignal<Workspace>(DEFAULT_WORKSPACE);
   const [saveStatus, setSaveStatus] = createSignal<SaveStatus>("idle");
