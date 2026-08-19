@@ -1,0 +1,142 @@
+/**
+ * archview design tokens — M17.B Sprint B.
+ *
+ * The whole workbench reads from this file. A single
+ * change to `--accent-3` (e.g. brand refresh) propagates
+ * to every button, every border, every node color.
+ *
+ * Layering:
+ *   - Neutral (5 stops, 1 chroma step each) for surfaces.
+ *   - Accent (5 stops) for the primary brand.
+ *   - Semantic C4 (1 per level) for node colors in the
+ *     C4 view, exposed via `--c4-context`, `--c4-container`,
+ *     `--c4-component`, `--c4-code`.
+ *   - State (ok / warn / err / info) for feedback toasts
+ *     and validation messages.
+ *   - Typography (Inter Variable, single family for now;
+ *     monospace falls back to system mono for code spans).
+ *   - Spacing (4-8-12-16-24-32-48-64, 8 px base).
+ *   - Radius (4 / 8 / 12).
+ *   - Shadow (xs / sm / md / lg, alpha-modest).
+ *
+ * Light mode is implemented by overriding the dark defaults
+ * inside `@media (prefers-color-scheme: light)`. The names
+ * stay the same — the meaning of `--bg-0` flips from
+ * "darkest" to "lightest".
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Neutral: 5 stops, dark-to-light, with brand chroma. */
+  --bg-0: oklch(15% 0.012 250); /* canvas, deepest */
+  --bg-1: oklch(19% 0.014 250); /* surface (topbar) */
+  --bg-2: oklch(23% 0.016 250); /* elevated card */
+  --bg-3: oklch(28% 0.018 250); /* hover state */
+  --bg-4: oklch(34% 0.02 250); /* active state */
+  --bg-5: oklch(42% 0.022 250); /* strong contrast */
+  --fg-0: oklch(96% 0.005 250); /* body text */
+  --fg-1: oklch(82% 0.008 250); /* muted */
+  --fg-2: oklch(66% 0.012 250); /* placeholder */
+  --border: oklch(32% 0.012 250);
+  --border-strong: oklch(46% 0.018 250);
+
+  /* --- Accent: brand blue. */
+  --accent-1: oklch(70% 0.13 250); /* fg on dark */
+  --accent-2: oklch(64% 0.15 250);
+  --accent-3: oklch(58% 0.17 250); /* default (was #5b8def) */
+  --accent-4: oklch(50% 0.16 250); /* hover */
+  --accent-5: oklch(40% 0.14 250); /* pressed */
+  --accent-on: oklch(98% 0.005 250); /* text on accent */
+
+  /* --- Semantic C4 levels (per the C4 model). */
+  --c4-context: var(--accent-3);
+  --c4-container: oklch(78% 0.1 235);
+  --c4-component: oklch(85% 0.07 235);
+  --c4-code: oklch(82% 0.05 235);
+  --c4-default: var(--fg-1);
+
+  /* --- State. */
+  --ok: oklch(70% 0.16 145);
+  --warn: oklch(78% 0.16 80);
+  --err: oklch(64% 0.2 25);
+  --info: var(--accent-3);
+
+  /* --- Typography (Inter Variable). */
+  --font-sans:
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono",
+    Menlo, Consolas, monospace;
+  --fs-xs: clamp(11px, 0.7rem, 12px);
+  --fs-sm: clamp(12px, 0.78rem, 13px);
+  --fs-md: clamp(13px, 0.85rem, 14px);
+  --fs-base: clamp(14px, 0.92rem, 15px);
+  --fs-lg: clamp(15px, 1rem, 17px);
+  --fs-xl: clamp(18px, 1.2rem, 22px);
+  --fs-2xl: clamp(22px, 1.5rem, 28px);
+  --fs-3xl: clamp(28px, 1.9rem, 36px);
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-base: 1.5;
+  --lh-loose: 1.7;
+
+  /* --- Spacing (8 px base). */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* --- Radius. */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  /* --- Shadow. */
+  --sh-xs: 0 1px 1px rgb(0 0 0 / 0.18);
+  --sh-sm: 0 2px 4px rgb(0 0 0 / 0.22);
+  --sh-md: 0 4px 12px rgb(0 0 0 / 0.3);
+  --sh-lg: 0 12px 32px rgb(0 0 0 / 0.4);
+
+  /* --- Motion. */
+  --ease-out: cubic-bezier(0.2, 0.6, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+}
+
+/* Light mode: invert the neutral and fg scales, keep accent
+ * and C4 semantics identical. The names stay the same — the
+ * meaning of --bg-0 just becomes "lightest". */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --bg-0: oklch(99% 0.005 250); /* canvas, lightest */
+    --bg-1: oklch(97% 0.005 250); /* surface */
+    --bg-2: oklch(94% 0.006 250); /* elevated card */
+    --bg-3: oklch(91% 0.008 250); /* hover */
+    --bg-4: oklch(86% 0.01 250); /* active */
+    --bg-5: oklch(78% 0.012 250);
+    --fg-0: oklch(20% 0.01 250);
+    --fg-1: oklch(40% 0.012 250);
+    --fg-2: oklch(56% 0.014 250);
+    --border: oklch(86% 0.008 250);
+    --border-strong: oklch(72% 0.012 250);
+
+    --accent-on: oklch(98% 0.005 250);
+
+    --sh-xs: 0 1px 1px rgb(0 0 0 / 0.06);
+    --sh-sm: 0 2px 4px rgb(0 0 0 / 0.08);
+    --sh-md: 0 4px 12px rgb(0 0 0 / 0.12);
+    --sh-lg: 0 12px 32px rgb(0 0 0 / 0.18);
+  }
+}

@@ -25,6 +25,7 @@ import {
 import { GraphRenderer } from "./renderer/g6";
 import { loadBundle, type GraphBundle, type GraphNode } from "./bundle/loader";
 import { Sidebar, type SidebarStats } from "./components/Sidebar";
+import { EmptyState } from "./components/primitives";
 import { resolveView, type CallGraphMode } from "./routing";
 import { C4View } from "./views/C4View";
 import { CallGraphView } from "./views/CallGraphView";
@@ -273,9 +274,11 @@ export const App: Component = () => {
           when={driftMode() ? null : bundle()}
           fallback={
             driftMode() ? null : (
-              <p class="empty-canvas">
-                Load a bundle from the top bar to start exploring.
-              </p>
+              <EmptyState
+                icon={<EmptyStateIcon />}
+                title="No bundle loaded"
+                body="Pick a sample above to explore a call-graph, class diagram, C4 view, or sequence diagram. Or paste a bundle URL exported by archctl."
+              />
             )
           }
         >
@@ -478,5 +481,31 @@ const GraphView: Component<{
 
   return <div class="canvas" ref={mount} />;
 };
+
+/** Inline icon for the empty state. A small graph glyph that
+ *  hints at what the workbench is for without depending on an
+ *  external icon font. */
+function EmptyStateIcon() {
+  return (
+    <svg
+      width="32"
+      height="32"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="6" r="2.2" />
+      <circle cx="18" cy="6" r="2.2" />
+      <circle cx="12" cy="18" r="2.2" />
+      <line x1="7.5" y1="7" x2="11" y2="16" />
+      <line x1="16.5" y1="7" x2="13" y2="16" />
+      <line x1="8" y1="6" x2="16" y2="6" />
+    </svg>
+  );
+}
 
 export default App;
