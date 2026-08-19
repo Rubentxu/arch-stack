@@ -2,17 +2,18 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-19, post-release v1.70.0 (UAT smoke fixes
-> multi-lenguaje: sanitize canonical keys, OF_TYPE propagation, schema 1.1.1,
-> prefixes de lenguaje en sequence, categoría `code` en relevance/coverage/explain).
+> Última actualización: 2026-08-19, post-release v1.71.0 (UAT smoke fixes
+> multi-lenguaje + paths como DATA: sanitize canonical keys, OF_TYPE propagation,
+> schema 1.1.1, prefixes de lenguaje en sequence, categoría `code` en
+> relevance/coverage/explain, paths con `@` en evidence/source).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `8a150d6` (PR #245 squash — UAT smoke fixes) |
-| Versión | `v1.70.0` (latest tag, UAT smoke fixes multi-lenguaje) |
+| Tip | `6737671` (PR #247 squash — paths como DATA) |
+| Versión | `v1.71.0` (latest tag, UAT vueuse paths fix) |
 | Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); re-cuenta en cada verify; clippy clean |
 | Working tree | clean (`main`); tags v1.65.0–v1.69.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
@@ -20,7 +21,7 @@
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 141 (v0.1.0 → v1.70.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Tags | 142 (v0.1.0 → v1.71.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -107,6 +108,7 @@
 | `v1.68.0` | wave-3-workbench-ux | Workbench UX parcial (ADR-062, items 31–33): NavigationTarget + pila con breadcrumbs/back/forward, action palette (copy id, zoom C4, explain vía `GET /api/explain`, relations), semantic zoom Context↔Container↔Component por re-export. Strict bundles degradan. Fixes: flock flakiness diagram_export + version drift (PR #231). |
 | `v1.69.0` | d2-deprecated-sweep | Barrido deprecated (deuda D2 auditoría): `diagram::queries` eliminado (13 call sites → `crate::graph`), `evidence::put`/`extract_with_system_clock` eliminados, manifests sync. Release pipeline reparado (PRs #235–#244) + self-update. |
 | `v1.70.0` | uat-smoke-fixes | UAT multi-lenguaje (axum-rust + echo-go, sandbox Podman): `sanitize_identifier` para canonical keys con `@` (13 sitios), `batch_link_of_type` propaga errores, schema 1.1.1 (`EvidenceEntry.status`), prefixes go/java/kotlin/javascript en `parse_from_selector`, categoría `code` en relevance/coverage/explain. Harness: `bench/smoke-matrix.sh` + `bench/build-in-sandbox.sh` (PR #245). |
+| `v1.71.0` | uat-vueuse-paths | Paths de evidence/source como DATA (UAT vueuse, PR #247): repos con `@` en rutas (snapshots npm scoped, patches) fallaban `call-graph --apply` con `write_source_artifact` error. Se reemplaza charset-validation por quote-escaping en 5 sitios de `store.rs`; vueuse aplica 1239 elementos / 13878 relaciones. |
 
 ## Capacidades shipped (v0.x — historical)
 
