@@ -11,9 +11,12 @@
  *     focuses the node.
  *   - resetting the focus re-pushes the full graph and clears the
  *     focus ring.
+ *   - M18: the semantic-zoom pill bar switches the visible set to a
+ *     level-wide filter and the toggle round-trips through
+ *     localStorage.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@solidjs/testing-library";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { C4View } from "../views/C4View";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 
@@ -193,5 +196,226 @@ describe("C4View (M17.1 graph view)", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(focusCalls).toContain("app");
+  });
+});
+
+// ── M18: semantic-zoom pill bar ───────────────────────────────────────
+
+/**
+ * In this project's jsdom env `localStorage` is exposed as a plain
+ * object (no `getItem`/`setItem`/`clear`). The C4View's
+ * `readStoredLevel`/`writeStoredLevel` guard against that and
+ * silently no-op. For tests that need real persistence semantics
+ * we install a minimal Storage-like shim on globalThis and restore
+ * the original between tests.
+ */
+function installLocalStorageShim(): () => void {
+  const g = globalThis as unknown as { localStorage: unknown };
+  const original = g.localStorage;
+  const store = new Map<string, string>();
+  const shim = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+    clear: () => {
+      store.clear();
+    },
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  };
+  g.localStorage = shim;
+  return () => {
+    g.localStorage = original;
+  };
+}
+
+describe("C4View (M18 semantic zoom)", () => {
+  let restore: () => void = () => {};
+
+  beforeEach(() => {
+    restore = installLocalStorageShim();
+  });
+
+  afterEach(() => {
+    cleanup();
+    setDataCalls.splice(0, setDataCalls.length);
+    focusCalls.splice(0, focusCalls.length);
+    clearFocusState.count = 0;
+    restore();
+  });
+
+  const lsGet = (k: string): string | null => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  };
+  const lsSet = (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  it("renders one pill per present C4 level with a count badge", () => {
+    const { container } = render(() => (
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    ));
+    const pills = container.querySelectorAll("button.c4-level-pill");
+    // 1 "All levels" + 3 level pills (Context, Container, Component)
+    expect(pills).toHaveLength(4);
+    const labels = Array.from(pills).map((p) => p.textContent?.trim() ?? "");
+    expect(labels.some((l) => l.startsWith("Context"))).toBe(true);
+    expect(labels.some((l) => l.startsWith("Container"))).toBe(true);
+    expect(labels.some((l) => l.startsWith("Component"))).toBe(true);
+  });
+
+  it("filters visible set to the picked level when a pill is clicked", async () => {
+    const { container } = render(() => (
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    ));
+    await Promise.resolve();
+    await Promise.resolve();
+    setDataCalls.length = 0;
+
+    // Click the Container pill (level 2).
+    const containerPill = Array.from(
+      container.querySelectorAll("button.c4-level-pill"),
+    ).find((b) => b.textContent?.trim().startsWith("Container")) as
+      HTMLButtonElement | undefined;
+    expect(containerPill).toBeDefined();
+    fireEvent.click(containerPill!);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const last = setDataCalls[setDataCalls.length - 1];
+    const visibleIds = (last.nodes as Array<{ id: string }>).map((n) => n.id);
+    expect(visibleIds.sort()).toEqual(["container.api", "container.db"]);
+    // No edges here because edges go system→container, not
+    // container↔container.
+    expect(last.edges).toHaveLength(0);
+  });
+
+  it("toggles the active pill off when clicked again", async () => {
+    const { container } = render(() => (
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    ));
+    await Promise.resolve();
+    await Promise.resolve();
+    const pill = Array.from(
+      container.querySelectorAll("button.c4-level-pill"),
+    ).find((b) => b.textContent?.trim().startsWith("Container")) as
+      HTMLButtonElement | undefined;
+    expect(pill).toBeDefined();
+
+    fireEvent.click(pill!);
+    await Promise.resolve();
+    expect(pill!.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(pill!);
+    await Promise.resolve();
+    expect(pill!.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("'All levels' clears the filter and restores drill-down", async () => {
+    const { container } = render(() => (
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    ));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const containerPill = Array.from(
+      container.querySelectorAll("button.c4-level-pill"),
+    ).find((b) => b.textContent?.trim().startsWith("Container")) as
+      HTMLButtonElement | undefined;
+    fireEvent.click(containerPill!);
+    await Promise.resolve();
+    await Promise.resolve();
+    setDataCalls.length = 0;
+
+    const allPill = Array.from(
+      container.querySelectorAll("button.c4-level-pill"),
+    ).find((b) => b.textContent?.trim() === "All levels") as
+      HTMLButtonElement | undefined;
+    fireEvent.click(allPill!);
+    await Promise.resolve();
+    await Promise.resolve();
+    const last = setDataCalls[setDataCalls.length - 1];
+    // Back to "no filter, no focus" → all nodes visible.
+    expect(last.nodes).toHaveLength(5);
+  });
+
+  it("persists the picked level to localStorage", async () => {
+    const { container } = render(() => (
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    ));
+    await Promise.resolve();
+    await Promise.resolve();
+    const pill = Array.from(
+      container.querySelectorAll("button.c4-level-pill"),
+    ).find((b) => b.textContent?.trim().startsWith("Component")) as
+      HTMLButtonElement | undefined;
+    fireEvent.click(pill!);
+    await Promise.resolve();
+    expect(lsGet("archview.c4.lastLevel")).toBe("3");
+    const allPill = Array.from(
+      container.querySelectorAll("button.c4-level-pill"),
+    ).find((b) => b.textContent?.trim() === "All levels") as
+      HTMLButtonElement | undefined;
+    fireEvent.click(allPill!);
+    await Promise.resolve();
+    expect(lsGet("archview.c4.lastLevel")).toBeNull();
+  });
+
+  it("restores the level filter from localStorage on mount", async () => {
+    lsSet("archview.c4.lastLevel", "2");
+    const { container } = render(() => (
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    ));
+    await Promise.resolve();
+    await Promise.resolve();
+    // The Container pill should already be active on first render.
+    const pill = container.querySelector(
+      'button.c4-level-pill[aria-pressed="true"]',
+    );
+    expect(pill?.textContent?.trim()).toMatch(/^Container/);
   });
 });
