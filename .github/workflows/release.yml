@@ -93,6 +93,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # dtolnay/rust-toolchain does not reliably add cross targets on
+      # macOS arm64 hosts (E0463 'can't find crate for core' for
+      # x86_64-apple-darwin). Ensure it explicitly.
+      - name: Ensure target installed
+        run: rustup target add ${{ matrix.target }}
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
