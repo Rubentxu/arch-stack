@@ -64,7 +64,7 @@
 | [ADR-053](ADR-053-architecture-diff-as-first-class-capability.md) | Architecture Diff como capability first-class — `archctl architecture diff <id_a> <id_b>` | Aceptado — 2026-08-13 (shipped en v1.51.0, P2-02) |
 | [ADR-054](ADR-054-architecture-policy-and-fitness-functions.md) | Políticas y fitness functions sobre el grafo canónico — 6 reglas (ADR-054) + SARIF/JUnit projectors | Aceptado — 2026-08-13 (shipped en v1.54.0 + v1.55.0, P2-05 + P2-06) |
 | [ADR-055](ADR-055-sanitized-architecture-bundle.md) | Sanitized Architecture Bundle compartible | **Cerrado — 2026-08-18** (fase 1 strict v1.61.0, fase 2 scanner v1.63.0, fase 3 entropía v1.67.0; reabierto por ADR-061) |
-| [ADR-056](ADR-056-moldable-architecture-workbench.md) | Moldable Architecture Workbench y navegación semántica (LensSpec) — canonical anchor de ROADMAP §H3 entry criteria | **Deferido — 2026-08-18** (Reopen: ≥2 LensSpec-translatable consumers OR measured need; entry criteria en ROADMAP §H3) |
+| [ADR-056](ADR-056-moldable-architecture-workbench.md) | Moldable Architecture Workbench y navegación semántica (LensSpec) — canonical anchor de ROADMAP §H3 entry criteria | **Aceptado (parcial) — 2026-08-19** via ADR-062 (items 31–33, v1.68.0; P3-05 deferida) |
 | [ADR-057](ADR-057-archctl-versioned-distribution.md) | `archctl` como CLI versionado distribuible (asdf-inspired) | **Aceptado — 2026-08-11** (H4 closed en v1.36.0, M73+M76; PR #149 + PR #152) |
 | [ADR-058](ADR-058-self-update-github-releases.md) | Self-update via GitHub Releases (binarios pre-compilados) | **Aceptado — 2026-08-11** (H4 closed en v1.36.0, M76; PR #152) |
 | [ADR-059](ADR-059-rawgraphquery-trait-split.md) | RawGraphQuery trait split + SemanticEdgeRepository boundary (P1-04) | Aceptado (2026-08-15) |

@@ -1,13 +1,13 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.67.0 ALCANZADO (2026-08-18) — Wave 3 parcial: items 19/22/27/28+29 cerrados en PRs #211–#229; ADR-055 fases 1–3 CERRADAS; CHANGELOG formalizado v1.60.0–v1.67.0.
-**Versión:** 2.9
+**Estado:** v1.68.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) vía ADR-062; restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
+**Versión:** 2.10
 **Fecha:** 19 de agosto de 2026
-**Cambios vs 2.8:** Cycle log backfill v1.50.0–v1.67.0 (Wave 2 P2-02→P2-10, Wave 3 items 19/22/27/28+29, fusion follow-ups, ADR-055 fases 2–3). ADR-055 sale de deferral → CERRADO (reopened por ADR-061 y completado). Restante Wave 3: items 30–34 (session token, NavigationTarget, action palette, semantic zoom, lens recommendation).
+**Cambios vs 2.9:** ADR-062 reconsidera ADR-056 en alcance parcial (precedente ADR-061): pasos 1–3 de su estrategia de migración sin LensSpec. Cycle log row para `wave-3-workbench-ux` (v1.68.0). ADR-056 → Aceptado (parcial).
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
-> parcial (items 19/22/27/28+29 cerrados, 30–34 pendientes), ver
-> [docs/STATE.md](STATE.md) §"Plan vigente" +
+> parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
+> gates), ver [docs/STATE.md](STATE.md) §"Plan vigente" +
 > "Anti-roadmap" + "Próxima acción del usuario". Este doc se
 > mantiene como anchor histórico (M0–M32, milestones 73–76, H4
 > cerrado).
@@ -977,6 +977,7 @@ Incluye:
 | `fuse-on-write` | `feat/fuse-on-write` (merged via PR #227) | `ce28185` | **Cerrado** ✅ · tag `v1.65.0` · recompute_fused_for_versions tras cada write de evidencia + limpieza superseded |
 | `fusion-params` | `feat/fusion-params` (merged via PR #228) | `ab5e9ba` | **Cerrado** ✅ · tag `v1.66.0` · `--cutoff-days` + StalenessWeightedEvaluator::new + evaluador en seam |
 | `adr055-phase3-entropy` | `feat/adr055-phase3-entropy` (merged via PR #229) | `2ee1107` | **Cerrado** ✅ · tag `v1.67.0` · detección por entropía Shannon ≥4.0 bits/char + allowlist — **ADR-055 CERRADO** |
+| `wave-3-workbench-ux` | `feat/wave-3-workbench-ux` (merged via PR #231, squash `f9d76df`) | `f9d76df` | **Cerrado** ✅ · tag `v1.68.0` · ADR-062 (reconsideración ADR-056 alcance parcial, items 31–33): NavigationTarget + pila de navegación (breadcrumbs, back/forward), action palette (copy id, zoom C4, explain vía `GET /api/explain`, relations), semantic zoom Context↔Container↔Component por re-export — sin LensSpec (P3-05 sigue deferida; nivel "Code" con reopen trigger propio) · strict bundles degradan explain · fixes pre-existentes: flock flakiness diagram_export (serialización mutex) + version drift ADR-038 (1.68.0) · verify: archview 147 tests + archctl 1107 tests + clippy/fmt/doctor + verify-local PASS · debt-verify PASS_WITH_WARNINGS (0/0/0, 2 LOW) · A-lite, fallback-path (delegación sddk-* rota) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 

@@ -2,16 +2,16 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-19, post-release v1.67.0 (cierre Wave 3 items 19/22/27/28+29,
-> ADR-055 fases 1–3, CHANGELOG formalizado v1.60.0–v1.67.0).
+> Última actualización: 2026-08-19, post-release v1.68.0 (workbench UX parcial:
+> items 31–33 via ADR-062, /api/explain, semantic zoom C4).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `331902a` (merge local de `2ee1107` PR #229; árboles idénticos, GitHub main en `2ee1107`) |
-| Versión | `v1.67.0` (latest tag, ADR-055 fase 3) |
+| Tip | `f9d76df` (PR #231 squash — workbench UX parcial) |
+| Versión | `v1.68.0` (latest tag, workbench UX ADR-062) |
 | Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); re-cuenta en cada verify; clippy clean |
 | Working tree | clean (`main`); tags v1.65.0–v1.67.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
@@ -19,7 +19,7 @@
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 138 (v0.1.0 → v1.67.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Tags | 139 (v0.1.0 → v1.68.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -103,6 +103,7 @@
 | `v1.65.0` | fuse-on-write | `recompute_fused_for_versions` persiste tras cada write de evidencia (seams `c4_discover`/`call_graph`) + limpieza de superseded (PR #227). |
 | `v1.66.0` | fusion-params | `--cutoff-days` configurable + `StalenessWeightedEvaluator::new` + evaluador configurable en seam (PR #228). |
 | `v1.67.0` | adr055-phase3-entropy | Detección por entropía Shannon (≥4.0 bits/char, len ≥32) + allowlist documentada (PR #229). **ADR-055 CERRADO** (fases 1–3). |
+| `v1.68.0` | wave-3-workbench-ux | Workbench UX parcial (ADR-062, items 31–33): NavigationTarget + pila con breadcrumbs/back/forward, action palette (copy id, zoom C4, explain vía `GET /api/explain`, relations), semantic zoom Context↔Container↔Component por re-export. Strict bundles degradan. Fixes: flock flakiness diagram_export + version drift (PR #231). |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -143,7 +144,7 @@
 | Apache Arrow | Deferred | Bundle size >10MB AND JSON parsing bottleneck measured |
 | cosmos.gl (>100k nodos) | Deferred | Node count >100k AND G6 canvas FPS <30 |
 | [ADR-051](adr/ADR-051-loopback-workbench-session-security.md) loopback workbench session security | Deferred (ADR-051 accepted with Deferido 2026-08-18) | ≥1 disclosed loopback-session hijack vector (CVE or reproducible PoC) OR feature parity claim requiring per-session permission scoping |
-| [ADR-056](adr/ADR-056-moldable-architecture-workbench.md) moldable architecture workbench (LensSpec) | Deferred (ADR-056 accepted with Deferido 2026-08-18; canonical anchor of ROADMAP §H3) | ≥2 consumers with LensSpec-translatable duplication OR a measured need (≥3 users reporting the same lens problem OR perf p99 breach traceable to view-strategy variance) |
+| [ADR-056](adr/ADR-056-moldable-architecture-workbench.md) moldable architecture workbench (LensSpec) | **Aceptado (parcial)** — 2026-08-19 via ADR-062: items 31–33 shipped (v1.68.0); P3-05 sigue deferida | ≥2 consumers with LensSpec-translatable duplication OR a measured need (≥3 users reporting the same lens problem OR perf p99 breach traceable to view-strategy variance) |
 | SceneGraph abstraction | Deferred | ≥3 view types need shared scene model |
 | WIT Plugin SDK | Deferred | ≥1 third-party consumer registered |
 | Event sourcing/replay | Deferred | Temporal diff is shipped requirement |
@@ -224,7 +225,7 @@ Estado de la wave:
    policy metamodel (P2-05), fitness evaluator (P2-06), context relevance
    (P2-07), task context (P2-08), observation/claim carriers (P2-09a),
    intent vs reality (P2-10). All under `archctl architecture ...`.
-4. **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine) y 28+29 (strict ArchBundle + archview read-only) CERRADOS v1.60.0–v1.67.0; restantes 30–34 (session token, NavigationTarget, action palette, semantic zoom, lens recommendation) pendientes.
+4. **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only) y 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) CERRADOS v1.60.0–v1.68.0; restantes: item 30 (session token, gated por ADR-051) y item 34 (lens recommendation, P3-05, gated por ADR-056/062).
 
 ## Comandos de verificación
 
@@ -255,27 +256,28 @@ cargo run --quiet --bin archctl -- capabilities --check
 ## Próxima acción del usuario
 
 Wave 3 parcial CERRADO: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion
-engine) y 28+29 (strict ArchBundle + archview read-only) — v1.60.0 a
-v1.67.0, todos taggeados (tags v1.65.0–v1.67.0 verificados en origin,
-2026-08-19). CHANGELOG formalizado con secciones por release.
+engine), 28+29 (strict ArchBundle + archview read-only) y **31–33
+(workbench UX, v1.68.0)** — v1.60.0 a v1.68.0, todos taggeados y
+verificados en origin.
 
-**ADR-055 CERRADO** (2026-08-18): fase 1 strict bundle (v1.61.0), fase 2
-scanner anti-secretos (v1.63.0), fase 3 entropía Shannon (v1.67.0).
-Out-of-scope documentado: report de redacciones, cutoff por proyecto (XDG).
-
-**Fusion engine COMPLETO** (v1.62.0–v1.66.0): persiste por defecto,
-`--expire-stale`, fuse-on-write desde extractores, `--cutoff-days` y
-evaluador configurable en el seam.
+**Workbench UX parcial (ADR-062)**: cross-view identity (NavigationTarget
+sobre IDs canónicos), action palette (copy id, zoom, explain vía
+`/api/explain`, relations), semantic zoom C4 (Context↔Container↔Component
+por re-export). Strict bundles degradan explain.
 
 Restante Wave 3 (catálogo `docs/arch-stack-proposals-2026-08-13/`):
-items 30–34 — session token, cross-view NavigationTarget, action palette,
-semantic zoom, lens recommendation experiment (solapa con ADR-056).
+- **Item 30 (session token)** — gated por ADR-051 (hijack vector
+  disclosed).
+- **Item 34 (lens recommendation)** — P3-05, XL, gated por ADR-056/062
+  (≥2 consumers OR measured need).
+- **Nivel "Code" (C4→class-diagram)** — reopen trigger propio (ADR-062):
+  ≥1 consumidor con necesidad real.
+- **ELK layout + virtualización >1k nodos** (M17.1 opcionales) — solo si
+  el zoom los exige.
 
 Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 - **ADR-051 loopback session security** — abre solo con hijack vector
   disclosed.
-- **ADR-056 moldable architecture workbench (LensSpec)** — entry criteria
-  explícitos en `docs/ROADMAP.md` §H3; ≥2 consumers OR measured need.
 - **B2/B3 ADR-016** — pendientes con reopen triggers en
   `docs/adr/ADR-016-activegraph-packs-investigacion.md`.
 
