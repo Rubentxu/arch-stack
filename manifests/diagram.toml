@@ -32,7 +32,6 @@ editable = [
   "archctl/src/diagram/hash.rs",
   "archctl/src/diagram/schema_embed.rs",
   "archctl/src/diagram/assets.rs",
-  "archctl/src/diagram/queries.rs",
   "archctl/src/diagram/export_types.rs",
   "archctl/src/diagram/view_types.rs",
   "archctl/src/diagram/apply.rs",
