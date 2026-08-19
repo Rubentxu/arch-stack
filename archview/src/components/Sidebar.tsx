@@ -5,8 +5,17 @@
  * sidebar also renders a SourceDrawer (H1, ADR-041 §5–§6).
  */
 
-import { For, Show, type Component } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  type Component,
+} from "solid-js";
 import type { GraphNode } from "../bundle/loader";
+import type { RendererEdge } from "../types";
+import { zoomTargetFor } from "../lib/navigation";
+import type { ExplainResult } from "../lib/workspace";
 import { SourceDrawer, type SourceDrawerProps } from "./SourceDrawer";
 
 export interface SidebarStats {
@@ -32,9 +41,87 @@ export interface SidebarProps {
   /** Wired by App via `useWorkspaceState()` — fetch + open-editor handlers. */
   onFetchSource?: SourceDrawerProps["fetchSource"];
   onOpenInEditor?: SourceDrawerProps["openInEditor"];
+  /** ADR-062: zoom handler — App resolves the NavigationTarget. */
+  onZoom?: (dir: "in" | "out") => void;
+  /** ADR-062: explain action — undefined for strict bundles (no store). */
+  onExplain?: (id: string) => Promise<ExplainResult>;
+  /** Bundle edges for the relations section (filtered by selected node). */
+  edges?: readonly RendererEdge[];
+}
+
+/** One relation row for the selected node. */
+interface RelationRow {
+  dir: "in" | "out";
+  other: string;
+  label?: string;
+}
+
+function relationsFor(
+  node: GraphNode,
+  edges: readonly RendererEdge[],
+): RelationRow[] {
+  return edges
+    .filter((e) => e.source === node.id || e.target === node.id)
+    .map((e) => ({
+      dir: e.source === node.id ? ("out" as const) : ("in" as const),
+      other: e.source === node.id ? e.target : e.source,
+      label: e.label ?? e.kind,
+    }));
+}
+
+/** Defensive file:line label for explain evidence entries. */
+function explainEvidenceLine(ev: Record<string, unknown>): string {
+  const file = ev.file ?? ev.path ?? "?";
+  const line = ev.line ?? ev.start_line ?? "?";
+  return `${String(file)}:${String(line)}`;
 }
 
 export const Sidebar: Component<SidebarProps> = (props) => {
+  const [copied, setCopied] = createSignal(false);
+  const [explainState, setExplainState] = createSignal<
+    "idle" | "loading" | "error"
+  >("idle");
+  const [explainData, setExplainData] = createSignal<ExplainResult | null>(
+    null,
+  );
+  const [explainError, setExplainError] = createSignal<string | null>(null);
+
+  // Reset per-node action state when the selection changes.
+  createEffect(() => {
+    const selectedId = props.node?.id;
+    void selectedId; // reactive dependency
+    setCopied(false);
+    setExplainState("idle");
+    setExplainData(null);
+    setExplainError(null);
+  });
+
+  const copyId = () => {
+    const n = props.node;
+    if (!n) return;
+    const write = navigator.clipboard?.writeText;
+    if (write) {
+      void write(n.id).then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      });
+    }
+  };
+
+  const runExplain = async () => {
+    const n = props.node;
+    if (!n || !props.onExplain) return;
+    setExplainState("loading");
+    setExplainError(null);
+    try {
+      setExplainData(await props.onExplain(n.id));
+      setExplainState("idle");
+    } catch (e) {
+      setExplainError(e instanceof Error ? e.message : String(e));
+      setExplainState("error");
+    }
+  };
+
   return (
     <aside class="sidebar">
       <header class="sidebar-header">
@@ -130,6 +217,59 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   </dd>
                 </Show>
               </dl>
+
+              <div class="node-actions">
+                <h4>Actions</h4>
+                <div class="actions-row">
+                  <button type="button" onClick={copyId}>
+                    {copied() ? "copied ✓" : "copy id"}
+                  </button>
+                  <Show when={zoomTargetFor(node(), "in") !== null}>
+                    <button type="button" onClick={() => props.onZoom?.("in")}>
+                      zoom in
+                    </button>
+                  </Show>
+                  <Show when={zoomTargetFor(node(), "out") !== null}>
+                    <button type="button" onClick={() => props.onZoom?.("out")}>
+                      zoom out
+                    </button>
+                  </Show>
+                  <Show when={props.onExplain}>
+                    <button type="button" onClick={() => void runExplain()}>
+                      {explainState() === "loading" ? "explaining…" : "explain"}
+                    </button>
+                  </Show>
+                </div>
+                <Show when={explainError()}>
+                  <p class="action-error">{explainError()}</p>
+                </Show>
+                <Show when={explainData()}>
+                  {(data) => (
+                    <div class="explain-result">
+                      <p class="statement">{data().subject.statement}</p>
+                      <Show when={data().provenance.unsubstantiated}>
+                        <p class="muted">unsubstantiated — no evidence found</p>
+                      </Show>
+                      <ul class="evidence-list">
+                        <For each={data().provenance.evidence}>
+                          {(ev) => (
+                            <li>
+                              <code>{explainEvidenceLine(ev)}</code>
+                              <Show when={ev.claim}>
+                                <span class="muted"> {String(ev.claim)}</span>
+                              </Show>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                      <For each={data().warnings}>
+                        {(w) => <p class="muted">⚠ {w}</p>}
+                      </For>
+                    </div>
+                  )}
+                </Show>
+              </div>
+
               <h4>Evidence</h4>
               <ul class="evidence-list">
                 <For each={extractEvidence(node())}>
@@ -145,6 +285,30 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   )}
                 </For>
               </ul>
+
+              <Show when={(props.edges ?? []).length > 0}>
+                <h4>Relations</h4>
+                <Show
+                  when={relationsFor(node(), props.edges ?? []).length > 0}
+                  fallback={<p class="muted">no relations for this node</p>}
+                >
+                  <ul class="relations-list">
+                    <For each={relationsFor(node(), props.edges ?? [])}>
+                      {(rel) => (
+                        <li class={`rel ${rel.dir}`}>
+                          <span class="dir">
+                            {rel.dir === "in" ? "←" : "→"}
+                          </span>
+                          <code>{rel.other}</code>
+                          <Show when={rel.label}>
+                            <span class="muted"> {rel.label}</span>
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </Show>
 
               <Show
                 when={

@@ -34,7 +34,8 @@ import { DriftView } from "./views/DriftView";
 import { ImpactView } from "./views/ImpactView";
 import { PackageView } from "./views/PackageView";
 import { buildPackageNode } from "./views/PackageGraph";
-import { useWorkspaceState } from "./lib/workspace";
+import { useWorkspaceState, explainElement } from "./lib/workspace";
+import { NavStack, zoomTargetFor, type NavEntry } from "./lib/navigation";
 
 const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
   {
@@ -88,7 +89,10 @@ export const App: Component = () => {
   // demand. Wired into the Sidebar (SourceDrawer) below.
   const ws = useWorkspaceState();
 
-  const handleLoad = async (url: string) => {
+  // ADR-062: cross-view navigation stack (breadcrumbs + back/forward).
+  const [stack, setStack] = createSignal<NavStack>(new NavStack());
+
+  const loadUrl = async (url: string, focusId?: string) => {
     setError(null);
     try {
       const b = await loadBundle(url);
@@ -96,8 +100,53 @@ export const App: Component = () => {
       setSelected(null);
       setStats(undefined);
       setCallGraphMode("impact");
+      if (focusId) {
+        // Identity survives view changes: keep the canonical element
+        // selected when it is present in the destination bundle.
+        setSelected(b.nodes.find((n) => n.id === focusId) ?? null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleLoad = async (url: string, label?: string) => {
+    setStack((s) => s.push({ url, label: label ?? url }));
+    await loadUrl(url);
+  };
+
+  const navigateEntry = (entry: NavEntry) => {
+    setStack((s) => s.push(entry));
+    void loadUrl(entry.url, entry.elementId);
+  };
+
+  const goHistory = (dir: "back" | "forward") => {
+    const next = dir === "back" ? stack().back() : stack().forward();
+    if (next.index === stack().index) return;
+    setStack(next);
+    const entry = next.current();
+    if (entry) void loadUrl(entry.url, entry.elementId);
+  };
+
+  const jumpTo = (i: number) => {
+    const next = stack().jumpTo(i);
+    if (next.index === stack().index) return;
+    setStack(next);
+    const entry = next.current();
+    if (entry) void loadUrl(entry.url, entry.elementId);
+  };
+
+  const handleZoom = (dir: "in" | "out") => {
+    const node = selected();
+    if (!node) return;
+    const t = zoomTargetFor(node, dir);
+    if (t) {
+      navigateEntry({
+        url: t.url,
+        label: t.label,
+        elementId: t.elementId,
+        level: t.level,
+      });
     }
   };
 
@@ -180,6 +229,43 @@ export const App: Component = () => {
             </button>
           </nav>
         </Show>
+
+        <nav class="nav-history" aria-label="Navigation history">
+          <button
+            type="button"
+            aria-label="Back"
+            disabled={stack().index <= 0}
+            onClick={() => goHistory("back")}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            aria-label="Forward"
+            disabled={
+              stack().length === 0 || stack().index >= stack().length - 1
+            }
+            onClick={() => goHistory("forward")}
+          >
+            →
+          </button>
+          <ol class="breadcrumbs">
+            <For each={stack().all()}>
+              {(entry, i) => (
+                <li>
+                  <button
+                    type="button"
+                    class={i() === stack().index ? "active" : ""}
+                    title={entry.url}
+                    onClick={() => jumpTo(i())}
+                  >
+                    {entry.label}
+                  </button>
+                </li>
+              )}
+            </For>
+          </ol>
+        </nav>
       </header>
 
       <main class="main">
@@ -352,6 +438,9 @@ export const App: Component = () => {
           onOpenInEditor={
             bundle()?.strict === true ? undefined : ws.openInEditor
           }
+          onZoom={handleZoom}
+          onExplain={bundle()?.strict === true ? undefined : explainElement}
+          edges={bundle()?.edges ?? []}
         />
       </main>
 
