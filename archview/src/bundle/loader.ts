@@ -87,14 +87,24 @@ export function normalizeBundle(
         (raw.interactions as Record<string, unknown>[]) ?? []
       ).map(normalizeInteraction);
       break;
-    case "class-diagram":
-      nodes = ((raw.nodes as Record<string, unknown>[] | undefined) ?? []).map(
-        classDiagramNodeToNode,
-      );
-      edges = ((raw.edges as Record<string, unknown>[] | undefined) ?? []).map(
-        classDiagramEdgeToEdge,
-      );
+    case "class-diagram": {
+      // M17.C / F2: real archctl bundles can have edge endpoints
+      // that do not match a node id byte-for-byte. The two common
+      // shapes are (a) the trailing `:line` differs because it is
+      // the line of the reference, not the line of the class
+      // declaration, and (b) the endpoint is just the class name.
+      // We normalise every edge endpoint to a real node id before
+      // handing the bundle to the G6 renderer, which does a strict
+      // id-based lookup.
+      const rawNodes =
+        (raw.nodes as Record<string, unknown>[] | undefined) ?? [];
+      const rawEdges =
+        (raw.edges as Record<string, unknown>[] | undefined) ?? [];
+      nodes = rawNodes.map(classDiagramNodeToNode);
+      const index = buildEndpointIndex(nodes);
+      edges = rawEdges.map((e) => classDiagramEdgeToEdge(e, index));
       break;
+    }
     case "c4":
       // Canonical viewer-bundle: manifest + projection + evidence + styles.
       // R1 — incomplete bundles are rejected with the missing section named.
@@ -141,11 +151,19 @@ export function normalizeBundle(
   return {
     schemaVersion,
     source,
-    // R2 — deterministic: never `new Date()`, always manifest.generatedAt.
-    loadedAt: stringOr(
-      (raw.manifest as Record<string, unknown> | undefined)?.generatedAt,
-      "unknown",
-    ),
+    // R2 — deterministic preferred: `manifest.generatedAt` if present.
+    // M17.C / F3: bundles that are not canonical C4 (e.g. the
+    // class-diagram shape produced by `archctl code class-diagram`)
+    // have no `manifest` section, so they used to land in the
+    // sidebar as `loadedAt: unknown`. The wall clock is fine as a
+    // fallback — it is the moment the workbench opened the bundle,
+    // which is what the user actually wants to see. R2 only forbids
+    // using the wall clock when a deterministic value is available.
+    loadedAt:
+      stringOr(
+        (raw.manifest as Record<string, unknown> | undefined)?.generatedAt,
+        "",
+      ) || new Date().toISOString(),
     nodes,
     edges,
     rawKind,
@@ -226,15 +244,76 @@ function classDiagramNodeToNode(n: Record<string, unknown>): RendererNode {
   };
 }
 
-function classDiagramEdgeToEdge(e: Record<string, unknown>): RendererEdge {
+function classDiagramEdgeToEdge(
+  e: Record<string, unknown>,
+  index: EndpointIndex,
+): RendererEdge {
   return {
     id: stringOr(e.canonical_key, `${e.source}->${e.target}`),
-    source: stringOr(e.source, ""),
-    target: stringOr(e.target, ""),
+    source: resolveEndpoint(stringOr(e.source, ""), index),
+    target: resolveEndpoint(stringOr(e.target, ""), index),
     kind: stringOr(e.predicate, "unknown"),
     label: stringOr(e.predicate, ""),
     meta: { ...e },
   };
+}
+
+/**
+ * A small lookup index used by the class-diagram normaliser to
+ * resolve edge endpoints that do not match a node id byte-for-byte.
+ * Three keys are kept per node so the resolution is fast and the
+ * intent is obvious at the call site.
+ *
+ *   byId      : the exact canonical_key
+ *   byIdNoLine: the canonical_key with the trailing `:N` stripped
+ *   byName    : the short name (last `:` segment)
+ */
+interface EndpointIndex {
+  byId: Map<string, string>;
+  byIdNoLine: Map<string, string>;
+  byName: Map<string, string>;
+}
+
+function buildEndpointIndex(nodes: RendererNode[]): EndpointIndex {
+  const byId = new Map<string, string>();
+  const byIdNoLine = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const n of nodes) {
+    if (n.id) byId.set(n.id, n.id);
+    const head = stripTrailingLine(n.id);
+    if (head && head !== n.id) byIdNoLine.set(head, n.id);
+    if (n.label) byName.set(n.label, n.id);
+  }
+  return { byId, byIdNoLine, byName };
+}
+
+/**
+ * Resolve an edge endpoint to a real node id. Tries, in order:
+ *   1. exact id match
+ *   2. id with the trailing `:N` (line) stripped
+ *   3. short name match
+ * If none match, returns the original reference untouched so the
+ * renderer can still warn about the orphan rather than silently
+ * rewiring the edge.
+ */
+function resolveEndpoint(ref: string, index: EndpointIndex): string {
+  if (!ref) return ref;
+  if (index.byId.has(ref)) return ref;
+  const head = stripTrailingLine(ref);
+  if (head && index.byIdNoLine.has(head)) {
+    return index.byIdNoLine.get(head)!;
+  }
+  if (index.byName.has(ref)) return index.byName.get(ref)!;
+  return ref;
+}
+
+/** Drop the trailing `:N` if `ref` ends in one. */
+function stripTrailingLine(ref: string): string {
+  const idx = ref.lastIndexOf(":");
+  if (idx < 0) return ref;
+  const tail = ref.slice(idx + 1);
+  if (/^\d+$/.test(tail)) return ref.slice(0, idx);
+  return ref;
 }
 
 /**
