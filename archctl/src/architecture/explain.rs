@@ -132,6 +132,11 @@ fn explain_element(repo: &dyn DiagramRepository, id: &str) -> Result<ExplainRepo
     // Determine category from id prefix
     let category = if id.starts_with("c4:") {
         "c4"
+    } else if id.starts_with("cg:") || id.starts_with("cd:") {
+        // Code elements (call-graph / class-diagram). UAT smoke
+        // 2026-08-19: explain failed for code elements because the
+        // fallback list omitted "code".
+        "code"
     } else if id.starts_with("uml") {
         "uml"
     } else if id.starts_with("behavior:") {
@@ -152,7 +157,7 @@ fn explain_element(repo: &dyn DiagramRepository, id: &str) -> Result<ExplainRepo
         Some(e) => e,
         None => {
             // Try other categories
-            for cat in &["uml", "behavior"] {
+            for cat in &["uml", "behavior", "code"] {
                 let elements = repo
                     .list_elements(cat, None, None)
                     .map_err(ExplainError::from)?;

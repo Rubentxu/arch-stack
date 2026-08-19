@@ -205,7 +205,7 @@ pub fn build_bundle(
 
     // 5. Build manifest
     let manifest = Manifest {
-        schema_version: "1.1.0".into(), // M81: bumped from 1.0.0 → 1.1.0 for cosmetic fields
+        schema_version: "1.1.1".into(), // 1.1.0 → 1.1.1: EvidenceEntry.status (UAT smoke 2026-08-19)
         format: "viewer-bundle".into(),
         view_selector: selector.to_string(),
         base_revision: revision,
@@ -1140,7 +1140,7 @@ mod tests {
         assert_eq!(report.element_count, 1);
         assert_eq!(report.edge_count, 1);
         assert_eq!(report.evidence_count, 1);
-        assert_eq!(report.manifest.schema_version, "1.1.0");
+        assert_eq!(report.manifest.schema_version, "1.1.1");
         assert_eq!(report.manifest.format, "viewer-bundle");
         assert_eq!(report.manifest.view_selector, "container:orders");
         assert!(!report.manifest.base_revision.is_empty());

@@ -1434,7 +1434,7 @@ pub fn apply(
                 blake3::hash(version_props_str.as_bytes()).to_hex()
             );
             crate::graph::Element {
-                id: format!("cg:{}", n.canonical_key),
+                id: format!("cg:{}", crate::graph::sanitize_identifier(&n.canonical_key)),
                 kind_id: kind_id.to_string(),
                 category: "code".to_string(),
                 canonical_key: n.canonical_key.clone(),
@@ -1466,7 +1466,7 @@ pub fn apply(
         }
         element_versions.push(crate::graph::ElementVersion {
             id: version_id,
-            element_id: format!("cg:{}", n.canonical_key),
+            element_id: format!("cg:{}", crate::graph::sanitize_identifier(&n.canonical_key)),
             name: n.name.clone(),
             status: "drafted".to_string(),
             origin: "call-graph".to_string(),
@@ -1490,19 +1490,25 @@ pub fn apply(
                 FunctionKind::Method => "code.method",
                 FunctionKind::Closure => "code.closure",
             };
-            (format!("cg:{}", n.canonical_key), kind_id.to_string())
+            (
+                format!("cg:{}", crate::graph::sanitize_identifier(&n.canonical_key)),
+                kind_id.to_string(),
+            )
         })
         .collect();
     if !of_type_pairs.is_empty() {
-        ElementRepository::batch_link_of_type(s, &of_type_pairs)
-            .context("batch_link_of_type")
-            .map_err(CallGraphError::GraphWrite)?;
+        // NOTE: map_err(GraphWrite) on an anyhow chain collapses the
+        // causes (anyhow Display = outermost context only). Format with
+        // {:#} to preserve the chain — found during UAT smoke 2026-08-19.
+        ElementRepository::batch_link_of_type(s, &of_type_pairs).map_err(|e| {
+            CallGraphError::GraphWrite(anyhow::anyhow!("batch_link_of_type: {e:#}"))
+        })?;
     }
 
     // Write call edges (per-edge, since the OPTIONAL MATCH semantics
     // don't batch cleanly with UNWIND — callee resolution is per-row).
     for edge in &report.edges {
-        let src_element_id = format!("cg:{}", edge.caller);
+        let src_element_id = format!("cg:{}", crate::graph::sanitize_identifier(&edge.caller));
         if !existing_keys.contains(&edge.caller) {
             let sa_id = if let Some(id) = source_artifact_ids.get(&edge.file) {
                 id.clone()

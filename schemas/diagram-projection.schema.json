@@ -190,6 +190,10 @@
         "contentHash": {
           "type": "string"
         },
+        "status": {
+          "type": "string",
+          "enum": ["accepted", "drafted", "superseded"]
+        },
         "observedAt": {
           "type": "string",
           "format": "date-time"

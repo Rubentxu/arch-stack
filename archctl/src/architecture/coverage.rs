@@ -223,7 +223,7 @@ pub fn coverage(
     let mut all_version_ids: Vec<String> = Vec::new();
 
     // Iterate elements across all categories
-    for category in &["c4", "uml", "behavior"] {
+    for category in &["c4", "uml", "behavior", "code"] {
         let elements = repo.list_elements(category, None, None)?;
         for element in elements {
             total_elements += 1;
@@ -245,7 +245,7 @@ pub fn coverage(
     }
 
     // Iterate semantic edges (relations)
-    for category in &["c4", "uml", "behavior"] {
+    for category in &["c4", "uml", "behavior", "code"] {
         let edges = repo.list_semantic_edges(category)?;
         total_relations += edges.len();
         // SemanticEdgeRow doesn't have confidence — relations in MVP
@@ -262,7 +262,7 @@ pub fn coverage(
 
     // Also collect relation version ids and fetch relation evidence
     let mut all_rel_version_ids: Vec<String> = Vec::new();
-    for category in &["c4", "uml", "behavior"] {
+    for category in &["c4", "uml", "behavior", "code"] {
         let edges = repo.list_semantic_edges(category)?;
         for edge in edges {
             if !edge.relation_id.is_empty()

@@ -256,11 +256,11 @@ fn export_bundle_envelope_structurally_valid() {
         "bundle must have 'styles' field"
     );
 
-    // Schema version must be "1.1.0" (inside manifest, not top-level).
+    // Schema version must be "1.1.1" (inside manifest, not top-level).
     assert_eq!(
         bundle["manifest"]["schemaVersion"].as_str(),
-        Some("1.1.0"),
-        "schemaVersion must be 1.1.0"
+        Some("1.1.1"),
+        "schemaVersion must be 1.1.1"
     );
 
     // Manifest elementCount must match actual projection nodes length.

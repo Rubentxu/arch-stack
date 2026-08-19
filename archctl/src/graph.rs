@@ -187,6 +187,28 @@ pub fn validate_identifier(id: &str) -> Result<&str> {
     Ok(id)
 }
 
+/// Sanitize an identifier derived from an external canonical key.
+///
+/// Tree-sitter canonical keys may contain characters outside the strict
+/// identifier charset (e.g. Rust closures `closure@53`). Derived ids
+/// (`cg:`/`cd:`/`sm:` prefixes) must stay within `[alnum . - _ : /]` so
+/// `validate_identifier` and Cypher literals remain safe. Disallowed
+/// characters collapse to `-`.
+///
+/// Found by the 2026-08-19 UAT smoke: `call-graph --apply` on
+/// `tokio-rs/axum` failed with `invalid character '@' in identifier`.
+pub fn sanitize_identifier(raw: &str) -> String {
+    raw.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '/') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
 pub fn query(
     project_dir: &Path,
     cypher: &str,
@@ -369,6 +391,24 @@ mod tests {
         assert!(validate_identifier("curly}boom").is_err());
         assert!(validate_identifier("nonascií").is_err());
         assert!(validate_identifier(&"x".repeat(257)).is_err());
+    }
+
+    #[test]
+    fn sanitize_identifier_collapses_disallowed_chars() {
+        // Rust closures: tree-sitter canonical keys carry '@' (UAT smoke bug).
+        assert_eq!(
+            sanitize_identifier("rust:src/main.rs:closure@53:53"),
+            "rust:src/main.rs:closure-53:53"
+        );
+        // Class-diagram arrow separator + generics.
+        assert_eq!(sanitize_identifier("a→b<c>"), "a-b-c-");
+        // Valid identifiers pass through unchanged.
+        assert_eq!(
+            sanitize_identifier("c4:system:checkout"),
+            "c4:system:checkout"
+        );
+        // Sanitized output always validates.
+        assert!(validate_identifier(&sanitize_identifier("x@y→z w")).is_ok());
     }
 
     #[test]
