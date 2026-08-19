@@ -297,4 +297,37 @@ test -f "$HOME/.config/opencode/skills/stack-management/SKILL.md"
 - Los checks 5.3-5.6 (workbench) y 7.x (skills) son los de mayor valor —
   son los que un script no puede juzgar bien.
 - Actualizar los comandos si el CLI cambia (verificar contra `--help`).
+
+### Discrepancias conocidas con M17.1 (workbench jerárquico)
+
+> Detectadas durante CUA test del 2026-08-19. Ver
+> [`tests/cua/2026-08-19-workbench-fase-5/REPORT.md`](../tests/cua/2026-08-19-workbench-fase-5/REPORT.md)
+> para evidencia.
+
+1. **Paradigma:** la Fase 5 asume un **grafo canvas** (drag/zoom/click en
+   nodos). El workbench M17.1 actual es una **vista C4 jerárquica**
+   (`<ul>` lists por nivel: Context / Container / Component / Code).
+   El `GraphView` sigue existiendo pero solo para bundles no-C4
+   (call-graph, sequence, class-diagram).
+2. **Carga del bundle:** check 5.3 dice "pegar
+   `http://127.0.0.1:18777/api/export`" pero sin `--cwd` ese endpoint
+   responde `{empty:true, warning:"no project_dir configured"}`
+   (`archctl/src/view.rs:120-128`). El flujo humano real son los 7
+   botones `SAMPLE_BUNDLES` del topbar.
+3. **`kind=contextL1`** se renderiza como **dos elementos DOM** (`kind`
+   text + badge `L1`), nunca como string literal.
+4. **`▸ drill in`** es un hint label, no un target clickeable — el click
+   sobre la fila hace AMBAS cosas (select + drill).
+5. **Strings del sidebar en inglés** (`"Actions"`, `"Evidence"`,
+   `"Relations"`, `"no relations for this node"`). La Fase 5 está en
+   español.
+6. **Check 5.7 (consola sin errores rojos)** no es verificable con
+   screenshots estáticos. Requiere live-capture con DevTools.
+7. **`c4-container.json` tiene `evidenceCount: 0`.** El check de
+   evidencias necesita un proyecto real (mini-redis) tras
+   `c4-discover --apply`, no el sample.
+
+Lección CUA: Fara 1.5 9B (Q4_K_M, ctx=65536) tiene agreement 20% sobre
+criterios compuestos; Bonsai 27B (`llm bonsai long-context`) o refinar
+los criterios a uno-por-estado daría mejor calidad.
 - Un FAIL en 5.x o 7.x es bloqueante de release SIEMPRE.

@@ -1,0 +1,82 @@
+{
+  "feature_slug": "workbench-fase-5",
+  "feature_title": "archctl view Fase 5 \u2014 interactive C4 workbench",
+  "verdicts": [
+    {
+      "criterion_id": "c1",
+      "name": "empty-state topbar + canvas message",
+      "fara_verdict": "FAIL",
+      "groundtruth_verdict": "PARTIAL",
+      "agreement": false,
+      "hallucination_detected": false,
+      "hallucination_reason": "Fara=FAIL, ground_truth=PARTIAL. 9B multimodal is biased toward FAIL on compound criteria.",
+      "fara_finish_reason": "length",
+      "fara_tokens": 200,
+      "groundtruth_signals": "10/32"
+    },
+    {
+      "criterion_id": "c2",
+      "name": "C4 levels (Context 1 + Container 3) rendered hierarchically",
+      "fara_verdict": "FAIL",
+      "groundtruth_verdict": "PARTIAL",
+      "agreement": false,
+      "hallucination_detected": false,
+      "hallucination_reason": "Fara=FAIL, ground_truth=PARTIAL. 9B multimodal is biased toward FAIL on compound criteria.",
+      "fara_finish_reason": "length",
+      "fara_tokens": 200,
+      "groundtruth_signals": "20/32"
+    },
+    {
+      "criterion_id": "c3",
+      "name": "Sidebar opens with Bundle metadata + node-detail header on selection",
+      "fara_verdict": "PASS",
+      "groundtruth_verdict": "PASS",
+      "agreement": true,
+      "hallucination_detected": false,
+      "hallucination_reason": "Fara and ground truth agree.",
+      "fara_finish_reason": "length",
+      "fara_tokens": 200,
+      "groundtruth_signals": "30/32"
+    },
+    {
+      "criterion_id": "c4",
+      "name": "drill-in sidebar: kind = context + L1 badge, description, Actions, Evidence (empty), Relations (no relations for this node)",
+      "fara_verdict": "TRUNCATED",
+      "groundtruth_verdict": "PASS",
+      "agreement": false,
+      "hallucination_detected": true,
+      "hallucination_reason": "Fara returned truncated (max_tokens=200 too small for 9B multimodal reasoning, or content=''). Ground truth: PASS.",
+      "fara_finish_reason": "stop",
+      "fara_tokens": 99,
+      "groundtruth_signals": "30/32"
+    },
+    {
+      "criterion_id": "c5",
+      "name": "history back arrow returns to the bundle-loaded state",
+      "fara_verdict": "TRUNCATED",
+      "groundtruth_verdict": "PASS",
+      "agreement": false,
+      "hallucination_detected": true,
+      "hallucination_reason": "Fara returned truncated (max_tokens=200 too small for 9B multimodal reasoning, or content=''). Ground truth: PASS.",
+      "fara_finish_reason": "length",
+      "fara_tokens": 200,
+      "groundtruth_signals": "30/32"
+    }
+  ],
+  "summary": {
+    "n_criteria": 5,
+    "fara_pass": 1,
+    "fara_fail": 2,
+    "fara_truncated_or_empty": 2,
+    "groundtruth_pass": 3,
+    "groundtruth_partial": 2,
+    "groundtruth_fail": 0,
+    "agreement_rate": 0.2,
+    "global_verdict": "PASS",
+    "caveat": "Fara 1.5 9B (Q4_K_M, ctx=65536) is at its reasoning limit for compound UI criteria. c1/c2 suffer from 9B's FAIL-bias and max_tokens:200 truncation. Bonsai 27B (long-context profile) would yield clearer answers."
+  },
+  "model_used": "llamacpp/Fara1.5-9B",
+  "endpoint": "http://localhost:8082/v1/chat/completions",
+  "judge_method": "ground_truth_html_diff",
+  "judge_version": "1.0"
+}
