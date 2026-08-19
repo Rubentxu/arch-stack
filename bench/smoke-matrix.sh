@@ -93,13 +93,20 @@ evidence_cell() {
 }
 
 accept_cell() {
-  local ids ok=true
+  local ids n ok=true
   # Evidence rows use `e.id` (LadybugDB projection key), not `id`.
-  ids=$(sandbox_cmd 60 evidence list --status drafted --json | jq -r '.[]["e.id"]' 2>/dev/null | head -20)
+  local listed
+  listed=$(sandbox_cmd 60 evidence list --status drafted --json)
+  n=$(echo "$listed" | jq 'length' 2>/dev/null || echo 0)
+  if [[ "${n:-0}" -lt 1 ]]; then
+    record "accept" false "no drafted evidence (vacuous cell — call-graph produced 0 evidences)"
+    return
+  fi
+  ids=$(echo "$listed" | jq -r '.[]["e.id"]' 2>/dev/null | head -20)
   for id in $ids; do
     sandbox_cmd 60 evidence accept --id "$id" >/dev/null 2>&1 || { ok=false; break; }
   done
-  [[ "$ok" == "true" ]] && record "accept" true "all drafted accepted" || record "accept" false "accept failed for some id"
+  [[ "$ok" == "true" ]] && record "accept" true "all drafted accepted ($n)" || record "accept" false "accept failed for some id"
 }
 
 explain_cell() {
