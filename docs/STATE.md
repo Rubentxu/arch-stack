@@ -2,17 +2,17 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-19, post-release v1.76.0 (M19 ELK layered
-> layout en Web Worker: sustituye dagre built-in de G6, 4 archivos
-> nuevos + refactor g6.ts + 7 vistas migradas).
+> Última actualización: 2026-08-20, post-release v1.77.0 (M20 DOM
+> virtualization: `<VirtualList>` primitive + aplicado a C4View
+> relations footer y Sidebar relations list; +10 tests).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `d97999b` (PR #262 squash — M19 ELK worker layout) |
-| Versión | `v1.76.0` (latest tag, M19 ELK + Web Worker) |
+| Tip | `7597c99` (PR #264 squash — M20 virtualizer) |
+| Versión | `v1.77.0` (latest tag, M20 virtualizer) |
 | Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); re-cuenta en cada verify; clippy clean |
 | Working tree | clean (`main`); tags v1.65.0–v1.69.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
@@ -20,7 +20,7 @@
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 147 (v0.1.0 → v1.76.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Tags | 148 (v0.1.0 → v1.77.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -112,7 +112,8 @@
 | `v1.73.0` | uat-consistency-sprint | Sprint de consistencia post-UAT (PR #252): verify-local.sh ahora usa el binario real vía `CARGO_TARGET_DIR`/config.toml · bench/datasets.sh --populate-self-dogfood rsyncea el checkout local al cache · smoke-matrix.sh accept_cell falla con 0 evidences (gate no-vacuo) · e2e/human_loop_sandbox.sh Fase 9.2 path check correcto · c4_discover batch_link_of_type error incluye sample_id · doc state-machine corregido (rust/typescript/python, no kotlin). |
 | `v1.74.0` | m17-workbench-redesign | Rediseño del workbench archview (4 PRs apilados #255→#256→#257→#258, sprint M17): Sprint A reescribe las 7 vistas (C4/CallGraph/ClassDiagram/Sequence/Impact/Package/Drift) sobre `@antv/g6 ^5.0.50` con dagre layouts, único punto de render y de decode; Sprint B introduce design system unificado (Inter Variable, OKLCH tokens con clamp+rem, light mode override, primitives Button/EmptyState/Tag reusables); Sprint C arregla el loader para bundles reales (EndpointIndex resuelve mismatch `:line-of-declaration` vs `:line-of-reference` del `gold.json`, wall-clock fallback para `loadedAt`); Sprint C2 colapsa el topbar saturado (7 sample buttons → `<select>`) y tokeniza G6 labels (`--g6-label-font-size: var(--fs-sm)` con `readCssVarNumber` para resolver `clamp()` correctamente). 160/160 tests, 0 lint errors, build OK. |
 | `v1.75.0` | m18-c4-semantic-zoom | Semantic-zoom pill bar para C4 view (PR #260, M18): barra de pills sobre el canvas (`All levels` + 1 por nivel C4 con ≥1 nodo, badge de conteo) que filtra el visible set globalmente. Re-click o `All levels` toggle off. Persistencia en localStorage `archview.c4.lastLevel`. Helpers nuevos en `C4Graph.ts` (`nodesAtLevel`, `levelCounts`, `visibleNodesWithLevel`); UI con tokens del design system. Sample multi-nivel `c4-semantic-zoom.json` (3+4+5 nodes, 14 edges) entra en `SAMPLE_BUNDLES`. 173/173 tests, 0 lint errors, build OK. |
-| `v1.76.0` | m19-elk-worker-layout | ELK layered layout en Web Worker (PR #262, M19): sustituye el dagre built-in de G6 por `elkjs 0.12` corriendo en worker via `workerUrl` (Vite `?url`). 4 archivos nuevos (`layout-presets.ts` con TB/LR/RL_LAYERED, `layout-client.ts` con `LayoutService` interface + `ElkLayoutService` real, `preset-layout.ts` con custom G6 v5 layout no-op) + 1 refactor de `g6.ts` (setData internamente async, DI seam `layoutService`, generation counter anti-race) + 7 vistas migradas (cada `layout: { type: "dagre", rankdir }` → `layoutOptions: TB_LAYERED | LR_LAYERED`). 184/184 tests pass (+11: 5 layout-presets + 6 layout-client), lint 0 errors, 7/7 vistas verificadas con Playwright. |
+| `v1.76.0` | m19-elk-worker-layout | ELK layered layout en Web Worker (PR #262, M19): sustituye el dagre built-in de G6 por `elkjs 0.12` corriendo en worker via `workerUrl` (Vite `?url`). 4 archivos nuevos (`layout-presets.ts` con TB/LR/RL_LAYERED, `layout-client.ts` con `LayoutService` interface + `ElkLayoutService` real, `preset-layout.ts` con custom G5 v6 layout no-op) + 1 refactor de `g6.ts` (setData internamente async, DI seam `layoutService`, generation counter anti-race) + 7 vistas migradas (cada `layout: { type: "dagre", rankdir }` → `layoutOptions: TB_LAYERED | LR_LAYERED`). 184/184 tests pass (+11: 5 layout-presets + 6 layout-client), lint 0 errors, 7/7 vistas verificadas con Playwright. |
+| `v1.77.0` | m20-virtualization | DOM virtualization para listas no acotadas (PR #264, M20): nueva primitive `<VirtualList>` (fixed-height, Solid `<For>` con keyExtractor, overscan) en `components/primitives/VirtualList.tsx`. Aplicada a `C4View` relations footer (1015 edges → ~12 DOM rows, factor ~85x) y a `Sidebar` relations list (1k edges en hub → ~12 DOM rows). 196/196 archview tests pass (+10: 6 VirtualList unit + 2 integration en Sidebar y C4View + 2 sample loader). Sample sintético `c4-stress-200.json` (318 nodos / 1015 edges con hub `system:core`) commitea como reproducer de perf. Hallazgo de la medición Playwright: el bottleneck para 1k+ nodos es G6 canvas paint, NO DOM; siguiente sprint = G6 culling / LOD. |
 
 ## Capacidades shipped (v0.x — historical)
 
