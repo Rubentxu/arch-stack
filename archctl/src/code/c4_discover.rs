@@ -419,13 +419,12 @@ pub fn apply(
             .first()
             .map(|(id, _)| id.clone())
             .unwrap_or_default();
-        ElementRepository::batch_link_of_type(s, &of_type_pairs)
-            .with_context(|| {
-                format!(
-                    "c4_discover batch_link_of_type (sample_id={sample_id:?}, n={})",
-                    of_type_pairs.len()
-                )
-            })?;
+        ElementRepository::batch_link_of_type(s, &of_type_pairs).with_context(|| {
+            format!(
+                "c4_discover batch_link_of_type (sample_id={sample_id:?}, n={})",
+                of_type_pairs.len()
+            )
+        })?;
     }
 
     // ── Phase 4: Evidence writes (kept as-is, per-evidence loop inside tx) ────
