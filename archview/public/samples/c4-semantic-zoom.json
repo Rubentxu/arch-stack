@@ -1,0 +1,199 @@
+{
+  "manifest": {
+    "schemaVersion": "1.0.0",
+    "format": "viewer-bundle",
+    "viewSelector": "context:*/container:*/component:*",
+    "baseRevision": "blake3:b1a2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+    "generatedAt": "2026-08-19T22:00:00Z",
+    "elementCount": 12,
+    "edgeCount": 14,
+    "evidenceCount": 0
+  },
+  "projection": {
+    "nodes": [
+      {
+        "id": "person:user",
+        "type": "context",
+        "name": "User",
+        "description": "A regular user of the platform",
+        "canonicalKey": "user"
+      },
+      {
+        "id": "system:archctl",
+        "type": "context",
+        "name": "archctl",
+        "description": "CLI sidecar that emits architecture bundles",
+        "canonicalKey": "archctl"
+      },
+      {
+        "id": "system:archview",
+        "type": "context",
+        "name": "archview",
+        "description": "Web workbench that consumes archctl bundles",
+        "canonicalKey": "archview"
+      },
+      {
+        "id": "container:archctl/cli",
+        "type": "container",
+        "name": "CLI",
+        "description": "Single Rust binary, dispatches subcommands",
+        "canonicalKey": "archctl/cli",
+        "parentId": "system:archctl"
+      },
+      {
+        "id": "container:archctl/store",
+        "type": "container",
+        "name": "Store",
+        "description": "LadybugDB persistence layer with flock",
+        "canonicalKey": "archctl/store",
+        "parentId": "system:archctl"
+      },
+      {
+        "id": "container:archview/web",
+        "type": "container",
+        "name": "Web",
+        "description": "SolidJS + G6 workbench",
+        "canonicalKey": "archview/web",
+        "parentId": "system:archview"
+      },
+      {
+        "id": "container:archview/loader",
+        "type": "container",
+        "name": "Loader",
+        "description": "Bundle decode + normalize pipeline",
+        "canonicalKey": "archview/loader",
+        "parentId": "system:archview"
+      },
+      {
+        "id": "component:archctl/cli/dispatch",
+        "type": "component",
+        "name": "Dispatch",
+        "description": "Clap subcommand parser",
+        "canonicalKey": "archctl/cli/dispatch",
+        "parentId": "container:archctl/cli"
+      },
+      {
+        "id": "component:archctl/cli/render",
+        "type": "component",
+        "name": "Render",
+        "description": "Output formatters (text/JSON/PlantUML)",
+        "canonicalKey": "archctl/cli/render",
+        "parentId": "container:archctl/cli"
+      },
+      {
+        "id": "component:archctl/store/lbug",
+        "type": "component",
+        "name": "LbugAdapter",
+        "description": "LadybugDB session + schema migrations",
+        "canonicalKey": "archctl/store/lbug",
+        "parentId": "container:archctl/store"
+      },
+      {
+        "id": "component:archview/web/g6",
+        "type": "component",
+        "name": "G6Renderer",
+        "description": "Single G6 graph for all views",
+        "canonicalKey": "archview/web/g6",
+        "parentId": "container:archview/web"
+      },
+      {
+        "id": "component:archview/loader/normalize",
+        "type": "component",
+        "name": "Normalize",
+        "description": "Per-shape normalizer (call-graph, c4, ...)",
+        "canonicalKey": "archview/loader/normalize",
+        "parentId": "container:archview/loader"
+      }
+    ],
+    "edges": [
+      {
+        "id": "rel:0",
+        "source": "person:user",
+        "target": "system:archctl",
+        "predicate": "uses"
+      },
+      {
+        "id": "rel:1",
+        "source": "person:user",
+        "target": "system:archview",
+        "predicate": "uses"
+      },
+      {
+        "id": "rel:2",
+        "source": "system:archctl",
+        "target": "system:archview",
+        "predicate": "feeds"
+      },
+      {
+        "id": "rel:3",
+        "source": "container:archctl/cli",
+        "target": "container:archctl/store",
+        "predicate": "writes"
+      },
+      {
+        "id": "rel:4",
+        "source": "container:archctl/store",
+        "target": "container:archview/loader",
+        "predicate": "feeds"
+      },
+      {
+        "id": "rel:5",
+        "source": "container:archview/loader",
+        "target": "container:archview/web",
+        "predicate": "feeds"
+      },
+      {
+        "id": "rel:6",
+        "source": "container:archctl/cli",
+        "target": "container:archview/web",
+        "predicate": "watches"
+      },
+      {
+        "id": "rel:7",
+        "source": "component:archctl/cli/dispatch",
+        "target": "component:archctl/store/lbug",
+        "predicate": "calls"
+      },
+      {
+        "id": "rel:8",
+        "source": "component:archctl/cli/render",
+        "target": "component:archctl/store/lbug",
+        "predicate": "reads"
+      },
+      {
+        "id": "rel:9",
+        "source": "component:archview/loader/normalize",
+        "target": "component:archview/web/g6",
+        "predicate": "feeds"
+      },
+      {
+        "id": "rel:10",
+        "source": "component:archctl/cli/dispatch",
+        "target": "component:archctl/cli/render",
+        "predicate": "calls"
+      },
+      {
+        "id": "rel:11",
+        "source": "component:archview/web/g6",
+        "target": "component:archview/loader/normalize",
+        "predicate": "renders"
+      },
+      {
+        "id": "rel:12",
+        "source": "container:archctl/cli",
+        "target": "component:archctl/cli/dispatch",
+        "predicate": "owns"
+      },
+      {
+        "id": "rel:13",
+        "source": "container:archview/web",
+        "target": "component:archview/web/g6",
+        "predicate": "owns"
+      }
+    ]
+  },
+  "evidence": [],
+  "styles": {
+    "theme": "default"
+  }
+}

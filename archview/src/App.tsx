@@ -67,6 +67,10 @@ const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
     label: "Sample C4 container (archctl)",
     url: "/samples/c4-container.json",
   },
+  {
+    label: "Sample C4 semantic zoom (3 levels)",
+    url: "/samples/c4-semantic-zoom.json",
+  },
 ];
 
 export const App: Component = () => {

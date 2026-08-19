@@ -82,3 +82,54 @@ export function breadcrumbTrail(
   }
   return trail;
 }
+
+/**
+ * Filter nodes by C4 hierarchy level (1=Context, 2=Container,
+ * 3=Component, 4=Code). A null/undefined level returns all nodes
+ * unchanged (no filter).
+ *
+ * M18: powers the semantic-zoom pill bar. The pill click sets the
+ * level filter globally; focus remains tracked for sidebar selection
+ * but does not narrow the visible set while the pill is active.
+ */
+export function nodesAtLevel(
+  nodes: GraphNode[],
+  level: number | null | undefined,
+): GraphNode[] {
+  if (level === null || level === undefined) return nodes;
+  return nodes.filter((n) => (n.level ?? 0) === level);
+}
+
+/**
+ * Count nodes per C4 level. Returns entries sorted by level
+ * ascending. Levels with zero nodes are omitted; out-of-band
+ * (`level: 0`) nodes are skipped so the pill bar only shows
+ * actual C4 levels present in the bundle.
+ */
+export function levelCounts(nodes: GraphNode[]): Array<[number, number]> {
+  const counts = new Map<number, number>();
+  for (const n of nodes) {
+    const level = n.level ?? 0;
+    if (level === 0) continue;
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort(([a], [b]) => a - b);
+}
+
+/**
+ * Compose the level filter with the drill-down focus. When the
+ * level filter is set, it wins (M18 user-picked interaction
+ * "Pills de nivel global"): drill-down is suppressed because the
+ * user explicitly asked to see the whole level. When the level
+ * filter is null, the existing drill-down applies.
+ */
+export function visibleNodesWithLevel(
+  nodes: GraphNode[],
+  level: number | null | undefined,
+  focusId: string | null | undefined,
+): GraphNode[] {
+  if (level !== null && level !== undefined) {
+    return nodesAtLevel(nodes, level);
+  }
+  return visibleNodesForFocus(nodes, focusId);
+}

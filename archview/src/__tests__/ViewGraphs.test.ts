@@ -3,6 +3,9 @@ import {
   visibleNodesForFocus,
   groupNodesByLevel,
   breadcrumbTrail,
+  nodesAtLevel,
+  levelCounts,
+  visibleNodesWithLevel,
 } from "../views/C4Graph";
 import {
   partitionMembers,
@@ -80,6 +83,81 @@ describe("C4Graph", () => {
 
   it("returns empty trail when focus not found", () => {
     expect(breadcrumbTrail(nodes, "ghost")).toEqual([]);
+  });
+
+  // ── M18: semantic-zoom helpers ──────────────────────────────────────
+  const zoomFixture = [
+    { id: "sys:1", label: "A", kind: "context", level: 1 },
+    { id: "sys:2", label: "B", kind: "context", level: 1 },
+    {
+      id: "ctn:1",
+      label: "A-C1",
+      kind: "container",
+      level: 2,
+      parentId: "sys:1",
+    },
+    {
+      id: "ctn:2",
+      label: "A-C2",
+      kind: "container",
+      level: 2,
+      parentId: "sys:1",
+    },
+    {
+      id: "cmp:1",
+      label: "A-C1-X",
+      kind: "component",
+      level: 3,
+      parentId: "ctn:1",
+    },
+    { id: "orphan", label: "?", kind: "weird", level: 0 },
+  ] as never;
+
+  it("nodesAtLevel returns all when level is null/undefined", () => {
+    expect(nodesAtLevel(zoomFixture, null)).toHaveLength(6);
+    expect(nodesAtLevel(zoomFixture, undefined)).toHaveLength(6);
+  });
+
+  it("nodesAtLevel filters by exact level", () => {
+    const level1 = nodesAtLevel(zoomFixture, 1);
+    expect(level1.map((n) => n.id).sort()).toEqual(["sys:1", "sys:2"]);
+    const level2 = nodesAtLevel(zoomFixture, 2);
+    expect(level2.map((n) => n.id).sort()).toEqual(["ctn:1", "ctn:2"]);
+    const level3 = nodesAtLevel(zoomFixture, 3);
+    expect(level3.map((n) => n.id)).toEqual(["cmp:1"]);
+  });
+
+  it("levelCounts omits empty levels and out-of-band nodes", () => {
+    const counts = levelCounts(zoomFixture);
+    expect(counts).toEqual([
+      [1, 2],
+      [2, 2],
+      [3, 1],
+    ]);
+  });
+
+  it("levelCounts returns [] for empty input", () => {
+    expect(levelCounts([])).toEqual([]);
+  });
+
+  it("visibleNodesWithLevel prefers the level filter over focus", () => {
+    // When level is set, focus is ignored — the user wants the
+    // whole level, not a drill-down slice.
+    const visible = visibleNodesWithLevel(zoomFixture, 2, "cmp:1");
+    expect(visible.map((n) => n.id).sort()).toEqual(["ctn:1", "ctn:2"]);
+  });
+
+  it("visibleNodesWithLevel falls back to drill-down when level is null", () => {
+    const visible = visibleNodesWithLevel(zoomFixture, null, "ctn:1");
+    // Drill-down: focus + children + parent
+    const ids = visible.map((n) => n.id);
+    expect(ids).toContain("ctn:1");
+    expect(ids).toContain("sys:1");
+    expect(ids).toContain("cmp:1");
+  });
+
+  it("visibleNodesWithLevel returns all when neither level nor focus is set", () => {
+    expect(visibleNodesWithLevel(zoomFixture, null, null)).toHaveLength(6);
   });
 });
 
