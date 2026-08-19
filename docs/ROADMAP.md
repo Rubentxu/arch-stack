@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.71.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX) vía ADR-062; UAT multi-lenguaje (axum/echo v1.70.0, vueuse paths v1.71.0); restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
-**Versión:** 2.12
+**Estado:** v1.72.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX) vía ADR-062; UAT multi-lenguaje (axum/echo v1.70.0, vueuse paths v1.71.0, vueuse pnpm v1.72.0); restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
+**Versión:** 2.13
 **Fecha:** 19 de agosto de 2026
-**Cambios vs 2.11:** Cycle log row para `uat-vueuse-paths` (v1.71.0, PR #247): paths de evidence/source como DATA (quote-escaping en vez de charset-validation); vueuse call-graph aplica 1239 elementos.
+**Cambios vs 2.12:** Cycle log row para `uat-vueuse-pnpm` (v1.72.0, PR #249): NpmWorkspace con pnpm-workspace.yaml + expansión de globs, components sin dirs ocultos, ids C4 sanitizados. Vueuse: 12 containers, export container:* = 12.
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
@@ -981,6 +981,7 @@ Incluye:
 | `d2-deprecated-sweep` | `feat/d2-deprecated-sweep` (PR #235) | `11628e1` | **Cerrado** ✅ · tag `v1.69.0` · barrido deprecated (deuda D2 auditoría): `diagram::queries` eliminado (13 call sites → `crate::graph`), `evidence::put` + `extract_with_system_clock` eliminados, manifests sync · release pipeline reparado (PRs #236–#244: archview embed, runners, tag handling, SHA256SUMS) + self-update D5 |
 | `uat-smoke-fixes` | `feat/uat-smoke-fixes` (merged via PR #245, squash `8a150d6`) | `8a150d6` | **Cerrado** ✅ · tag `v1.70.0` · UAT multi-lenguaje (smoke axum-rust + echo-go en sandbox Podman): 5 bugs de producto — `sanitize_identifier` para canonical keys con `@` (13 sitios), `batch_link_of_type` propaga errores (OF_TYPE silenciosos), schema 1.1.1 (`EvidenceEntry.status`), prefixes go/java/kotlin/javascript en `parse_from_selector`, categoría `code` en relevance/coverage/explain · harness `bench/smoke-matrix.sh` + `bench/build-in-sandbox.sh` · validación: 54 binarios de test ok, clippy -D warnings, fmt, doctor 6 scopes 0 findings · nota: rel_id no-ASCII en class-diagram latente |
 | `uat-vueuse-paths` | `fix/vueuse-at-paths` (merged via PR #247, squash `6737671`) | `6737671` | **Cerrado** ✅ · tag `v1.71.0` · paths de evidence/source como DATA (UAT vueuse): `@` en rutas (snapshots npm scoped, patches) rompía `call-graph --apply` con `write_source_artifact` error · 5 sitios en `store.rs` pasan de charset-validation a quote-escaping (put_evidence, list_evidence, list_evidence_by_status, put_source, put_structural_evidence) · ADR-005 preservado (path real) · vueuse: 1239 elementos / 13878 relaciones · 2 regresiones (round-trip `@` + inyección con comillas) |
+| `uat-vueuse-pnpm` | `fix/vueuse-pnpm-workspace` (merged via PR #249, squash `f631025`) | `f631025` | **Cerrado** ✅ · tag `v1.72.0` · detección de workspaces pnpm (UAT vueuse): NpmWorkspace parsea pnpm-workspace.yaml + expande globs `/*` (scoped + exclusiones `!`) — antes pasaba los globs como paths literales al walker y nunca detectaba miembros (npm/yarn/pnpm) · components ignora dirs ocultos (`packages/.test`) · ids `c4:container:@vueuse/core` sanitizados (fallaban batch OF_TYPE → rollback) · vueuse: 12 containers, export container:* = 12 nodes · tests npm-workspace 5 + components + c4_discover sanitize · suite 54 binarios, clippy/fmt/doctor ok |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 
