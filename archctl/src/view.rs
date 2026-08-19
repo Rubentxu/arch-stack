@@ -241,6 +241,14 @@ pub fn handle_request_with_body(
         ("GET", path) if path.starts_with("/api/source?") => {
             handle_api_source_get(path, project_dir)
         }
+        // ---- Explain action (ADR-062, workbench action palette) ----
+        ("GET", path) if path.starts_with("/api/explain?") => {
+            let id = path
+                .strip_prefix("/api/explain?")
+                .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("id=")))
+                .unwrap_or("");
+            handle_api_explain(project_dir, id)
+        }
         ("POST", path) if path == "/api/open-editor" || path.starts_with("/api/open-editor?") => {
             handle_api_open_editor_post(body, project_dir, env)
         }
@@ -661,6 +669,48 @@ fn percent_decode(s: &str) -> Option<String> {
         .decode_utf8()
         .ok()
         .map(|c| c.into_owned())
+}
+
+/// GET /api/explain?id=<element_id|rel:*> — explain the evidence chain
+/// backing a graph subject (ADR-062, workbench action palette).
+fn handle_api_explain(
+    project_dir: Option<&str>,
+    id: &str,
+) -> (
+    tiny_http::StatusCode,
+    String,
+    Vec<u8>,
+    Vec<(String, String)>,
+) {
+    use crate::architecture::{ExplainError, explain};
+
+    if crate::graph::validate_identifier(id).is_err() {
+        return json_error(400, &format!("invalid identifier: {id}"));
+    }
+    let Some(dir) = project_dir else {
+        return json_error(
+            409,
+            "no project_dir configured — run `archctl view --cwd <dir>`",
+        );
+    };
+    let info = crate::project::resolve_project(dir);
+    let store = match crate::store::open_and_init(&info.project_dir) {
+        Ok(s) => s,
+        Err(e) => return json_error(500, &format!("store open failed: {e}")),
+    };
+    let repo: &dyn crate::store::DiagramRepository = &*store;
+    match explain(repo, id) {
+        Ok(report) => (
+            tiny_http::StatusCode(200),
+            "application/json".to_string(),
+            serde_json::to_vec_pretty(&report).unwrap_or_default(),
+            vec![],
+        ),
+        Err(e @ (ExplainError::SubjectNotFound(_) | ExplainError::RelationNotFound(_))) => {
+            json_error(404, &e.to_string())
+        }
+        Err(ExplainError::Store(e)) => json_error(500, &e),
+    }
 }
 
 #[cfg(test)]
