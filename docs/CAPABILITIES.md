@@ -3,6 +3,7 @@
 | ID | Category | Maturity | Deterministic | Availability | Providers |
 |----|----------|----------|---------------|--------------|-----------|
 | cli.agent | cli | stable | true | available | any (stable) |
+| cli.architecture | cli | stable | true | available | any (stable) |
 | cli.code | cli | stable | true | available | any (stable) |
 | cli.diagram | cli | stable | true | available | any (stable) |
 | cli.doctor | cli | stable | true | available | any (stable) |
