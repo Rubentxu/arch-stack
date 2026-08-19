@@ -24,6 +24,7 @@ import {
 } from "solid-js";
 import type { GraphNode, SequenceInteraction } from "../bundle/loader";
 import { GraphRenderer } from "../renderer/g6";
+import { TB_LAYERED } from "../renderer/layout-presets";
 import {
   extractParticipants,
   orderInteractions,
@@ -76,13 +77,8 @@ export const SequenceView: Component<SequenceViewProps> = (props) => {
       container: containerRef,
       width: containerRef?.clientWidth || 800,
       height: containerRef?.clientHeight || 600,
-      layout: {
-        type: "dagre",
-        rankdir: "TB",
-        align: "UL",
-        nodesep: 30,
-        ranksep: 60,
-      },
+      // M19: ELK layered in Web Worker, top-to-bottom.
+      layoutOptions: TB_LAYERED,
       onNodeClick: (id) => {
         props.onSelect(id);
       },

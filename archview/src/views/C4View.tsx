@@ -37,6 +37,7 @@ import {
 } from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import { GraphRenderer } from "../renderer/g6";
+import { TB_LAYERED } from "../renderer/layout-presets";
 import {
   breadcrumbTrail,
   groupNodesByLevel,
@@ -169,13 +170,9 @@ export const C4View: Component<C4ViewProps> = (props) => {
       container: containerRef,
       width,
       height,
-      layout: {
-        type: "dagre",
-        rankdir: "TB",
-        align: "UL",
-        nodesep: 40,
-        ranksep: 60,
-      },
+      // M19: ELK layered in Web Worker, top-to-bottom.
+      // Replaces the M17.1 dagre config.
+      layoutOptions: TB_LAYERED,
       onNodeClick: (id) => {
         handleNodeClick(id);
       },

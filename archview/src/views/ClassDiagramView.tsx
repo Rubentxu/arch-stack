@@ -28,6 +28,7 @@ import {
 } from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import { GraphRenderer } from "../renderer/g6";
+import { LR_LAYERED } from "../renderer/layout-presets";
 import { groupEdgesByPredicate } from "./ClassDiagramGraph";
 
 export interface ClassDiagramViewProps {
@@ -54,13 +55,8 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
       container: containerRef,
       width: containerRef?.clientWidth || 800,
       height: containerRef?.clientHeight || 600,
-      layout: {
-        type: "dagre",
-        rankdir: "LR",
-        align: "UL",
-        nodesep: 30,
-        ranksep: 80,
-      },
+      // M19: ELK layered in Web Worker, left-to-right.
+      layoutOptions: LR_LAYERED,
       onNodeClick: (id) => {
         props.onSelect(id);
       },

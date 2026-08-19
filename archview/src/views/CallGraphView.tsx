@@ -31,6 +31,7 @@ import {
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import type { SidebarStats } from "../components/Sidebar";
 import { GraphRenderer } from "../renderer/g6";
+import { LR_LAYERED, RL_LAYERED } from "../renderer/layout-presets";
 import {
   blastRadiusOf,
   expandLevels,
@@ -126,13 +127,10 @@ export const CallGraphView: Component<CallGraphViewProps> = (props) => {
       container: containerRef,
       width: containerRef.clientWidth || 800,
       height: containerRef.clientHeight || 600,
-      layout: {
-        type: "dagre",
-        rankdir: direction() === "callers" ? "RL" : "LR",
-        align: "UL",
-        nodesep: 30,
-        ranksep: 60,
-      },
+      // M19: ELK layered in Web Worker. Direction flips on the
+      // fly when the user toggles callers/callees (see setLayout
+      // in the createEffect below).
+      layoutOptions: direction() === "callers" ? RL_LAYERED : LR_LAYERED,
       onNodeClick: (id) => {
         setFocusId(id);
         props.onSelect(id);
@@ -154,14 +152,10 @@ export const CallGraphView: Component<CallGraphViewProps> = (props) => {
     const edges = visibleEdges();
     const dir = direction();
     if (!renderer) return;
-    // Update layout direction on the fly if it changed.
-    void renderer.setLayout({
-      type: "dagre",
-      rankdir: dir === "callers" ? "RL" : "LR",
-      align: "UL",
-      nodesep: 30,
-      ranksep: 60,
-    });
+    // Update layout direction on the fly if it changed. M19:
+    // delegates to the LayoutService (ELK worker) instead of
+    // swapping G6's dagre config.
+    void renderer.setLayout(dir === "callers" ? RL_LAYERED : LR_LAYERED);
     renderer.setData({
       schemaVersion: "0.0.0",
       source: "callgraph-view",

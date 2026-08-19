@@ -10,14 +10,34 @@
  * state — the SolidJS component drives bundle updates into the
  * renderer via `setData()` calls.
  *
- * M17.1: the renderer now accepts a `layout` config and a
- * `nodeStyle` config (color by C4 level / by kind) so each view
- * (C4, CallGraph, ClassDiagram, etc.) can shape the same engine
- * without owning G6 details (R3 of the renderer contract).
+ * M17.1: the renderer accepts a `nodeStyle` config (color by C4
+ * level / by kind) so each view (C4, CallGraph, ClassDiagram,
+ * etc.) can shape the same engine without owning G6 details.
+ *
+ * M19: the renderer no longer runs G6's dagre layout. Instead,
+ * `setData` calls a `LayoutService` (default = ELK layered in a
+ * Web Worker) to compute positions, embeds them on each node as
+ * `style.x` / `style.y`, and asks G6 to use the custom
+ * `preset` layout which respects the pre-set positions. The
+ * dependency-injection seam (`LayoutService`) lets tests swap a
+ * stub without touching the real ELK.
  */
 
-import { Graph, NodeEvent, type DisplayObject } from "@antv/g6";
+import {
+  Graph,
+  NodeEvent,
+  ExtensionCategory,
+  register,
+  type DisplayObject,
+} from "@antv/g6";
 import type { RendererBundle, RendererNode } from "../types";
+import { PresetLayout } from "./preset-layout";
+import {
+  createLayoutService,
+  type LayoutOptions,
+  type LayoutService,
+} from "./layout-client";
+import { DEFAULT_LAYOUT } from "./layout-presets";
 
 /** G6 v5 layout config — kept as `unknown` to avoid pulling the
  *  full G6 type tree into the renderer surface area. Views pass
@@ -28,8 +48,17 @@ export interface RendererOptions {
   container: HTMLElement;
   width: number;
   height: number;
-  /** Optional initial layout. Defaults to `d3-force` if omitted. */
+  /** Optional initial layout. M19: deprecated — the renderer
+   *  ignores this and uses `LayoutService` (ELK) by default.
+   *  Kept for backward compatibility with M17.x views that still
+   *  pass `{ type: "dagre", ... }`. */
   layout?: G6Layout;
+  /** Optional initial layout options (ELK). Defaults to TB layered. */
+  layoutOptions?: LayoutOptions;
+  /** Optional layout service (ELK by default). Inject a stub in
+   *  tests; pass a custom impl for offline / different layout
+   *  algorithms. */
+  layoutService?: LayoutService;
   /** Optional per-node color/look config. */
   nodeStyle?: NodeStyleConfig;
   /** Optional click handler — fired with the clicked node id. */
@@ -145,16 +174,44 @@ const DEFAULT_NODE_STYLE: NodeStyleConfig = {
   labelBackgroundFill: readCssVar("--bg-0", "#0e1116"),
 };
 
+// Register the `preset` layout exactly once. Vite's HMR may
+// re-evaluate this module in dev mode, so guard with a module
+// flag. G6's `register` warns on duplicate registration; the
+// flag avoids the warning and the small overhead.
+let _presetRegistered = false;
+function ensurePresetLayoutRegistered(): void {
+  if (_presetRegistered) return;
+  register(ExtensionCategory.LAYOUT, "preset", PresetLayout);
+  _presetRegistered = true;
+}
+
 export class GraphRenderer {
   private graph: Graph | null = null;
   private currentBundle: RendererBundle | null = null;
   private nodeStyle: NodeStyleConfig;
   private selectedNodeId: string | null = null;
   private onNodeClickHandler: ((id: string) => void) | null = null;
+  private layoutService: LayoutService;
+  private currentLayoutOptions: LayoutOptions;
+  /**
+   * Latest setData promise. New setData calls await the
+   * previous one so the graph doesn't receive out-of-order
+   * layouts. If a new call comes in while one is in flight,
+   * the in-flight one is still awaited (its result will be
+   * discarded by the generation check below).
+   */
+  private renderChain: Promise<void> = Promise.resolve();
+  /** Counter — incremented on every setData. A render step
+   *  checks this against its captured value and bails if a
+   *  newer setData superseded it. */
+  private generation = 0;
 
   constructor(private options: RendererOptions) {
     this.nodeStyle = { ...DEFAULT_NODE_STYLE, ...options.nodeStyle };
     this.onNodeClickHandler = options.onNodeClick ?? null;
+    this.layoutService = options.layoutService ?? createLayoutService();
+    this.currentLayoutOptions = options.layoutOptions ?? DEFAULT_LAYOUT;
+    ensurePresetLayoutRegistered();
     this.init();
   }
 
@@ -166,14 +223,9 @@ export class GraphRenderer {
       autoFit: "view",
       background: this.nodeStyle.background ?? "#0e1116",
       data: { nodes: [], edges: [] },
-      // M17.1 — layout is now passed by the caller (view-driven).
-      // Default to d3-force if not provided.
-      layout: (this.options.layout as Record<string, unknown> | undefined) ?? {
-        type: "force",
-        preventOverlap: true,
-        nodeSize: 24,
-        gravity: 0.5,
-      },
+      // M19 — layout is now `preset` (no-op). Positions come from
+      // the model, populated by the LayoutService in `setData`.
+      layout: { type: "preset" },
       node: {
         type: "circle",
         style: {
@@ -227,45 +279,98 @@ export class GraphRenderer {
     });
   }
 
-  setData(bundle: RendererBundle): void {
+  /**
+   * Push a new bundle into the renderer. M19: first asks the
+   * `LayoutService` (ELK by default, in a Web Worker) to compute
+   * positions, then embeds them on each node, then asks G6 to
+   * re-render. Calls are serialised so a fast double-click on
+   * a C4 pill does not race the previous layout.
+   *
+   * Returns void — the work is fire-and-forget from the caller's
+   * perspective, but errors are logged via `console.error`.
+   */
+  setData(bundle: RendererBundle, options?: LayoutOptions): void {
     this.currentBundle = bundle;
-    if (!this.graph) return;
-    void this.graph.setData({
-      nodes: bundle.nodes.map((n) => ({
-        id: n.id,
-        data: {
-          label: n.label,
-          kind: n.kind,
-          level: n.level,
-          file: n.file,
-          parentId: n.parentId,
-          ...n.meta,
-        },
-      })),
-      edges: bundle.edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        data: { label: e.label, kind: e.kind, ...e.meta },
-      })),
-    });
-    void this.graph.draw().then(() => {
-      // Auto-fit after first paint so the user sees the whole graph.
-      void this.graph?.fitView();
-    });
+    if (options) this.currentLayoutOptions = options;
+    const opts = this.currentLayoutOptions;
+    const myGen = ++this.generation;
+    this.renderChain = this.renderChain
+      .then(async () => {
+        if (myGen !== this.generation) return; // superseded
+        if (!this.graph) return;
+        const positions = await this.layoutService.computeLayout(bundle, opts);
+        if (myGen !== this.generation) return; // superseded during layout
+        this.graph.setData({
+          nodes: bundle.nodes.map((n) => ({
+            id: n.id,
+            data: {
+              label: n.label,
+              kind: n.kind,
+              level: n.level,
+              file: n.file,
+              parentId: n.parentId,
+              ...n.meta,
+            },
+            style: {
+              x: positions.get(n.id)?.x,
+              y: positions.get(n.id)?.y,
+            },
+          })),
+          edges: bundle.edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            data: { label: e.label, kind: e.kind, ...e.meta },
+          })),
+        });
+        await this.graph.draw();
+        if (myGen === this.generation) {
+          this.graph.fitView();
+        }
+      })
+      .catch((err: unknown) => {
+        // We swallow the error here because the renderChain is
+        // shared across setData calls; a single failure must
+        // not poison subsequent layouts. The view layer
+        // observes empty/error states by other means.
+        console.error("Layout/render failed:", err);
+      });
   }
 
   /**
-   * Change the layout dynamically. Calls `graph.setLayout(...)` then
-   * `graph.layout()` and re-centers the view. Use this when the user
-   * toggles layout direction (TB / LR) or after a drill-in that
-   * changes the graph's effective shape.
+   * Change the layout dynamically. M19: re-runs the layout
+   * service with new options and pushes the new positions to
+   * G6 via `updateNodeData`. Returns the promise so callers
+   * can await the re-layout (e.g. before re-centering).
    */
-  async setLayout(layout: G6Layout): Promise<void> {
-    if (!this.graph) return;
-    this.graph.setLayout(layout as Record<string, unknown>);
-    await this.graph.layout();
-    this.graph.fitCenter();
+  async setLayout(options: LayoutOptions): Promise<void> {
+    this.currentLayoutOptions = options;
+    const bundle = this.currentBundle;
+    if (!this.graph || !bundle) return;
+    const myGen = ++this.generation;
+    this.renderChain = this.renderChain
+      .then(async () => {
+        if (myGen !== this.generation) return;
+        const positions = await this.layoutService.computeLayout(
+          bundle,
+          options,
+        );
+        if (myGen !== this.generation) return;
+        const updates = bundle.nodes
+          .map((n) => {
+            const pos = positions.get(n.id);
+            if (!pos) return null;
+            return { id: n.id, style: { x: pos.x, y: pos.y } };
+          })
+          .filter(<T>(x: T | null): x is T => x !== null);
+        await this.graph!.updateNodeData(updates);
+        await this.graph!.draw();
+        if (myGen === this.generation) this.graph!.fitCenter();
+      })
+      .catch((err: unknown) => {
+        console.error("setLayout failed:", err);
+      });
+    return this.renderChain;
   }
 
   /**
