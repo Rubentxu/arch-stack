@@ -153,8 +153,12 @@ jobs:
           cat migration-manifest.json
 
       - name: Generate SHA256SUMS
+        # Tarballs are staged at the workspace root by the steps above
+        # (`../<name>.tar.gz` relative to `archctl/`). The previous `cd ..`
+        # escaped the workspace entirely and broke every release since
+        # v1.38.0 (regression from PR #177, native runners restructure).
         run: |
-          cd ..
+          cd "${GITHUB_WORKSPACE}"
           sha256sum \
               archctl-${{ github.ref_name }}-*.tar.gz \
               archctl-assets-${{ github.ref_name }}.tar.gz \
