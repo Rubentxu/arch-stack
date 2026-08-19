@@ -1,3 +1,16 @@
+## [1.72.0] — 2026-08-19
+
+### Fixed
+- **Detectción de workspaces pnpm + sanitización de ids C4** (UAT vueuse,
+  2026-08-19): `NpmWorkspace` ignoraba `pnpm-workspace.yaml` y pasaba
+  globs (`packages/*`) como paths literales al walker — nunca detectaba
+  miembros (npm/yarn/pnpm). Ahora parsea ambos manifiestos, expande
+  globs `/*` (con miembros scoped y exclusiones `!`) y filtra dirs
+  ocultos. `ComponentsStrategy` ignora dirs ocultos (`packages/.test`).
+  Los ids `c4:container:@vueuse/core` se construyen con
+  `sanitize_identifier` (fallaban los batch OF_TYPE → rollback). Vueuse:
+  12 containers descubiertos, `export container:*` devuelve 12 nodes.
+
 ## [1.71.0] — 2026-08-19
 
 ### Fixed
