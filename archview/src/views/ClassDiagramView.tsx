@@ -1,42 +1,117 @@
 /**
- * ClassDiagramView — renders class-diagram bundles as UML class
- * diagrams with compartments (name / attributes / methods) and
- * kind-specific edge styles.
+ * ClassDiagramView — renders class-diagram bundles as a G6
+ * dagre horizontal graph (M17.1.1).
  *
- * Layout (left-to-right, simple flow):
- *   - One card per class with three sections:
- *     1. Header: stereotype (interface/trait/enum) + class name
- *     2. Attributes (members with member_kind="field")
- *     3. Methods (members with member_kind="fn" / "method")
- *   - Edges: extends (solid with triangle), implements (dashed),
- *     composes (solid with diamond).
+ * Layout (left-to-right):
+ *   - One circle per class/interface/trait/enum.
+ *   - Color encodes the stereotype (class / interface / trait / enum)
+ *     via the renderer's `byKind` palette.
+ *   - Edges: extends (solid), implements (dashed), composes
+ *     (thick). The edge list panel below the canvas keeps the
+ *     per-predicate breakdown for users that want to read it as
+ *     a table.
  *
- * M17.4 MVP is a card grid + edge list. M17.4.1 can upgrade to a
- * force-directed graph layout via G6 with compartment nodes.
+ * M17.1.1 replaced the previous card-grid render with a G6
+ * graph so the user can see the inheritance / composition
+ * topology at a glance. The per-class attribute / method
+ * compartments live in the sidebar now (via `onSelect`).
  */
 
-import { For, Show, createMemo, type Component } from "solid-js";
-import type { GraphEdge, GraphNode } from "../bundle/loader";
 import {
-  partitionMembers,
-  stereotypeFor,
-  groupEdgesByPredicate,
-} from "./ClassDiagramGraph";
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
+import type { GraphEdge, GraphNode } from "../bundle/loader";
+import { GraphRenderer } from "../renderer/g6";
+import { groupEdgesByPredicate } from "./ClassDiagramGraph";
 
 export interface ClassDiagramViewProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  selectedId: string | null;
   onSelect: (id: string | null) => void;
 }
 
 export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
-  /** Edges grouped by predicate kind for the bottom panel. */
+  let containerRef!: HTMLDivElement;
+  let renderer: GraphRenderer | undefined;
+
   const edgeGroups = createMemo(() => groupEdgesByPredicate(props.edges));
 
   const nodeById = createMemo<Map<string, GraphNode>>(() => {
     const m = new Map<string, GraphNode>();
     for (const n of props.nodes) m.set(n.id, n);
     return m;
+  });
+
+  onMount(() => {
+    renderer = new GraphRenderer({
+      container: containerRef,
+      width: containerRef.clientWidth || 800,
+      height: containerRef.clientHeight || 600,
+      layout: {
+        type: "dagre",
+        rankdir: "LR",
+        align: "UL",
+        nodesep: 30,
+        ranksep: 80,
+      },
+      onNodeClick: (id) => {
+        props.onSelect(id);
+      },
+    });
+    renderer.setData({
+      schemaVersion: "0.0.0",
+      source: "class-diagram-view",
+      loadedAt: "0",
+      rawKind: "class-diagram",
+      nodes: props.nodes,
+      edges: props.edges,
+    });
+  });
+
+  createEffect(() => {
+    if (!renderer) return;
+    renderer.setData({
+      schemaVersion: "0.0.0",
+      source: "class-diagram-view",
+      loadedAt: "0",
+      rawKind: "class-diagram",
+      nodes: props.nodes,
+      edges: props.edges,
+    });
+  });
+
+  createEffect(() => {
+    const id = props.selectedId;
+    if (!renderer) return;
+    if (id) {
+      void renderer.focusNode(id);
+    } else {
+      void renderer.clearFocus();
+    }
+  });
+
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || !renderer) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) renderer.resize(width, height);
+    });
+    ro.observe(containerRef);
+    onCleanup(() => ro.disconnect());
+  });
+
+  onCleanup(() => {
+    renderer?.destroy();
+    renderer = undefined;
   });
 
   return (
@@ -52,76 +127,7 @@ export const ClassDiagramView: Component<ClassDiagramViewProps> = (props) => {
         when={props.nodes.length > 0}
         fallback={<p class="empty">No classes in this bundle.</p>}
       >
-        <div class="cd-grid">
-          <For each={props.nodes}>
-            {(node) => {
-              const { fields, methods } = partitionMembers(node);
-              return (
-                <article
-                  class={`cd-card cd-kind-${node.kind}`}
-                  onClick={() => props.onSelect(node.id)}
-                >
-                  <header class="cd-card-header">
-                    <Show when={stereotypeFor(node.kind)}>
-                      {(s) => <span class="cd-stereotype">{s()}</span>}
-                    </Show>
-                    <h3 class="cd-name">{node.label}</h3>
-                    <Show when={node.language}>
-                      <span class="cd-language">{node.language}</span>
-                    </Show>
-                    <Show when={node.file}>
-                      <span class="cd-file">
-                        {node.file}:{node.line ?? "?"}
-                      </span>
-                    </Show>
-                  </header>
-
-                  <Show when={fields.length > 0}>
-                    <section class="cd-compartment cd-attributes">
-                      <h4>attributes</h4>
-                      <ul>
-                        <For each={fields}>
-                          {(f) => (
-                            <li>
-                              <span class="cd-member-name">
-                                {f.name || "(anon)"}
-                              </span>
-                              <Show when={f.signature}>
-                                <span class="cd-member-sig">
-                                  : {f.signature}
-                                </span>
-                              </Show>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </section>
-                  </Show>
-
-                  <Show when={methods.length > 0}>
-                    <section class="cd-compartment cd-methods">
-                      <h4>methods</h4>
-                      <ul>
-                        <For each={methods}>
-                          {(m) => (
-                            <li>
-                              <span class="cd-member-name">
-                                {m.name || "(anon)"}()
-                              </span>
-                              <Show when={m.signature}>
-                                <span class="cd-member-sig">{m.signature}</span>
-                              </Show>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </section>
-                  </Show>
-                </article>
-              );
-            }}
-          </For>
-        </div>
+        <div ref={containerRef} class="cd-canvas" />
 
         <Show when={props.edges.length > 0}>
           <section class="cd-relations">
