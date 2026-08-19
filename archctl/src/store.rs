@@ -1236,11 +1236,14 @@ impl EvidenceOps for LbugStore {
             // The caller (evidence::put) is expected to validate
             // identifiers before calling us. If something slipped
             // through we surface the error rather than silently
-            // allowing Cypher injection.
+            // allowing Cypher injection. NOTE: `path` is DATA, not an
+            // identifier — real repos contain '@', spaces and non-ASCII
+            // in file paths (found by the 2026-08-19 UAT smoke on
+            // vueuse: test/__snapshots__/tsnapi/@vueuse/...). It is
+            // quote-escaped like `claim`, never charset-validated.
             let id = crate::graph::validate_identifier(&ev.id)
                 .context("evidence id failed validation")?;
-            let path = crate::graph::validate_identifier(&ev.path)
-                .context("evidence path failed validation")?;
+            let path = ev.path.replace('\'', "\\'");
             let kind = crate::graph::validate_identifier(ev.kind.as_str())?;
             let tool = crate::graph::validate_identifier(&ev.tool_name)?;
             let rule = crate::graph::validate_identifier(&ev.rule_id)?;
@@ -1385,7 +1388,9 @@ impl EvidenceOps for LbugStore {
     fn list_evidence(&self, path: Option<&str>) -> Result<Vec<Row>> {
         let cypher = match path {
             Some(p) => {
-                let safe = crate::graph::validate_identifier(p)?;
+                // Path is data (quote-escaped, not charset-validated) —
+                // matches how put_evidence stores it.
+                let safe = p.replace('\'', "\\'");
                 format!(
                     "MATCH (e:Evidence) WHERE e.path = '{safe}' \
                      RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path \
@@ -1513,7 +1518,9 @@ impl EvidenceOps for LbugStore {
         // Build the Cypher query — fetch e.props for filtering, plus the 6 canonical columns
         let cypher = match path {
             Some(p) => {
-                let safe = crate::graph::validate_identifier(p)?;
+                // Path is data (quote-escaped, not charset-validated) —
+                // matches how put_evidence stores it.
+                let safe = p.replace('\'', "\\'");
                 format!(
                     "MATCH (e:Evidence) WHERE e.path = '{safe}' \
                      RETURN e.id, e.kind, e.claim, e.start_line, e.end_line, e.path, e.props \
@@ -1551,8 +1558,10 @@ impl SourceOps for LbugStore {
         let session = self.session_mut_inner()?;
         let id =
             crate::graph::validate_identifier(&source.id).context("source id failed validation")?;
-        let rel_path = crate::graph::validate_identifier(&source.relative_path)
-            .context("source relative_path failed validation")?;
+        // relative_path is DATA (real file paths can contain '@', spaces,
+        // non-ASCII — vueuse UAT smoke 2026-08-19). Quote-escape like
+        // content_hash; never charset-validate.
+        let rel_path = source.relative_path.replace('\'', "\\'");
         let lang = crate::graph::validate_identifier(&source.language)
             .context("source language failed validation")?;
         let kind = crate::graph::validate_identifier(&source.kind)
@@ -2503,8 +2512,9 @@ impl EvidenceRepository for LbugStore {
         let kind = crate::graph::validate_identifier(&ev.kind)
             .context("put_structural_evidence: kind failed validation")?;
         let safe_claim = ev.claim.replace('\'', "\\'");
-        let file = crate::graph::validate_identifier(&ev.file)
-            .context("put_structural_evidence: file failed validation")?;
+        // file is DATA (real paths can contain '@', spaces, non-ASCII —
+        // vueuse UAT smoke 2026-08-19). Quote-escape, don't validate.
+        let file = ev.file.replace('\'', "\\'");
         let _rule_id = crate::graph::validate_identifier(&ev.rule_id)
             .context("put_structural_evidence: rule_id failed validation")?;
         let props_json =
@@ -3476,6 +3486,68 @@ mod tests {
 
         let empty = store.list_evidence(Some("nonexistent/path")).unwrap();
         assert_eq!(empty.len(), 0);
+    }
+
+    /// Regression: real repos contain '@', spaces and non-ASCII in file
+    /// paths (vueuse UAT smoke 2026-08-19:
+    /// `test/__snapshots__/tsnapi/@vueuse/core/index.snapshot.js`).
+    /// Paths are DATA — they must round-trip through put_evidence /
+    /// list_evidence without charset rejection, and quotes must be
+    /// escaped (no Cypher breakout).
+    #[test]
+    fn evidence_path_with_at_sign_and_quotes_round_trips() {
+        let tmp = fixture();
+        let project = tmp.path().join("proj");
+        let mut store = LbugStore::open(&project).unwrap();
+        store.init().unwrap();
+
+        let at_path = "test/__snapshots__/tsnapi/@vueuse/core/index.snapshot.js";
+        let quote_path = "a' OR '1'='1";
+
+        for (i, path) in [at_path, quote_path].iter().enumerate() {
+            let ev = Evidence {
+                id: format!("ev:path:{}", i),
+                kind: EvidenceKind::Structural,
+                claim: "path data round-trip".to_string(),
+                path: (*path).to_string(),
+                start_line: 1,
+                end_line: 1,
+                start_byte: Some(0),
+                end_byte: Some(4),
+                tool_name: TOOL_NAME.to_string(),
+                tool_version: TOOL_VERSION.to_string(),
+                rule_id: "astgrep:rust:function_item".to_string(),
+                language: "typescript".to_string(),
+                observed_at: "2026-08-19T00:00:00Z".to_string(),
+                source_origin: SourceOrigin::UserWorkspace,
+                content_hash: Some("sha256:0".to_string()),
+                text_preview: None,
+                props: Default::default(),
+                status: EvidenceStatus::Drafted,
+            };
+            store.put_evidence(std::slice::from_ref(&ev)).unwrap();
+        }
+
+        // '@' path round-trips by exact path filter.
+        let rows = store.list_evidence(Some(at_path)).unwrap();
+        assert_eq!(rows.len(), 1, "path with '@' must round-trip");
+        assert_eq!(
+            rows[0].get("e.path").and_then(|c| c.as_str()),
+            Some(at_path),
+            "stored path must equal the real path (ADR-005 resolvability)"
+        );
+
+        // Quote path is stored escaped: it matches itself, and the
+        // breakout attempt does not leak other rows.
+        let rows = store.list_evidence(Some(quote_path)).unwrap();
+        assert_eq!(rows.len(), 1, "escaped quote path must match itself only");
+        assert_eq!(
+            rows[0].get("e.path").and_then(|c| c.as_str()),
+            Some(quote_path)
+        );
+
+        let all = store.list_evidence(None).unwrap();
+        assert_eq!(all.len(), 2, "only the two written rows exist");
     }
 
     /// P2-09b dual-write seam: after a successful `put_evidence`,

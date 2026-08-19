@@ -107,6 +107,23 @@ mod tests {
         assert_ne!(id1, id2, "different content_hash must produce different id");
     }
 
+    /// Regression: real file paths can contain '@' (scoped npm snapshots,
+    /// patches — vueuse UAT smoke 2026-08-19). relative_path is DATA and
+    /// must persist as-is (ADR-005 resolvability), never be rejected by
+    /// identifier validation.
+    #[test]
+    fn write_source_artifact_accepts_at_sign_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("proj");
+        let fs = crate::filesystem::SystemFilesystem;
+        crate::graph::init(&project, &fs).unwrap();
+        let mut store = crate::store::open_default(&project).unwrap();
+        let path = "test/__snapshots__/tsnapi/@vueuse/core/index.snapshot.js";
+        let id = write_source_artifact(&mut *store, path, "sha256:abc123", "typescript").unwrap();
+        let expected = SourceArtifact::id_for(path, "sha256:abc123");
+        assert_eq!(id, expected, "id must be derived from the real path");
+    }
+
     fn seeded_store_with_canonical_keys(keys: &[&str]) -> LbugStore {
         use crate::store::ElementRepository;
         let tmp = tempfile::tempdir().unwrap();
