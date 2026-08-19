@@ -3,16 +3,14 @@
  * blast radius: every node that transitively depends on it (callers)
  * or that it transitively depends on (callees).
  *
- * Why M17.7: in a refactor or feature change, you need to know
- * "if I change this function, what else is affected?" This view
- * answers that question.
+ * Visual: focus node + every node in the impact zone are drawn
+ * in a G6 dagre horizontal graph; the focus is highlighted in
+ * orange (proposed change), the impact zone in yellow, and
+ * unreachable nodes are not drawn at all (they were noise
+ * anyway).
  *
- * Algorithm: BFS in both directions from focus (configurable:
- * upstream / downstream / both). Each step shows the path from
- * focus → leaf so the user can see WHY a node is in the zone.
- *
- * Visual: focus highlighted orange (proposed change), impact zone
- * nodes highlighted yellow (blast radius), other nodes dimmed.
+ * M17.1.4 replaced the previous path-tree render with a G6
+ * graph. The pure helpers in ImpactGraph.ts are unchanged.
  */
 
 import {
@@ -21,10 +19,14 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  onCleanup,
+  onMount,
+  untrack,
   type Component,
 } from "solid-js";
-import type { GraphNode } from "../bundle/loader";
+import type { GraphEdge, GraphNode } from "../bundle/loader";
 import type { SidebarStats } from "../components/Sidebar";
+import { GraphRenderer } from "../renderer/g6";
 import {
   computeImpact,
   impactCount as countImpact,
@@ -37,7 +39,7 @@ export type { ImpactDirection, ImpactEntry };
 
 export interface ImpactViewProps {
   nodes: GraphNode[];
-  edges: { source: string; target: string }[];
+  edges: GraphEdge[];
   initialFocusId?: string;
   onSelect: (id: string | null) => void;
   onStats?: (stats: SidebarStats) => void;
@@ -45,9 +47,12 @@ export interface ImpactViewProps {
 
 export const ImpactView: Component<ImpactViewProps> = (props) => {
   const [focusId, setFocusId] = createSignal<string | null>(
-    props.initialFocusId ?? props.nodes[0]?.id ?? null,
+    untrack(() => props.initialFocusId ?? props.nodes[0]?.id ?? null),
   );
   const [direction, setDirection] = createSignal<ImpactDirection>("both");
+
+  let containerRef!: HTMLDivElement;
+  let renderer: GraphRenderer | undefined;
 
   const focus = createMemo(() => {
     const id = focusId();
@@ -55,52 +60,129 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
     return props.nodes.find((n) => n.id === id) ?? null;
   });
 
-  /** BFS from focus in both directions with path tracking. */
-  const impactEntries = createMemo<ImpactEntry[]>(() =>
-    computeImpact(props.nodes, props.edges, focusId() ?? "", direction()),
-  );
-
-  /** Group entries by depth for hierarchical display. */
-  const byDepth = createMemo<Record<number, ImpactEntry[]>>(() => {
-    const groups: Record<number, ImpactEntry[]> = {};
-    for (const e of impactEntries()) {
-      if (e.depth === 0) continue; // skip focus itself
-      (groups[e.depth] ??= []).push(e);
-    }
-    return groups;
+  const impactEntries = createMemo<ImpactEntry[]>(() => {
+    const id = focusId();
+    if (!id) return [];
+    return computeImpact(props.nodes, props.edges, id, direction());
   });
 
-  /** Stats: count of impacted nodes + max depth. */
   const impactCount = createMemo<number>(() => countImpact(impactEntries()));
-  const maxDepth = createMemo<number>(() => maxImpactDepth(impactEntries()));
 
-  const nodeById = createMemo(() => {
-    const m = new Map<string, GraphNode>();
-    for (const n of props.nodes) m.set(n.id, n);
-    return m;
+  /** Nodes the user should see: focus + impact zone. */
+  const visibleNodes = createMemo<GraphNode[]>(() => {
+    const f = focus();
+    if (!f) return [];
+    const ids = new Set<string>([f.id]);
+    for (const e of impactEntries()) ids.add(e.nodeId);
+    return props.nodes.filter((n) => ids.has(n.id));
   });
 
-  // Emit stats whenever focus/direction change. Notification is a
-  // side effect, so use createEffect (not createMemo): derived impact
-  // calculations above stay pure (R4).
+  /** Edges that connect two visible nodes. */
+  const visibleEdges = createMemo<GraphEdge[]>(() => {
+    const ids = new Set(visibleNodes().map((n) => n.id));
+    return props.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  });
+
+  // Build a per-node color override that highlights focus + zone.
+  const nodeStyleConfig = createMemo(() => ({
+    byLevel: { 1: "#f59e0b" /* focus */, 0: "#5b8def" },
+    byKind: { function: "#f59e0b" },
+    defaultFill: "#facc15" /* impact zone */,
+    defaultStroke: "#a16207",
+    selectedStroke: "#fb923c",
+  }));
+
   createEffect(() => {
+    // SidebarStats is shared with the call-graph view. We re-use
+    // `blastRadius` (size of the impact zone) and map
+    // `direction` to the call-graph vocabulary so the sidebar
+    // shows consistent labels.
+    const dir = direction();
+    const sidebarDir: "callees" | "callers" | "both" =
+      dir === "upstream"
+        ? "callers"
+        : dir === "downstream"
+          ? "callees"
+          : "both";
     props.onStats?.({
       blastRadius: impactCount(),
-      depth: maxDepth(),
-      direction:
-        direction() === "both"
-          ? "both"
-          : direction() === "upstream"
-            ? "callers"
-            : "callees",
+      depth: maxImpactDepth(impactEntries()),
+      direction: sidebarDir,
     });
+  });
+
+  onMount(() => {
+    renderer = new GraphRenderer({
+      container: containerRef,
+      width: containerRef?.clientWidth || 800,
+      height: containerRef?.clientHeight || 600,
+      layout: {
+        type: "dagre",
+        rankdir: "LR",
+        align: "UL",
+        nodesep: 30,
+        ranksep: 80,
+      },
+      onNodeClick: (id) => {
+        setFocusId(id);
+        props.onSelect(id);
+      },
+    });
+    renderer.setData({
+      schemaVersion: "0.0.0",
+      source: "impact-view",
+      loadedAt: "0",
+      rawKind: "call-graph",
+      nodes: visibleNodes(),
+      edges: visibleEdges(),
+    });
+  });
+
+  createEffect(() => {
+    if (!renderer) return;
+    renderer.setNodeStyle(nodeStyleConfig());
+    renderer.setData({
+      schemaVersion: "0.0.0",
+      source: "impact-view",
+      loadedAt: "0",
+      rawKind: "call-graph",
+      nodes: visibleNodes(),
+      edges: visibleEdges(),
+    });
+  });
+
+  createEffect(() => {
+    const id = focusId();
+    if (!renderer) return;
+    if (id) {
+      void renderer.focusNode(id);
+    } else {
+      void renderer.clearFocus();
+    }
+  });
+
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || !renderer) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) renderer.resize(width, height);
+    });
+    ro.observe(containerRef);
+    onCleanup(() => ro.disconnect());
+  });
+
+  onCleanup(() => {
+    renderer?.destroy();
+    renderer = undefined;
   });
 
   return (
     <div class="impact-view">
       <header class="impact-header">
         <div class="impact-focus">
-          <label>Proposed change at</label>
+          <label>Focus (proposed change)</label>
           <select
             value={focusId() ?? ""}
             onChange={(e) => {
@@ -113,8 +195,7 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
             </For>
           </select>
         </div>
-
-        <div class="impact-controls">
+        <div class="impact-direction">
           <label>Direction</label>
           <select
             value={direction()}
@@ -122,115 +203,55 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
               setDirection(e.currentTarget.value as ImpactDirection)
             }
           >
-            <option value="downstream">downstream (callees)</option>
-            <option value="upstream">upstream (callers)</option>
+            <option value="upstream">callers (upstream)</option>
+            <option value="downstream">callees (downstream)</option>
             <option value="both">both</option>
           </select>
         </div>
+        <p class="impact-stats">
+          <strong>{impactCount()}</strong> impacted · max depth{" "}
+          <strong>{maxImpactDepth(impactEntries())}</strong> · {direction()}
+        </p>
       </header>
 
       <Show
         when={focus()}
-        fallback={<p class="empty">No function selected.</p>}
+        fallback={
+          <p class="empty">Pick a focus function to see its blast radius.</p>
+        }
       >
-        {(f) => (
-          <div class="impact-body">
-            <section class="impact-focus-detail">
-              <h2>
-                <span class="impact-tag focus">PROPOSED</span>
-                {f().label}
-              </h2>
-              <Show when={f().file}>
-                <code class="impact-file">
-                  {f().file}:{f().line ?? "?"}
-                </code>
-              </Show>
-              <div class="impact-stats">
-                <span>
-                  <strong>{impactCount()}</strong> impacted functions
-                </span>
-                <span>·</span>
-                <span>
-                  max depth <strong>{maxDepth()}</strong>
-                </span>
-                <span>·</span>
-                <span>{direction()}</span>
-              </div>
-            </section>
+        <div ref={containerRef} class="impact-canvas" />
 
-            <Show
-              when={impactCount() > 0}
-              fallback={
-                <p class="empty">
-                  No {direction()} impact from {f().label} within 5 levels.
-                </p>
-              }
-            >
-              <section class="impact-zones">
-                <h3>Blast radius by depth</h3>
-                <For
-                  each={Object.entries(byDepth()).sort(
-                    ([a], [b]) => Number(a) - Number(b),
-                  )}
-                >
-                  {([depth, entries]) => (
-                    <div class="impact-depth">
-                      <h4>
-                        Depth {depth}{" "}
-                        <span class="muted">({entries.length})</span>
-                      </h4>
-                      <ul class="impact-list">
-                        <For each={entries}>
-                          {(entry) => {
-                            const node = nodeById().get(entry.nodeId);
-                            if (!node) return null;
-                            return (
-                              <li>
-                                <button
-                                  class={`impact-node ${entry.direction}`}
-                                  onClick={() => props.onSelect(node.id)}
-                                >
-                                  <span
-                                    class={`impact-arrow-${entry.direction}`}
-                                  >
-                                    {entry.direction === "upstream" ? "↑" : "↓"}
-                                  </span>
-                                  <span class="impact-node-name">
-                                    {node.label}
-                                  </span>
-                                  <Show when={node.file}>
-                                    <span class="impact-node-file">
-                                      {node.file}:{node.line ?? "?"}
-                                    </span>
-                                  </Show>
-                                </button>
-                                <details class="impact-path">
-                                  <summary>path from focus</summary>
-                                  <ol>
-                                    <For each={entry.path}>
-                                      {(pid) => {
-                                        const pnode = nodeById().get(pid);
-                                        return (
-                                          <li>
-                                            <code>{pnode?.label ?? pid}</code>
-                                          </li>
-                                        );
-                                      }}
-                                    </For>
-                                  </ol>
-                                </details>
-                              </li>
-                            );
-                          }}
-                        </For>
-                      </ul>
-                    </div>
-                  )}
-                </For>
-              </section>
-            </Show>
-          </div>
-        )}
+        <section class="impact-legend">
+          <span class="legend-chip legend-focus">Focus (proposed)</span>
+          <span class="legend-chip legend-impact">Impact zone</span>
+        </section>
+
+        <Show when={impactEntries().length > 0}>
+          <section class="impact-paths">
+            <h3>Impact paths</h3>
+            <ul>
+              <For each={impactEntries()}>
+                {(entry) => {
+                  const node = props.nodes.find((n) => n.id === entry.nodeId);
+                  if (!node) return null;
+                  return (
+                    <li>
+                      <code>{node.label}</code>{" "}
+                      <span class="muted">depth {entry.depth}</span>
+                      <Show when={entry.path.length > 1}>
+                        <span class="muted">
+                          {" "}
+                          via {entry.path.slice(0, -1).join(" → ")}
+                        </span>
+                      </Show>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </section>
+        </Show>
       </Show>
     </div>
   );

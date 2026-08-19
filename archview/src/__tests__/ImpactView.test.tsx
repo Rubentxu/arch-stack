@@ -10,6 +10,37 @@ import {
 import { ImpactView } from "../views/ImpactView";
 import type { SidebarStats } from "../components/Sidebar";
 
+// M17.1.4: ImpactView mounts a G6 canvas. In jsdom G6 cannot
+// acquire a real Canvas2D context, so the renderer is mocked.
+vi.mock("../renderer/g6", () => ({
+  GraphRenderer: class {
+    constructor() {
+      /* noop */
+    }
+    setData() {
+      /* noop */
+    }
+    setNodeStyle() {
+      /* noop */
+    }
+    setLayout() {
+      return Promise.resolve();
+    }
+    focusNode() {
+      return Promise.resolve();
+    }
+    clearFocus() {
+      return Promise.resolve();
+    }
+    resize() {
+      /* noop */
+    }
+    destroy() {
+      /* noop */
+    }
+  },
+}));
+
 /**
  * R4 — Impact statistics notification must be a reactive side effect
  * while derived impact calculations stay pure. The observable count,
