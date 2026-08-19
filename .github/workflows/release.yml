@@ -166,8 +166,8 @@ jobs:
           mkdir -p dist staging
           cp "archctl/target/${{ matrix.target }}/release/archctl" staging/archctl
           chmod +x staging/archctl
-          tar -C staging -czf "dist/archctl-${{ env.TAG_NAME }}-${{ matrix.label }}.tar.gz" archctl
-          ls -lh "dist/archctl-${{ env.TAG_NAME }}-${{ matrix.label }}.tar.gz"
+          tar -C staging -czf "dist/archctl-${{ matrix.target }}.tar.gz" archctl
+          ls -lh "dist/archctl-${{ matrix.target }}.tar.gz"
 
       - name: Build assets-stack tarball (platform-independent)
         if: ${{ steps.probe.outcome != 'failure' }}
@@ -195,7 +195,7 @@ jobs:
         run: |
           cd dist
           sha256sum \
-              archctl-${{ env.TAG_NAME }}-*.tar.gz \
+              archctl-*.tar.gz \
               archctl-assets-${{ env.TAG_NAME }}.tar.gz \
               migration-manifest.json \
               > SHA256SUMS
@@ -207,7 +207,7 @@ jobs:
         with:
           name: release-${{ matrix.label }}
           path: |
-            dist/archctl-${{ env.TAG_NAME }}-${{ matrix.label }}.tar.gz
+            dist/archctl-${{ matrix.target }}.tar.gz
             dist/archctl-assets-${{ env.TAG_NAME }}.tar.gz
             dist/SHA256SUMS
             dist/migration-manifest.json
@@ -240,7 +240,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p staging
-          find artifacts -name "archctl-${{ env.TAG_NAME }}-*.tar.gz" -exec cp -t staging {} +
+          find artifacts -name "archctl-*.tar.gz" -exec cp -t staging {} +
           find artifacts -name "archctl-assets-${{ env.TAG_NAME }}.tar.gz" -exec cp -t staging {} +
           find artifacts -name "SHA256SUMS" -exec cp -t staging {} +
           find artifacts -name "migration-manifest.json" -exec cp -t staging {} +
@@ -275,8 +275,8 @@ jobs:
 
             | Platform | Asset |
             |---|---|
-            | Linux x86_64 | `archctl-${{ env.TAG_NAME }}-linux-x86_64.tar.gz` |
-            | Linux aarch64 | `archctl-${{ env.TAG_NAME }}-linux-aarch64.tar.gz` |
+            | Linux x86_64 | `archctl-x86_64-unknown-linux-gnu.tar.gz` |
+            | Linux aarch64 | `archctl-aarch64-unknown-linux-gnu.tar.gz` |
             | Assets (skills/agents/plugins) | `archctl-assets-${{ env.TAG_NAME }}.tar.gz` |
             | Migration manifest | `migration-manifest.json` |
 
