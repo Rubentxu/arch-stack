@@ -186,6 +186,11 @@ fn detect_rust_components(
         if module_name.is_empty() || module_name == "src" {
             continue;
         }
+        // Hidden dirs (.test, .github, …) are fixtures/config, not
+        // modules (vueuse UAT smoke 2026-08-19: packages/.test).
+        if module_name.starts_with('.') {
+            continue;
+        }
 
         // Look for mod.rs or lib.rs to get the marker
         let marker_path = dir.join("mod.rs");
@@ -285,6 +290,11 @@ fn detect_ts_components(
             if module_name.is_empty() {
                 continue;
             }
+            // Hidden dirs (.test, .assets, …) are fixtures, not modules
+            // (vueuse UAT smoke 2026-08-19: packages/.test).
+            if module_name.starts_with('.') {
+                continue;
+            }
 
             let file = if fs.exists(&dir.join("index.ts")) {
                 "index.ts"
@@ -355,6 +365,10 @@ fn detect_py_components(
                 .unwrap_or_default();
 
             if module_name.is_empty() {
+                continue;
+            }
+            // Hidden dirs are fixtures, not modules (vueuse UAT smoke).
+            if module_name.starts_with('.') {
                 continue;
             }
 
@@ -484,5 +498,27 @@ mod tests {
         // Must be sorted alphabetically
         let names: Vec<_> = result.iter().map(|c| c.name.clone()).collect();
         assert_eq!(names, vec!["alpha", "beta", "zebra"]);
+    }
+
+    #[test]
+    fn skips_hidden_dirs_in_packages() {
+        // vueuse-style: packages/.test/index.ts is a hidden fixture dir,
+        // not a module. Regression from the 2026-08-19 UAT smoke.
+        let fs = MemoryFilesystem::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        fs.create_dir_all(&root.join("packages/.test")).unwrap();
+        fs.create_dir_all(&root.join("packages/core")).unwrap();
+        fs.write(&root.join("packages/.test/index.ts"), b"export {}")
+            .unwrap();
+        fs.write(&root.join("packages/core/index.ts"), b"export {}")
+            .unwrap();
+
+        let s = ComponentsStrategy;
+        let result = s.detect(root, &fs).unwrap();
+
+        let names: Vec<_> = result.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(names, vec!["core"], "hidden dirs must not be modules");
     }
 }

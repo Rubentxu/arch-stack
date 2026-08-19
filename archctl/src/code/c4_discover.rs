@@ -341,7 +341,14 @@ pub fn apply(
             "components" => ("mt.component", "component"),
             _ => ("mt.container", "container"),
         };
-        let element_id = format!("c4:{}:{}", element_prefix, container.canonical_key);
+        // Element ids must stay within the identifier charset. Canonical
+        // keys from npm package names carry '@' and '/' (`@vueuse/core`),
+        // which validate_identifier rejects (vueuse UAT smoke 2026-08-19).
+        let element_id = format!(
+            "c4:{}:{}",
+            element_prefix,
+            crate::graph::sanitize_identifier(&container.canonical_key)
+        );
 
         // Pre-compute version_props (mirrors write_element_version logic)
         let version_props = serde_json::json!({
@@ -420,7 +427,12 @@ pub fn apply(
             "components" => ("mt.component", "component"),
             _ => ("mt.container", "container"),
         };
-        let element_id = format!("c4:{}:{}", element_prefix, container.canonical_key);
+        // Sanitized like Phase 1 (npm package names carry '@'/'/').
+        let element_id = format!(
+            "c4:{}:{}",
+            element_prefix,
+            crate::graph::sanitize_identifier(&container.canonical_key)
+        );
 
         let version_props = serde_json::json!({
             "inferred": true,
@@ -817,6 +829,46 @@ mod tests {
         assert_eq!(r.elements_skipped, 0);
         assert!(r.evidences_written >= 1);
         assert!(r.source_artifacts_written >= 1);
+    }
+
+    /// Regression: npm package names carry '@' and '/' (`@vueuse/core`);
+    /// the derived element id must be sanitized or OF_TYPE batch writes
+    /// reject it (vueuse UAT smoke 2026-08-19).
+    #[test]
+    fn apply_sanitizes_element_ids_from_npm_package_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+
+        let report = DiscoverReport {
+            schema_version: "1.0".to_string(),
+            project: ProjectMeta {
+                root: project.display().to_string(),
+                files_scanned: 10,
+                languages: BTreeMap::new(),
+                duration_ms: 50,
+            },
+            discovered: vec![Container {
+                canonical_key: "@vueuse/core".to_string(),
+                name: "@vueuse/core".to_string(),
+                strategy: "npm-workspace".to_string(),
+                confidence: 0.8,
+                merged_from: vec!["npm-workspace".to_string()],
+                evidences: vec![Evidence {
+                    content_hash: String::new(),
+                    file: "packages/core/package.json".to_string(),
+                    line: 2,
+                    kind: EvidenceKind::Structural,
+                    text: "npm workspace package".to_string(),
+                }],
+            }],
+            errors: vec![],
+        };
+
+        let fs = MemoryFilesystem::new();
+        let result = apply(project, &report, &fs);
+        assert!(result.is_ok(), "apply must succeed: {:?}", result.err());
+        let r = result.unwrap();
+        assert_eq!(r.elements_written, 1);
     }
 
     #[test]
