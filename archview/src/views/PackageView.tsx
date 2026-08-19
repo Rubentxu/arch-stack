@@ -6,17 +6,22 @@
  * nodes whose file shares a common directory prefix. A package
  * is the first path segment (e.g. "src/auth.rs" → "src").
  *
- * M17.5 MVP: card grid + relations list + cycle detection. The view
- * derives package-level edges from the underlying call-graph by
- * counting inter-package call edges (with weight = number of calls).
- * Cycles are highlighted in the relations panel.
- *
- * Pure helpers (packageForFile / buildPackageEdges / detectCycles)
- * live in `./PackageGraph.ts` for testability without JSX imports.
+ * M17.1.5 replaced the previous card-grid render with a G6
+ * dagre horizontal graph. The pure helpers in PackageGraph.ts
+ * are unchanged.
  */
 
-import { For, Show, createMemo, type Component } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
 import type { GraphEdge, GraphNode } from "../bundle/loader";
+import { GraphRenderer } from "../renderer/g6";
 import {
   buildPackageEdges,
   detectCycles,
@@ -35,8 +40,21 @@ interface Package {
   functionCount: number;
 }
 
+/** Map a `Package` to a node the renderer can consume. The id
+ *  is the package name (must be unique). */
+function packageToNode(p: Package): GraphNode {
+  return {
+    id: p.name,
+    label: p.name,
+    kind: "package",
+    file: p.name,
+  };
+}
+
 export const PackageView: Component<PackageViewProps> = (props) => {
-  /** Aggregate nodes by package (file directory). */
+  let containerRef!: HTMLDivElement;
+  let renderer: GraphRenderer | undefined;
+
   const packages = createMemo<Package[]>(() => {
     const map = new Map<string, Package>();
     for (const node of props.nodes) {
@@ -51,25 +69,88 @@ export const PackageView: Component<PackageViewProps> = (props) => {
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  /**
-   * Build package-level edges from call-graph edges. A package edge
-   * (A → B) exists if any function in A calls any function in B.
-   */
   const packageEdges = createMemo(() =>
     buildPackageEdges(props.nodes, props.edges),
   );
 
-  /** Detect cycles via DFS. Returns edge keys that are part of a cycle. */
-  const cycleEdges = createMemo(() => detectCycles(packageEdges()));
+  const cycles = createMemo(() => detectCycles(packageEdges()));
+
+  const packageNodes = createMemo<GraphNode[]>(() =>
+    packages().map(packageToNode),
+  );
+
+  const packageEdgeList = createMemo<GraphEdge[]>(() =>
+    packageEdges().map((e) => ({
+      id: `${e.from}->${e.to}`,
+      source: e.from,
+      target: e.to,
+      label: `${e.weight}`,
+      kind: e.inCycle ? "cycle" : "depends",
+    })),
+  );
+
+  onMount(() => {
+    renderer = new GraphRenderer({
+      container: containerRef,
+      width: containerRef?.clientWidth || 800,
+      height: containerRef?.clientHeight || 600,
+      layout: {
+        type: "dagre",
+        rankdir: "LR",
+        align: "UL",
+        nodesep: 40,
+        ranksep: 60,
+      },
+      onNodeClick: (id) => {
+        props.onSelect(id);
+      },
+    });
+    renderer.setData({
+      schemaVersion: "0.0.0",
+      source: "package-view",
+      loadedAt: "0",
+      rawKind: "call-graph",
+      nodes: packageNodes(),
+      edges: packageEdgeList(),
+    });
+  });
+
+  createEffect(() => {
+    if (!renderer) return;
+    renderer.setData({
+      schemaVersion: "0.0.0",
+      source: "package-view",
+      loadedAt: "0",
+      rawKind: "call-graph",
+      nodes: packageNodes(),
+      edges: packageEdgeList(),
+    });
+  });
+
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || !renderer) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) renderer.resize(width, height);
+    });
+    ro.observe(containerRef);
+    onCleanup(() => ro.disconnect());
+  });
+
+  onCleanup(() => {
+    renderer?.destroy();
+    renderer = undefined;
+  });
 
   return (
     <div class="package-view">
       <header class="pkg-header">
-        <h2>Package diagram</h2>
+        <h2>Packages</h2>
         <p class="muted">
           {packages().length} packages · {packageEdges().length} inter-package
           edges
-          {cycleEdges().size > 0 ? " · ⚠ cycle" : ""}
         </p>
       </header>
 
@@ -77,47 +158,28 @@ export const PackageView: Component<PackageViewProps> = (props) => {
         when={packages().length > 0}
         fallback={<p class="empty">No functions to derive packages from.</p>}
       >
-        <div class="pkg-grid">
-          <For each={packages()}>
-            {(pkg) => (
-              <article
-                class="pkg-card"
-                onClick={() => props.onSelect(pkg.name)}
-                title={`${pkg.fileCount} file(s), ${pkg.functionCount} function(s)`}
-              >
-                <h3 class="pkg-name">{pkg.name}</h3>
-                <dl class="pkg-stats">
-                  <dt>files</dt>
-                  <dd>{pkg.fileCount}</dd>
-                  <dt>functions</dt>
-                  <dd>{pkg.functionCount}</dd>
-                </dl>
-              </article>
-            )}
-          </For>
-        </div>
+        <div ref={containerRef} class="pkg-canvas" />
 
-        <Show when={packageEdges().length > 0}>
-          <section class="pkg-relations">
-            <h3>Inter-package dependencies</h3>
+        <Show when={cycles().length > 0}>
+          <section class="pkg-cycles">
+            <h3>Dependency cycles</h3>
             <ul>
-              <For each={packageEdges()}>
-                {(e) => {
-                  const isCycle = cycleEdges().has(`${e.source}\0${e.target}`);
-                  return (
-                    <li
-                      class={`pkg-edge ${
-                        isCycle ? "is-cycle" : ""
-                      } weight-${Math.min(3, e.weight)}`}
-                    >
-                      <code>{e.source}</code>
-                      <span class="pkg-arrow">
-                        ─{isCycle ? "↺" : "→"}({e.weight})→
-                      </span>
-                      <code>{e.target}</code>
-                    </li>
-                  );
-                }}
+              <For each={cycles()}>
+                {(c) => (
+                  <li>
+                    <For each={c}>
+                      {(p, i) => (
+                        <>
+                          <Show when={i() > 0}>
+                            <span class="arrow"> → </span>
+                          </Show>
+                          <code>{p}</code>
+                        </>
+                      )}
+                    </For>
+                    <span class="arrow"> → {c[0]}</span>
+                  </li>
+                )}
               </For>
             </ul>
           </section>
