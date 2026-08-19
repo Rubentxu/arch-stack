@@ -53,30 +53,57 @@ export interface NodeStyleConfig {
   defaultFill?: string;
   defaultStroke?: string;
   selectedStroke?: string;
+  /** Canvas background (G6's `background` option). */
+  background?: string;
+  /** Edge stroke color. */
+  edgeStroke?: string;
+  /** Label text color. */
+  labelFill?: string;
+  /** Label background fill. */
+  labelBackgroundFill?: string;
+}
+
+/**
+ * Read a CSS custom property from `:root`. The workbench's
+ * design system (styles/tokens.css) defines these. Used by
+ * the renderer's defaults so the graph picks up the
+ * active theme — including the light-mode override under
+ * `@media (prefers-color-scheme: light)`.
+ */
+function readCssVar(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return v.length > 0 ? v : fallback;
 }
 
 const DEFAULT_NODE_STYLE: NodeStyleConfig = {
   byLevel: {
-    1: "#5b8def", // primary (context)
-    2: "#7ab8ff", // secondary (container)
-    3: "#9ec9ff", // tertiary (component)
-    0: "#7a8aa0", // fallback (unknown)
+    1: readCssVar("--c4-context", "#5b8def"),
+    2: readCssVar("--c4-container", "#7ab8ff"),
+    3: readCssVar("--c4-component", "#9ec9ff"),
+    0: readCssVar("--c4-default", "#7a8aa0"),
   },
   byKind: {
-    person: "#f59e0b",
-    software_system: "#5b8def",
-    container: "#7ab8ff",
-    component: "#9ec9ff",
-    function: "#5b8def",
-    method: "#7ab8ff",
-    class: "#9ec9ff",
-    interface: "#a78bfa",
-    trait: "#a78bfa",
-    enum: "#fbbf24",
+    person: readCssVar("--warn", "#f59e0b"),
+    software_system: readCssVar("--c4-context", "#5b8def"),
+    container: readCssVar("--c4-container", "#7ab8ff"),
+    component: readCssVar("--c4-component", "#9ec9ff"),
+    function: readCssVar("--c4-context", "#5b8def"),
+    method: readCssVar("--c4-container", "#7ab8ff"),
+    class: readCssVar("--c4-component", "#9ec9ff"),
+    interface: readCssVar("--accent-2", "#a78bfa"),
+    trait: readCssVar("--accent-2", "#a78bfa"),
+    enum: readCssVar("--warn", "#fbbf24"),
   },
-  defaultFill: "#5b8def",
-  defaultStroke: "#1f3a5f",
-  selectedStroke: "#fbbf24",
+  defaultFill: readCssVar("--c4-context", "#5b8def"),
+  defaultStroke: readCssVar("--border-strong", "#1f3a5f"),
+  selectedStroke: readCssVar("--warn", "#fbbf24"),
+  background: readCssVar("--bg-0", "#0e1116"),
+  edgeStroke: readCssVar("--fg-1", "#7a8aa0"),
+  labelFill: readCssVar("--fg-0", "#e6edf3"),
+  labelBackgroundFill: readCssVar("--bg-0", "#0e1116"),
 };
 
 export class GraphRenderer {
@@ -98,7 +125,7 @@ export class GraphRenderer {
       width: this.options.width,
       height: this.options.height,
       autoFit: "view",
-      background: "#0e1116",
+      background: this.nodeStyle.background ?? "#0e1116",
       data: { nodes: [], edges: [] },
       // M17.1 — layout is now passed by the caller (view-driven).
       // Default to d3-force if not provided.
@@ -117,10 +144,10 @@ export class GraphRenderer {
           stroke: this.nodeStyle.defaultStroke ?? "#1f3a5f",
           lineWidth: 1.5,
           labelText: (d: { data?: { label?: string } }) => d.data?.label ?? "",
-          labelFill: "#e6edf3",
+          labelFill: this.nodeStyle.labelFill ?? "#e6edf3",
           labelFontSize: 11,
           labelBackground: true,
-          labelBackgroundFill: "#0e1116",
+          labelBackgroundFill: this.nodeStyle.labelBackgroundFill ?? "#0e1116",
           labelBackgroundOpacity: 0.7,
           labelPadding: [2, 4, 2, 4] as [number, number, number, number],
         },
@@ -128,7 +155,7 @@ export class GraphRenderer {
       edge: {
         type: "line",
         style: {
-          stroke: "#7a8aa0",
+          stroke: this.nodeStyle.edgeStroke ?? "#7a8aa0",
           lineWidth: 1,
           endArrow: true,
           endArrowSize: 8,
