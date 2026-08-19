@@ -95,6 +95,49 @@ html, body {
   color: var(--accent-on);
 }
 
+/* M17.C2 / F1: the sample selector takes the place of 7 buttons.
+ * It sits at the same height as the URL input and the drift
+ * toggle, so the row height stays uniform. The custom caret is a
+ * thin inline SVG so we don't pull in an icon font. The colour
+ * (`%2390a0b8`) is the OKLCH `--fg-1` token mapped to a sRGB hex
+ * because the SVG is data-URL-decoded by the browser, which
+ * cannot resolve CSS custom properties. */
+.bundle-loader .sample-select {
+  padding: 6px 28px 6px 10px;
+  background-color: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-0);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%2390a0b8'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.bundle-loader .sample-select:hover:not(:disabled) {
+  background-color: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.bundle-loader .sample-select:focus-visible {
+  outline: none;
+  border-color: var(--accent-3);
+  box-shadow: 0 0 0 3px rgb(91 141 239 / 0.25);
+}
+
+.bundle-loader .sample-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .bundle-loader input {
   flex: 1;
   padding: var(--sp-2) var(--sp-3);

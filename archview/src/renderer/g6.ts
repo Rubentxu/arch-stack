@@ -78,6 +78,45 @@ function readCssVar(name: string, fallback: string): string {
   return v.length > 0 ? v : fallback;
 }
 
+/**
+ * Like `readCssVar` but returns a number suitable for G6's
+ * `size` and `labelFontSize`. The token value is often a
+ * `clamp()` (e.g. `clamp(12px, 0.78rem, 13px)`), so a naive
+ * `parseFloat` returns NaN. Instead, we ask the browser to
+ * resolve the value into a concrete pixel measurement by
+ * applying it to a hidden probe element and reading
+ * `getComputedStyle().fontSize` / `getBoundingClientRect()`.
+ *
+ * Returns the `fallback` if the value is unparseable, or if
+ * we are not in a DOM environment (jsdom unit tests).
+ */
+function readCssVarNumber(name: string, fallback: number): number {
+  if (typeof document === "undefined") return fallback;
+  const root = document.documentElement;
+  // Get the raw token string. If the token is `var(--fs-sm)`,
+  // getPropertyValue already resolves one level; if `--fs-sm` is
+  // itself a clamp, we still get the clamp string and need the
+  // probe element below to materialise the final pixel value.
+  const raw = getComputedStyle(root).getPropertyValue(name).trim();
+  if (!raw) return fallback;
+  // Cheap path: a plain number or "<n>px" string.
+  const direct = Number.parseFloat(raw);
+  if (Number.isFinite(direct) && /^\s*[\d.]+\s*(px)?\s*$/.test(raw)) {
+    return Math.round(direct);
+  }
+  // Fallback path: render the token through a probe element so
+  // the browser resolves clamp() / rem / em into a real pixel
+  // measurement. The element is not inserted into the document.
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.fontSize = `var(${name})`;
+  root.appendChild(probe);
+  const resolved = Number.parseFloat(getComputedStyle(probe).fontSize);
+  root.removeChild(probe);
+  return Number.isFinite(resolved) ? Math.round(resolved) : fallback;
+}
+
 const DEFAULT_NODE_STYLE: NodeStyleConfig = {
   byLevel: {
     1: readCssVar("--c4-context", "#5b8def"),
@@ -138,14 +177,27 @@ export class GraphRenderer {
       node: {
         type: "circle",
         style: {
-          size: 18,
+          // M17.C2 / F5: node size and label font size are now read
+          // from CSS custom properties so they participate in the
+          // design system (and follow light mode). Fallbacks keep
+          // the renderer usable in non-DOM environments (jsdom
+          // unit tests).
+          size: readCssVarNumber("--g6-node-size", 18),
           fill: (d: { data?: { level?: number; kind?: string } }) =>
             this.colorForNode(d.data),
           stroke: this.nodeStyle.defaultStroke ?? "#1f3a5f",
           lineWidth: 1.5,
           labelText: (d: { data?: { label?: string } }) => d.data?.label ?? "",
           labelFill: this.nodeStyle.labelFill ?? "#e6edf3",
-          labelFontSize: 11,
+          labelFontSize: readCssVarNumber(
+            "--g6-label-font-size",
+            11,
+            // The token value is `var(--fs-sm)` which itself is
+            // a `clamp()` expression. Browsers resolve it to a
+            // computed pixel value when we read it via
+            // getComputedStyle, but G6 wants an integer, so we
+            // round.
+          ),
           labelBackground: true,
           labelBackgroundFill: this.nodeStyle.labelBackgroundFill ?? "#0e1116",
           labelBackgroundOpacity: 0.7,
