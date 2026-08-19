@@ -162,6 +162,18 @@ vi.mock("../renderer/g6", () => ({
     setData() {
       /* noop */
     }
+    setLayout() {
+      return Promise.resolve();
+    }
+    focusNode() {
+      return Promise.resolve();
+    }
+    clearFocus() {
+      return Promise.resolve();
+    }
+    resize() {
+      /* noop */
+    }
     destroy() {
       /* noop */
     }
@@ -212,10 +224,11 @@ describe("App navigation — call-graph bundles (R1/R3/R5)", () => {
     expect(
       document.querySelector(".callgraph-focus-detail")?.textContent,
     ).toContain("main");
-    // Level 1 downstream from main reaches auth_login (blast radius 1).
-    expect(document.querySelector(".callgraph-levels")?.textContent).toContain(
-      "auth_login",
-    );
+    // M17.1: the level list was replaced by a G6 canvas. The
+    // underlying BFS expansion is still verified by
+    // CallGraphGraph.test.ts; here we just assert the canvas
+    // mounted and the stats sidebar reflects the blast radius.
+    expect(document.querySelector(".callgraph-canvas")).not.toBeNull();
     expect(document.querySelector(".callgraph-stats")?.textContent).toContain(
       "1",
     );
@@ -229,30 +242,24 @@ describe("App navigation — call-graph bundles (R1/R3/R5)", () => {
     loadSample("Sample call-graph (deep, 5 nodes)");
     fireEvent.click(await screen.findByRole("button", { name: "Call graph" }));
 
+    // M17.1: the per-level text list is now drawn inside the G6
+    // canvas and is not queryable via textContent. The stats
+    // sidebar is the user-visible signal that BFS expanded to
+    // depth 1 (2 reachable functions from "alpha" at depth 1).
     await waitFor(() =>
-      expect(
-        document.querySelector(".callgraph-levels")?.textContent,
-      ).toContain("beta"),
-    );
-    expect(document.querySelector(".callgraph-levels")?.textContent).toContain(
-      "gamma",
+      expect(document.querySelector(".callgraph-canvas")).not.toBeNull(),
     );
     expect(document.querySelector(".callgraph-stats")?.textContent).toContain(
       "2",
     );
-    // delta/epsilon are depth-2 only — not yet visible.
-    expect(
-      document.querySelector(".callgraph-levels")?.textContent,
-    ).not.toContain("delta");
 
     fireEvent.click(screen.getByRole("button", { name: "Increase depth" }));
+    // After depth=2 the blast radius grows to 4 (delta, epsilon
+    // become reachable in the deep bundle).
     await waitFor(() =>
-      expect(
-        document.querySelector(".callgraph-levels")?.textContent,
-      ).toContain("delta"),
-    );
-    expect(document.querySelector(".callgraph-levels")?.textContent).toContain(
-      "epsilon",
+      expect(document.querySelector(".callgraph-stats")?.textContent).toContain(
+        "4",
+      ),
     );
   });
 });
