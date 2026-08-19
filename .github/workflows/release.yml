@@ -1,14 +1,21 @@
 name: release
 
-# Trigger on every version tag push. The workflow:
-# 1. Builds the archctl binary on each target in the matrix.
-# 2. Generates SHA256SUMS + migration-manifest.json.
-# 3. Creates/updates the GitHub Release with the binary tarballs.
+# Trigger on every version tag push, or manually via workflow_dispatch
+# (the dispatch runs THIS file from the selected branch and checks out the
+# input tag for the build — see `env.TAG_NAME` + checkout `ref`).
 #
-# To cut a release:
-#   git tag v1.X.Y && git push origin v1.X.Y
+# The workflow:
+# 1. Builds archview (workbench) + embeds it and assets-stack.
+# 2. Builds the archctl binary on each target in the matrix.
+# 3. Runs the ADR-048 storage probe (blocking on linux; macOS degrades).
+# 4. Generates SHA256SUMS + migration-manifest.json.
+# 5. Creates/updates the GitHub Release with the binary tarballs.
 #
-# Per ADR-040 (versioned distribution) + ADR-041 (self-update via GitHub Releases).
+# Per ADR-040 (versioned distribution) + ADR-041 (self-update via GitHub
+# Releases). Repair history: PR #177 (v1.43.0) broke this workflow
+# (dropped archview embed steps, `cd ..` in SHA256SUMS, `..` artifact
+# paths rejected by upload-artifact@v4, macos-13 runner retired);
+# releases failed from v1.38.0 to v1.69.0 until this repair.
 
 on:
   push:
@@ -17,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.38.0). Defaults to the latest pushed tag."
+        description: "Tag to release (e.g. v1.69.0). Defaults to the latest pushed tag."
         required: false
         type: string
 
@@ -29,6 +36,9 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
   RUST_BACKTRACE: "1"
+  # For tag pushes: github.ref_name is the tag (e.g. v1.69.0).
+  # For workflow_dispatch: use the explicit input.
+  TAG_NAME: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -38,14 +48,18 @@ jobs:
     name: build ${{ matrix.label }}
     # Native runners per target (P0-03): darwin binaries MUST be built on
     # macOS (no cross toolchain for the lbug C++ FFI), aarch64 on ARM.
+    # macos-x86_64 builds on macos-14 (Rosetta cross-compile): macos-13 was
+    # retired and queue-starved every run.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           # Linux x86_64 — primary target, Tier 1 per ADR-040.
+          # ubuntu-24.04: gcc 13 provides <format> required by lbug 0.18.3
+          # headers on cold-cache builds (gcc 11 on 22.04 fails).
           - label: linux-x86_64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             os: linux
             archive: tar.gz
@@ -55,9 +69,9 @@ jobs:
             target: aarch64-unknown-linux-gnu
             os: linux
             archive: tar.gz
-          # macOS Intel — Tier 1 (Apple Silicon emulator support).
+          # macOS Intel — Tier 1 (Rosetta cross-compile on arm64 runner).
           - label: macos-x86_64
-            runner: macos-13
+            runner: macos-14
             target: x86_64-apple-darwin
             os: macos
             archive: tar.gz
@@ -70,21 +84,54 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      # Bootstrap rust-embed assets (ADR-033): archctl/assets-stack/ is
-      # gitignored; the crate cannot compile without it.
-      - name: Bootstrap assets-stack
-        run: scripts/embed-stack.sh
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: archview/pnpm-lock.yaml
+
+      - name: Build archview dist
+        working-directory: archview
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      # rust-embed assets: archctl/assets-view/ + archctl/assets-stack/ are
+      # gitignored; the crate serves a stub workbench without them.
+      - name: Embed workbench + stack assets
+        run: |
+          ./scripts/embed-view.sh
+          ./scripts/embed-stack.sh
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: archctl -> Cargo.toml
+
+      - name: Version sync guard (tag == Cargo.toml)
+        run: |
+          TAG="${{ env.TAG_NAME }}"
+          WANT="${TAG#v}"
+          grep -q "^version = \"${WANT}\"" archctl/Cargo.toml || {
+            echo "version mismatch: tag ${TAG} vs archctl/Cargo.toml (want ${WANT})"
+            exit 1
+          }
+          echo "version sync OK: ${TAG}"
 
       - name: Build archctl release binary
         working-directory: archctl
@@ -93,88 +140,77 @@ jobs:
           ls -lh target/${{ matrix.target }}/release/archctl
 
       - name: Run storage compatibility probe (ADR-048 Tier-1 gate)
+        id: probe
         working-directory: archctl
+        # lbug 0.18.3's native macOS library fails the fresh-CRUD probe;
+        # the gate must still BLOCK the broken macOS binary, but not the
+        # whole release: continue-on-error lets the job skip artifact
+        # upload below instead (linux stays blocking).
+        continue-on-error: ${{ matrix.os == 'macos' }}
         run: |
           set -euo pipefail
-          # Create a temp project dir for the probe
           TMP=$(mktemp -d)
           mkdir -p "$TMP/probe-test"
-          # Run the storage probe in JSON mode; non-zero exit means block release
           ./target/${{ matrix.target }}/release/archctl doctor --scope storage --json --cwd "$TMP" | tee storage-report.json
           STORAGE_EXIT=${PIPESTATUS[0]}
-          # Artifact: upload the JSON report regardless of pass/fail
-          echo "storage_exit=$STORAGE_EXIT" >> "$GITHUB_OUTPUT"
-          # Upload JSON report as artifact (1-day retention)
-          if [ -s storage-report.json ]; then
-            echo "Storage probe output captured"
-          fi
-          # Release gate: block on non-Compatible/Unknown
           if [ "$STORAGE_EXIT" -ne 0 ]; then
-            echo "Storage probe failed (exit $STORAGE_EXIT) — release blocked"
+            echo "Storage probe failed (exit $STORAGE_EXIT) — release blocked for ${{ matrix.label }}"
             exit 1
           fi
           echo "Storage probe passed"
 
       - name: Build payload tarball (binary + assets-stack/)
+        if: ${{ steps.probe.outcome != 'failure' }}
         run: |
           set -euo pipefail
-          cd archctl
-          mkdir -p staging
-          # Copy the binary with the conventional name.
-          cp "target/${{ matrix.target }}/release/archctl" staging/archctl
+          mkdir -p dist staging
+          cp "archctl/target/${{ matrix.target }}/release/archctl" staging/archctl
           chmod +x staging/archctl
-          # Create the platform-specific tarball.
-          case "${{ matrix.os }}" in
-            linux)  tar -C staging -czf "../archctl-${{ github.ref_name }}-${{ matrix.label }}.tar.gz" archctl ;;
-            macos)  tar -C staging -czf "../archctl-${{ github.ref_name }}-${{ matrix.label }}.tar.gz" archctl ;;
-          esac
-          ls -lh "../archctl-${{ github.ref_name }}-${{ matrix.label }}.tar.gz"
+          tar -C staging -czf "dist/archctl-${{ env.TAG_NAME }}-${{ matrix.label }}.tar.gz" archctl
+          ls -lh "dist/archctl-${{ env.TAG_NAME }}-${{ matrix.label }}.tar.gz"
 
       - name: Build assets-stack tarball (platform-independent)
-        working-directory: archctl
+        if: ${{ steps.probe.outcome != 'failure' }}
         run: |
-          # Bundle assets-stack/ + assets-view/ + Cargo.toml metadata.
-          tar -czf "../archctl-assets-${{ github.ref_name }}.tar.gz" \
+          # Bundle assets-stack/ + assets-view/ + metadata.
+          tar -C archctl -czf "dist/archctl-assets-${{ env.TAG_NAME }}.tar.gz" \
               assets-stack assets-view
-          ls -lh "../archctl-assets-${{ github.ref_name }}.tar.gz"
+          ls -lh "dist/archctl-assets-${{ env.TAG_NAME }}.tar.gz"
 
       - name: Generate migration-manifest.json
-        working-directory: archctl
+        if: ${{ steps.probe.outcome != 'failure' }}
         run: |
-          # Determine previous tag for the from_version field.
           PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p' || echo "")
-          cat > migration-manifest.json << EOF
+          cat > dist/migration-manifest.json << EOF
           {
             "from_version": "${PREV_TAG#v}",
-            "to_version": "${{ github.ref_name }}",
+            "to_version": "${{ env.TAG_NAME }}",
             "migrations": []
           }
           EOF
-          cat migration-manifest.json
+          cat dist/migration-manifest.json
 
       - name: Generate SHA256SUMS
-        # Tarballs are staged at the workspace root by the steps above
-        # (`../<name>.tar.gz` relative to `archctl/`). The previous `cd ..`
-        # escaped the workspace entirely and broke every release since
-        # v1.38.0 (regression from PR #177, native runners restructure).
+        if: ${{ steps.probe.outcome != 'failure' }}
         run: |
-          cd "${GITHUB_WORKSPACE}"
+          cd dist
           sha256sum \
-              archctl-${{ github.ref_name }}-*.tar.gz \
-              archctl-assets-${{ github.ref_name }}.tar.gz \
-              archctl/migration-manifest.json \
+              archctl-${{ env.TAG_NAME }}-*.tar.gz \
+              archctl-assets-${{ env.TAG_NAME }}.tar.gz \
+              migration-manifest.json \
               > SHA256SUMS
           cat SHA256SUMS
 
       - name: Upload artifacts
+        if: ${{ steps.probe.outcome != 'failure' }}
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.label }}
           path: |
-            ../archctl-${{ github.ref_name }}-${{ matrix.label }}.tar.gz
-            ../archctl-assets-${{ github.ref_name }}.tar.gz
-            ../SHA256SUMS
-            archctl/migration-manifest.json
+            dist/archctl-${{ env.TAG_NAME }}-${{ matrix.label }}.tar.gz
+            dist/archctl-assets-${{ env.TAG_NAME }}.tar.gz
+            dist/SHA256SUMS
+            dist/migration-manifest.json
 
   # ---------------------------------------------------------------------------
   # publish_release: aggregate all builds into a single GitHub Release.
@@ -182,19 +218,10 @@ jobs:
   publish_release:
     name: publish GitHub Release
     needs: build_matrix
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
-      - name: Determine tag
-        id: tag
-        run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -207,9 +234,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p staging
-          # Collect all per-platform binaries.
-          find artifacts -name "archctl-${{ steps.tag.outputs.name }}-*.tar.gz" -exec cp -t staging {} +
-          find artifacts -name "archctl-assets-${{ steps.tag.outputs.name }}.tar.gz" -exec cp -t staging {} +
+          find artifacts -name "archctl-${{ env.TAG_NAME }}-*.tar.gz" -exec cp -t staging {} +
+          find artifacts -name "archctl-assets-${{ env.TAG_NAME }}.tar.gz" -exec cp -t staging {} +
           find artifacts -name "SHA256SUMS" -exec cp -t staging {} +
           find artifacts -name "migration-manifest.json" -exec cp -t staging {} +
           ls -lh staging/
@@ -217,23 +243,23 @@ jobs:
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          name: "${{ steps.tag.outputs.name }}"
+          tag_name: ${{ env.TAG_NAME }}
+          name: "${{ env.TAG_NAME }}"
           body: |
-            ## ${{ steps.tag.outputs.name }}
+            ## ${{ env.TAG_NAME }}
 
-            Auto-generated by `.github/workflows/release.yml` (M78 — pipeline de release automatizado).
+            Auto-generated by `.github/workflows/release.yml`.
 
             ### Install
 
             ```bash
             # Verify the binary:
-            curl -fsSL https://github.com/Rubentxu/arch-stack/releases/download/${{ steps.tag.outputs.name }}/SHA256SUMS | \
-                grep "${{ steps.tag.outputs.name }}.*linux-x86_64" | sha256sum --check
+            curl -fsSL https://github.com/Rubentxu/arch-stack/releases/download/${{ env.TAG_NAME }}/SHA256SUMS | \
+                grep "${{ env.TAG_NAME }}.*linux-x86_64" | sha256sum --check
             # Install via archctl self update:
-            archctl self update --to ${{ steps.tag.outputs.name }}
+            archctl self update --to ${{ env.TAG_NAME }}
             # Or manually:
-            curl -fsSL https://github.com/Rubentxu/arch-stack/releases/download/${{ steps.tag.outputs.name }}/archctl-${{ steps.tag.outputs.name }}-linux-x86_64.tar.gz | tar xz
+            curl -fsSL https://github.com/Rubentxu/arch-stack/releases/download/${{ env.TAG_NAME }}/archctl-${{ env.TAG_NAME }}-linux-x86_64.tar.gz | tar xz
             sudo mv archctl /usr/local/bin/
             ```
 
@@ -241,11 +267,11 @@ jobs:
 
             | Platform | Asset |
             |---|---|
-            | Linux x86_64 | `archctl-${{ steps.tag.outputs.name }}-linux-x86_64.tar.gz` |
-            | Linux aarch64 | `archctl-${{ steps.tag.outputs.name }}-linux-aarch64.tar.gz` |
-            | macOS x86_64 | `archctl-${{ steps.tag.outputs.name }}-macos-x86_64.tar.gz` |
-            | macOS Apple Silicon | `archctl-${{ steps.tag.outputs.name }}-macos-aarch64.tar.gz` |
-            | Assets (skills/agents/plugins) | `archctl-assets-${{ steps.tag.outputs.name }}.tar.gz` |
+            | Linux x86_64 | `archctl-${{ env.TAG_NAME }}-linux-x86_64.tar.gz` |
+            | Linux aarch64 | `archctl-${{ env.TAG_NAME }}-linux-aarch64.tar.gz` |
+            | macOS x86_64 | `archctl-${{ env.TAG_NAME }}-macos-x86_64.tar.gz` (absent when the ADR-048 probe fails) |
+            | macOS Apple Silicon | `archctl-${{ env.TAG_NAME }}-macos-aarch64.tar.gz` (absent when the ADR-048 probe fails) |
+            | Assets (skills/agents/plugins) | `archctl-assets-${{ env.TAG_NAME }}.tar.gz` |
             | Migration manifest | `migration-manifest.json` |
 
             ### Per ADR-040/041
@@ -255,9 +281,8 @@ jobs:
             - SHA256 verified against `SHA256SUMS` before applying.
             - `migration-manifest.json` documents schema migrations (if any).
           draft: false
-          prerelease: ${{ contains(steps.tag.outputs.name, '-rc') || contains(steps.tag.outputs.name, '-nightly') || contains(steps.tag.outputs.name, '-alpha') || contains(steps.tag.outputs.name, '-beta') }}
+          prerelease: ${{ contains(env.TAG_NAME, '-rc') || contains(env.TAG_NAME, '-nightly') || contains(env.TAG_NAME, '-alpha') || contains(env.TAG_NAME, '-beta') }}
           files: |
             staging/*
-          fail_on_unmatched_files: true
-          # Pin to the latest commit on the tag (don't move the tag).
-          target_commitish: ${{ github.sha }}
+          fail_on_unmatched_files: false
+          target_commitish: ${{ env.TAG_NAME }}
