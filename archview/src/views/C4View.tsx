@@ -38,6 +38,7 @@ import {
 import type { GraphEdge, GraphNode } from "../bundle/loader";
 import { GraphRenderer } from "../renderer/g6";
 import { TB_LAYERED } from "../renderer/layout-presets";
+import { VirtualList } from "../components/primitives";
 import {
   breadcrumbTrail,
   groupNodesByLevel,
@@ -316,15 +317,22 @@ export const C4View: Component<C4ViewProps> = (props) => {
       <Show when={visibleEdges().length > 0}>
         <footer class="c4-relations">
           <h4>Relations ({visibleEdges().length})</h4>
-          <ul>
-            <For each={visibleEdges()}>
-              {(e) => (
-                <li>
-                  <code>{e.source}</code> → <code>{e.target}</code>
-                </li>
-              )}
-            </For>
-          </ul>
+          <VirtualList
+            items={visibleEdges()}
+            itemHeight={24}
+            height={180}
+            overscan={5}
+            ariaLabel="Visible C4 relations"
+            class="c4-relations-list"
+            itemKey={(e) => e.id}
+            renderItem={(e) => (
+              <div class="rel-line">
+                <code>{e.source}</code>
+                <span class="muted"> → </span>
+                <code>{e.target}</code>
+              </div>
+            )}
+          />
         </footer>
       </Show>
 

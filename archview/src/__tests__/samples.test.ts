@@ -17,6 +17,9 @@ const SAMPLES = [
   "c4-container.json",
   "c4-declared.json",
   "c4-actual.json",
+  "c4-semantic-zoom.json",
+  "c4-stress-200.json",
+  "c4-stress-1k.json",
 ] as const;
 
 function loadSample(name: string): Record<string, unknown> {
