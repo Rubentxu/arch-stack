@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.70.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX) vía ADR-062; UAT smoke fixes multi-lenguaje (axum/echo) v1.70.0; restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
-**Versión:** 2.11
+**Estado:** v1.71.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX) vía ADR-062; UAT multi-lenguaje (axum/echo v1.70.0, vueuse paths v1.71.0); restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
+**Versión:** 2.12
 **Fecha:** 19 de agosto de 2026
-**Cambios vs 2.10:** Cycle log rows para `d2-deprecated-sweep` (v1.69.0) y `uat-smoke-fixes` (v1.70.0, PR #245): 5 bugs de producto UAT multi-lenguaje (sanitize canonical keys, OF_TYPE propagation, schema 1.1.1, sequence lang prefixes, categoría `code`).
+**Cambios vs 2.11:** Cycle log row para `uat-vueuse-paths` (v1.71.0, PR #247): paths de evidence/source como DATA (quote-escaping en vez de charset-validation); vueuse call-graph aplica 1239 elementos.
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
@@ -980,6 +980,7 @@ Incluye:
 | `wave-3-workbench-ux` | `feat/wave-3-workbench-ux` (merged via PR #231, squash `f9d76df`) | `f9d76df` | **Cerrado** ✅ · tag `v1.68.0` · ADR-062 (reconsideración ADR-056 alcance parcial, items 31–33): NavigationTarget + pila de navegación (breadcrumbs, back/forward), action palette (copy id, zoom C4, explain vía `GET /api/explain`, relations), semantic zoom Context↔Container↔Component por re-export — sin LensSpec (P3-05 sigue deferida; nivel "Code" con reopen trigger propio) · strict bundles degradan explain · fixes pre-existentes: flock flakiness diagram_export (serialización mutex) + version drift ADR-038 (1.68.0) · verify: archview 147 tests + archctl 1107 tests + clippy/fmt/doctor + verify-local PASS · debt-verify PASS_WITH_WARNINGS (0/0/0, 2 LOW) · A-lite, fallback-path (delegación sddk-* rota) |
 | `d2-deprecated-sweep` | `feat/d2-deprecated-sweep` (PR #235) | `11628e1` | **Cerrado** ✅ · tag `v1.69.0` · barrido deprecated (deuda D2 auditoría): `diagram::queries` eliminado (13 call sites → `crate::graph`), `evidence::put` + `extract_with_system_clock` eliminados, manifests sync · release pipeline reparado (PRs #236–#244: archview embed, runners, tag handling, SHA256SUMS) + self-update D5 |
 | `uat-smoke-fixes` | `feat/uat-smoke-fixes` (merged via PR #245, squash `8a150d6`) | `8a150d6` | **Cerrado** ✅ · tag `v1.70.0` · UAT multi-lenguaje (smoke axum-rust + echo-go en sandbox Podman): 5 bugs de producto — `sanitize_identifier` para canonical keys con `@` (13 sitios), `batch_link_of_type` propaga errores (OF_TYPE silenciosos), schema 1.1.1 (`EvidenceEntry.status`), prefixes go/java/kotlin/javascript en `parse_from_selector`, categoría `code` en relevance/coverage/explain · harness `bench/smoke-matrix.sh` + `bench/build-in-sandbox.sh` · validación: 54 binarios de test ok, clippy -D warnings, fmt, doctor 6 scopes 0 findings · nota: rel_id no-ASCII en class-diagram latente |
+| `uat-vueuse-paths` | `fix/vueuse-at-paths` (merged via PR #247, squash `6737671`) | `6737671` | **Cerrado** ✅ · tag `v1.71.0` · paths de evidence/source como DATA (UAT vueuse): `@` en rutas (snapshots npm scoped, patches) rompía `call-graph --apply` con `write_source_artifact` error · 5 sitios en `store.rs` pasan de charset-validation a quote-escaping (put_evidence, list_evidence, list_evidence_by_status, put_source, put_structural_evidence) · ADR-005 preservado (path real) · vueuse: 1239 elementos / 13878 relaciones · 2 regresiones (round-trip `@` + inyección con comillas) |
 
 ## Cycle cerrado — `refactor-1b-filesystem-port`
 

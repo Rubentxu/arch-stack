@@ -1,3 +1,17 @@
+## [1.71.0] — 2026-08-19
+
+### Fixed
+- **Paths de evidence/source como DATA** (UAT vueuse, 2026-08-19):
+  `call-graph --apply` fallaba con `apply failed: graph write failed:
+  write_source_artifact` en repos con `@` en rutas de archivo (snapshots
+  npm scoped, patches). Los paths nunca se usan como identificadores en
+  MATCH — se reemplaza la validación de charset por escape de comillas
+  (igual que claim/content_hash/props) en 5 sitios de `store.rs`
+  (`put_evidence`, `list_evidence`, `list_evidence_by_status`,
+  `put_source`, `put_structural_evidence`). Preserva ADR-005 (path real
+  almacenado) y la defensa anti-inyección. Vueuse ahora aplica
+  1239 elementos / 13878 relaciones.
+
 ## [1.70.0] — 2026-08-19
 
 ### Fixed
