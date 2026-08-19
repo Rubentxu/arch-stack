@@ -17,6 +17,7 @@ import type { RendererEdge } from "../types";
 import { zoomTargetFor } from "../lib/navigation";
 import type { ExplainResult } from "../lib/workspace";
 import { SourceDrawer, type SourceDrawerProps } from "./SourceDrawer";
+import { VirtualList } from "./primitives";
 
 export interface SidebarStats {
   /** Computed by the call-graph view: unique reachable functions. */
@@ -292,21 +293,24 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   when={relationsFor(node(), props.edges ?? []).length > 0}
                   fallback={<p class="muted">no relations for this node</p>}
                 >
-                  <ul class="relations-list">
-                    <For each={relationsFor(node(), props.edges ?? [])}>
-                      {(rel) => (
-                        <li class={`rel ${rel.dir}`}>
-                          <span class="dir">
-                            {rel.dir === "in" ? "←" : "→"}
-                          </span>
-                          <code>{rel.other}</code>
-                          <Show when={rel.label}>
-                            <span class="muted"> {rel.label}</span>
-                          </Show>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
+                  <VirtualList
+                    items={relationsFor(node(), props.edges ?? [])}
+                    itemHeight={28}
+                    height={220}
+                    overscan={4}
+                    ariaLabel="Node relations"
+                    class="relations-list"
+                    itemKey={(rel, i) => `${rel.dir}-${rel.other}-${i}`}
+                    renderItem={(rel) => (
+                      <div class={`rel ${rel.dir}`}>
+                        <span class="dir">{rel.dir === "in" ? "←" : "→"}</span>
+                        <code>{rel.other}</code>
+                        <Show when={rel.label}>
+                          <span class="muted"> {rel.label}</span>
+                        </Show>
+                      </div>
+                    )}
+                  />
                 </Show>
               </Show>
 

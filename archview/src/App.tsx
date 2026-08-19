@@ -71,6 +71,10 @@ const SAMPLE_BUNDLES: Array<{ label: string; url: string }> = [
     label: "Sample C4 semantic zoom (3 levels)",
     url: "/samples/c4-semantic-zoom.json",
   },
+  {
+    label: "Sample C4 stress (318 nodes, hub:core with 100 incoming edges)",
+    url: "/samples/c4-stress-200.json",
+  },
 ];
 
 export const App: Component = () => {
