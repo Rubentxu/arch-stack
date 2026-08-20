@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Fixed
+
+- **EventLog::open no longer truncates existing journal** (cycle `t0-trust-001-eventlog-reopen`,
+  TRUST-001): `File::create` replaced by `OpenOptions::new().create(true).append(true)` per
+  the in-tree precedents at `cognitive/audit/log.rs:151-154` and `store.rs:961-967`. Adds 4
+  regression tests covering reopen with content, append after reopen, and first-open of
+  non-existent path. Invariant: "Abrir journal existente nunca trunca"
+  (`specs/40-AGENT-EVENT-JOURNAL.md:10`).
+
 ## [1.80.0] — 2026-08-20
 
 ### Added

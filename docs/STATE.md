@@ -216,6 +216,11 @@
 - M61 (v1.29.0): cognitive policy tests — DONE
 - M62 (no tag): STATE.md refresh (was this cycle) — DONE
 - M69 (v1.30.0): arch-stack product roadmap convergence — DONE
+- **t0-trust-001-eventlog-reopen** (TRUST-001, A-lite, scope ~30 LOC, 3 commits):
+  red→green fix on `EventLog::open`. Closes latent bug (journal only used in tests today;
+  `SyncDispatcher` wires it next). Exit gate of T0 partially met (reopen safe).
+  Next: TRUST-002 (event IDs + causation/correlation) or TRUST-003
+  (AuthorityClass/ExecutionClass mapping).
 
 Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
 
