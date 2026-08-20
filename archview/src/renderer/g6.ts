@@ -37,6 +37,10 @@ import {
   type LayoutOptions,
   type LayoutService,
 } from "./layout-client";
+import {
+  createCullingService,
+  type CullingService,
+} from "./culling-service";
 import { DEFAULT_LAYOUT } from "./layout-presets";
 
 /** G6 v5 layout config — kept as `unknown` to avoid pulling the
@@ -89,6 +93,14 @@ export interface RendererOptions {
   nodeStyle?: NodeStyleConfig;
   /** Optional click handler — fired with the clicked node id. */
   onNodeClick?: (nodeId: string) => void;
+  /** M21: Enable viewport-based culling. Defaults to false.
+   *  When true, nodes and edges outside the visible viewport are
+   *  hidden via setElementVisibility. */
+  enableCulling?: boolean;
+  /** M21: Optional culling service instance. When omitted and
+   *  enableCulling is true, createCullingService() is used.
+   *  Contract: recompute(graph, bundle, opts) -> void, teardown() -> void. */
+  cullingService?: CullingService;
   /** M21: Zoom LOD thresholds. Additive — does not require enableCulling. */
   lodThresholds?: LodThresholds;
 }
@@ -223,6 +235,12 @@ export class GraphRenderer {
   private currentLayoutOptions: LayoutOptions;
   /** M21: Zoom LOD thresholds for label/edge visibility. */
   private lodThresholds: Required<LodThresholds>;
+  /** M21: Culling service for viewport-based visibility. */
+  private cullingService: CullingService;
+  /** M21: Event handler references for culling (unsubscribe on destroy). */
+  private cullingHandlers: { destroy: () => void }[] = [];
+  /** M21: Guard — subscribe culling viewport handlers only once. */
+  private cullingHandlersBound = false;
   /**
    * Latest setData promise. New setData calls await the
    * previous one so the graph doesn't receive out-of-order
@@ -247,6 +265,9 @@ export class GraphRenderer {
       labels: lt?.labels ?? 0.5,
       edges: lt?.edges ?? 0.25,
     };
+    // M21: initialise culling service
+    this.cullingService =
+      options.cullingService ?? createCullingService({ enabled: options.enableCulling ?? false });
     ensurePresetLayoutRegistered();
     this.init();
   }
@@ -367,6 +388,13 @@ export class GraphRenderer {
         await this.graph.draw();
         // M21: apply zoom LOD after each render.
         this.applyZoomLod();
+        // M21: recompute culling after each render (debounced internally).
+        this.cullingService.recompute(this.graph, bundle, {});
+        // M21: wire viewport-change handlers (once, after graph is ready).
+        if (!this.cullingHandlersBound) {
+          this.subscribeCullingHandlers();
+          this.cullingHandlersBound = true;
+        }
         if (myGen === this.generation) {
           this.graph.fitView();
         }
@@ -487,6 +515,12 @@ export class GraphRenderer {
   }
 
   destroy(): void {
+    // M21: unsubscribe culling viewport handlers.
+    for (const h of this.cullingHandlers) {
+      h.destroy();
+    }
+    this.cullingHandlers = [];
+    this.cullingService.teardown();
     if (this.graph) {
       this.graph.destroy();
       this.graph = null;
@@ -550,6 +584,31 @@ export class GraphRenderer {
       ...nodeVisibility,
       ...edgeVisibility,
     });
+  }
+
+  /**
+   * M21: Subscribe to G6 viewport-change events for culling.
+   * Called once after the first render completes.
+   * Handlers are unsubscribed on `destroy()`.
+   */
+  private subscribeCullingHandlers(): void {
+    if (!this.graph) return;
+    const graph = this.graph;
+    const bundle: RendererBundle = this.currentBundle ?? ({ nodes: [], edges: [] } as unknown as RendererBundle);
+
+    // Wheel: user scrolls/zooms — recompute culling after debounce.
+    const onWheelHandler = () => {
+      this.cullingService.recompute(graph, bundle, {});
+    };
+    const wheelHandle = graph.on("wheel", onWheelHandler);
+    this.cullingHandlers.push(wheelHandle);
+
+    // Drag-canvas:end: user pans — recompute culling after debounce.
+    const onDragEndHandler = () => {
+      this.cullingService.recompute(graph, bundle, {});
+    };
+    const dragHandle = graph.on("drag-canvas:end", onDragEndHandler);
+    this.cullingHandlers.push(dragHandle);
   }
 }
 
