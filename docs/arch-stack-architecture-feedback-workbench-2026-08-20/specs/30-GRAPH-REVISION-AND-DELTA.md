@@ -1,5 +1,9 @@
 # Spec — GraphRevision & GraphDelta
 
+## Version 1.1 (2026-08-20)
+
+Added canonical-write policy enforcement at `accept_evidence` (ADR-063). Evidence rows with `SourceOrigin::ModelInference` cannot transition to `Accepted` via the standard CLI path. The predicate is `trust::canonical_write_allowed(ExecutionClass, AuthorityClass)` and the matrix is in `specs/12-TRUST-DETERMINISM-AND-AUTHORITY.md`. Honest `Evaluation` attestation replaces the hardcoded `"user_accepted"` / `"archctl:lifecycle_v1"` pair with the actual caller and invocation path.
+
 ## Purpose
 Exponer updates semánticos incrementales sin reload completo.
 
