@@ -51,7 +51,9 @@ describe("<TabBar>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(2);
     expect(tabs[0].getAttribute("aria-selected")).toBe("false");
     expect(tabs[0].getAttribute("tabindex")).toBe("-1");
@@ -72,7 +74,9 @@ describe("<TabBar>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(2);
     fireEvent.click(tabs[1]);
     expect(onChange).toHaveBeenCalledWith("b");
@@ -92,7 +96,9 @@ describe("<TabBar>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(3);
     // ArrowRight from tab A should activate tab B
     fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
@@ -119,7 +125,9 @@ describe("<TabBar>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(3);
     fireEvent.keyDown(tabs[1], { key: "Home" });
     expect(onChange).toHaveBeenLastCalledWith("a");
@@ -140,7 +148,9 @@ describe("<TabBar>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(3);
     // Badge with count 3 — should be present
     expect(tabs[0].querySelector(".tab-badge")).toBeTruthy();
@@ -164,7 +174,9 @@ describe("<TabBar>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(2);
     expect(tabs[0].hasAttribute("disabled")).toBeTruthy();
     fireEvent.click(tabs[0]);
@@ -184,7 +196,9 @@ describe("<TabPanel>", () => {
         </TabPanel>
       </>
     ));
-    const panels = Array.from(container.querySelectorAll('[role="tabpanel"]')) as HTMLDivElement[];
+    const panels = Array.from(
+      container.querySelectorAll('[role="tabpanel"]'),
+    ) as HTMLDivElement[];
     expect(panels).toHaveLength(2);
     // First panel (a) should be visible
     expect(panels[0].textContent).toContain("Panel A content");
@@ -203,7 +217,9 @@ describe("<TabPanel>", () => {
         </TabPanel>
       </>
     ));
-    const panels = Array.from(container.querySelectorAll('[role="tabpanel"]')) as HTMLDivElement[];
+    const panels = Array.from(
+      container.querySelectorAll('[role="tabpanel"]'),
+    ) as HTMLDivElement[];
     expect(panels).toHaveLength(2);
     // First panel (a) is active: hidden should be falsy
     const hidden0 = panels[0].getAttribute("hidden");
@@ -224,7 +240,9 @@ describe("<TabPanel>", () => {
         ariaLabel="Test"
       />
     ));
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    const tabs = Array.from(
+      container.querySelectorAll('[role="tab"]'),
+    ) as HTMLButtonElement[];
     expect(tabs).toHaveLength(2);
     // Tab a should have aria-controls pointing to panel-a
     expect(tabs[0].getAttribute("aria-controls")).toBe("panel-a");

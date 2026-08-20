@@ -87,7 +87,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     null,
   );
   const [explainError, setExplainError] = createSignal<string | null>(null);
-  const [activeTab, setActiveTab] = createSignal<"evidence" | "relations">("evidence");
+  const [activeTab, setActiveTab] = createSignal<"evidence" | "relations">(
+    "evidence",
+  );
 
   // Reset per-node action state when the selection changes.
   createEffect(() => {
@@ -135,15 +137,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       ];
     }
     const evList = extractEvidence(props.node);
-    const relList = props.edges
-      ? relationsFor(props.node, props.edges)
-      : [];
+    const relList = props.edges ? relationsFor(props.node, props.edges) : [];
     const evBadge =
       Array.isArray(evList) && evList.length > 0 ? evList.length : undefined;
     const relBadge =
-      Array.isArray(relList) && relList.length > 0
-        ? relList.length
-        : undefined;
+      Array.isArray(relList) && relList.length > 0 ? relList.length : undefined;
     return [
       { id: "evidence" as const, label: "Evidence", badge: evBadge },
       { id: "relations" as const, label: "Relations", badge: relBadge },
