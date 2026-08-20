@@ -130,6 +130,18 @@ impl SourceOrigin {
             SourceOrigin::ModelInference => "model_inference",
         }
     }
+
+    /// Parse a string label into a SourceOrigin variant.
+    /// Used by `from_props` to derive scoped fail-closed default.
+    pub fn parse_label(s: &str) -> Option<Self> {
+        match s {
+            "user_workspace" => Some(Self::UserWorkspace),
+            "user_input" => Some(Self::UserInput),
+            "tool_output" => Some(Self::ToolOutput),
+            "model_inference" => Some(Self::ModelInference),
+            _ => None,
+        }
+    }
 }
 
 /// Lifecycle state of an Evidence row.
@@ -179,13 +191,32 @@ impl EvidenceStatus {
         }
     }
 
-    /// Read from a props map. Returns `Accepted` when the key is
-    /// absent (D2 read-time default for legacy rows).
-    pub fn from_props(props: &serde_json::Map<String, serde_json::Value>) -> Self {
+    /// Read from a props map with explicit source_origin.
+    ///
+    /// Scoped fail-closed (Q4, ADR-063): absent `status` returns `Drafted`
+    /// ONLY when `source_origin` is `None` or `ModelInference`. Legacy rows
+    /// with `UserWorkspace`/`UserInput`/`ToolOutput` still read `Accepted`
+    /// (back-compat). Maintainer confirmed no deployed graph has Evidence rows
+    /// lacking `status` AND non-workspace origin in the threat surface.
+    pub fn from_props(
+        props: &serde_json::Map<String, serde_json::Value>,
+        source_origin: Option<SourceOrigin>,
+    ) -> Self {
         match props.get("status").and_then(|v| v.as_str()) {
             Some("drafted") => Self::Drafted,
+            Some("accepted") => Self::Accepted,
             Some("superseded") => Self::Superseded,
-            _ => Self::Accepted,
+            // Unknown status string: treat as Drafted (fail-closed)
+            Some(_) | None => {
+                match source_origin {
+                    // Threat surface: no origin or LLM origin → drafted
+                    None | Some(SourceOrigin::ModelInference) => Self::Drafted,
+                    // Legacy back-compat: workspace/input/tool output → accepted
+                    Some(SourceOrigin::UserWorkspace)
+                    | Some(SourceOrigin::UserInput)
+                    | Some(SourceOrigin::ToolOutput) => Self::Accepted,
+                }
+            }
         }
     }
 }
@@ -1274,5 +1305,69 @@ mod tests {
             &props,
         );
         assert_eq!(id1, id2, "idempotent: same fact twice = same id");
+    }
+
+    // ─── T4: SourceOrigin::ModelInference + scoped fail-closed from_props ───
+
+    /// ADR-063 Q4: ModelInference defaults to Drafted.
+    #[test]
+    fn default_for_origin_model_inference_is_drafted() {
+        assert_eq!(
+            EvidenceStatus::default_for_origin(SourceOrigin::ModelInference),
+            EvidenceStatus::Drafted
+        );
+    }
+
+    /// ADR-063: parse_label round-trips via the wire strings.
+    #[test]
+    fn source_origin_parse_label_round_trips() {
+        for origin in [
+            SourceOrigin::UserWorkspace,
+            SourceOrigin::UserInput,
+            SourceOrigin::ToolOutput,
+            SourceOrigin::ModelInference,
+        ] {
+            let s = origin.as_str();
+            let back = SourceOrigin::parse_label(s);
+            assert_eq!(Some(origin), back, "parse_label({s}) must round-trip");
+        }
+        assert_eq!(None, SourceOrigin::parse_label("unknown"));
+    }
+
+    /// ADR-063 Q4 scoped fail-closed: absent status + ModelInference → Drafted.
+    #[test]
+    fn from_props_absent_status_with_model_inference_is_drafted_scoped() {
+        let props = serde_json::Map::new(); // no status key
+        let result = EvidenceStatus::from_props(&props, Some(SourceOrigin::ModelInference));
+        assert_eq!(
+            result,
+            EvidenceStatus::Drafted,
+            "ModelInference with absent status must be Drafted (Q4 scoped fail-closed)"
+        );
+    }
+
+    /// ADR-063 legacy back-compat: absent status + UserWorkspace → Accepted.
+    /// This is the key distinction from the old (fail-open) behaviour.
+    #[test]
+    fn from_props_absent_status_with_user_workspace_is_accepted_legacy() {
+        let props = serde_json::Map::new(); // no status key
+        let result = EvidenceStatus::from_props(&props, Some(SourceOrigin::UserWorkspace));
+        assert_eq!(
+            result,
+            EvidenceStatus::Accepted,
+            "UserWorkspace with absent status must be Accepted (legacy back-compat)"
+        );
+    }
+
+    /// ADR-063 Q4 scoped fail-closed: absent status + no source_origin → Drafted.
+    #[test]
+    fn from_props_absent_status_with_no_origin_is_drafted_scoped() {
+        let props = serde_json::Map::new(); // no status key, no source_origin
+        let result = EvidenceStatus::from_props(&props, None);
+        assert_eq!(
+            result,
+            EvidenceStatus::Drafted,
+            "Absent source_origin with absent status must be Drafted (Q4 scoped fail-closed)"
+        );
     }
 }

@@ -51,7 +51,7 @@ use tracing::warn;
 
 use crate::clock::Clock;
 use crate::evaluation::Evaluation;
-use crate::evidence::{Evidence, EvidenceStatus};
+use crate::evidence::{Evidence, EvidenceStatus, SourceOrigin};
 use crate::graph::{
     Element, ElementRow, ElementVersion, GraphStat, RelationRow, SemanticEdgeRow,
     StructuralEvidence, VersionPropsRow,
@@ -1425,8 +1425,12 @@ impl EvidenceOps for LbugStore {
             .map(cell_to_json_map)
             .unwrap_or_default();
 
-        // Step 2: check current status
-        let current = EvidenceStatus::from_props(&props_json);
+        // Step 2: check current status (scoped fail-closed per ADR-063 Q4)
+        let source_origin = props_json
+            .get("source_origin")
+            .and_then(|v| v.as_str())
+            .and_then(SourceOrigin::parse_label);
+        let current = EvidenceStatus::from_props(&props_json, source_origin);
         if current == EvidenceStatus::Accepted {
             // Idempotent: already accepted
             return Ok(());
@@ -1483,8 +1487,12 @@ impl EvidenceOps for LbugStore {
             .map(cell_to_json_map)
             .unwrap_or_default();
 
-        // Step 2: check current status
-        let current = EvidenceStatus::from_props(&props_json);
+        // Step 2: check current status (scoped fail-closed per ADR-063 Q4)
+        let source_origin = props_json
+            .get("source_origin")
+            .and_then(|v| v.as_str())
+            .and_then(SourceOrigin::parse_label);
+        let current = EvidenceStatus::from_props(&props_json, source_origin);
         if current == EvidenceStatus::Superseded {
             // Idempotent: already superseded
             return Ok(());
@@ -1540,7 +1548,11 @@ impl EvidenceOps for LbugStore {
             .filter(|r| {
                 let props_map: serde_json::Map<String, serde_json::Value> =
                     r.get("e.props").map(cell_to_json_map).unwrap_or_default();
-                EvidenceStatus::from_props(&props_map) == status
+                let source_origin = props_map
+                    .get("source_origin")
+                    .and_then(|v| v.as_str())
+                    .and_then(SourceOrigin::parse_label);
+                EvidenceStatus::from_props(&props_map, source_origin) == status
             })
             .map(|mut r| {
                 // Drop the e.props column so returned shape matches list_evidence
@@ -3906,7 +3918,10 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert_eq!(EvidenceStatus::from_props(&props), EvidenceStatus::Accepted);
+        assert_eq!(
+            EvidenceStatus::from_props(&props, Some(SourceOrigin::UserWorkspace)),
+            EvidenceStatus::Accepted
+        );
     }
 
     #[test]
@@ -4041,7 +4056,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(
-            EvidenceStatus::from_props(&props),
+            EvidenceStatus::from_props(&props, Some(SourceOrigin::UserWorkspace)),
             EvidenceStatus::Superseded
         );
     }
@@ -4090,7 +4105,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(
-            EvidenceStatus::from_props(&props),
+            EvidenceStatus::from_props(&props, Some(SourceOrigin::UserWorkspace)),
             EvidenceStatus::Superseded
         );
     }
@@ -4131,7 +4146,8 @@ mod tests {
         };
         store.put_evidence(std::slice::from_ref(&legacy)).unwrap();
 
-        // list_evidence_by_status(Accepted) — should return accepted + legacy
+        // list_evidence_by_status(Accepted) — should return accepted only (not legacy)
+        // Q4 scoped fail-closed: absent status + absent source_origin → Drafted
         let accepted = store
             .list_evidence_by_status(EvidenceStatus::Accepted, None)
             .unwrap();
@@ -4144,15 +4160,15 @@ mod tests {
             "must include accepted row"
         );
         assert!(
-            accepted_ids.contains(&"ev:status:legacy"),
-            "must include legacy row (read-time default)"
+            !accepted_ids.contains(&"ev:status:legacy"),
+            "must NOT include legacy row (Q4: absent source_origin + absent status = Drafted)"
         );
         assert!(
             !accepted_ids.contains(&"ev:status:drafted"),
             "must NOT include drafted row"
         );
 
-        // list_evidence_by_status(Drafted)
+        // list_evidence_by_status(Drafted) — includes legacy row per Q4
         let drafted = store
             .list_evidence_by_status(EvidenceStatus::Drafted, None)
             .unwrap();
@@ -4164,7 +4180,11 @@ mod tests {
             drafted_ids.contains(&"ev:status:drafted"),
             "must include drafted row"
         );
-        assert_eq!(drafted_ids.len(), 1);
+        assert!(
+            drafted_ids.contains(&"ev:status:legacy"),
+            "must include legacy row (Q4: absent source_origin + absent status = Drafted)"
+        );
+        assert_eq!(drafted_ids.len(), 2);
 
         // list_evidence_by_status(Superseded)
         let superseded = store
