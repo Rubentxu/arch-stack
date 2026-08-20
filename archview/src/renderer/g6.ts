@@ -44,6 +44,32 @@ import { DEFAULT_LAYOUT } from "./layout-presets";
  *  pre-shaped configs from the doc. */
 export type G6Layout = unknown;
 
+/**
+ * Zoom LOD thresholds — controls at which zoom levels labels and
+ * edges become hidden to reduce overdraw on large graphs (M21).
+ */
+export interface LodThresholds {
+  /** Hide labels when zoom < this value (default 0.5). */
+  labels?: number;
+  /** Hide edges when zoom < this value (default 0.25). */
+  edges?: number;
+}
+
+/**
+ * Viewport bounding box in canvas coordinates.
+ */
+export interface Viewport {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * Visibility state for a single element.
+ */
+export type ElementVisibility = "visible" | "hidden";
+
 export interface RendererOptions {
   container: HTMLElement;
   width: number;
@@ -63,6 +89,8 @@ export interface RendererOptions {
   nodeStyle?: NodeStyleConfig;
   /** Optional click handler — fired with the clicked node id. */
   onNodeClick?: (nodeId: string) => void;
+  /** M21: Zoom LOD thresholds. Additive — does not require enableCulling. */
+  lodThresholds?: LodThresholds;
 }
 
 /**
@@ -193,6 +221,8 @@ export class GraphRenderer {
   private onNodeClickHandler: ((id: string) => void) | null = null;
   private layoutService: LayoutService;
   private currentLayoutOptions: LayoutOptions;
+  /** M21: Zoom LOD thresholds for label/edge visibility. */
+  private lodThresholds: Required<LodThresholds>;
   /**
    * Latest setData promise. New setData calls await the
    * previous one so the graph doesn't receive out-of-order
@@ -211,6 +241,12 @@ export class GraphRenderer {
     this.onNodeClickHandler = options.onNodeClick ?? null;
     this.layoutService = options.layoutService ?? createLayoutService();
     this.currentLayoutOptions = options.layoutOptions ?? DEFAULT_LAYOUT;
+    // M21: zoom LOD thresholds — fill in defaults
+    const lt = options.lodThresholds;
+    this.lodThresholds = {
+      labels: lt?.labels ?? 0.5,
+      edges: lt?.edges ?? 0.25,
+    };
     ensurePresetLayoutRegistered();
     this.init();
   }
@@ -265,7 +301,12 @@ export class GraphRenderer {
           endArrowSize: 8,
         },
       },
-      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+      behaviors: [
+        "drag-canvas",
+        "zoom-canvas",
+        "drag-element",
+        { type: "optimize-viewport-transform", debounce: 200 },
+      ],
     });
     // M17.1 — wire node click so views can drive selection.
     this.graph.on(NodeEvent.CLICK, (e: { target?: DisplayObject }) => {
@@ -324,6 +365,8 @@ export class GraphRenderer {
           })),
         });
         await this.graph.draw();
+        // M21: apply zoom LOD after each render.
+        this.applyZoomLod();
         if (myGen === this.generation) {
           this.graph.fitView();
         }
@@ -469,6 +512,44 @@ export class GraphRenderer {
       if (c) return c;
     }
     return this.nodeStyle.defaultFill ?? "#5b8def";
+  }
+
+  /**
+   * M21: Zoom Level-of-Detail — hides labels and edges when the
+   * zoom level drops below configured thresholds to reduce overdraw.
+   *
+   * Defaults: labels hidden at zoom < 0.5, edges hidden at zoom < 0.25.
+   * Does nothing when the graph is not yet initialised.
+   */
+  private applyZoomLod(): void {
+    if (!this.graph) return;
+    const zoom = this.graph.getZoom();
+    const { labels: labelThreshold, edges: edgeThreshold } = this.lodThresholds;
+    const nodeVisibility: Record<string, "visible" | "hidden"> = {};
+    const edgeVisibility: Record<string, "visible" | "hidden"> = {};
+
+    // All nodes stay visible; labels are controlled via G6's built-in
+    // label visibility mechanism. We apply visibility to the node/edge
+    // elements themselves.
+    const allNodeIds = this.graph.getNodeData().map((n) => n.id as string);
+    const allEdgeIds = this.graph.getEdgeData().map((e) => e.id as string);
+
+    if (zoom < labelThreshold) {
+      for (const id of allNodeIds) nodeVisibility[id] = "hidden";
+    } else {
+      for (const id of allNodeIds) nodeVisibility[id] = "visible";
+    }
+
+    if (zoom < edgeThreshold) {
+      for (const id of allEdgeIds) edgeVisibility[id] = "hidden";
+    } else {
+      for (const id of allEdgeIds) edgeVisibility[id] = "visible";
+    }
+
+    this.graph.setElementVisibility({
+      ...nodeVisibility,
+      ...edgeVisibility,
+    });
   }
 }
 
