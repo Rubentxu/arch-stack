@@ -64,6 +64,56 @@ use crate::blake_like;
 use crate::diagram::export_types::EvidenceEntry;
 use std::collections::HashSet;
 
+// ─── ADR-063: trust enforcement ───────────────────────────────────────
+// Thread-local invocation path set by cli.rs before each subcommand dispatch.
+// This lets the Evaluation attestation record WHO called accept_evidence
+// rather than hard-coding "user_accepted".
+thread_local! {
+    static CURRENT_INVOCATION_PATH: std::cell::RefCell<Option<&'static str>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Set the invocation path for the current thread.
+/// Called by `cli.rs` before any subcommand that calls `accept_evidence`.
+/// Cleared at function exit via RAII guard `InvocaPathReset`.
+pub fn set_invocation_path(path: &'static str) {
+    CURRENT_INVOCATION_PATH.with(|cell| *cell.borrow_mut() = Some(path));
+}
+
+/// RAII guard that resets the invocation path on drop.
+pub struct InvocationPathReset(#[allow(unused)] &'static str);
+
+impl InvocationPathReset {
+    pub fn new(path: &'static str) -> Self {
+        set_invocation_path(path);
+        InvocationPathReset(path)
+    }
+}
+
+impl Drop for InvocationPathReset {
+    fn drop(&mut self) {
+        CURRENT_INVOCATION_PATH.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+
+fn invocation_path() -> Option<&'static str> {
+    CURRENT_INVOCATION_PATH.with(|cell| *cell.borrow())
+}
+
+/// Reads the ARCHCTL_ACTOR env var to determine who/what is calling.
+/// Falls back to "cli=caller" (anonymous) if not set.
+fn actor_identity() -> String {
+    std::env::var("ARCHCTL_ACTOR")
+        .map(|v| {
+            if v.is_empty() {
+                "cli=caller".to_string()
+            } else {
+                v
+            }
+        })
+        .unwrap_or_else(|_| "cli=caller".to_string())
+}
+
 /// Evidence persistence operations — the domain side of the port.
 ///
 /// Covers `archctl evidence *` commands: draft, list, lifecycle transitions,
@@ -1440,7 +1490,24 @@ impl EvidenceOps for LbugStore {
         }
         // current == Drafted: proceed
 
-        // Step 3: flip status in props
+        // Step 3 [ADR-063 HUNK B]: re-derive trust classification from
+        // props and call canonical_write_allowed. This is the chokepoint
+        // that prevents ModelInference claims from minting canonical facts.
+        // DEFENSIVE: we re-derive from props rather than trusting any stamp.
+        // When source_origin is absent from props we pass UserWorkspace (the
+        // conservative default); the canonical_write_allowed matrix handles
+        // unknown authority gracefully via the catch-all _ arm.
+        let guard_origin = props_json
+            .get("source_origin")
+            .and_then(|v| v.as_str())
+            .and_then(SourceOrigin::parse_label)
+            .unwrap_or(SourceOrigin::UserWorkspace);
+        let guard_tool = props_json.get("tool_name").and_then(|v| v.as_str());
+        let classification = crate::trust::classify(guard_origin, guard_tool);
+        crate::trust::canonical_write_allowed(classification.execution, classification.authority)
+            .map_err(|e| anyhow::anyhow!("canonical write denied: {}", e))?;
+
+        // Step 4: flip status in props
         let mut new_props = props_json;
         new_props.insert(
             "status".to_string(),
@@ -1457,8 +1524,14 @@ impl EvidenceOps for LbugStore {
             .query(&write_cypher)
             .with_context(|| format!("accept_evidence: failed to update props for {eid}"))?;
 
-        // Step 5: create Evaluation node + EVALUATES edge (best-effort)
-        let eval = Evaluation::accept(evidence_id, "user_accepted", "archctl:lifecycle_v1", clock);
+        // Step 5 [ADR-063 HUNK C]: honest Evaluation attestation.
+        // actor_identity() reads ARCHCTL_ACTOR env var (caller identity)
+        // or falls back to "cli=caller" (anonymous).
+        // evaluator includes invocation_path() for audit traceability.
+        let criterion = actor_identity();
+        let inv_path = invocation_path().unwrap_or("unknown");
+        let evaluator = format!("archctl:lifecycle_v1:{}", inv_path);
+        let eval = Evaluation::accept(evidence_id, &criterion, &evaluator, clock);
         // Best-effort: failure here does NOT roll back the status flip
         if let Err(e) = SourceOps::put_evaluation(self, &eval) {
             tracing::warn!(err = %e, eval_id = %eval.id, "accept_evidence: put_evaluation failed, continuing");
@@ -3925,7 +3998,10 @@ mod tests {
     }
 
     #[test]
-    fn accept_evidence_creates_evaluation_with_user_accepted_criterion() {
+    fn accept_evidence_creates_evaluation_with_honest_attestation() {
+        // ADR-063 HUNK C: Evaluation criterion is actor_identity() (ARCHCTL_ACTOR
+        // env var or "cli=caller" fallback) and evaluator is
+        // "archctl:lifecycle_v1:{invocation_path}".
         let tmp = fixture();
         let project = tmp.path().join("proj");
         let mut store = LbugStore::open(&project).unwrap();
@@ -3934,19 +4010,35 @@ mod tests {
         let ev = make_evidence("ev:accept:eval", EvidenceStatus::Drafted);
         store.put_evidence(std::slice::from_ref(&ev)).unwrap();
 
+        // Set ARCHCTL_ACTOR to simulate a named caller
+        // SAFETY: set_var is unsafe in Rust 2024; test-only and scoped.
+        unsafe { std::env::set_var("ARCHCTL_ACTOR", "test-agent") };
+        // Set invocation path for this test
+        set_invocation_path("evidence-accept");
+
         let clock: &dyn Clock = &crate::clock::FixedClock::new("2026-07-30T12:00:00Z");
         store.accept_evidence("ev:accept:eval", clock).unwrap();
 
-        // Verify Evaluation node was created
+        // Verify Evaluation node was created with honest attestation
         let eval_rows = store
-            .query("MATCH (ev:Evaluation) RETURN ev.criterion AS c, ev.passed AS p;")
+            .query("MATCH (ev:Evaluation) RETURN ev.criterion AS c, ev.evaluator AS e, ev.passed AS p;")
             .unwrap();
         assert_eq!(eval_rows.len(), 1);
         assert_eq!(
             eval_rows[0].get("c").and_then(|c| c.as_str()),
-            Some("user_accepted")
+            Some("test-agent"),
+            "criterion must be ARCHCTL_ACTOR env var value"
+        );
+        assert_eq!(
+            eval_rows[0].get("e").and_then(|c| c.as_str()),
+            Some("archctl:lifecycle_v1:evidence-accept"),
+            "evaluator must include invocation_path"
         );
         assert_eq!(eval_rows[0].get("p").and_then(|c| c.as_bool()), Some(true));
+
+        // SAFETY: remove_var is unsafe in Rust 2024 edition.
+        // The env var is test-only (set only in this test).
+        unsafe { std::env::remove_var("ARCHCTL_ACTOR") };
     }
 
     #[test]
