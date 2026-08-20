@@ -1,19 +1,29 @@
-## [Unreleased]
+## [1.83.0] — 2026-08-20
+
+Cycle `m25-authority-execution-classes` — closes the first live breach of
+ADR-P02 (Trust + Determinism + Authority typology + canonical-write gate).
+Three chained PRs (#287 docs +159, #288 code +738, #289 verify +407); diff
+`cbce2d3..d8c4a6a` (10 files, +1172/-27).
 
 ### Added
-- AuthorityClass × ExecutionClass typology for trust-aware canonical writes (ADR-063, ADR-P02, ADR-P03). New module `archctl/src/trust.rs` exposes `ExecutionClass`, `AuthorityClass`, `TrustClassification`, `classify()`, `canonical_write_allowed()`, `TrustViolation`. UAT-06 critical gate (`false_canonical_promotions == 0`) is exercised by `archctl/tests/uat_06_false_agent_claim.rs`.
-- `manifests/trust.toml` pins the 6 public symbols + 8 unit tests + 19 textual invariants + 6 prohibitions for the new module.
-- `docs/adr/ADR-063-trust-determinism-and-authority.md` hardens ADR-021's escalera into a type-enforced invariant.
+- AuthorityClass × ExecutionClass typology for trust-aware canonical writes (ADR-063, ADR-P02, ADR-P03). New module `archctl/src/trust.rs` exposes `ExecutionClass`, `AuthorityClass`, `TrustClassification`, `classify()`, `canonical_write_allowed()`, `canonical_promotion_allowed()`, `TrustViolation`. UAT-06 critical gate (`false_canonical_promotions == 0`) is exercised by `archctl/tests/uat_06_false_agent_claim.rs`.
+- `manifests/trust.toml` pins the 7 public symbols (incl. `canonical_promotion_allowed`) + 10 unit tests + 19 textual invariants + 4 prohibitions (reqwest, ureq, `http::`, `serde_json::Value`) for the new module.
+- `docs/adr/ADR-063-trust-determinism-and-authority.md` hardens ADR-021's escalera into a type-enforced invariant (accepted 2026-08-20).
 - `docs/arch-stack-architecture-feedback-workbench-2026-08-20/specs/12-TRUST-DETERMINISM-AND-AUTHORITY.md` (behaviour spec for the typology + canonical-write gate).
+- `archctl/tests/uat_06_false_agent_claim.rs` — UAT-06 critical gate integration test. 2 active scenarios green (false-canonical-promotion + negative control), 9 `#[ignore]`d skeletons pending TRUST-005 + spec-35.
 
 ### Changed
 - `SourceOrigin` gains the `ModelInference` variant. Stamped by future model-backed producers; classified as `Suggested` by default; cannot transit to `Accepted` via `accept_evidence` (ADR-063 invariant).
 - `EvidenceStatus::from_props` is scoped-fail-closed: absent `status` returns `Drafted` only when `source_origin` is absent or `ModelInference`. Legacy non-threat-surface rows still default to `Accepted` (back-compat; see ADR-063 Open Question Q4).
 - `LbugStore::accept_evidence` records an honest `Evaluation` node: `criterion` = `caller=<ARCHCTL_ACTOR>` (or `cli:caller` anonymous), `evaluator` = `archctl:lifecycle_v1:<invocation_path>`. Replaces the hardcoded `"user_accepted"` / `"archctl:lifecycle_v1"` pair that produced forged audit trails.
+- `archctl/src/cli.rs::evidence_accept_cmd` wraps the evidence path in an RAII `InvocationPathReset` guard (`store.rs:73-93`) so the `thread_local` is deterministic across panics.
 - `docs/arch-stack-architecture-feedback-workbench-2026-08-20/specs/30-GRAPH-REVISION-AND-DELTA.md` bumped to Version 1.1.
 
 ### Fixed
-- UAT-06 `false_canonical_promotions` gate: a CLI invocation of `evidence put` followed by `evidence accept` on an LLM-asserted claim now returns `Err(TrustViolation)` instead of forging a canonical fact.
+- UAT-06 `false_canonical_promotions` gate: a CLI invocation of `evidence put` followed by `evidence accept` on an LLM-asserted claim now returns `Err(TrustViolation)` instead of forging a canonical fact. **Closes the first live breach of ADR-P02.**
+
+### Security
+- See "Fixed" — the previous behaviour minted a canonical fact with a forged audit trail (`criterion="user_accepted"`, `evaluator="archctl:lifecycle_v1"`) for any caller invoking `evidence accept` on an LLM-asserted claim. The two-stage gate (matrix existence + promotion denied for `ModelInference × _`) restores type-enforced provenance.
 
 ## [1.82.0] — 2026-08-20
 

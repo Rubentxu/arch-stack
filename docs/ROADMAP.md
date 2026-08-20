@@ -220,7 +220,7 @@ primer cycle que ataque T0 (TRUST-001..006):
    con semantic version propio antes de tocar código.
 3. Cerrar el amend con **UAT-06** como verification gate.
 
-- m25-authority-execution-classes (2026-08-20): cycle satisfies the "amending ADR + spec-30 versioning" pre-condition via ADR-063 and spec-30 v1.1.
+- m25-authority-execution-classes (2026-08-20, v1.83.0): shipped via 3 chained PRs (#287 +159 docs, #288 +738 code, #289 +407 verify). Cycle satisfies the "amending ADR + spec-30 versioning" pre-condition via ADR-063 and spec-30 v1.1. Closes the first live breach of ADR-P02. Diff: `cbce2d3..d8c4a6a` (10 files, +1172/-27).
 
 Cualquier cycle posterior sigue el mismo patrón: spec → schema → ADR
 amend/propose → código → UAT.
@@ -1137,7 +1137,7 @@ Incluye:
 | `m59-close-stale-pr-32` | (no PR; closed via gh) | `n/a` | **Cerrado** ✅ · tag none · closed stale PR #32 (M23 Phase 1/6, 4+ days open, merge conflicts with main); rationale + re-open path documented in PR comment |
 | `m62-state-md-refresh` | `feat/m62-state-md-refresh` (merged to main via PR #132) | `b354e06` | **Cerrado** ✅ · tag none · STATE.md refresh to v1.26.0 (was dated v1.1.0); 22 cycles of new content; pure docs cycle (no tag bump) |
 | `m60-resolve-todos` | `feat/m60-resolve-todos` (squash-merged to main via PR #134) | `44943ea` | **Cerrado** ✅ · tag `v1.27.0` · resolves 2 TODO markers from M55 study (dockerfile.rs:139 OCI LABEL parser; class_diagram.rs:1067 Python class method extraction); 12 new unit tests; 1 golden fixture regenerated |
-| `m25-authority-execution-classes` | `feat/m25-trust-enforcement` (merged via PR #TBD) | `TBD` | **Cerrado** ✅ · tag TBD · ADR-063 + UAT-06 gate green (`false_canonical_promotions: 0`); trust.rs + chokepoint + 8 unit tests + 2 integration tests |
+| `m25-authority-execution-classes` | `feat/m25-trust-enforcement` (merged via PR #287 docs + PR #288 code + PR #289 verify) | `d8c4a6a` | **Cerrado** ✅ · tag `v1.83.0` · ADR-063 + UAT-06 gate green (`false_canonical_promotions: 0`); trust.rs + chokepoint + 10 unit tests + 2 integration tests (9 `#[ignore]`d skeletons pending TRUST-005 + spec-35) |
 | `m57-contributing-md` | `docs/m57-contributing-md` (merged to main via PR #136) | `cb0b83f` | **Cerrado** ✅ · tag `v1.28.0` · adds CONTRIBUTING.md (248 lines) with cycle workflow, manifest hygiene conventions, bounded contexts, testing rules, what-not-to-do list; cross-referenced from AGENTS.md |
 | `m58-specs-index` | `docs/m58-specs-index` (merged to main via PR #138) | `e16e249` | **Cerrado** ✅ · tag none · adds docs/specs/index.md (85 lines) with 13 specs grouped by audience (diagram views, code extraction, rendering, benchmarks, E2E); each row carries audience + one-line summary; pure docs cycle (M62 precedent, no tag bump) |
 | `m61-cognitive-policy-tests` | `test/m61-cognitive-policy-tests` (merged to main via PR #140) | `78c1e0d` | **Cerrado** ✅ · tag `v1.29.0` · adds 22 unit tests for cognitive/policy/{context,decision} (the 0-test gap in M55 study M61 audit); side-fix: `PolicyResult` derives PartialEq; cognitive test count 111 → 133 |
@@ -1757,18 +1757,22 @@ Razones:
 
 - **Fecha**: 2026-08-20
 - **Cycle id**: `p-38e02210a9f14317/m25-authority-execution-classes`
-- **Branch**: `feat/m25-trust-enforcement` (merged via PR #TBD)
-- **Verdict**: verify PENDING (apply complete; T6 critical gate test has pre-existing sanity-check bug)
+- **Branch**: `feat/m25-trust-enforcement` (merged via PR #287 docs + PR #288 code + PR #289 verify)
+- **Verdict**: verify PASS WITH WARNINGS (final; 2/2 critical gates green, 1147 tests green, 0 clippy, 0 fmt diff, 0 doctor findings across trust/evidence/store/diagram; 0 CRITICAL + 2 WARNING + 3 SUGGESTION at debt audit; both WARNINGs justified/non-blocking)
+- **Tag**: `v1.83.0` (annotated, peels `d8c4a6a`, pushed + verified remote)
+- **Diff inspected**: `cbce2d3..d8c4a6a` (10 files, +1172/-27)
 - **Output**:
-  - **ADR-063** (PR #TBD): Trust, Determinism and Authority. New module `archctl/src/trust.rs` exposes `ExecutionClass × AuthorityClass` typology + `canonical_write_allowed` + `canonical_promotion_allowed`. The 4×5 matrix encodes which (producer, authority) pairs may exist as Drafted candidates; the stricter promotion gate denies all `ModelInference × _` combinations until REQ-M25-006.
+  - **ADR-063** (PR #287): Trust, Determinism and Authority. New module `archctl/src/trust.rs` exposes `ExecutionClass × AuthorityClass` typology + `canonical_write_allowed` + `canonical_promotion_allowed`. The 4×5 matrix encodes which (producer, authority) pairs may exist as Drafted candidates; the stricter promotion gate denies all `ModelInference × _` combinations until REQ-M25-006.
   - **Option D fix** (embedded in apply): Resolved matrix-vs-chokepoint contradiction. `accept_evidence` now calls `canonical_promotion_allowed` (the promotion gate), not `canonical_write_allowed` (the existence matrix). ADR-063 invariant text updated to clarify two-stage semantics.
   - **SourceOrigin::ModelInference** (T4): New variant stamped by future model-backed producers; classified as `Suggested` by default; scoped fail-closed `from_props` per Q4 maintainer decision.
   - **Honest Evaluation attestation** (T5): `accept_evidence` records `criterion = caller=<ARCHCTL_ACTOR>` (or `cli:caller` anonymous) and `evaluator = archctl:lifecycle_v1:<invocation_path>`. Replaces hardcoded `"user_accepted"` / `"archctl:lifecycle_v1"`.
   - **UAT-06 integration test** (T6): `archctl/tests/uat_06_false_agent_claim.rs` — critical gate verifies `ModelInference` claim cannot be promoted to canonical; negative control verifies `UserWorkspace` claim can. 9 skeleton steps ignored pending TRUST-005 + spec-35.
   - **manifests/trust.toml** (T7): Scope gate for trust module. 7 public symbols, 19 textual invariants, 10 minimum tests, 4 prohibitions.
-- **Tests**: 811/811 lib green. `cargo clippy -- -D warnings` 0. `archctl doctor --scopes trust` 0 findings. UAT-06: 1/2 green (critical gate fails on pre-existing sanity-check bug in test file; negative control passes).
-- **DQS**: N/A (documentation-only cycle; no code quality scoring applicable)
+- **Tests**: 1147/1147 green (822 lib + 321 integration + 4 doctest). `cargo clippy -- -D warnings` 0. `archctl doctor --scopes trust,evidence,store,diagram` 0 findings. UAT-06: 2/2 critical active; 9 `#[ignore]`d skeletons pending TRUST-005.
+- **DQS**: N/A (release gate scope; multi-lens audit owned by `sddk-debt-verify` → `debt-report.md`).
 - **Decisiones locked** (de explore → proposal → spec): ADR-063 invariant ("ModelInference jamás puede escribir CanonicalObservedFact directamente"), two-stage gate semantics (matrix allows existence; promotion gate denies direct write), Q4 scoped fail-closed default.
 - **Jurisprudence**: ADR-063 amends ADR-021 §Reglas (escaleza + invariant); ADR-063 clarifies ADR-023 naming collision (`Adjudicated` vs `Approval`); Option D resolves architectural contradiction between architecture/12-…:33-38 (matrix green cell) and spec.md REQ-M25-002 (promotion denied).
-- **Pre-existing issue noted**: UAT-06 critical gate test has a sanity-check assertion (line 161-164) that expects `ev:ws:orders-stripe` to exist from `seed_orders_stripe_fixture`, but the seed is explicitly a no-op per its doc comment. The assertion will always fail. Unable to fix per Do-Not-Rewrite constraint. Recommend: remove the sanity check assertion or make the seed actually create the UserWorkspace claim.
+- **Pre-existing issue resolved in-session**: UAT-06 critical gate test had a sanity-check assertion (line 161-164) that expected `ev:ws:orders-stripe` to exist. The fix-forward (T6 amend commit `fd3b769`) replaced it with `accepted_ids.is_empty()` — verifying the chokepoint actually denied the LLM claim.
+- **Known deferred items**: REQ-M25-005 #17 programmatic API caller_id (`accept_evidence` lacks `caller_id` parameter); Path B direct-Cypher bypass for `link_semantic_edge`; 9 `#[ignore]`d UAT-06 skeletons; `thread_local CURRENT_INVOCATION_PATH` implicit cross-module coupling (justified by ADR-063 §Decisión §4).
 - **Próximo candidato**: M26 (FusedClaim persistence, TRUST-005) or M30 (Adjudication event store, REQ-M25-006).
+- **Próxima fase**: `sddk-archive` (per orchestrator release-before-archive sequence, ADR-0011).
