@@ -1,254 +1,395 @@
 #!/usr/bin/env node
 /**
- * M21 Performance Gate — G6 Culling + LOD
+ * M21 Performance Gate — G6 Culling + LOD  (refactored for M23 CI gate)
  *
- * Manual pre-PR performance gate for the M21 culling implementation.
  * Measures TTFP (time-to-first-paint) and sustained pan/zoom FPS on
  * c4-stress-1k.json (1221 nodes / 3920 edges).
  *
- * DECISION D (locked): this script remains manual pre-PR; the CI perf
- * gate is tracked in issue #perf-ci-gate (opened by sddk-apply in
- * apply-progress.md).
- *
  * PREREQUISITES:
  * - Node.js >= 20
- * - Playwright (installed globally: `npm install -g playwright` or `pip install playwright`)
- * - Chromium browser: `playwright install chromium`
- * - archview dev server must be on port 18080
+ * - Playwright (installed via `pnpm add -D playwright`)
+ * - Chromium browser: `pnpm exec playwright install chromium`
+ * - archview must be built (pnpm build) OR a custom server command provided
  *
  * USAGE:
- *   # Terminal 1: start dev server
- *   cd archview && pnpm dev &
+ *   node bench/perf-cull.mjs [--server-cmd 'pnpm preview --port 18080']
+ *                            [--output /path/to/perf.json]
+ *                            [--warmup N]
  *
- *   # Terminal 2: run perf gate
- *   node bench/perf-cull.mjs
+ *   --server-cmd  Command to start the preview server (default: pnpm preview --port 18080)
+ *   --output      Write JSON output to this file (default: stdout)
+ *   --warmup      Number of warmup runs before measurement (default: 1)
+ *                 The script runs (warmup + 1) iterations; first `warmup` are discarded.
  *
- * ACCEPTANCE CRITERIA (REQ-M21-007 / AC-1, AC-2):
- *   AC-1: TTFP ≤ 5000ms on c4-stress-1k.json
- *   AC-2: Sustained pan/zoom FPS ≥ 55 on c4-stress-1k.json
+ * ACCEPTANCE CRITERIA (ADR-019 regression gate):
+ *   AC-1: TTFP <= 5000ms on c4-stress-1k.json
+ *   AC-2: Sustained pan/zoom FPS >= 55 on c4-stress-1k.json
  *
- * If criteria are NOT met, set enableCulling: false in all views
- * and re-run after optimisation work. Do NOT merge with failing perf.
+ * Exit codes:
+ *   0 = measurement complete + both ACs pass
+ *   1 = AC failure (TTFP > 5000ms or FPS < 55)
+ *   2 = instrumentation error (server failed, browser error, etc.)
+ *
+ * JSON output schema:
+ * {
+ *   "ttfp_ms": number,
+ *   "fps_avg": number,
+ *   "fps_min": number,
+ *   "sample": "c4-stress-1k.json",
+ *   "runner": "archview-bench",
+ *   "timestamp": "ISO8601",
+ *   "duration_ms": number,
+ *   "samples": [{ "ts_ms": number, "fps": number }]
+ * }
  */
 
 import { chromium } from "playwright";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn } from "node:process";
+import { writeFileSync } from "node:fs";
 
-const DEV_SERVER_URL = "http://localhost:18080";
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const REPO_ROOT = resolve(__dirname, "..", "..");
+
+// ---- defaults ---------------------------------------------------------------
+const DEFAULT_SERVER_CMD = "pnpm preview --port 18080";
+const DEFAULT_OUTPUT = null;       // stdout
+const DEFAULT_WARMUP = 1;
+const DEFAULT_ITERATIONS = 1;      // measurement iterations (after warmup)
+
+// ---- acceptance thresholds --------------------------------------------------
 const BUNDLE_PATH = "/samples/c4-stress-1k.json";
 const TTFP_TIMEOUT_MS = 30_000;
-const FPS_DURATION_MS = 3_000;
+const FPS_DURATION_MS = 5_000;   // 5s sustained measurement per iteration
 const FPS_MIN = 55;
 const TTFP_MAX_MS = 5_000;
 
-async function startDevServer() {
-  const { spawn } = await import("node:child_process");
-  console.log("[perf-gate] Starting archview dev server...");
-  const server = spawn("pnpm", ["dev"], {
-    cwd: "/var/mnt/DiscoChino2-fast/Proyectos/agentesIA/arch-stack/archview",
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
-  });
+// ---- CLI parsing ------------------------------------------------------------
+function parseArgs() {
+    const args = process.argv.slice(2);
+    let serverCmd = DEFAULT_SERVER_CMD;
+    let outputPath = DEFAULT_OUTPUT;
+    let warmup = DEFAULT_WARMUP;
 
-  // Wait for server to be ready (look for "Local:" in output)
-  await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Dev server startup timeout (30s)")), 30_000);
-    server.stdout.on("data", (data) => {
-      const line = data.toString();
-      if (line.includes("Local:") || line.includes("localhost:18080")) {
-        clearTimeout(timeout);
-        resolve();
-      }
-    });
-    server.stderr.on("data", (data) => {
-      const line = data.toString();
-      if (line.includes("Local:") || line.includes("localhost:18080")) {
-        clearTimeout(timeout);
-        resolve();
-      }
-    });
-  });
-
-  console.log("[perf-gate] Dev server ready.");
-  return server;
+    for (let i = 0; i < args.length; i++) {
+        switch (args[i]) {
+            case "--server-cmd":
+                serverCmd = args[++i];
+                break;
+            case "--output":
+                outputPath = args[++i];
+                break;
+            case "--warmup":
+                warmup = parseInt(args[++i], 10);
+                if (isNaN(warmup) || warmup < 0) warmup = 0;
+                break;
+            default:
+                if (!args[i].startsWith("--")) break;
+                console.error(`[perf-cull] Unknown flag: ${args[i]}`);
+                process.exit(2);
+        }
+    }
+    return { serverCmd, outputPath, warmup };
 }
 
+const { serverCmd, outputPath, warmup } = parseArgs();
+const SERVER_URL = `http://localhost:${extractPort(serverCmd) || 18080}`;
+
+function extractPort(cmd) {
+    const m = cmd.match(/--port\s+(\d+)/);
+    return m ? m[1] : null;
+}
+
+// ---- server lifecycle ------------------------------------------------------
+function parseServerCommand(cmd) {
+    // Parse "pnpm preview --port 18080 --strictPort" into parts
+    const parts = cmd.split(/\s+/);
+    return { cmd: parts[0], args: parts.slice(1) };
+}
+
+async function waitForServer(url, timeout = 30_000) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) return true;
+        } catch {
+            // not ready yet
+        }
+        await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error(`Server at ${url} did not become ready within ${timeout}ms`);
+}
+
+async function startServer(serverCmd) {
+    const { cmd, args } = parseServerCommand(serverCmd);
+    console.log(`[perf-cull] Starting server: ${cmd} ${args.join(" ")}`);
+    console.log(`[perf-cull]   cwd: ${REPO_ROOT}`);
+
+    const child = spawn(cmd, args, {
+        cwd: REPO_ROOT,
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+    });
+
+    await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Server startup timeout (30s)")), 30_000);
+        child.stdout.on("data", (data) => {
+            const line = data.toString();
+            if (line.includes("localhost") || line.includes("Local:")) {
+                clearTimeout(timeout);
+                resolve();
+            }
+        });
+        child.stderr.on("data", (data) => {
+            const line = data.toString();
+            if (line.includes("localhost") || line.includes("Local:")) {
+                clearTimeout(timeout);
+                resolve();
+            }
+        });
+    });
+
+    await waitForServer(SERVER_URL);
+    console.log(`[perf-cull] Server ready at ${SERVER_URL}`);
+    return child;
+}
+
+function killServer(child) {
+    if (!child) return;
+    try {
+        // Kill the whole process group
+        process.kill(-child.pid, "SIGTERM");
+    } catch {
+        // ignore
+    }
+}
+
+// ---- measurements -----------------------------------------------------------
 async function measureTTFP(page) {
-  console.log("[perf-gate] Measuring TTFP...");
+    console.log("[perf-cull] Measuring TTFP...");
 
-  const start = performance.now();
+    const start = performance.now();
 
-  // Navigate to the app (loads the SPA shell)
-  await page.goto(DEV_SERVER_URL, { waitUntil: "domcontentloaded" });
+    await page.goto(SERVER_URL, { waitUntil: "domcontentloaded", timeout: TTFP_TIMEOUT_MS });
 
-  // Load the c4-stress-1k.json bundle via the file input.
-  // The App.tsx has a file input for loading bundles. We use the
-  // sample loader by navigating to the bundle URL directly via the
-  // app's load mechanism.
-  //
-  // Since the App loads samples via a File input, we use the
-  // /samples/ URL which is served statically by Vite.
-  const bundleUrl = DEV_SERVER_URL + BUNDLE_PATH;
+    // Load the c4-stress-1k.json bundle via the app's load mechanism.
+    const bundleUrl = SERVER_URL + BUNDLE_PATH;
 
-  // Click the "Load Bundle" button/link to open file picker
-  // For the perf test, we inject the bundle URL directly into
-  // the app's state via evaluate.
-  await page.evaluate(async (url) => {
-    // Import App's loadBundle and call it directly
-    const { loadBundle } = await import("/var/mnt/DiscoChino2-fast/Proyectos/agentesIA/arch-stack/archview/src/bundle/loader.ts");
-    await loadBundle(url);
-  }, bundleUrl);
+    await page.evaluate(async (url) => {
+        const { loadBundle } = await import(resolve(REPO_ROOT, "src/bundle/loader.ts"));
+        await loadBundle(url);
+    }, bundleUrl);
 
-  // Wait for the canvas to render (G6 graph is ready)
-  await page.waitForSelector("canvas", { timeout: TTFP_TIMEOUT_MS });
+    // Wait for canvas to render
+    await page.waitForSelector("canvas", { timeout: TTFP_TIMEOUT_MS });
 
-  // Also wait for the graph to finish initial render
-  await page.waitForFunction(
-    () => {
-      const canvas = document.querySelector("canvas");
-      if (!canvas) return false;
-      // Check that G6 has rendered nodes (canvas has non-trivial content)
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return true; // Can't check context, assume OK
-      return true;
-    },
-    { timeout: TTFP_TIMEOUT_MS },
-  );
+    await page.waitForFunction(
+        () => {
+            const canvas = document.querySelector("canvas");
+            return !!canvas;
+        },
+        { timeout: TTFP_TIMEOUT_MS },
+    );
 
-  const ttfp = performance.now() - start;
-  return ttfp;
+    const ttfp = performance.now() - start;
+    return ttfp;
 }
 
 async function measureFPS(page) {
-  console.log("[perf-gate] Measuring sustained pan/zoom FPS...");
+    console.log("[perf-cull] Measuring sustained FPS over ${FPS_DURATION_MS}ms...");
 
-  const canvas = await page.waitForSelector("canvas", { timeout: 10_000 });
-  const canvasBox = await canvas.boundingBox();
-  if (!canvasBox) throw new Error("Cannot get canvas bounding box");
+    const canvas = await page.waitForSelector("canvas", { timeout: 10_000 });
+    const canvasBox = await canvas.boundingBox();
+    if (!canvasBox) throw new Error("Cannot get canvas bounding box");
 
-  const centerX = canvasBox.x + canvasBox.width / 2;
-  const centerY = canvasBox.y + canvasBox.height / 2;
+    const centerX = canvasBox.x + canvasBox.width / 2;
+    const centerY = canvasBox.y + canvasBox.height / 2;
 
-  // Collect frame timestamps during a pan + zoom interaction sequence.
-  // Set up a frame collector using requestAnimationFrame
-  await page.evaluate(() => {
-    let raf = 0;
-    const collect = () => {
-      // Just mark that a frame fired
-      window.__perfFrameCount = (window.__perfFrameCount || 0) + 1;
-      raf = requestAnimationFrame(collect);
-    };
-    window.__perfFrameCount = 0;
-    collect();
-    // Give it a reference to stop later
-    window.__perfRaf = raf;
-  });
+    // Collect frame timestamps during a pan + zoom interaction sequence.
+    await page.evaluate(() => {
+        window.__perfTimestamps = [];
+        window.__perfRaf = 0;
+        const collect = () => {
+            window.__perfTimestamps.push(performance.now());
+            window.__perfRaf = requestAnimationFrame(collect);
+        };
+        window.__perfRaf = requestAnimationFrame(collect);
+    });
 
-  // Simulate pan: drag the canvas
-  await page.mouse.move(centerX, centerY);
-  await page.mouse.down();
-  for (let i = 0; i < 20; i++) {
-    await page.mouse.move(centerX + i * 10, centerY + i * 5);
-    await new Promise((r) => setTimeout(r, 16)); // ~60fps pace
-  }
-  await page.mouse.up();
+    // Simulate pan: drag the canvas
+    await page.mouse.move(centerX, centerY);
+    await page.mouse.down();
+    for (let i = 0; i < 20; i++) {
+        await page.mouse.move(centerX + i * 10, centerY + i * 5);
+        await new Promise((r) => setTimeout(r, 16));
+    }
+    await page.mouse.up();
 
-  // Simulate zoom: wheel scroll on canvas
-  for (let i = 0; i < 10; i++) {
-    await page.mouse.wheel(0, -100);
-    await new Promise((r) => setTimeout(r, 16));
-  }
+    // Simulate zoom: wheel scroll on canvas
+    for (let i = 0; i < 10; i++) {
+        await page.mouse.wheel(0, -100);
+        await new Promise((r) => setTimeout(r, 16));
+    }
 
-  await new Promise((r) => setTimeout(r, 500)); // Let frames settle
+    // Wait for FPS collection window to elapse
+    await new Promise((r) => setTimeout(r, FPS_DURATION_MS));
 
-  // Stop the frame collector
-  const frameCount = await page.evaluate(() => {
-    cancelAnimationFrame(window.__perfRaf);
-    return window.__perfFrameCount;
-  });
+    // Stop collector and compute FPS
+    const result = await page.evaluate(() => {
+        cancelAnimationFrame(window.__perfRaf);
+        const ts = window.__perfTimestamps;
+        if (ts.length < 2) {
+            return { fps: 0, elapsed: FPS_DURATION_MS };
+        }
+        const elapsed = ts[ts.length - 1] - ts[0];
+        const fps = (ts.length - 1) / (elapsed / 1000);
+        return { fps, elapsed };
+    });
 
-  // Calculate FPS from frame count and elapsed time
-  // We collected for approximately FPS_DURATION_MS but the interaction
-  // itself is shorter. Use the actual timestamps array if available.
-  const elapsed = timestamps.length > 1
-    ? timestamps[timestamps.length - 1] - timestamps[0]
-    : FPS_DURATION_MS;
-
-  const fps = frameCount / (elapsed / 1000);
-  return fps;
+    return result.fps;
 }
 
-async function main() {
-  let server = null;
-
-  try {
-    server = await startDevServer();
-
-    const browser = await chromium.launch({ headless: true });
+// ---- main measurement loop -------------------------------------------------
+async function runMeasurementIteration(browser) {
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
+        viewport: { width: 1280, height: 800 },
     });
     const page = await context.newPage();
 
-    // ── TTFP Measurement ───────────────────────────────────────────────
     let ttfp;
     try {
-      ttfp = await measureTTFP(page);
+        ttfp = await measureTTFP(page);
     } catch (err) {
-      console.error(`[perf-gate] TTFP measurement FAILED: ${err.message}`);
-      console.error("[perf-gate] TTFP AC-1: FAIL (measurement error)");
-      process.exit(1);
+        console.error(`[perf-cull] TTFP measurement FAILED: ${err.message}`);
+        await context.close();
+        return { error: "ttfp", message: err.message };
     }
 
-    const ttfpPass = ttfp <= TTFP_MAX_MS;
-    console.log(`[perf-gate] TTFP: ${Math.round(ttfp)}ms (limit: ${TTFP_MAX_MS}ms) — ${ttfpPass ? "PASS ✓" : "FAIL ✗"}`);
-
-    // ── FPS Measurement ──────────────────────────────────────────────────
     let fps;
     try {
-      fps = await measureFPS(page);
+        fps = await measureFPS(page);
     } catch (err) {
-      console.error(`[perf-gate] FPS measurement FAILED: ${err.message}`);
-      console.error("[perf-gate] AC-2: FAIL (measurement error)");
-      process.exit(1);
+        console.error(`[perf-cull] FPS measurement FAILED: ${err.message}`);
+        await context.close();
+        return { error: "fps", message: err.message };
     }
 
-    const fpsPass = fps >= FPS_MIN;
-    console.log(`[perf-gate] FPS: ${fps.toFixed(1)} (minimum: ${FPS_MIN}) — ${fpsPass ? "PASS ✓" : "FAIL ✗"}`);
+    await context.close();
+    return { ttfp, fps };
+}
 
-    // ── Result ────────────────────────────────────────────────────────────
-    console.log("\n" + "=".repeat(60));
-    if (ttfpPass && fpsPass) {
-      console.log("[perf-gate] ALL ACCEPTANCE CRITERIA MET — safe to merge");
-      console.log(`[perf-gate] TTFP: ${Math.round(ttfp)}ms ≤ ${TTFP_MAX_MS}ms`);
-      console.log(`[perf-gate] FPS:  ${fps.toFixed(1)} ≥ ${FPS_MIN}`);
+// ---- JSON output -----------------------------------------------------------
+function emitResult(measurements, outputPath) {
+    const ttfp_values = measurements.map((m) => m.ttfps).filter((v) => v != null);
+    const fps_values = measurements.map((m) => m.fps_values).flat().filter((v) => v != null);
+
+    const ttfp_ms = ttfp_values.length > 0 ? ttfp_values[ttfp_values.length - 1] : 0;
+    const fps_avg = fps_values.length > 0 ? fps_values.reduce((a, b) => a + b, 0) / fps_values.length : 0;
+    const fps_min = fps_values.length > 0 ? Math.min(...fps_values) : 0;
+
+    const sample = {
+        ttfp_ms,
+        fps_avg: parseFloat(fps_avg.toFixed(2)),
+        fps_min: parseFloat(fps_min.toFixed(2)),
+        sample: "c4-stress-1k.json",
+        runner: "archview-bench",
+        timestamp: new Date().toISOString(),
+        duration_ms: measurements.reduce((acc, m) => acc + (m.duration_ms || 0), 0),
+        samples: measurements.map((m, i) => ({
+            iteration: i + 1,
+            ttfp_ms: m.ttfps,
+            fps: m.fps_values.length > 0 ? parseFloat((m.fps_values.reduce((a, b) => a + b, 0) / m.fps_values.length).toFixed(2)) : 0,
+        })),
+    };
+
+    const json = JSON.stringify(sample, null, 2);
+    if (outputPath) {
+        writeFileSync(outputPath, json);
+        console.log(`[perf-cull] Result written to ${outputPath}`);
     } else {
-      console.error("[perf-gate] PERFORMANCE GATE FAILED");
-      if (!ttfpPass) console.error(`  AC-1 TTFP: ${Math.round(ttfp)}ms > ${TTFP_MAX_MS}ms`);
-      if (!fpsPass) console.error(`  AC-2 FPS:  ${fps.toFixed(1)} < ${FPS_MIN}`);
-      console.error("\nBefore merging:");
-      console.error("  1. Set enableCulling: false in all views");
-      console.error("  2. Investigate the bottleneck (layout? culling? G6 config?)");
-      console.error("  3. Re-run this script after optimisation");
-      console.error("  4. Do NOT merge with a failing perf gate");
+        console.log(json);
     }
-    console.log("=".repeat(60) + "\n");
 
-    await browser.close();
+    return sample;
+}
 
-    process.exit(ttfpPass && fpsPass ? 0 : 1);
-  } catch (err) {
-    console.error("[perf-gate] Unexpected error:", err);
-    process.exit(1);
-  } finally {
-    if (server) {
-      // Kill the dev server process group
-      try {
-        process.kill(-server.pid, "SIGTERM");
-      } catch {
-        // Ignore errors when killing
-      }
+// ---- main entry point ------------------------------------------------------
+async function main() {
+    const totalIterations = warmup + 1; // warmup iterations + 1 measurement
+    const measurements = [];
+    let server = null;
+
+    try {
+        // Start the preview server
+        try {
+            server = await startServer(serverCmd);
+        } catch (err) {
+            console.error(`[perf-cull] Server failed to start: ${err.message}`);
+            process.exit(2);
+        }
+
+        // Launch browser once for all iterations
+        const browser = await chromium.launch({ headless: true });
+
+        for (let iter = 0; iter < totalIterations; iter++) {
+            const isWarmup = iter < warmup;
+            const label = isWarmup ? `WARMUP ${iter + 1}/${warmup}` : `MEASUREMENT`;
+            console.log(`[perf-cull] === ${label} ===`);
+
+            const iterStart = Date.now();
+            const result = await runMeasurementIteration(browser);
+            const duration_ms = Date.now() - iterStart;
+
+            if (result.error) {
+                console.error(`[perf-cull] ${label} FAILED: ${result.error} — ${result.message}`);
+                await browser.close();
+                killServer(server);
+                process.exit(2);
+            }
+
+            const { ttfp, fps } = result;
+
+            if (isWarmup) {
+                console.log(`[perf-cull] Warmup ${iter + 1}: TTFP=${Math.round(ttfp)}ms FPS=${fps.toFixed(1)} (discarded)`);
+            } else {
+                console.log(`[perf-cull] Measurement: TTFP=${Math.round(ttfp)}ms FPS=${fps.toFixed(1)}`);
+                measurements.push({ ttfps: ttfp, fps_values: [fps], duration_ms });
+            }
+        }
+
+        await browser.close();
+        killServer(server);
+
+        // Emit result (last measurement iteration is what we report)
+        const sample = emitResult(measurements, outputPath);
+
+        // Evaluate ACs
+        const ttfpPass = sample.ttfp_ms <= TTFP_MAX_MS;
+        const fpsPass = sample.fps_avg >= FPS_MIN;
+
+        console.log("");
+        console.log("=".repeat(60));
+        console.log(`[perf-cull] TTFP: ${Math.round(sample.ttfp_ms)}ms (limit: ${TTFP_MAX_MS}ms) — ${ttfpPass ? "PASS" : "FAIL"}`);
+        console.log(`[perf-cull] FPS:  ${sample.fps_avg.toFixed(1)} avg / ${sample.fps_min.toFixed(1)} min (minimum: ${FPS_MIN}) — ${fpsPass ? "PASS" : "FAIL"}`);
+
+        if (ttfpPass && fpsPass) {
+            console.log("[perf-cull] ALL ACCEPTANCE CRITERIA MET — safe to merge");
+        } else {
+            console.error("[perf-cull] PERFORMANCE GATE FAILED");
+            if (!ttfpPass) console.error(`  AC-1 TTFP: ${Math.round(sample.ttfp_ms)}ms > ${TTFP_MAX_MS}ms`);
+            if (!fpsPass) console.error(`  AC-2 FPS:  ${sample.fps_avg.toFixed(1)} < ${FPS_MIN}`);
+        }
+        console.log("=".repeat(60) + "\n");
+
+        process.exit(ttfpPass && fpsPass ? 0 : 1);
+
+    } catch (err) {
+        console.error("[perf-cull] Unexpected error:", err);
+        if (server) killServer(server);
+        process.exit(2);
     }
-  }
 }
 
 main();
