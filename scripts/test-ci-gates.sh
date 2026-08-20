@@ -420,6 +420,72 @@ require "CHANGELOG references ci-main-gates" \
   grep -q 'ci-main-gates' CHANGELOG.md
 
 # ---------------------------------------------------------------------------
+# 11. bench-compare-archview.sh contract (M23 perf-ci-gate).
+# ---------------------------------------------------------------------------
+ARCHVIEW_BENCH_SCRIPT="scripts/bench-compare-archview.sh"
+require "bench-compare-archview.sh exists" test -f "$ARCHVIEW_BENCH_SCRIPT"
+require "bench-compare-archview.sh executable" test -x "$ARCHVIEW_BENCH_SCRIPT"
+require "bench-compare-archview.sh --help exits 0" \
+  bash -c '"$0" --help >/dev/null 2>&1' "$ARCHVIEW_BENCH_SCRIPT"
+
+# Default baseline is origin/main (valid in a normal clone).
+require "bench-compare-archview.sh default baseline origin/main accepted (fake 0)" \
+  bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 0 >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+
+# All-zero SHA must fail clearly (exit 2).
+require_not "bench-compare-archview.sh all-zero SHA rejected (exit 2)" \
+  bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 0 0000000000000000000000000000000000000000 >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+
+# Invalid / unreachable baseline must fail clearly (exit 2).
+require_not "bench-compare-archview.sh invalid baseline rejected (exit 2)" \
+  bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 0 no-such-ref-xyz >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+
+# TTFP regression: over 10% threshold exits 1, within 10% exits 0.
+require_not "bench-compare-archview.sh --fake-ttfp-regression 11 exits 1" \
+  bash -c '"$0" --fake-ttfp-regression 11 --fake-fps-regression 0 >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+require "bench-compare-archview.sh --fake-ttfp-regression 5 exits 0" \
+  bash -c '"$0" --fake-ttfp-regression 5 --fake-fps-regression 0 >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+
+# FPS regression: over 10% threshold exits 1, within 10% exits 0.
+require_not "bench-compare-archview.sh --fake-fps-regression 11 exits 1" \
+  bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 11 >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+require "bench-compare-archview.sh --fake-fps-regression 5 exits 0" \
+  bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 5 >/dev/null 2>&1' \
+  "$ARCHVIEW_BENCH_SCRIPT"
+
+# Worktree hygiene: must remove worktree from disk AND git metadata.
+require "bench-compare-archview.sh removes worktree from git metadata" \
+  grep -q 'git worktree remove --force' "$ARCHVIEW_BENCH_SCRIPT"
+require "bench-compare-archview.sh prunes worktree metadata" \
+  grep -q 'git worktree prune' "$ARCHVIEW_BENCH_SCRIPT"
+
+# python3 prerequisite must fail clearly before creating any worktree.
+MINBIN_ARCHVIEW="$(mktemp -d)"
+ln -s "$(command -v bash)" "$MINBIN_ARCHVIEW/bash"
+NOPY_MSG_AV="$(env PATH="$MINBIN_ARCHVIEW" bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 0 2>&1' "$ARCHVIEW_BENCH_SCRIPT" || true)"
+env PATH="$MINBIN_ARCHVIEW" bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 0 >/dev/null 2>&1' "$ARCHVIEW_BENCH_SCRIPT"
+NOPY_EXIT_AV=$?
+rm -rf "$MINBIN_ARCHVIEW"
+require "bench-compare-archview.sh missing python3 message mentions python3" \
+  grep -q 'python3' <<<"$NOPY_MSG_AV"
+if [ "$NOPY_EXIT_AV" -eq 2 ]; then
+    note_pass "bench-compare-archview.sh fails clearly without python3 (exit 2)"
+else
+    note_fail "bench-compare-archview.sh fails clearly without python3 (exit 2, got $NOPY_EXIT_AV)"
+fi
+
+# Structured JSON output on stdout (fake mode only — real mode needs playwright).
+JSON_OUT="$(bash -c '"$0" --fake-ttfp-regression 0 --fake-fps-regression 0 2>&1' "$ARCHVIEW_BENCH_SCRIPT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(\"regressions\",[]))' 2>/dev/null || echo '[]')"
+require "bench-compare-archview.sh outputs valid JSON with regressions key" \
+  python3 -c "import json; json.loads('$JSON_OUT')" >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
 # ADR Integrity Gate
 # ---------------------------------------------------------------------------
 echo ""
