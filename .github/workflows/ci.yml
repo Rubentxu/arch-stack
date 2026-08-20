@@ -191,3 +191,50 @@ jobs:
       # in scripts/check-bundle-cap.sh, shared with scripts/verify-local.sh.
       - name: Bundle size check (gzipped <= 2MB)
         run: ../scripts/check-bundle-cap.sh "dist/assets/*.js"
+
+  # ADR-019 enforcement post-merge (M23 perf-ci-gate): fail when TTFP or FPS
+  # regress >10% vs the previous main commit on c4-stress-1k.json.
+  # Reuses dist/ from the web job (already built). playwright is installed
+  # via pnpm exec (cached via ~/.cache/ms-playwright). Zero-SHA and
+  # unreachable baselines are rejected inside bench-compare-archview.sh (exit 2).
+  perf-cull:
+    name: archview (perf regression >10% vs previous main)
+    runs-on: ubuntu-latest
+    needs: web
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: archview/pnpm-lock.yaml
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('archview/pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: archview
+
+      - name: Install Playwright
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: archview
+
+      # ADR-019 perf gate: compare TTFP and FPS vs previous main.
+      # Direction: TTFP increase >10% = regression; FPS decrease <10% = regression.
+      - name: Benchmark regression compare (vs previous main)
+        run: scripts/bench-compare-archview.sh "${{ github.event.before }}"
