@@ -56,7 +56,6 @@ const REPO_ROOT = resolve(__dirname, "..", "..");
 const DEFAULT_SERVER_CMD = "pnpm preview --port 18080";
 const DEFAULT_OUTPUT = null;       // stdout
 const DEFAULT_WARMUP = 1;
-const DEFAULT_ITERATIONS = 1;      // measurement iterations (after warmup)
 
 // ---- acceptance thresholds --------------------------------------------------
 const BUNDLE_PATH = "/samples/c4-stress-1k.json";
