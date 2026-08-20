@@ -5,13 +5,14 @@
 > Última actualización: 2026-08-20, post-release v1.78.0 (M21
 > G6 culling + LOD: CullingService DI seam + zoom LOD + viewport
 > detection; +29 tests archview; 225 archview tests total).
+> Tip tras PR #268 (Cargo.lock follow-up squash): `fec8130`.
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `93bae6b` (PR #266 squash — M21 G6 culling + LOD) |
+| Tip | `fec8130` (PR #268 squash — Cargo.lock follow-up; v1.78.0 tag peels here) |
 | Versión | `v1.78.0` (latest tag, M21 G6 culling + LOD) |
 | Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `225 @ m21-g6-culling-lod`; re-cuenta en cada verify; clippy clean |
 | Working tree | clean (`main`); tags v1.65.0–v1.78.0 verificados en origin |

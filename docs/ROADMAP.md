@@ -1531,3 +1531,23 @@ Razones:
 - **Kùzu jurisprudence documented**: Kùzu 0.18.3 auto-reverts entire transaction on any query error. `link_with_merge_fallback` fixed to use idempotent `OPTIONAL MATCH ... WHERE r IS NULL ... CREATE` pattern — single query, no conditional error-throwing, no spurious auto-reverts.
 - **Notas**: ADR-059 documents the trait-split decision; the 22 application call sites that were using `GraphStore::query` for writes are now using typed repository methods.
 - **Próximo candidato**: P1-02 (CLI commands → handlers) o P1-06/P1-07 (extractor suite sobre el `UnitOfWork` port ahora estabilizado, o depuración de la connascence-of-Implementation residual con `*mut LbugStore` cuando llegue SparrowStore). A-W1 + C-W1 ya cerrados en este ciclo, así que ya no son deuda viva.
+
+## Cycle cerrado — `m21-g6-culling-lod` (v1.78.0)
+
+- **Fecha**: 2026-08-20
+- **Cycle id**: `p-38e02210a9f14317/m21-g6-culling-lod`
+- **Branch**: `feat/m21-g6-culling-lod` (PR #266 squash → `93bae6b`) + `release/v1.78.0` (PR #267 squash → `e8a313d`) + `fix/v1.78.0-cargo-lock` (PR #268 squash → `fec8130`)
+- **Tag**: `v1.78.0` (annotated, peels to `fec8130`)
+- **Verdict**: verify PASS_WITH_WARNINGS (2 warnings no bloqueantes + 1 suggestion) · debt-verify SKIPPED (reversibility=HIGH per proposal, A-lite `conditional`) · release REPORTED (status `RELEASE_PENDING`, terminal)
+- **Output**:
+  - **M21 work** (PR #266): G6 culling + zoom LOD con `CullingService` DI seam. `optimize-viewport-transform` behavior + zoom LOD post-render hook (labels<0.5, edges<0.25). `culling-service.ts` (~150 LOC, pure interface + factory + stub). Viewport detection bbox-vs-viewport + 10% margin + debounce 100ms via `setElementVisibility` batch. Per-view opt-in via `RendererOptions.enableCulling` (C4View, CallGraphView, ImpactView). M18 orthogonality guard: C4View desactiva culling cuando `levelFilter !== null`. Sample `c4-stress-1k.json` commiteado (1221 nodos / 3920 edges, hub `system:core`). Perf gate `bench/perf-cull.mjs` Playwright (manual pre-PR, decision D).
+  - **Release** (PR #267): bump `archctl/Cargo.toml` 1.77.0 → 1.78.0 + CHANGELOG entry + STATE.md update.
+  - **Cargo.lock follow-up** (PR #268): regenerated lockfile via `cargo build`; squashed into `fec8130`. Same pattern as `f9ffc7f` (v1.68.0 follow-up).
+- **Tests**: 225/225 archview (+29 nuevos: 26 CullingService unit + 3 C4View integration). `cargo test --features test-fixtures` PASS. `pnpm lint` 0 errors. `pnpm build` OK. `cargo clippy -- -D warnings` clean. `archctl doctor --scopes diagram,evidence,store` OK.
+- **DQS**: ~88/100 (connascence Position↔Visibility bounded; Information Bottleneck holds: views no importan de `@antv/g6` para cull).
+- **Decisiones locked** (de explore → proposal → spec): A (umbrales LOD 0.5/0.25), B (opt-in por view), C (M18 pill orthogonality), D (CI gate out of scope, issue `#perf-ci-gate`), E (regenerar 1k sample en T0).
+- **Jurisprudence**: M19 `LayoutService` DI pattern reusado para `CullingService` (mismo molde `archview/src/renderer/layout-client.ts:54-66`). M20 `<VirtualList>` primitive pattern no conflict — ortogonal. M18 semantic-zoom pill preservado.
+- **Gaps framework documentados** (kernel 1.28.0):
+  - `phase.plan.complete.a-lite` no existe en catálogo → cycle saltó `plan` directamente (`design → build` vía `phase.design.complete.a-lite`). No bloquea el trabajo pero requiere parche de framework.
+  - `phase.release.complete` no es transition válida (terminal `RELEASE_PENDING`). `release-passed` gate sin evaluador registrado. Bookkeeping, no bloquea el release real.
+- **Próximo candidato**: M22 (Sidebar con tabs evidence vs relations) o iterar sobre UX del culling con métricas del perf gate en CI (issue `#perf-ci-gate`).
