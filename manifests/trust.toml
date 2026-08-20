@@ -1,0 +1,75 @@
+# scope: trust
+#
+# trust.rs encodes the single source of truth for the question
+# "may this evidence be promoted to canonical?". ADR-063 + ADR-P02 +
+# ADR-P03. The two-axis typology (ExecutionClass × AuthorityClass)
+# is enforced by canonical_write_allowed (existence gate) and
+# canonical_promotion_allowed (promotion gate).
+
+id = "trust"
+version = "0.1.0"
+description = "Trust classification and canonical-write policy (ADR-063)"
+cargo_dir = "archctl"
+
+# Files that may be edited freely within this scope.
+editable = ["archctl/src/trust.rs"]
+
+# Public symbols that consumers depend on.
+# canonical_promotion_allowed added by Option D (m25).
+public_symbols = [
+  "ExecutionClass",
+  "AuthorityClass",
+  "TrustClassification",
+  "TrustViolation",
+  "classify",
+  "canonical_write_allowed",
+  "canonical_promotion_allowed",
+]
+
+# Textual invariants that prove the module does what its scope
+# declares. Plain strings (not regex) so a doctype tweak can't
+# quietly satisfy a stale contract.
+must_hold = [
+  # Enum shapes
+  "pub enum ExecutionClass",
+  "pub enum AuthorityClass",
+  "pub enum TrustViolation",
+  "pub struct TrustClassification",
+  # Four ExecutionClass variants
+  "PureDeterministic",
+  "DeterministicHeuristic",
+  "ModelInference",
+  "HumanDecision",
+  # Five AuthorityClass variants
+  "Observed",
+  "Derived",
+  "Suggested",
+  "Normative",
+  "Adjudicated",
+  # TrustViolation error variants
+  "ModelInferenceCannotBe",
+  "ModelInferenceWithoutAdjudicationEvent",
+  "DeterministicCannotBe",
+  "HeuristicWithoutObservation",
+  # Public API surface
+  "pub fn classify(",
+  "pub fn canonical_write_allowed(",
+  "pub fn canonical_promotion_allowed(",
+  # Two-stage gate semantics (Option D)
+  "ModelInference × Suggested",
+]
+
+# Minimum number of #[test] items in trust.rs.
+# 8 existed prior to m25; Option D added 2 more.
+minimum_tests = 10
+
+# Prohibitions: things this scope must NOT contain.
+# These catch regressions that would undermine the ADR-063 invariant.
+must_not_contain = [
+  # trust.rs must not import any HTTP client (network by default is blocked)
+  "reqwest",
+  "ureq",
+  "http::",
+  # trust.rs must not use serde_json::Value without typed wrapper
+  "serde_json::Value",
+]
