@@ -31,12 +31,7 @@
  *   </TabPanel>
  *   ```
  */
-import {
-  For,
-  Show,
-  type Component,
-  type JSX,
-} from "solid-js";
+import { For, Show, type Component, type JSX } from "solid-js";
 
 export interface TabItem {
   /** Opaque identifier — must match a corresponding `TabPanel value`. */
@@ -132,11 +127,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
   };
 
   return (
-    <div
-      role="tablist"
-      aria-label={props.ariaLabel}
-      class="tab-bar"
-    >
+    <div role="tablist" aria-label={props.ariaLabel} class="tab-bar">
       <For each={props.items}>
         {(item) => {
           const isActive = () => item.id === props.value;

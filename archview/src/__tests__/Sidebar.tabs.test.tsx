@@ -8,7 +8,7 @@
  *   - Badge counts are correct (omitted when 0)
  *   - Switching node resets tab back to "evidence"
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, fireEvent } from "@solidjs/testing-library";
 import { Sidebar } from "../components/Sidebar";
 import type { GraphNode } from "../bundle/loader";
@@ -28,7 +28,11 @@ const NODE_WITH_EVIDENCE_AND_RELATIONS: GraphNode = {
   },
 };
 
-function makeEdges(sourceId: string, _targetId: string, count: number): RendererEdge[] {
+function makeEdges(
+  sourceId: string,
+  _targetId: string,
+  count: number,
+): RendererEdge[] {
   const edges: RendererEdge[] = [];
   for (let i = 0; i < count; i++) {
     edges.push({
@@ -42,7 +46,9 @@ function makeEdges(sourceId: string, _targetId: string, count: number): Renderer
 }
 
 function getTabs(container: HTMLElement) {
-  return Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+  return Array.from(
+    container.querySelectorAll('[role="tab"]'),
+  ) as HTMLButtonElement[];
 }
 
 afterEach(() => {
