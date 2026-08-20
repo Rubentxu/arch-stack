@@ -1,3 +1,20 @@
+## [Unreleased]
+
+## [1.81.0] — 2026-08-20
+
+### Fixed
+
+- **EventLog::open no longer truncates existing journal** (cycle `t0-trust-001-eventlog-reopen`,
+  TRUST-001): `File::create` replaced by `OpenOptions::new().create(true).append(true)` per
+  the in-tree precedents at `cognitive/audit/log.rs:151-154` and `store.rs:961-967`. Adds 4
+  regression tests covering reopen with content, append after reopen, and first-open of
+  non-existent path. Invariant: "Abrir journal existente nunca trunca"
+  (`docs/arch-stack-architecture-feedback-workbench-2026-08-20/specs/40-AGENT-EVENT-JOURNAL.md:10`).
+
+### Notes
+- `EventLog` es hoy solo consumido por tests; `SyncDispatcher` lo cableará
+  en un ciclo T6 posterior, por lo que esta release es preventiva.
+
 ## [1.80.0] — 2026-08-20
 
 ### Added
