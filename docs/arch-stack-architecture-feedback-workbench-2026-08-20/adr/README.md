@@ -1,6 +1,6 @@
-# Proposed ADR Index
+# ADR Index (Accepted 2026-08-20)
 
-Los ADR-Pxx son propuestas del blueprint, no números oficiales del repo.
+Los ADR-Pxx fueron aceptados en bloque el 2026-08-20 por decisión del maintainer, tras validación personal del blueprint de 80 ficheros como roadmap coherente. Cada ADR lleva una sección `## Acceptance` con rationale, autoridad y trade-offs documentados. La triangulación per-ADR contra los ADRs existentes (021/022/023/038/039/040/054/056/062) se difiere a los ciclos de implementación, donde cualquier conflicto descubierto se reconcilia in-cycle.
 
 | ADR | Tema |
 |---|---|
