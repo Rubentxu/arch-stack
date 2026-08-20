@@ -1,3 +1,40 @@
+## [1.78.0] — 2026-08-20
+
+### Added
+- **G6 culling + zoom LOD** (PR #266, M21): viewport-based culling behind
+  `enableCulling` flag (opt-in per view). Reduces overdraw for 1000+ node
+  bundles. Two layers:
+  1. **Zoom LOD** (always-on, additive): hides labels at zoom < 0.5,
+     edges at zoom < 0.25 via `setElementVisibility` after each render.
+  2. **Viewport culling** (opt-in): hides elements outside the viewport
+     with configurable margin (default 10%). Debounced 100ms on
+     `wheel`/`drag-canvas:end` events.
+- **CullingService DI seam** (`renderer/culling-service.ts`): pure interface
+  (`recompute`, `teardown`) with `noopCullingService` stub and
+  `createCullingService` factory. 26 unit tests covering `isInViewport`
+  (11 boundary cases), `computeBboxUnion` (5 cases), factory, and debounce.
+- **`archview/bench/perf-cull.mjs`**: Playwright headless perf gate.
+  Measures TTFP (≤ 5 s AC-1) and sustained pan/zoom FPS (≥ 55 AC-2)
+  on `c4-stress-1k.json` (1221 nodes / 3920 edges). Manual pre-PR;
+  CI gate tracked in `#perf-ci-gate`.
+- **Sample `c4-stress-1k.json`**: 1221 nodes / 3920 edges, hub
+  `system:core` with 500 incoming edges. Deterministic (seed `0xc4dec0de`).
+  Regenerable via `scripts/generate-stress-sample.mjs`.
+
+### Changed
+- **`optimize-viewport-transform` behavior** appended to G6 behaviors array
+  (debounce 200ms) — free FPS win for all 8 views.
+- **`applyZoomLod` post-render hook** added to `GraphRenderer.setData`:
+  calls `setElementVisibility` after every `graph.draw()`.
+
+### Notes
+- **M18 orthogonality guard**: `C4View` enables culling only when
+  `levelFilter === null` (drill-down mode). When a semantic-zoom pill
+  is active, culling is OFF so M18 semantics are preserved.
+- **Opt-in by default**: `enableCulling: false` in all views until perf
+  gate validates sustained FPS. CallGraph and Impact default to `false`
+  with TODO for post-gate opt-in.
+
 ## [1.77.0] — 2026-08-20
 
 ### Added

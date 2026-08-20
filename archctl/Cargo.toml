@@ -1,6 +1,6 @@
 [package]
 name = "archctl"
-version = "1.77.0"
+version = "1.78.0"
 edition = "2024"
 # MSRV = consumer compile floor, validated empirically at apply: the current
 # dependency tree requires rustc 1.91 (cargo-platform@0.3.3) and 1.86-1.88
