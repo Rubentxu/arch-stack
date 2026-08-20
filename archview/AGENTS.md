@@ -100,3 +100,47 @@ pnpm format           # prettier write
 - Layout jerárquico ELK.js en Web Worker
 - Virtualización de DOM para >1k nodos
 - Sidebar con tabs (evidence vs relations) ✅ shipped v1.79.0
+
+## Perf budget enforcement (M23)
+
+ADR-019 §enforcement declares a post-merge CI gate for archview perf regressions.
+M23 implements it.
+
+### CI job: `perf-cull`
+
+Runs after every push to `main` (post-merge only, NOT PR-gated per ADR-025/ADR-047).
+
+- **Location**: `.github/workflows/ci.yml` — job `perf-cull`
+- **Baseline**: previous main SHA (`github.event.before`)
+- **Dataset**: `c4-stress-1k.json` (1 221 nodes / 3 920 edges)
+- **Threshold**: 10% regression
+  - TTFP increase > 10% → **FAIL**
+  - FPS decrease < 10% (i.e. `pr < main * 0.90`) → **FAIL**
+
+### Local reproduction
+
+```bash
+# Fake mode (no real benchmark — fast, deterministic)
+scripts/bench-compare-archview.sh --fake-ttfp-regression 11 --fake-fps-regression 11
+# EXIT 1 = regression detected (expected)
+
+scripts/bench-compare-archview.sh --fake-ttfp-regression 5 --fake-fps-regression 5
+# EXIT 0 = within threshold
+
+# Real mode (requires playwright)
+cd archview && pnpm build && node bench/perf-cull.mjs --output perf.json --warmup 1
+```
+
+### Investigating a failure
+
+1. **Check the CI run**: `gh run list --workflow=ci.yml` → find the failing `perf-cull` job
+2. **Get baseline JSON**: download `perf-baseline.json` from the baseline SHA artifact
+3. **Get head JSON**: download `perf-head.json` from the head artifact
+4. **Compare manually**: `jq '.ttfp_ms, .fps' perf-baseline.json perf-head.json`
+5. **Reproduce locally**: run the bench on a local checkout of the failing SHA
+
+### Out of scope (M23 debt)
+
+- Lighthouse score gate (ADR-019 L65) — not implemented
+- 10k + 100k benchmark datasets (ADR-019 §benchmarking) — not generated
+- Re-enabling `enableCulling: true` in CallGraphView/ImpactView — deferred
