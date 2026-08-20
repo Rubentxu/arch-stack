@@ -164,6 +164,16 @@ if [ "$MODE" = "full" ]; then
     # ADR-019 bundle cap: single-source script, shared with CI.
     run_gate "$REPO_ROOT/scripts/check-bundle-cap.sh" "$REPO_ROOT/archview/dist/assets/*.js"
 
+    # ---- archview perf gate (ADR-019, M23 perf-ci-gate) -----------------------
+    # Run real perf measurement when playwright is available (pnpm exec playwright --version succeeds).
+    # Uses --fake-ttfp-regression 0 --fake-fps-regression 0: no synthetic regression,
+    # real measurement against the current tree vs the baseline SHA.
+    if pnpm exec playwright --version >/dev/null 2>&1; then
+        run_gate "$REPO_ROOT/scripts/bench-compare-archview.sh" "$BASELINE"
+    else
+        echo "verify-local: archview perf gate skipped: playwright not installed (install: pnpm add -D playwright && pnpm exec playwright install chromium)"
+    fi
+
     # ---- CI-gate contract tests (deterministic; enforces this suite) ---------
     run_gate "$REPO_ROOT/scripts/test-ci-gates.sh"
 
