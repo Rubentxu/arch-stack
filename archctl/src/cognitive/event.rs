@@ -101,13 +101,25 @@ pub struct EventLog {
 impl EventLog {
     /// Open (or create) an event log at the given path.
     ///
-    /// The sequence marker file is placed alongside the log at `event.log.seq`.
+    /// # Critical invariant
+    /// Opening an existing journal MUST NOT truncate it. Spec
+    /// `40-AGENT-EVENT-JOURNAL.md`: *"Abrir journal existente nunca trunca."*
+    /// Uses `OpenOptions::new().create(true).append(true)` so the write
+    /// cursor stays at EOF across reopens (append-only). Mirrors two
+    /// precedents in-tree: `cognitive/audit/log.rs` (`AuditLogger::append`)
+    /// and `store.rs` (`LbugStore::open`, with the anti-truncation comment
+    /// and allow-attr). Per `ADR-P11` this is a causal journal, not an
+    /// event-sourced store; replay parity is the reopen trigger and is out
+    /// of scope here. Sequence marker at `event.log.seq` survives the open.
     pub fn open(path: PathBuf) -> io::Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        // Touch the file so it exists even if no events are written.
-        File::create(&path)?;
+        // Open in append mode so existing NDJSON lines survive a reopen.
+        // `File::create` would truncate — see `cognitive/audit/log.rs:147-161`
+        // and `store.rs:961-967` for the canonical precedent.
+        #[allow(clippy::suspicious_open_options)]
+        OpenOptions::new().create(true).append(true).open(&path)?;
         let seq_path = path.with_extension("seq");
         Ok(EventLog { path, seq_path })
     }
@@ -319,7 +331,11 @@ mod tests {
         // Semantic check: iter still yields 3 events
         let log = EventLog::open(log_path).unwrap();
         let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
-        assert_eq!(events.len(), 3, "iter() must return all 3 events after reopen");
+        assert_eq!(
+            events.len(),
+            3,
+            "iter() must return all 3 events after reopen"
+        );
         assert_eq!(events[0].envelope.seq, 1);
         assert_eq!(events[1].envelope.seq, 2);
         assert_eq!(events[2].envelope.seq, 3);
@@ -350,11 +366,19 @@ mod tests {
         // Verify: 7 events total, seq contiguous
         let log = EventLog::open(log_path).unwrap();
         let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
-        assert_eq!(events.len(), 7, "iter() must return all 7 events after reopen+append");
+        assert_eq!(
+            events.len(),
+            7,
+            "iter() must return all 7 events after reopen+append"
+        );
 
         // seq values must be 1..=7 in order (contiguous across boundary)
         let seqs: Vec<u64> = events.iter().map(|e| e.envelope.seq).collect();
-        assert_eq!(seqs, vec![1, 2, 3, 4, 5, 6, 7], "seq values must be contiguous 1..=7");
+        assert_eq!(
+            seqs,
+            vec![1, 2, 3, 4, 5, 6, 7],
+            "seq values must be contiguous 1..=7"
+        );
     }
 
     /// R3 + scenario 1: Open on a non-existent path creates an empty file.
@@ -386,10 +410,10 @@ mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let log_path = tmp_dir.path().join("append_mode_test.jsonl");
 
-        // Pre-write 50 bytes of content
+        // Pre-write 16 bytes of content: `{"x":1}\n{"y":2}\n`
         fs::write(&log_path, b"{\"x\":1}\n{\"y\":2}\n").unwrap();
         let original_len = fs::metadata(&log_path).unwrap().len();
-        assert_eq!(original_len, 21);
+        assert_eq!(original_len, 16, "precondition: file must be 16 bytes");
 
         // Open with EventLog::open (currently File::create — truncates)
         let _log = EventLog::open(log_path.clone()).unwrap();
@@ -418,6 +442,9 @@ mod tests {
         // Reopen and verify seq survived
         let log = EventLog::open(log_path).unwrap();
         let loaded_seq = log.seq().unwrap();
-        assert_eq!(loaded_seq, 123, "seq marker must survive EventLog::open reopen");
+        assert_eq!(
+            loaded_seq, 123,
+            "seq marker must survive EventLog::open reopen"
+        );
     }
 }
