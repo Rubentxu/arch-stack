@@ -1,3 +1,29 @@
+## [1.80.0] — 2026-08-20
+
+### Added
+- **ADR-019 perf CI gate for archview** (PRs #274–280, M23): post-merge
+  job `perf-cull` en `.github/workflows/ci.yml`. Mide TTFP y FPS sobre
+  `c4-stress-1k.json` (1221 nodos / 3920 edges) y falla cuando TTFP
+  aumenta >10% o FPS disminuye >10% vs `main` previo.
+  - `scripts/bench-compare-archview.sh`: nuevo script — mirrors
+    `bench-compare.sh` precedent con worktree pattern, zero-SHA guard,
+    `--fake-ttfp-regression N` / `--fake-fps-regression N` test mode,
+    y structured JSON output.
+  - `archview/bench/perf-cull.mjs`: refactorizado con JSON output
+    (`--output <path>`), `--server-cmd`, `--warmup N`, y fixes de bugs
+    latentes (L47 hardcoded path → `path.resolve(__dirname)`, L172
+    undefined `timestamps` → `window.__perfTimestamps[]`).
+  - ADR-019 §enforcement actualizado: mechanism #1 (CI gate) implementado
+    para archctl (`ci-main-gates`) y archview (`m23-perf-ci-gate`).
+  - `archview/AGENTS.md`: sección "Perf budget enforcement (M23)" añadida.
+
+### Notes
+- M23 cierra `#perf-ci-gate` (abierto por M21 apply-progress).
+- Debt: lighthouse score gate (ADR-019 L65) y 10k+100k datasets no
+  implementados — deferidos a ciclo futuro.
+- `enableCulling: true` en CallGraphView/ImpactView queda pendiente de
+  validación post-perf-gate.
+
 ## [1.79.0] — 2026-08-20
 
 ### Added

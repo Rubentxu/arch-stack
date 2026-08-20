@@ -60,9 +60,11 @@ Cualquier PR que introduzca uno de los siguientes patrones requiere justificaci�
 
 ### Performance budget enforcement
 
-1. **CI gate**: una suite de benchmarks corre en cada PR. Si una métrica se degrada >10% vs `main`, el PR no se mergea.
+1. **CI gate**: una suite de benchmarks corre en cada merge a `main`. Si una métrica se degrada >10% vs `main`, el job falla y se marca para rollback.
+   - **archctl**: implementado en `ci-main-gates` cycle. `scripts/bench-compare.sh` compara criterion ns/iteración con threshold 10%.
+   - **archview**: implementado en `m23-perf-ci-gate` cycle. `scripts/bench-compare-archview.sh` compara TTFP (ms) y FPS en `c4-stress-1k.json` con threshold 10%.
 2. **Bundle size limit**: el bundle JS+WASM gzipped no puede exceder 2MB. CI bloquea el merge.
-3. **Lighthouse score**: el workbench debe mantener Lighthouse Performance ≥90 en el bundle de 10k nodos.
+3. **Lighthouse score**: el workbench debe mantener Lighthouse Performance ≥90 en el bundle de 10k nodos. **No implementado** — tracking as debt.
 4. **Profiling on regression**: si una métrica falla, el CI adjunta un flamegraph al PR.
 
 ### Benchmarking dataset (canonical)

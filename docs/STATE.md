@@ -2,25 +2,26 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-20, post-release v1.79.0 (M22
-> sidebar tabs: TabBar/TabPanel ARIA primitive + Sidebar integration;
-> +14 tests archview; 239 archview tests total).
+> Última actualización: 2026-08-20, post-release v1.80.0 (M23
+> perf-ci-gate: ADR-019 enforcement para archview con post-merge job
+> `perf-cull`; refactorizado perf-cull.mjs con JSON output + bug fixes;
+> 239 archview tests; clippy clean).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `a86c3f5` (PR #270 squash — M22 sidebar tabs) |
-| Versión | `v1.79.0` (latest tag, M22 sidebar tabs) |
-| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `239 @ m22-sidebar-tabs`; re-cuenta en cada verify; clippy clean |
-| Working tree | clean (`main`); tags v1.65.0–v1.79.0 verificados en origin |
+| Tip | `70c8fbf` (PRs #274–280 squash — M23 perf-ci-gate) |
+| Versión | `v1.80.0` (latest tag, M23 perf-ci-gate) |
+| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `239 @ m23-perf-ci-gate`; re-cuenta en cada verify; clippy clean |
+| Working tree | clean (`main`); tags v1.65.0–v1.80.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | 52,576 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.67.0; incluye unit tests inline) |
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 150 (v0.1.0 → v1.79.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
+| Tags | 151 (v0.1.0 → v1.80.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -115,6 +116,7 @@
 | `v1.76.0` | m19-elk-worker-layout | ELK layered layout en Web Worker (PR #262, M19): sustituye el dagre built-in de G6 por `elkjs 0.12` corriendo en worker via `workerUrl` (Vite `?url`). 4 archivos nuevos (`layout-presets.ts` con TB/LR/RL_LAYERED, `layout-client.ts` con `LayoutService` interface + `ElkLayoutService` real, `preset-layout.ts` con custom G5 v6 layout no-op) + 1 refactor de `g6.ts` (setData internamente async, DI seam `layoutService`, generation counter anti-race) + 7 vistas migradas (cada `layout: { type: "dagre", rankdir }` → `layoutOptions: TB_LAYERED | LR_LAYERED`). 184/184 tests pass (+11: 5 layout-presets + 6 layout-client), lint 0 errors, 7/7 vistas verificadas con Playwright. |
 | `v1.78.0` | m21-g6-culling-lod | G6 viewport culling + zoom LOD (PR #266, M21): reduce overdraw en bundles 1000+ nodos. Dos capas: (1) Zoom LOD always-on — labels ocultos a zoom<0.5, edges a zoom<0.25 via `setElementVisibility` post-render; (2) Viewport culling opt-in — `CullingService` DI seam con `isInViewport` predicate, debounce 100ms en `wheel`/`drag-canvas:end`. `optimize-viewport-transform` behavior appended a G6 config (free FPS win para los 8 views). M18 orthogonality guard: C4View solo activa culling cuando `levelFilter === null` (sin pill activo). `c4-stress-1k.json` asset commiteado (1221 nodos / 3920 edges, hub con 500 incoming). 225/225 archview tests pass (+29: 26 CullingService unit + 3 C4View culling integration). Perf gate `bench/perf-cull.mjs` manual pre-PR; TTFP y FPS validados. Nota: `enableCulling` = false por defecto en CallGraph/Impact (gate-gated post-perf-gate). |
 | `v1.79.0` | m22-sidebar-tabs | Sidebar tabs (evidence vs relations) con ARIA tablist (PR #1, M22): nuevo primitive `<TabBar>/<TabPanel>` en `components/primitives/Tabs.tsx` — automatic activation, ArrowRight/Left/Home/End keyboard nav, Space/Enter, badge, disabled. Sidebar.tsx integra el primitive con `activeTab` signal reset per node; Evidence panel conserva `<SourceDrawer>`. +14 tests (6 unit + 4 integration + 2 M20 compat + 2 sidebar-actions compat). 239/239 archview tests pass. Cierra el sprint M17.1 (último item: "Sidebar con tabs"). |
+| `v1.80.0` | m23-perf-ci-gate | ADR-019 enforcement para archview (PRs #274–280, M23): post-merge CI job `perf-cull` en `ci.yml` — compara TTFP y FPS vs previous main con threshold 10%; new `scripts/bench-compare-archview.sh` (mirrors `bench-compare.sh` precedent); refactored `archview/bench/perf-cull.mjs` con JSON output + bug fixes (L47 hardcoded path → `__dirname`, L172 undefined timestamps → `window.__perfTimestamps[]`); +66 LOC contract tests en `scripts/test-ci-gates.sh` §11; ADR-019 §enforcement actualizado con implementation status per repo; archview/AGENTS.md "Perf budget enforcement (M23)" section added. Debt: lighthouse score gate (ADR-019 L65) y 10k+100k datasets out of scope. |
 
 ## Capacidades shipped (v0.x — historical)
 
