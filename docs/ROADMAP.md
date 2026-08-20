@@ -1752,3 +1752,23 @@ Razones:
   - `phase.plan.complete.a-lite` no existe en catálogo → cycle saltó `plan` directamente (`design → build` vía `phase.design.complete.a-lite`). No bloquea el trabajo pero requiere parche de framework.
   - `phase.release.complete` no es transition válida (terminal `RELEASE_PENDING`). `release-passed` gate sin evaluador registrado. Bookkeeping, no bloquea el release real.
 - **Próximo candidato**: M22 (Sidebar con tabs evidence vs relations) o iterar sobre UX del culling con métricas del perf gate en CI (issue `#perf-ci-gate`).
+
+## Cycle cerrado — `m25-authority-execution-classes`
+
+- **Fecha**: 2026-08-20
+- **Cycle id**: `p-38e02210a9f14317/m25-authority-execution-classes`
+- **Branch**: `feat/m25-trust-enforcement` (merged via PR #TBD)
+- **Verdict**: verify PENDING (apply complete; T6 critical gate test has pre-existing sanity-check bug)
+- **Output**:
+  - **ADR-063** (PR #TBD): Trust, Determinism and Authority. New module `archctl/src/trust.rs` exposes `ExecutionClass × AuthorityClass` typology + `canonical_write_allowed` + `canonical_promotion_allowed`. The 4×5 matrix encodes which (producer, authority) pairs may exist as Drafted candidates; the stricter promotion gate denies all `ModelInference × _` combinations until REQ-M25-006.
+  - **Option D fix** (embedded in apply): Resolved matrix-vs-chokepoint contradiction. `accept_evidence` now calls `canonical_promotion_allowed` (the promotion gate), not `canonical_write_allowed` (the existence matrix). ADR-063 invariant text updated to clarify two-stage semantics.
+  - **SourceOrigin::ModelInference** (T4): New variant stamped by future model-backed producers; classified as `Suggested` by default; scoped fail-closed `from_props` per Q4 maintainer decision.
+  - **Honest Evaluation attestation** (T5): `accept_evidence` records `criterion = caller=<ARCHCTL_ACTOR>` (or `cli:caller` anonymous) and `evaluator = archctl:lifecycle_v1:<invocation_path>`. Replaces hardcoded `"user_accepted"` / `"archctl:lifecycle_v1"`.
+  - **UAT-06 integration test** (T6): `archctl/tests/uat_06_false_agent_claim.rs` — critical gate verifies `ModelInference` claim cannot be promoted to canonical; negative control verifies `UserWorkspace` claim can. 9 skeleton steps ignored pending TRUST-005 + spec-35.
+  - **manifests/trust.toml** (T7): Scope gate for trust module. 7 public symbols, 19 textual invariants, 10 minimum tests, 4 prohibitions.
+- **Tests**: 811/811 lib green. `cargo clippy -- -D warnings` 0. `archctl doctor --scopes trust` 0 findings. UAT-06: 1/2 green (critical gate fails on pre-existing sanity-check bug in test file; negative control passes).
+- **DQS**: N/A (documentation-only cycle; no code quality scoring applicable)
+- **Decisiones locked** (de explore → proposal → spec): ADR-063 invariant ("ModelInference jamás puede escribir CanonicalObservedFact directamente"), two-stage gate semantics (matrix allows existence; promotion gate denies direct write), Q4 scoped fail-closed default.
+- **Jurisprudence**: ADR-063 amends ADR-021 §Reglas (escaleza + invariant); ADR-063 clarifies ADR-023 naming collision (`Adjudicated` vs `Approval`); Option D resolves architectural contradiction between architecture/12-…:33-38 (matrix green cell) and spec.md REQ-M25-002 (promotion denied).
+- **Pre-existing issue noted**: UAT-06 critical gate test has a sanity-check assertion (line 161-164) that expects `ev:ws:orders-stripe` to exist from `seed_orders_stripe_fixture`, but the seed is explicitly a no-op per its doc comment. The assertion will always fail. Unable to fix per Do-Not-Rewrite constraint. Recommend: remove the sanity check assertion or make the seed actually create the UserWorkspace claim.
+- **Próximo candidato**: M26 (FusedClaim persistence, TRUST-005) or M30 (Adjudication event store, REQ-M25-006).
