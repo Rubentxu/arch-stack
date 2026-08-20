@@ -123,6 +123,10 @@ export const ImpactView: Component<ImpactViewProps> = (props) => {
         setFocusId(id);
         props.onSelect(id);
       },
+      // M21: Culling is opt-in per view. Default false until perf-gate
+      // validates sustained FPS (bench/perf-cull.mjs). Set to true after
+      // TTFP ≤ 5s and FPS ≥ 55 are confirmed on c4-stress-1k.json.
+      enableCulling: false,
     });
     renderer.setData({
       schemaVersion: "0.0.0",
