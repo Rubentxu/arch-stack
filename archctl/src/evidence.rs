@@ -94,6 +94,9 @@ impl EvidenceKind {
 /// one of these three tags. There is no `Unknown` variant because
 /// missing provenance is itself an invariant violation; if you
 /// can't tell where a row came from, you don't emit the row.
+///
+/// ADR-063 adds `ModelInference` so that LLM output is distinguishable
+/// from human free-text input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceOrigin {
@@ -111,6 +114,11 @@ pub enum SourceOrigin {
     /// still traceable because we kept the original source byte
     /// range alongside the tool's view.
     ToolOutput,
+    /// Output of a model-backed agent (LLM analyst, future cognitive
+    /// layer). Treated as `Drafted` by default and can never transit
+    /// to `Accepted` via `accept_evidence` without an explicit
+    /// Adjudication event. ADR-063, ADR-P02.
+    ModelInference,
 }
 
 impl SourceOrigin {
@@ -119,6 +127,7 @@ impl SourceOrigin {
             SourceOrigin::UserWorkspace => "user_workspace",
             SourceOrigin::UserInput => "user_input",
             SourceOrigin::ToolOutput => "tool_output",
+            SourceOrigin::ModelInference => "model_inference",
         }
     }
 }
@@ -165,6 +174,8 @@ impl EvidenceStatus {
         match origin {
             SourceOrigin::UserWorkspace => Self::Accepted,
             SourceOrigin::UserInput | SourceOrigin::ToolOutput => Self::Drafted,
+            // ADR-063: model-backed claims never default to canonical.
+            SourceOrigin::ModelInference => Self::Drafted,
         }
     }
 
@@ -559,6 +570,7 @@ mod tests {
             SourceOrigin::UserWorkspace => EvidenceKind::Structural,
             SourceOrigin::UserInput => EvidenceKind::Lexical,
             SourceOrigin::ToolOutput => EvidenceKind::Annotation,
+            SourceOrigin::ModelInference => EvidenceKind::Annotation,
         };
     }
 

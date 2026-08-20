@@ -42,6 +42,7 @@ pub mod telemetry;
 /// tests in `tests/` are separate crates and need to import via
 /// `archctl::test_helpers`.
 pub mod test_helpers;
+pub mod trust;
 pub mod view;
 pub mod xdg;
 
