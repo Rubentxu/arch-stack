@@ -1504,8 +1504,11 @@ impl EvidenceOps for LbugStore {
             .unwrap_or(SourceOrigin::UserWorkspace);
         let guard_tool = props_json.get("tool_name").and_then(|v| v.as_str());
         let classification = crate::trust::classify(guard_origin, guard_tool);
-        crate::trust::canonical_write_allowed(classification.execution, classification.authority)
-            .map_err(|e| anyhow::anyhow!("canonical write denied: {}", e))?;
+        crate::trust::canonical_promotion_allowed(
+            classification.execution,
+            classification.authority,
+        )
+        .map_err(|e| anyhow::anyhow!("canonical write denied: {}", e))?;
 
         // Step 4: flip status in props
         let mut new_props = props_json;

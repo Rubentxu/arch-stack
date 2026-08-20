@@ -204,6 +204,39 @@ pub fn canonical_write_allowed(
     }
 }
 
+/// The **promotion gate**. Returns `Ok(())` iff `(exec, authority)` may
+/// be promoted to `EvidenceStatus::Accepted` (= `CanonicalObservedFact`).
+///
+/// Stricter than [`canonical_write_allowed`]: while the matrix allows
+/// `ModelInference × Suggested` for candidate visibility, this predicate
+/// denies all `ModelInference × _` combinations because `ModelInference`
+/// must never directly mint canonical. The only path for `ModelInference`
+/// to reach canonical is `ModelInference × Adjudicated` with an explicit
+/// Adjudication event (REQ-M25-006, deferred).
+///
+/// Single 2-input gate every transition to `EvidenceStatus::Accepted`
+/// must pass at the chokepoint.
+///
+/// |                  | Observed | Derived | Suggested | Normative | Adjudicated |
+/// |------------------|----------|---------|-----------|-----------|-------------|
+/// | PureDeterministic| ✅       | ✅      | ❌        | ❌        | ❌          |
+/// | DeterministicH…  | ❌       | ✅      | ✅        | ❌        | ❌          |
+/// | ModelInference   | ❌       | ❌      | ❌        | ❌        | ❌*         |
+/// | HumanDecision    | ✅       | ❌      | ✅        | ✅        | ✅          |
+///
+/// `*` `ModelInference × Adjudicated` is denied until REQ-M25-006 ships.
+pub fn canonical_promotion_allowed(
+    exec: ExecutionClass,
+    authority: AuthorityClass,
+) -> Result<(), TrustViolation> {
+    if matches!(exec, ExecutionClass::ModelInference) {
+        // The matrix entry for ModelInference × Suggested is for candidate
+        // visibility only; promotion to Accepted is never direct.
+        return Err(TrustViolation::ModelInferenceCannotBe(authority));
+    }
+    canonical_write_allowed(exec, authority)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,5 +479,32 @@ mod tests {
                 "PureDeterministic × {a:?} must be denied"
             );
         }
+    }
+
+    /// The matrix allows `ModelInference × Suggested` (candidate visibility).
+    /// But promotion to `Accepted` is never direct — the promotion gate denies
+    /// all `ModelInference × _` combinations.
+    #[test]
+    fn model_inference_x_suggested_is_promotion_denied_even_though_matrix_allows() {
+        // The matrix allows this combination (candidate visibility).
+        assert_eq!(
+            canonical_write_allowed(ExecutionClass::ModelInference, AuthorityClass::Suggested),
+            Ok(())
+        );
+        // But promotion is denied (direct canonical write forbidden).
+        assert_eq!(
+            canonical_promotion_allowed(ExecutionClass::ModelInference, AuthorityClass::Suggested),
+            Err(TrustViolation::ModelInferenceCannotBe(
+                AuthorityClass::Suggested
+            ))
+        );
+    }
+
+    #[test]
+    fn human_decision_x_normative_promotion_allowed() {
+        assert_eq!(
+            canonical_promotion_allowed(ExecutionClass::HumanDecision, AuthorityClass::Normative),
+            Ok(())
+        );
     }
 }
