@@ -447,4 +447,288 @@ mod tests {
             "seq marker must survive EventLog::open reopen"
         );
     }
+
+    // ---------------------------------------------------------------------------
+    // TRUST-002 regression tests — event IDs + causation + checkpoint
+    // ---------------------------------------------------------------------------
+
+    /// R1 + spec scenario 1: EventEnvelope carries eventId and timestamp fields.
+    /// Fails against pre-fix (EventEnvelope lacks event_id and timestamp fields).
+    #[test]
+    fn event_envelope_includes_event_id_and_timestamp() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("event_id_test.jsonl");
+        let mut log = EventLog::open(log_path.clone()).unwrap();
+
+        // append takes correlation_id, causation_id, graph_revision — auto-assigns
+        // event_id (UUID v7) and timestamp (Utc::now())
+        let id = log
+            .append(
+                "test-producer",
+                "test-source",
+                "TestEvent",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // event_id must be a valid (non-nil) UUID
+        assert!(
+            !id.is_nil(),
+            "append must assign a non-nil event_id"
+        );
+
+        // The persisted event must carry eventId and timestamp fields
+        let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
+        assert_eq!(events.len(), 1);
+        let json_str = serde_json::to_string(&events[0]).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        // JSON must contain the new camelCase keys
+        assert!(
+            json_val.get("eventId").is_some(),
+            "JSON must contain eventId field"
+        );
+        assert!(
+            json_val.get("timestamp").is_some(),
+            "JSON must contain timestamp field"
+        );
+        assert!(
+            json_val.get("schemaVersion").is_some(),
+            "JSON must contain schemaVersion field"
+        );
+    }
+
+    /// R2 + spec scenario 1: EventLog::append assigns unique event_id to each call.
+    /// Fails against pre-fix (append does not auto-assign event_id).
+    #[test]
+    fn event_log_append_assigns_unique_ids() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("unique_ids_test.jsonl");
+        let mut log = EventLog::open(log_path.clone()).unwrap();
+
+        let id1 = log
+            .append(
+                "producer",
+                "source",
+                "Event1",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let id2 = log
+            .append(
+                "producer",
+                "source",
+                "Event2",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let id3 = log
+            .append(
+                "producer",
+                "source",
+                "Event3",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // All IDs must be unique
+        assert_ne!(id1, id2, "each append must assign a unique event_id");
+        assert_ne!(id2, id3, "each append must assign a unique event_id");
+        assert_ne!(id1, id3, "each append must assign a unique event_id");
+    }
+
+    /// R2 + spec scenario 2: child event carries causation_id referencing parent event_id.
+    /// Fails against pre-fix (append signature does not accept correlation_id/causation_id).
+    #[test]
+    fn event_log_causation_chain() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("causation_chain_test.jsonl");
+        let mut log = EventLog::open(log_path.clone()).unwrap();
+
+        // Parent event
+        let parent_id = log
+            .append(
+                "producer",
+                "source",
+                "ParentEvent",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // Child event caused by parent
+        let child_id = log
+            .append(
+                "producer",
+                "source",
+                "ChildEvent",
+                serde_json::json!({}),
+                None,
+                Some(parent_id),
+                None,
+            )
+            .unwrap();
+
+        // Child ID must differ from parent
+        assert_ne!(parent_id, child_id, "child must have different event_id from parent");
+
+        // Read back and verify causation
+        let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
+        assert_eq!(events.len(), 2);
+
+        // Second event (child) must carry causationId = parent_id
+        let child_json =
+            serde_json::to_string(&events[1]).unwrap();
+        let child_val: serde_json::Value = serde_json::from_str(&child_json).unwrap();
+        assert!(
+            child_val.get("causationId").is_some(),
+            "child event must carry causationId field"
+        );
+        let causation_id_str = child_val["causationId"].as_str().unwrap();
+        assert_eq!(
+            causation_id_str, parent_id.to_string(),
+            "causationId must reference parent event_id"
+        );
+    }
+
+    /// R2 + spec scenario 3: two events with same correlation_id share correlation group.
+    /// Fails against pre-fix (append signature does not accept correlation_id).
+    #[test]
+    fn event_log_correlation_group() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("correlation_group_test.jsonl");
+        let mut log = EventLog::open(log_path.clone()).unwrap();
+
+        let correlation = uuid::Uuid::new_v4();
+
+        // Event A: part of correlation group
+        log.append(
+            "producer",
+            "source",
+            "EventA",
+            serde_json::json!({}),
+            Some(correlation),
+            None,
+            None,
+        )
+        .unwrap();
+
+        // Event B: same correlation, no causation
+        log.append(
+            "producer",
+            "source",
+            "EventB",
+            serde_json::json!({}),
+            Some(correlation),
+            None,
+            None,
+        )
+        .unwrap();
+
+        // Event C: different correlation
+        log.append(
+            "producer",
+            "source",
+            "EventC",
+            serde_json::json!({}),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
+        assert_eq!(events.len(), 3);
+
+        // All 3 events must carry correlationId
+        for (i, event) in events.iter().enumerate() {
+            let json_str = serde_json::to_string(event).unwrap();
+            let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+            assert!(
+                val.get("correlationId").is_some(),
+                "event {} must carry correlationId field",
+                i
+            );
+        }
+
+        // Events 0 and 1 must have the same correlationId
+        let json0 = serde_json::to_string(&events[0]).unwrap();
+        let json1 = serde_json::to_string(&events[1]).unwrap();
+        let val0: serde_json::Value = serde_json::from_str(&json0).unwrap();
+        let val1: serde_json::Value = serde_json::from_str(&json1).unwrap();
+        assert_eq!(
+            val0["correlationId"], val1["correlationId"],
+            "events A and B must share correlationId"
+        );
+
+        // Event 2 must have null correlationId (different group)
+        let json2 = serde_json::to_string(&events[2]).unwrap();
+        let val2: serde_json::Value = serde_json::from_str(&json2).unwrap();
+        assert!(
+            val0["correlationId"] != val2["correlationId"] || val2["correlationId"].is_null(),
+            "event C must have different (or null) correlationId"
+        );
+    }
+
+    /// R4 + spec scenario 4: legacy pre-1.1 JSONL (without eventId) deserializes
+    /// with Uuid::nil() and a warning is emitted.
+    /// Fails against pre-fix (current deserializer does not handle missing eventId).
+    #[test]
+    fn event_log_handles_legacy_jsonl() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("legacy_test.jsonl");
+
+        // Write a pre-1.1 JSONL line (no eventId, no correlationId, ts as integer)
+        let legacy_line = r#"{"ts":1234567890,"source":"legacy","eventType":"LegacyEvent","payload":{},"seq":1,"schemaVersion":"1.0","producer":"test"}"#;
+        std::fs::write(&log_path, legacy_line).unwrap();
+
+        // Open and iterate — must not fail
+        let log = EventLog::open(log_path.clone()).unwrap();
+        let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
+        assert_eq!(events.len(), 1);
+
+        // The event must deserialize with event_id = Uuid::nil()
+        // (we can't easily check the nil UUID from the EventEnvelope struct,
+        // but we verify the event is readable and schemaVersion is "1.0")
+        let json_str = serde_json::to_string(&events[0]).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(val["schemaVersion"], "1.0");
+    }
+
+    /// R3 + spec scenario 5: per-consumer checkpoint persists across reopen.
+    /// Fails against pre-fix (consumer_checkpoint API does not exist).
+    #[test]
+    fn event_log_checkpoint_roundtrip() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("checkpoint_test.jsonl");
+        let log = EventLog::open(log_path.clone()).unwrap();
+
+        // Set checkpoint for consumer "alpha" to seq=42
+        log.set_consumer_checkpoint("alpha", 42).unwrap();
+
+        // Drop and reopen
+        drop(log);
+        let log = EventLog::open(log_path).unwrap();
+
+        // Read checkpoint back — must be 42
+        let seq = log.consumer_checkpoint("alpha").unwrap();
+        assert_eq!(
+            seq, 42,
+            "consumer_checkpoint must return 42 after reopen"
+        );
+    }
 }
