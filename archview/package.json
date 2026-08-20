@@ -1,6 +1,6 @@
 {
   "name": "archview",
-  "version": "1.77.0",
+  "version": "1.79.0",
   "private": true,
   "type": "module",
   "description": "Code Knowledge Graph Workbench — consumes archctl bundles",
