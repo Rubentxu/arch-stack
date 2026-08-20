@@ -81,7 +81,7 @@ canonical architecture fact
 
 | H | Título | Exit gate (UAT) | ADRs blueprint | ADRs repo ya aceptados | Estado real |
 |---|---|---|---|---|---|
-| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | **TRUST-001 shipped v1.81.0** (reopen safe ✅); TRUST-002..006 pending |
+| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | **TRUST-001 shipped v1.81.0** (reopen safe ✅); **TRUST-002 shipped v1.82.0** (causation infra ✅); TRUST-003..006 pending |
 | **T1** | Incremental Knowledge Engine | UAT-04 + equality gate | P05, P06 | — | backlog only |
 | **T2** | Structured Docs + Tantivy | UAT-08 recall | P04 | — | backlog only |
 | **T3** | Live Revision Loop | UAT-04/UAT-10 + budget | P11, P12 | [ADR-010](../adr/ADR-010-concurrencia-ladybugdb.md), [ADR-033](../adr/ADR-033-archctl-view-embedded-workbench.md) | backlog only |

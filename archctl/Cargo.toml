@@ -1,6 +1,6 @@
 [package]
 name = "archctl"
-version = "1.81.0"
+version = "1.82.0"
 edition = "2024"
 # MSRV = consumer compile floor, validated empirically at apply: the current
 # dependency tree requires rustc 1.91 (cargo-platform@0.3.3) and 1.86-1.88
@@ -36,7 +36,7 @@ gix = "0.86"
 hex = "0.4"
 sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["std", "serde", "clock"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 ast-grep-core = { version = "0.45", features = ["tree-sitter"] }
 ast-grep-language = { version = "0.45.0", features = ["builtin-parser"] }
 ignore = "0.4"
@@ -58,6 +58,8 @@ merman-render = "=0.8.0-alpha.3"
 rust-embed = { version = "8", features = ["include-flate"] }
 tiny_http = "0.12"
 percent-encoding = "2"
+# TRUST-002: consumer_id validation in per-consumer checkpoint API.
+regex = "1"
 # M71: atomic writes for workspace state persistence (ADR-041)
 tempfile = "3"
 # M73: versioned distribution — semver parsing for install_dir paths.

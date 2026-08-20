@@ -64,7 +64,7 @@ impl EventDispatcher {
     {
         // 1. Append to log (unprocessed)
         let serialized = SerializedEvent::from_envelope(envelope.clone());
-        if let Err(e) = self.log.append(&serialized) {
+        if let Err(e) = self.log.append_serialized(&serialized) {
             eprintln!("eventlog append error: {}", e);
         }
 
@@ -99,9 +99,12 @@ impl EventDispatcher {
             }
         }
 
-        // 4. Update processed seq (best-effort)
-        if let Err(e) = self.log.update_seq(envelope.seq) {
-            eprintln!("eventlog update_seq error: {}", e);
+        // 4. Update per-consumer checkpoint (best-effort)
+        if let Err(e) = self
+            .log
+            .set_consumer_checkpoint("event_dispatcher", envelope.seq)
+        {
+            eprintln!("eventlog set_consumer_checkpoint error: {}", e);
         }
 
         outputs
@@ -198,11 +201,18 @@ mod tests {
 
     fn make_envelope(event_type: &str, seq: u64) -> EventEnvelope {
         EventEnvelope {
-            ts: 1_000_000_000 * seq,
+            event_id: uuid::Uuid::nil(),
+            schema_version: "1.0".to_string(),
+            timestamp: chrono::DateTime::from_timestamp(1_000_000_000 * seq as i64, 0)
+                .unwrap_or_else(chrono::Utc::now),
             source: "test".into(),
+            producer: "test".into(),
             event_type: event_type.into(),
             payload: serde_json::json!({}),
             seq,
+            correlation_id: None,
+            causation_id: None,
+            graph_revision: None,
         }
     }
 

@@ -2,9 +2,9 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-20, post-release v1.81.0 (TRUST-001
-> shipped: EventLog::open ya no trunca; 4 regression tests; v1.80.0 was
-> M23 perf-ci-gate).
+> Última actualización: 2026-08-20, post-release v1.82.0 (TRUST-002
+> shipped: event IDs + causation/correlation + per-consumer checkpoint infra;
+> v1.81.0 was TRUST-001 EventLog reopen fix).
 
 ## Estado del trunk
 
@@ -20,7 +20,7 @@
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 151 (v0.1.0 → v1.80.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Tags | 152 (v0.1.0 → v1.82.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -215,11 +215,12 @@
 - M61 (v1.29.0): cognitive policy tests — DONE
 - M62 (no tag): STATE.md refresh (was this cycle) — DONE
 - M69 (v1.30.0): arch-stack product roadmap convergence — DONE
-- **t0-trust-001-eventlog-reopen** (TRUST-001, A-lite, scope ~30 LOC, 3 commits):
-  red→green fix on `EventLog::open`. Closes latent bug (journal only used in tests today;
-  `SyncDispatcher` wires it next). Exit gate of T0 partially met (reopen safe).
-  Next: TRUST-002 (event IDs + causation/correlation) or TRUST-003
-  (AuthorityClass/ExecutionClass mapping).
+- **t0-trust-001-eventlog-reopen** (TRUST-001, v1.81.0): shipped. Latent bug closed
+  preventively (EventLog only used in tests today; `SyncDispatcher` wires it in T6).
+- **t0-trust-002-event-ids-causation** (TRUST-002, v1.82.0): shipped. EventEnvelope
+  extended with eventId (UUID v7) + correlationId/causationId + per-consumer checkpoint
+  infra. Foundation for causal journal (ADR-P11). `SyncDispatcher` wiring deferred to T6.
+  Next: TRUST-003 (AuthorityClass/ExecutionClass mapping) or TRUST-006 (T6 SyncDispatcher).
 
 Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
 
@@ -273,8 +274,9 @@ cargo run --quiet --bin archctl -- capabilities --check
 ## Próxima acción del usuario
 
 **T0 Trust — progress:**
-- ✅ **TRUST-001 EventLog reopen** (cycle `t0-trust-001-eventlog-reopen`, v1.81.0, PR #284): shipped. Latent bug closed preventively (EventLog only used in tests today; `SyncDispatcher` wires it in T6).
-- 🎯 **Próximo PR sugerido**: TRUST-002 (`t0-trust-002-event-ids-causation`) — event IDs + correlation/causation IDs + per-consumer checkpoint. Foundation for causal journal (ADR-P11). Estimated ~80–120 LOC. Depends on TRUST-001 ✅.
+- ✅ **TRUST-001 EventLog reopen** (cycle `t0-trust-001-eventlog-reopen`, v1.81.0): shipped. Latent bug closed preventively.
+- ✅ **TRUST-002 Event IDs + causation/correlation** (cycle `t0-trust-002-event-ids-causation`, v1.82.0): shipped. Causation infra ✅; `SyncDispatcher` wires in T6.
+- 🎯 **Próximo PR sugerido**: TRUST-006 (T6 SyncDispatcher → EventLog wiring) or TRUST-003 (AuthorityClass/ExecutionClass mapping).
 
 Wave 3 parcial CERRADO: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion
 engine), 28+29 (strict ArchBundle + archview read-only) y **31–33

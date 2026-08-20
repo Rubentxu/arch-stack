@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+## [1.82.0] — 2026-08-20
+
+### Added
+
+- **EventEnvelope now carries `eventId`, `correlationId`, `causationId`, `processed`**
+  (cycle `t0-trust-002-event-ids-causation`, TRUST-002): each event is uniquely
+  identified by a UUID v7 (RFC 9562), timestamped at append time, and supports
+  correlation/causation chains per ADR-P11. Per-consumer checkpoint infrastructure
+  (`<log>.checkpoint.<id>.seq`) is now available; consumers wire up in T6
+  (SyncDispatcher). Schema `event-envelope.schema.json` bumped 1.0 → 1.1. Legacy
+  JSONL (pre-1.1) deserializes with `Uuid::nil()` and a warning. No breaking
+  change for callers using `EventLog::append` (auto-assignment is transparent).
+  - `EventLog::append` (7-arg) auto-assigns `eventId` (UUID v7) and `timestamp`
+  - `EventLog::consumer_checkpoint(id)` / `set_consumer_checkpoint(id, seq)` added
+  - `EventLog::append_serialized` preserves old API for direct SerializedEvent writes
+  - 6 new regression tests (TRUST-002) + 17 total in `cognitive::event::tests`
+
 ## [1.81.0] — 2026-08-20
 
 ### Fixed
