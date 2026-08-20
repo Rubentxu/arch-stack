@@ -1,3 +1,33 @@
+## [1.79.0] — 2026-08-20
+
+### Added
+- **`<TabBar>` / `<TabPanel>` ARIA primitives** (PR #270, M22): nuevo
+  primitive en `archview/src/components/primitives/Tabs.tsx`. ARIA APG
+  tablist pattern con `role="tablist"`, `aria-selected`, `aria-controls`,
+  keyboard navigation (ArrowRight/ArrowLeft/Home/End), Space/Enter para
+  activar, automatic activation (foco = activa), badge counts, disabled
+  state. 6 unit tests + re-export en `primitives/index.ts`.
+- **Sidebar tabs integration** (`Sidebar.tsx`): el bloque plano de
+  evidence + relations se eleva a un `<TabBar>` con dos paneles
+  (`evidence` y `relations`). `createSignal<"evidence"|"relations">`
+  con default `evidence` y reset per node (mismo patrón que
+  `copied()`/`explainState()`). `<SourceDrawer>` queda dentro del panel
+  `evidence` (coherencia con `meta.evidence_refs`); `node-actions`
+  (copy/zoom/explain) queda fuera, siempre encima del TabBar. Badge
+  con count omitido si 0. 4 integration tests en `Sidebar.tabs.test.tsx`.
+
+### Changed
+- **Compat con M20 test** (`Sidebar.virtualizer.test.tsx`): ajustado
+  para pre-seleccionar tab `relations` (decisión F). NO se añadió prop
+  pública `defaultTab` al Sidebar (backward-compat preserved).
+
+### Notes
+- M22 cierra el sprint M17.1 (último item: "Sidebar con tabs").
+- Ortogonal con M18 (semantic-zoom pill), M19 (ELK), M20 (VirtualList),
+  M21 (culling).
+- Keyboard shortcut global (`Alt+1`/`Alt+2`) y migración del
+  view-selector de call-graph → out-of-scope, debt notes.
+
 ## [1.78.0] — 2026-08-20
 
 ### Added
