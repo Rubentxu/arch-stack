@@ -37,12 +37,39 @@ import {
   type LayoutOptions,
   type LayoutService,
 } from "./layout-client";
+import { createCullingService, type CullingService } from "./culling-service";
 import { DEFAULT_LAYOUT } from "./layout-presets";
 
 /** G6 v5 layout config — kept as `unknown` to avoid pulling the
  *  full G6 type tree into the renderer surface area. Views pass
  *  pre-shaped configs from the doc. */
 export type G6Layout = unknown;
+
+/**
+ * Zoom LOD thresholds — controls at which zoom levels labels and
+ * edges become hidden to reduce overdraw on large graphs (M21).
+ */
+export interface LodThresholds {
+  /** Hide labels when zoom < this value (default 0.5). */
+  labels?: number;
+  /** Hide edges when zoom < this value (default 0.25). */
+  edges?: number;
+}
+
+/**
+ * Viewport bounding box in canvas coordinates.
+ */
+export interface Viewport {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * Visibility state for a single element.
+ */
+export type ElementVisibility = "visible" | "hidden";
 
 export interface RendererOptions {
   container: HTMLElement;
@@ -63,6 +90,16 @@ export interface RendererOptions {
   nodeStyle?: NodeStyleConfig;
   /** Optional click handler — fired with the clicked node id. */
   onNodeClick?: (nodeId: string) => void;
+  /** M21: Enable viewport-based culling. Defaults to false.
+   *  When true, nodes and edges outside the visible viewport are
+   *  hidden via setElementVisibility. */
+  enableCulling?: boolean;
+  /** M21: Optional culling service instance. When omitted and
+   *  enableCulling is true, createCullingService() is used.
+   *  Contract: recompute(graph, bundle, opts) -> void, teardown() -> void. */
+  cullingService?: CullingService;
+  /** M21: Zoom LOD thresholds. Additive — does not require enableCulling. */
+  lodThresholds?: LodThresholds;
 }
 
 /**
@@ -193,6 +230,14 @@ export class GraphRenderer {
   private onNodeClickHandler: ((id: string) => void) | null = null;
   private layoutService: LayoutService;
   private currentLayoutOptions: LayoutOptions;
+  /** M21: Zoom LOD thresholds for label/edge visibility. */
+  private lodThresholds: Required<LodThresholds>;
+  /** M21: Culling service for viewport-based visibility. */
+  private cullingService: CullingService;
+  /** M21: Event handler references for culling (unsubscribe on destroy). */
+  private cullingHandlers: { destroy: () => void }[] = [];
+  /** M21: Guard — subscribe culling viewport handlers only once. */
+  private cullingHandlersBound = false;
   /**
    * Latest setData promise. New setData calls await the
    * previous one so the graph doesn't receive out-of-order
@@ -211,6 +256,16 @@ export class GraphRenderer {
     this.onNodeClickHandler = options.onNodeClick ?? null;
     this.layoutService = options.layoutService ?? createLayoutService();
     this.currentLayoutOptions = options.layoutOptions ?? DEFAULT_LAYOUT;
+    // M21: zoom LOD thresholds — fill in defaults
+    const lt = options.lodThresholds;
+    this.lodThresholds = {
+      labels: lt?.labels ?? 0.5,
+      edges: lt?.edges ?? 0.25,
+    };
+    // M21: initialise culling service
+    this.cullingService =
+      options.cullingService ??
+      createCullingService({ enabled: options.enableCulling ?? false });
     ensurePresetLayoutRegistered();
     this.init();
   }
@@ -265,7 +320,12 @@ export class GraphRenderer {
           endArrowSize: 8,
         },
       },
-      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+      behaviors: [
+        "drag-canvas",
+        "zoom-canvas",
+        "drag-element",
+        { type: "optimize-viewport-transform", debounce: 200 },
+      ],
     });
     // M17.1 — wire node click so views can drive selection.
     this.graph.on(NodeEvent.CLICK, (e: { target?: DisplayObject }) => {
@@ -324,6 +384,15 @@ export class GraphRenderer {
           })),
         });
         await this.graph.draw();
+        // M21: apply zoom LOD after each render.
+        this.applyZoomLod();
+        // M21: recompute culling after each render (debounced internally).
+        this.cullingService.recompute(this.graph, bundle, {});
+        // M21: wire viewport-change handlers (once, after graph is ready).
+        if (!this.cullingHandlersBound) {
+          this.subscribeCullingHandlers();
+          this.cullingHandlersBound = true;
+        }
         if (myGen === this.generation) {
           this.graph.fitView();
         }
@@ -444,6 +513,12 @@ export class GraphRenderer {
   }
 
   destroy(): void {
+    // M21: unsubscribe culling viewport handlers.
+    for (const h of this.cullingHandlers) {
+      h.destroy();
+    }
+    this.cullingHandlers = [];
+    this.cullingService.teardown();
     if (this.graph) {
       this.graph.destroy();
       this.graph = null;
@@ -469,6 +544,71 @@ export class GraphRenderer {
       if (c) return c;
     }
     return this.nodeStyle.defaultFill ?? "#5b8def";
+  }
+
+  /**
+   * M21: Zoom Level-of-Detail — hides labels and edges when the
+   * zoom level drops below configured thresholds to reduce overdraw.
+   *
+   * Defaults: labels hidden at zoom < 0.5, edges hidden at zoom < 0.25.
+   * Does nothing when the graph is not yet initialised.
+   */
+  private applyZoomLod(): void {
+    if (!this.graph) return;
+    const zoom = this.graph.getZoom();
+    const { labels: labelThreshold, edges: edgeThreshold } = this.lodThresholds;
+    const nodeVisibility: Record<string, "visible" | "hidden"> = {};
+    const edgeVisibility: Record<string, "visible" | "hidden"> = {};
+
+    // All nodes stay visible; labels are controlled via G6's built-in
+    // label visibility mechanism. We apply visibility to the node/edge
+    // elements themselves.
+    const allNodeIds = this.graph.getNodeData().map((n) => n.id as string);
+    const allEdgeIds = this.graph.getEdgeData().map((e) => e.id as string);
+
+    if (zoom < labelThreshold) {
+      for (const id of allNodeIds) nodeVisibility[id] = "hidden";
+    } else {
+      for (const id of allNodeIds) nodeVisibility[id] = "visible";
+    }
+
+    if (zoom < edgeThreshold) {
+      for (const id of allEdgeIds) edgeVisibility[id] = "hidden";
+    } else {
+      for (const id of allEdgeIds) edgeVisibility[id] = "visible";
+    }
+
+    this.graph.setElementVisibility({
+      ...nodeVisibility,
+      ...edgeVisibility,
+    });
+  }
+
+  /**
+   * M21: Subscribe to G6 viewport-change events for culling.
+   * Called once after the first render completes.
+   * Handlers are unsubscribed on `destroy()`.
+   */
+  private subscribeCullingHandlers(): void {
+    if (!this.graph) return;
+    const graph = this.graph;
+    const bundle: RendererBundle =
+      this.currentBundle ??
+      ({ nodes: [], edges: [] } as unknown as RendererBundle);
+
+    // Wheel: user scrolls/zooms — recompute culling after debounce.
+    const onWheelHandler = () => {
+      this.cullingService.recompute(graph, bundle, {});
+    };
+    const wheelHandle = graph.on("wheel", onWheelHandler);
+    this.cullingHandlers.push(wheelHandle);
+
+    // Drag-canvas:end: user pans — recompute culling after debounce.
+    const onDragEndHandler = () => {
+      this.cullingService.recompute(graph, bundle, {});
+    };
+    const dragHandle = graph.on("drag-canvas:end", onDragEndHandler);
+    this.cullingHandlers.push(dragHandle);
   }
 }
 

@@ -177,6 +177,10 @@ export const C4View: Component<C4ViewProps> = (props) => {
       onNodeClick: (id) => {
         handleNodeClick(id);
       },
+      // M21: Enable culling only when no level filter is active (M18 guard).
+      // When levelFilter !== null, semantic zoom is in effect and culling
+      // must not interfere with the pill-based view contract.
+      enableCulling: levelFilter() === null,
     });
 
     // Initial data push.
