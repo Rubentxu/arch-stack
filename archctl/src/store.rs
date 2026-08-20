@@ -106,12 +106,12 @@ fn actor_identity() -> String {
     std::env::var("ARCHCTL_ACTOR")
         .map(|v| {
             if v.is_empty() {
-                "cli=caller".to_string()
+                "cli:caller".to_string()
             } else {
                 v
             }
         })
-        .unwrap_or_else(|_| "cli=caller".to_string())
+        .unwrap_or_else(|_| "cli:caller".to_string())
 }
 
 /// Evidence persistence operations — the domain side of the port.

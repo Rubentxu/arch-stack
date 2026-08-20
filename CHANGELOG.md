@@ -9,7 +9,7 @@
 ### Changed
 - `SourceOrigin` gains the `ModelInference` variant. Stamped by future model-backed producers; classified as `Suggested` by default; cannot transit to `Accepted` via `accept_evidence` (ADR-063 invariant).
 - `EvidenceStatus::from_props` is scoped-fail-closed: absent `status` returns `Drafted` only when `source_origin` is absent or `ModelInference`. Legacy non-threat-surface rows still default to `Accepted` (back-compat; see ADR-063 Open Question Q4).
-- `LbugStore::accept_evidence` records an honest `Evaluation` node: `criterion` = `caller=<ARCHCTL_ACTOR>` (or `cli=caller` anonymous), `evaluator` = `archctl:lifecycle_v1:<invocation_path>`. Replaces the hardcoded `"user_accepted"` / `"archctl:lifecycle_v1"` pair that produced forged audit trails.
+- `LbugStore::accept_evidence` records an honest `Evaluation` node: `criterion` = `caller=<ARCHCTL_ACTOR>` (or `cli:caller` anonymous), `evaluator` = `archctl:lifecycle_v1:<invocation_path>`. Replaces the hardcoded `"user_accepted"` / `"archctl:lifecycle_v1"` pair that produced forged audit trails.
 - `docs/arch-stack-architecture-feedback-workbench-2026-08-20/specs/30-GRAPH-REVISION-AND-DELTA.md` bumped to Version 1.1.
 
 ### Fixed
