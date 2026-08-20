@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arch-stack.local/schemas/visual-request.schema.json",
+  "title": "VisualRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "purpose",
+    "graphRevision",
+    "focusIds"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "question": {
+      "type": "string"
+    },
+    "graphRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "focusIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "compareIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "lensHint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "overlayHints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

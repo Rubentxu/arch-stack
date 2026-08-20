@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "id": "fb:001",
+  "targetId": "claim:agent:orders-stripe",
+  "verdict": "reject",
+  "replacement": {
+    "statement": "Orders accesses Stripe through PaymentProvider"
+  },
+  "actor": "human",
+  "graphRevision": 523,
+  "timestamp": "2026-08-20T12:00:00Z",
+  "evidenceIds": [
+    "ev:payment-provider"
+  ],
+  "correlationId": "corr:task-83"
+}

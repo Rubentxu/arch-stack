@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "fromRevision": 522,
+  "toRevision": 523,
+  "nodesAdded": [],
+  "nodesChanged": [
+    {
+      "id": "code:function:payment.authorize",
+      "kind": "code.function",
+      "properties": {
+        "contentHash": "b3:example"
+      }
+    }
+  ],
+  "nodesRemoved": [],
+  "edgesAdded": [
+    {
+      "id": "rel:orders-payment",
+      "sourceId": "c4:orders",
+      "targetId": "c4:payment",
+      "predicate": "depends_on",
+      "properties": {
+        "authority": "Observed"
+      }
+    }
+  ],
+  "edgesChanged": [],
+  "edgesRemoved": [],
+  "affectedEntityIds": [
+    "c4:orders",
+    "c4:payment"
+  ]
+}

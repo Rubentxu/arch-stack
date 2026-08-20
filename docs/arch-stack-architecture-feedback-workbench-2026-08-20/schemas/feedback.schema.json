@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arch-stack.local/schemas/feedback.schema.json",
+  "title": "Feedback",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "targetId",
+    "verdict",
+    "actor",
+    "graphRevision",
+    "timestamp"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string"
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "accept",
+        "reject",
+        "uncertain",
+        "supersede",
+        "correct"
+      ]
+    },
+    "replacement": {},
+    "actor": {
+      "type": "string"
+    },
+    "graphRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "correlationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}
