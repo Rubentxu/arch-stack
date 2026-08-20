@@ -22,7 +22,7 @@
  * DI seam contract.
  */
 
-import type { Graph,type NodeData,type EdgeData } from "@antv/g6";
+import type { Graph,type NodeData } from "@antv/g6";
 import type { RendererBundle } from "../types";
 import type { Viewport } from "./g6";
 
