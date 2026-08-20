@@ -9,6 +9,7 @@ import {
   For,
   Show,
   createEffect,
+  createMemo,
   createSignal,
   type Component,
 } from "solid-js";
@@ -17,7 +18,7 @@ import type { RendererEdge } from "../types";
 import { zoomTargetFor } from "../lib/navigation";
 import type { ExplainResult } from "../lib/workspace";
 import { SourceDrawer, type SourceDrawerProps } from "./SourceDrawer";
-import { VirtualList } from "./primitives";
+import { TabBar, TabPanel, VirtualList } from "./primitives";
 
 export interface SidebarStats {
   /** Computed by the call-graph view: unique reachable functions. */
@@ -86,6 +87,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     null,
   );
   const [explainError, setExplainError] = createSignal<string | null>(null);
+  const [activeTab, setActiveTab] = createSignal<"evidence" | "relations">("evidence");
 
   // Reset per-node action state when the selection changes.
   createEffect(() => {
@@ -95,6 +97,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     setExplainState("idle");
     setExplainData(null);
     setExplainError(null);
+    setActiveTab("evidence");
   });
 
   const copyId = () => {
@@ -122,6 +125,30 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       setExplainState("error");
     }
   };
+
+  // Tab items reactive to node + evidence/relations counts.
+  const tabItems = createMemo(() => {
+    if (!props.node) {
+      return [
+        { id: "evidence" as const, label: "Evidence", badge: undefined },
+        { id: "relations" as const, label: "Relations", badge: undefined },
+      ];
+    }
+    const evList = extractEvidence(props.node);
+    const relList = props.edges
+      ? relationsFor(props.node, props.edges)
+      : [];
+    const evBadge =
+      Array.isArray(evList) && evList.length > 0 ? evList.length : undefined;
+    const relBadge =
+      Array.isArray(relList) && relList.length > 0
+        ? relList.length
+        : undefined;
+    return [
+      { id: "evidence" as const, label: "Evidence", badge: evBadge },
+      { id: "relations" as const, label: "Relations", badge: relBadge },
+    ];
+  });
 
   return (
     <aside class="sidebar">
@@ -271,26 +298,45 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                 </Show>
               </div>
 
-              <h4>Evidence</h4>
-              <ul class="evidence-list">
-                <For each={extractEvidence(node())}>
-                  {(ev) => (
-                    <li>
-                      <code>
-                        {ev.file}:{ev.line}
-                      </code>
-                      <span class="confidence">
-                        confidence: {ev.confidence}
-                      </span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-
-              <Show when={(props.edges ?? []).length > 0}>
-                <h4>Relations</h4>
+              <TabBar
+                items={tabItems()}
+                value={activeTab()}
+                onChange={setActiveTab}
+                ariaLabel="Sidebar panels"
+              />
+              <TabPanel value="evidence" activeValue={activeTab()}>
+                <ul class="evidence-list">
+                  <For each={extractEvidence(node())}>
+                    {(ev) => (
+                      <li>
+                        <code>
+                          {ev.file}:{ev.line}
+                        </code>
+                        <span class="confidence">
+                          confidence: {ev.confidence}
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
                 <Show
-                  when={relationsFor(node(), props.edges ?? []).length > 0}
+                  when={
+                    props.onFetchSource &&
+                    props.onOpenInEditor &&
+                    typeof evLine(node(), evFile(node())) === "number"
+                  }
+                >
+                  <SourceDrawer
+                    file={evFile(node()) as string}
+                    line={evLine(node(), evFile(node())) as number}
+                    fetchSource={props.onFetchSource!}
+                    openInEditor={props.onOpenInEditor!}
+                  />
+                </Show>
+              </TabPanel>
+              <TabPanel value="relations" activeValue={activeTab()}>
+                <Show
+                  when={(props.edges ?? []).length > 0}
                   fallback={<p class="muted">no relations for this node</p>}
                 >
                   <VirtualList
@@ -312,22 +358,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                     )}
                   />
                 </Show>
-              </Show>
-
-              <Show
-                when={
-                  props.onFetchSource &&
-                  props.onOpenInEditor &&
-                  typeof evLine(node(), evFile(node())) === "number"
-                }
-              >
-                <SourceDrawer
-                  file={evFile(node()) as string}
-                  line={evLine(node(), evFile(node())) as number}
-                  fetchSource={props.onFetchSource!}
-                  openInEditor={props.onOpenInEditor!}
-                />
-              </Show>
+              </TabPanel>
             </div>
           )}
         </Show>
