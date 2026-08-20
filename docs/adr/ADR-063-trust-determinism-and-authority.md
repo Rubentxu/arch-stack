@@ -27,7 +27,10 @@ The orthogonal axis (what epistemic weight the fact carries) is specified by ADR
 7. **One manifest gate** `manifests/trust.toml` registers the 6 public symbols + 8 unit tests + 19 textual invariants + 6 prohibitions. `manifests/evidence.toml` and `manifests/store.toml` are unchanged.
 8. **One behaviour spec** `specs/12-TRUST-DETERMINISM-AND-AUTHORITY.md` formalises the 7 REQ-M25-001..007 requirements.
 
-**The invariant**: `ModelInference` jamás puede escribir `CanonicalObservedFact` (an Evidence row with `status == Accepted`) directamente. The matrix permits `ModelInference × Suggested` only — exactly what ADR-P02 wanted for *candidate visibility* — and every promotion to `Accepted` is gated by the matrix.
+**The invariant**: `ModelInference` jamás puede escribir `CanonicalObservedFact` (an Evidence row with `status == Accepted`) **directly**. Two predicates enforce this:
+- `canonical_write_allowed(exec, authority)` — the **4×5 existence matrix** that classifies combinations (rows can exist with `status: Drafted` and be queryable as candidates). `ModelInference × Suggested` is the only green cell for ModelInference per `architecture/12-…:33-38` (candidate visibility, ADR-P02).
+- `canonical_promotion_allowed(exec, authority)` — the **stricter promotion gate** every transition to `EvidenceStatus::Accepted` must pass. Currently denies all `ModelInference × _` combinations until REQ-M25-006 (Adjudication event store) lands.
+The chokepoint at `accept_evidence` calls the second; the matrix stays permissive for candidate visibility.
 
 ## Consecuencias
 

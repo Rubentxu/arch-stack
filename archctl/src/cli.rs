@@ -1988,6 +1988,8 @@ fn evidence_accept_cmd(
     json: bool,
     ctx: &CliContext,
 ) -> Result<i32> {
+    // ADR-063 HUNK C: set invocation path for honest Evaluation attestation
+    let _guard = crate::store::InvocationPathReset::new("evidence-accept");
     let cwd = ctx.resolve_cwd(cwd.as_ref());
     let info = resolve_project(&cwd.to_string_lossy());
     let mut store = ctx.store_factory.open_and_init(&info.project_dir)?;
