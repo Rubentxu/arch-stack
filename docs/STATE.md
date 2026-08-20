@@ -2,10 +2,9 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-20, post-release v1.80.0 (M23
-> perf-ci-gate: ADR-019 enforcement para archview con post-merge job
-> `perf-cull`; refactorizado perf-cull.mjs con JSON output + bug fixes;
-> 239 archview tests; clippy clean).
+> Última actualización: 2026-08-20, post-release v1.81.0 (TRUST-001
+> shipped: EventLog::open ya no trunca; 4 regression tests; v1.80.0 was
+> M23 perf-ci-gate).
 
 ## Estado del trunk
 
@@ -272,6 +271,10 @@ cargo run --quiet --bin archctl -- capabilities --check
 ```
 
 ## Próxima acción del usuario
+
+**T0 Trust — progress:**
+- ✅ **TRUST-001 EventLog reopen** (cycle `t0-trust-001-eventlog-reopen`, v1.81.0, PR #284): shipped. Latent bug closed preventively (EventLog only used in tests today; `SyncDispatcher` wires it in T6).
+- 🎯 **Próximo PR sugerido**: TRUST-002 (`t0-trust-002-event-ids-causation`) — event IDs + correlation/causation IDs + per-consumer checkpoint. Foundation for causal journal (ADR-P11). Estimated ~80–120 LOC. Depends on TRUST-001 ✅.
 
 Wave 3 parcial CERRADO: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion
 engine), 28+29 (strict ArchBundle + archview read-only) y **31–33

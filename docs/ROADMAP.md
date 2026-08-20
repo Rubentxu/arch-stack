@@ -3,7 +3,7 @@
 **Estado:** v1.80.0 ALCANZADO (2026-08-20) — M23 perf-ci-gate shipped (ADR-019 enforcement para archview, post-merge CI job `perf-cull`, +66 LOC contract tests); Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes.
 **Versión:** 2.15
 **Fecha:** 20 de agosto de 2026
-**Cambios vs 2.14:** 6 cycle log rows (`m17-workbench-redesign` v1.74.0 / `m18-c4-semantic-zoom` v1.75.0 / `m19-elk-worker-layout` v1.76.0 / `m21-g6-culling-lod` v1.78.0 / `m22-sidebar-tabs` v1.79.0 / `m23-perf-ci-gate` v1.80.0) + nueva sección `## Plan vivo — Architecture Feedback Workbench (paquete 2026-08-20)` que cruza T0–T11 con ADRs aceptados del repo, indexa los 80 tickets del backlog PR-sized y nombra UAT-06 (false-agent-claim) como verification gate de P02.
+**Cambios vs 2.14:** 7 cycle log rows (`m17-workbench-redesign` v1.74.0 / `m18-c4-semantic-zoom` v1.75.0 / `m19-elk-worker-layout` v1.76.0 / `m21-g6-culling-lod` v1.78.0 / `m22-sidebar-tabs` v1.79.0 / `m23-perf-ci-gate` v1.80.0 / `t0-trust-001-eventlog-reopen` v1.81.0) + nueva sección `## Plan vivo — Architecture Feedback Workbench (paquete 2026-08-20)` que cruza T0–T11 con ADRs aceptados del repo, indexa los 80 tickets del backlog PR-sized y nombra UAT-06 (false-agent-claim) como verification gate de P02.
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
@@ -81,7 +81,7 @@ canonical architecture fact
 
 | H | Título | Exit gate (UAT) | ADRs blueprint | ADRs repo ya aceptados | Estado real |
 |---|---|---|---|---|---|
-| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | foundation drafted (sin ExecutionClass/AuthorityClass materializado) |
+| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | **TRUST-001 shipped v1.81.0** (reopen safe ✅); TRUST-002..006 pending |
 | **T1** | Incremental Knowledge Engine | UAT-04 + equality gate | P05, P06 | — | backlog only |
 | **T2** | Structured Docs + Tantivy | UAT-08 recall | P04 | — | backlog only |
 | **T3** | Live Revision Loop | UAT-04/UAT-10 + budget | P11, P12 | [ADR-010](../adr/ADR-010-concurrencia-ladybugdb.md), [ADR-033](../adr/ADR-033-archctl-view-embedded-workbench.md) | backlog only |
