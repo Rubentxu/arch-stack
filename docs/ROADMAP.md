@@ -1,15 +1,15 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.73.0 ALCANZADO (2026-08-19) — Wave 3 parcial ampliada: items 31–33 (workbench UX) vía ADR-062; UAT multi-lenguaje (axum/echo v1.70.0, vueuse paths v1.71.0, vueuse pnpm v1.72.0, sprint consistencia v1.73.0); restantes item 30 (ADR-051 gated) + item 34 (P3-05 gated).
-**Versión:** 2.14
-**Fecha:** 19 de agosto de 2026
-**Cambios vs 2.13:** Cycle log row para `uat-consistency-sprint` (v1.73.0, PR #252): verify-local.sh binario stale, datasets.sh --populate-self-dogfood, accept_cell gate no-vacuo, e2e/human_loop_sandbox path fix, c4_discover error msg con sample_id, doc state-machine.
+**Estado:** v1.80.0 ALCANZADO (2026-08-20) — M23 perf-ci-gate shipped (ADR-019 enforcement para archview, post-merge CI job `perf-cull`, +66 LOC contract tests); Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes.
+**Versión:** 2.15
+**Fecha:** 20 de agosto de 2026
+**Cambios vs 2.14:** 6 cycle log rows (`m17-workbench-redesign` v1.74.0 / `m18-c4-semantic-zoom` v1.75.0 / `m19-elk-worker-layout` v1.76.0 / `m21-g6-culling-lod` v1.78.0 / `m22-sidebar-tabs` v1.79.0 / `m23-perf-ci-gate` v1.80.0) + nueva sección `## Plan vivo — Architecture Feedback Workbench (paquete 2026-08-20)` que cruza T0–T11 con ADRs aceptados del repo, indexa los 80 tickets del backlog PR-sized y nombra UAT-06 (false-agent-claim) como verification gate de P02.
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
 > gates), ver [docs/STATE.md](STATE.md) §"Plan vigente" +
 > "Anti-roadmap" + "Próxima acción del usuario". Este doc se
-> mantiene como anchor histórico (M0–M32, milestones 73–76, H4
+> mantiene como anchor histórico (M0–M34+, milestones 73–76 con H4
 > cerrado).
 
 ---
@@ -26,6 +26,202 @@
 8. No se añade un daemon hasta que la concurrencia lo justifique (ADR-010).
 9. Cada diagrama tiene propósito, alcance y evidencia.
 10. Adoptamos crates de análisis como librerías, no como CLIs (ADR-012).
+
+---
+
+## Plan vivo — Architecture Feedback Workbench (paquete 2026-08-20)
+
+> **Blueprint consolidado** que evoluciona `archctl` de *code knowledge
+> graph workbench* a un **entorno de razonamiento visual sobre software**
+> donde código, documentación, intención, runtime, tests, agentes y
+> feedback humano comparten identidades y evidencia. Las fuentes, los
+> ADRs propuestos, las specs, los schemas JSON, los ejemplos y los UAT
+> journeys viven en
+> [`docs/arch-stack-architecture-feedback-workbench-2026-08-20/`](arch-stack-architecture-feedback-workbench-2026-08-20/README.md)
+> (80 ficheros: 68 markdown + 16 ADR-Pxx + 12 specs + 5 JSON Schemas 2020-12
+> + 6 examples + UAT). Este ROADMAP queda como **índice** que los
+> referencia desde aquí y los cruza con los ADRs ya aceptados del repo.
+
+### North Star del paquete
+
+> Reducir drásticamente el esfuerzo necesario para que un humano forme,
+> verifique, mantenga y corrija su modelo mental de un sistema software
+> complejo.
+
+### Frontera invariante (P02 + P03) — corazón del diseño
+
+`ExecutionClass` y `AuthorityClass` son ortogonales. **Una afirmación
+deliberadamente falsa de un LLM nunca puede promocionarse a `Observed`**.
+El escenario [`uat-06-false-agent-claim.yaml`](arch-stack-architecture-feedback-workbench-2026-08-20/examples/uat-06-false-agent-claim.yaml)
+es el verification gate (`false_canonical_promotions: 0`).
+
+```text
+LLM / modelo     ──►  ModelInference        ──►  Suggested   (no canonical)
+Algoritmo deter  ──►  PureDeterministic     ──►  Observed | Derived
+Heurística       ──►  DeterministicHeuristic ─►  Suggested
+Humano           ──►  HumanDecision         ──►  Normative | Adjudicated
+```
+
+Una heurística puede ser determinista y seguir siendo sólo *Suggested*;
+una decisión humana puede ser *Normative* sin ser un cálculo
+determinista. Esa ortogonalidad es lo que evita:
+
+```text
+LLM hallucination
+       ↓
+canonical architecture fact
+```
+
+### Horizontes T0–T11 — siguiente capa tras H0–H3
+
+> **Convención**: T0–T11 **no sustituyen** a H0–H3 (ya shipped o
+> parcial, ver §"Horizons H0–H3" abajo). Son la **siguiente capa**
+> de evolución hacia *Architecture Feedback Workbench*. Cada T arranca
+> sólo cuando su exit gate (UAT journey) se cumple.
+
+| H | Título | Exit gate (UAT) | ADRs blueprint | ADRs repo ya aceptados | Estado real |
+|---|---|---|---|---|---|
+| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | foundation drafted (sin ExecutionClass/AuthorityClass materializado) |
+| **T1** | Incremental Knowledge Engine | UAT-04 + equality gate | P05, P06 | — | backlog only |
+| **T2** | Structured Docs + Tantivy | UAT-08 recall | P04 | — | backlog only |
+| **T3** | Live Revision Loop | UAT-04/UAT-10 + budget | P11, P12 | [ADR-010](../adr/ADR-010-concurrencia-ladybugdb.md), [ADR-033](../adr/ADR-033-archctl-view-embedded-workbench.md) | backlog only |
+| **T4** | Visual Reasoning Foundation | UAT-01/02/03/10 | P01, P07, P08 | [ADR-013](../adr/ADR-013-viewer-ortogonal.md), [ADR-020](../adr/ADR-020-renderer-stack.md), [ADR-038](../adr/ADR-038-one-product-five-invariants.md), [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md), [ADR-056](../adr/ADR-056-moldable-architecture-workbench.md) (parcial), [ADR-062](../adr/ADR-062-moldable-workbench-partial.md) | **foundation shipped** (M17 workbench + M18 semantic zoom + M19 ELK + M21 G6 culling/LOD + M22 sidebar tabs + M23 ADR-019 perf-ci-gate como verification gate) |
+| **T5** | Intent & Reconciliation | UAT-05 | P09 | P2-10 (v1.59.0, intent vs reality MVP — 4-class delta + self-dogfood `archctl-intent.toml`) | **MVP shipped** — falta la matriz y el mapa |
+| **T6** | Agent ↔ Visual ↔ Feedback | UAT-06/UAT-14 | P10, P11 | [ADR-021](../adr/ADR-021-cognitive-layer.md), [ADR-022](../adr/ADR-022-agent-catalog.md) (parcial 2/9) | backlog only |
+| **T7** | Change Intelligence | UAT-09 | P07, P09 | [ADR-054](../adr/ADR-054-policy-rules.md) (6 closed rules) | backlog only |
+| **T8** | Stories & Causality | UAT-07/UAT-13 | P11 | — | backlog only |
+| **T9** | Runtime Reality | runtime drift explained | P15 | [ADR-015](../adr/ADR-015-activegraph-packs-investigacion.md) (deferred) | backlog only |
+| **T10** | What-if | (post-T7) | P14 | [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap | conditional |
+| **T11** | Advanced Intelligence | (gated by T7) | P13 | [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap | deferred |
+
+### Backlog PR-sized (80 items, agrupados por horizonte)
+
+Detalle completo en
+[`roadmap/51-IMPLEMENTATION-BACKLOG.md`](arch-stack-architecture-feedback-workbench-2026-08-20/roadmap/51-IMPLEMENTATION-BACKLOG.md).
+Tickets:
+
+| Horizonte | Tickets | Resumen |
+|---|---|---|
+| **T0 Trust** | TRUST-001..006 | EventLog open + reopen regression; event IDs + correlación; AuthorityClass/ExecutionClass mapping; no canonical write from model-backed output; real confidence/status; FreshnessPolicy por fuente |
+| **T1 Index** | IDX-001..009 | ArtifactLedger BLAKE3; notify watcher; debounce/coalesce; Rayon extraction; ObservationBatch canonicalization; changed-file apply; removed/renamed invalidation; differential harness; Criterion cold/warm benches |
+| **T2 Docs/Search** | DOC-001..003 + SRCH-001..004 | Document/Section extraction; ADR recognizer; deterministic reference linker; Tantivy schema/index adapter; revision-aware commit/rebuild; hybrid seed resolver; ContextBundle `included_because` |
+| **T3 Live** | LIVE-001..007 | GraphRevision; GraphDelta; revision/delta HTTP; index worker en `view --watch`; archview polling store; style vs topology update; selection/viewport preservation |
+| **T4 Visual** | VIS-001..012 | SelectionBus; adjacency index; InspectorRegistry; Smart System Overview; internal LensDefinition; migrar C4 + Impact consumers; DSM sparse; Canvas2D matrix; Graph↔DSM↔Source linking; System Map d3-hierarchy; metric overlay contract |
+| **T5 Intent** | INT-001..006 | IntentCandidate/AcceptedIntent; deterministic Reconciliation; projection/API; Reconciliation Matrix; Intent Map; Intent Coverage |
+| **T6 Agent/Feedback** | AGV-001..007 | ProjectionSpec↔VisualRequest compatibility; Visual Compiler; VisualArtifact; selection→AgentContext; Feedback write/retrieval; proposed/ghost visual state |
+| **T7 Change** | CHG-001..006 | Expected Change Surface; IntentDiff; SemanticReview; synchronized before/after; test impact; UAT impact |
+| **T8+** | STORY-*, CAUSAL-*, OTEL-*, WHATIF-* | Diferidos — sólo cuando los gates previos se cierren |
+
+### ADRs propuestos (P01–P16) — política de promoción
+
+Los `ADR-Pxx` viven en
+[`arch-stack-architecture-feedback-workbench-2026-08-20/adr/`](arch-stack-architecture-feedback-workbench-2026-08-20/adr/README.md)
+con status **Proposed**. **No son ADRs aceptados del repo.** Antes de
+promover cada uno a `ADR-032+`, el ciclo de aceptación debe:
+
+1. Buscar si ya existe decisión equivalente (mapa en esta sección).
+2. Si solapa con ADR existente, **amend/supersede** — no duplicar.
+3. Asignar número real del repo sólo tras amend/supersede ratificado.
+4. Preservar el ADR histórico (no reescribir historia).
+
+| ADR-P | Tema | ADR repo relacionado | Acción recomendada |
+|---|---|---|---|
+| P01 | Visual workbench primary interface | [ADR-013](../adr/ADR-013-viewer-ortogonal.md), [ADR-038](../adr/ADR-038-one-product-five-invariants.md), [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md), [ADR-062](../adr/ADR-062-moldable-workbench-partial.md) | amend ADR-062 |
+| P02 | Deterministic core / probabilistic edge | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas | amend ADR-021 §"Reglas" con ExecutionClass × AuthorityClass |
+| P03 | Authority vs execution | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Contrato + [ADR-022](../adr/ADR-022-agent-catalog.md) §Output schema | amend ADR-021/022 |
+| P04 | Polyglot local projections | [ADR-007](../adr/ADR-007-modelos-y-renderizadores-de-diagramas.md), [ADR-012](../adr/ADR-012-adopcion-incremental-crates-analisis.md), [ADR-020](../adr/ADR-020-renderer-stack.md), [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md) | amend ADR-007/020 |
+| P05 | Incremental index | (nuevo) | proponer ADR-032 |
+| P06 | Tiered code intelligence | [ADR-006](../adr/ADR-006-adaptadores-de-herramientas-cli.md) superseded por [ADR-012](../adr/ADR-012-adopcion-incremental-crates-analisis.md) | heredado de ADR-012 |
+| P07 | Coordinated task-fit lenses | [ADR-056](../adr/ADR-056-moldable-architecture-workbench.md) (parcial), [ADR-062](../adr/ADR-062-moldable-workbench-partial.md) | amend ADR-062 (P3-05 sigue deferida per ADR-056 entry criteria) |
+| P08 | Visual technology partition | [ADR-020](../adr/ADR-020-renderer-stack.md), [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md) | amend ADR-020 |
+| P09 | Feedback/Reconciliation graph-native | [ADR-023](../adr/ADR-023-action-proposal-and-policy.md), [ADR-054](../adr/ADR-054-policy-rules.md), P2-10 v1.59.0 | amend ADR-023 + ADR-054 |
+| P10 | Agent↔Visual protocol | [ADR-021](../adr/ADR-021-cognitive-layer.md), [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-023](../adr/ADR-023-action-proposal-and-policy.md) | amend ADR-022 §Protocol |
+| P11 | Causal journal (no event sourcing) | [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) (deferred) | proponer ADR-033 |
+| P12 | Live workbench without daemon | [ADR-010](../adr/ADR-010-concurrencia-ladybugdb.md), [ADR-033](../adr/ADR-033-archctl-view-embedded-workbench.md) | heredado |
+| P13 | Semantic retrieval deferred | [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap | heredado |
+| P14 | Thinking canvas proposal space | [ADR-039](../adr/ADR-039-renderer-reality-anti-roadmap.md) §anti-roadmap | nuevo spike (gated por T7) |
+| P15 | Runtime evidence via OTel | [ADR-015](../adr/ADR-015-activegraph-packs-investigacion.md) (deferred) | reopen per ADR-015 §Trigger |
+| P16 | Human comprehension release gate | [ADR-019](../adr/ADR-019-performance-budget.md) §enforcement (M23 ya shipped) | amend ADR-019 §enforcement con hierarchy "deterministic > human > LLM advisory" |
+
+### Especificaciones, schemas y ejemplos ejecutables
+
+12 specs, 5 JSON Schemas 2020-12 válidos, 6 examples parsean — viven en
+[`arch-stack-architecture-feedback-workbench-2026-08-20/{specs,schemas,examples}/`](arch-stack-architecture-feedback-workbench-2026-08-20/specs/README.md).
+
+Convención: cualquier cycle SDD que materialice un T0–T11 debe
+**versionar primero la spec/schema** correspondiente antes de tocar
+código. Detalle por spec:
+
+| Spec | Tema | Schema JSON asociado |
+|---|---|---|
+| 30-GraphRevision-and-Delta | Revision/Delta API | [`graph-delta.schema.json`](arch-stack-architecture-feedback-workbench-2026-08-20/schemas/graph-delta.schema.json) |
+| 31-Lens-Definition | Internal LensDefinition (gated por ADR-056/062) | — |
+| 32-Selection-Bus | Coordinated selections | — |
+| 33-Inspector-Registry | Moldable inspectors | — |
+| 34-Visual-Request-and-Artifact | Agent→Visual protocol | [`visual-request.schema.json`](arch-stack-architecture-feedback-workbench-2026-08-20/schemas/visual-request.schema.json) |
+| 35-Feedback-and-Reconciliation | Feedback/reconciliation graph-native | [`feedback.schema.json`](arch-stack-architecture-feedback-workbench-2026-08-20/schemas/feedback.schema.json) |
+| 36-Architecture-Story | Causality + stories | — |
+| 37-Semantic-Review | Change intelligence | — |
+| 38-Incremental-Index | Notify + BLAKE3 + Rayon | — |
+| 39-Search-Context-Bundle | Tantivy + ContextBundle | [`context-bundle.schema.json`](arch-stack-architecture-feedback-workbench-2026-08-20/schemas/context-bundle.schema.json) |
+| 40-Agent-Event-Journal | Causal journal | [`event-envelope.schema.json`](arch-stack-architecture-feedback-workbench-2026-08-20/schemas/event-envelope.schema.json) |
+| 41-UAT-Graph | UAT como subgrafo | — |
+
+### UAT — 14 journeys, no "¿se renderizó?"
+
+Detalle en
+[`arch-stack-architecture-feedback-workbench-2026-08-20/uat/`](arch-stack-architecture-feedback-workbench-2026-08-20/uat/60-UAT-STRATEGY.md).
+Authority order explícito:
+
+```text
+deterministic data/DOM assertions
+        >
+human task correctness
+        >
+human subjective measures
+        >
+multimodal LLM advisory
+```
+
+El **más crítico**: **UAT-06 (false-agent-claim)** — gate
+`false_canonical_promotions: 0`. Es el test que demuestra que P02 está
+cableado, no sólo documentado: una afirmación falsa pero plausible del
+agente no puede promocionarse a hecho canónico, el humano puede
+rechazarla, el rechazo persiste tras reinicio, futuras invocaciones
+reciben la corrección. El escenario YAML ejecutable vive en
+[`examples/uat-06-false-agent-claim.yaml`](arch-stack-architecture-feedback-workbench-2026-08-20/examples/uat-06-false-agent-claim.yaml).
+
+Otros journeys notables: UAT-01 (first insight), UAT-02 (why),
+UAT-03 (graph vs DSM dense coupling), UAT-04 (incremental edit),
+UAT-05 (intent vs reality), UAT-07 (agent causality), UAT-08
+(knowledge retrieval), UAT-09 (semantic review), UAT-10 (context
+preservation), UAT-11 (scale), UAT-12 (accessibility), UAT-13
+(architecture story), UAT-14 (feedback reuse).
+
+### Riesgos vivos (resumen)
+
+Detalle completo en
+[`roadmap/53-RISKS-AND-OPEN-QUESTIONS.md`](arch-stack-architecture-feedback-workbench-2026-08-20/roadmap/53-RISKS-AND-OPEN-QUESTIONS.md).
+Los tres con mayor leverage:
+
+1. **LLM contamina truth** → authority gate (T0).
+2. **layout instability** → stable positions + topology-aware update (T3).
+3. **docs vuelven a quedar stale** → capability/traceability dogfooding per-cycle.
+
+### Próxima acción derivada del paquete
+
+El paquete es **propuesta, no work-in-progress**. Antes de iniciar el
+primer cycle que ataque T0 (TRUST-001..006):
+
+1. Abrir un ADR de amend que **endurezca [ADR-021](../adr/ADR-021-cognitive-layer.md)
+   §Reglas** con la separación `ExecutionClass × AuthorityClass` y el
+   principio "false canonical promotion impossible".
+2. Versionar la spec [`30-GRAPH-REVISION-AND-DELTA`](arch-stack-architecture-feedback-workbench-2026-08-20/specs/30-GRAPH-REVISION-AND-DELTA.md)
+   con semantic version propio antes de tocar código.
+3. Cerrar el amend con **UAT-06** como verification gate.
+
+Cualquier cycle posterior sigue el mismo patrón: spec → schema → ADR
+amend/propose → código → UAT.
 
 ---
 

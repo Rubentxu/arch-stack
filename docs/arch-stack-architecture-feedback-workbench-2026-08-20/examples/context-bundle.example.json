@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1.0",
+  "task": "explain payment provider isolation",
+  "graphRevision": 523,
+  "budgetTokens": 6000,
+  "truncated": false,
+  "omittedCount": 0,
+  "items": [
+    {
+      "id": "adr:017",
+      "score": 1.0,
+      "includedBecause": "ADR-017 explicitly references PaymentProvider",
+      "pathFromSeed": [
+        "query:payment provider",
+        "adr:017"
+      ],
+      "confidence": 1.0,
+      "freshness": "current",
+      "revision": 523
+    },
+    {
+      "id": "c4:payment",
+      "score": 0.93,
+      "includedBecause": "canonical name match + ADR relation",
+      "pathFromSeed": [
+        "adr:017",
+        "c4:payment"
+      ],
+      "confidence": 0.98,
+      "freshness": "current",
+      "revision": 523
+    }
+  ]
+}

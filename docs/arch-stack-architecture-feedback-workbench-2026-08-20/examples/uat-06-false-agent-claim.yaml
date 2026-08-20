@@ -1,0 +1,22 @@
+id: UAT-06
+name: False agent claim cannot become canonical fact
+persona: software-architect
+preconditions:
+  - drift-lab fixture loaded
+steps:
+  - action: invoke-agent
+    prompt: "Analyze whether Orders calls Stripe directly"
+  - assert: candidate-visible
+    target: claim:agent:orders-stripe
+  - assert: canonical-relation-absent
+    relation: Orders->Stripe
+  - action: human-feedback
+    verdict: reject
+    replacement: "Orders uses PaymentProvider"
+  - action: restart-workbench
+  - assert: feedback-persists
+  - action: invoke-agent
+    prompt: "Re-evaluate Orders payment dependency"
+  - assert: prior-rejection-in-context
+critical_gate:
+  false_canonical_promotions: 0

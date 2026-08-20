@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arch-stack.local/schemas/graph-delta.schema.json",
+  "title": "GraphDelta",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "fromRevision",
+    "toRevision",
+    "nodesAdded",
+    "nodesChanged",
+    "nodesRemoved",
+    "edgesAdded",
+    "edgesChanged",
+    "edgesRemoved"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "fromRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "toRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nodesAdded": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entityRef"
+      }
+    },
+    "nodesChanged": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entityRef"
+      }
+    },
+    "nodesRemoved": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "edgesAdded": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationRef"
+      }
+    },
+    "edgesChanged": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationRef"
+      }
+    },
+    "edgesRemoved": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "affectedEntityIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "entityRef": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "relationRef": {
+      "type": "object",
+      "required": [
+        "id",
+        "sourceId",
+        "targetId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "predicate": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
