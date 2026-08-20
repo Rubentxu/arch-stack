@@ -14,3 +14,5 @@ export { Tag } from "./Tag";
 export type { TagProps, TagTone } from "./Tag";
 export { VirtualList } from "./VirtualList";
 export type { VirtualListProps } from "./VirtualList";
+export { TabBar, TabPanel } from "./Tabs";
+export type { TabBarProps, TabItem, TabPanelProps } from "./Tabs";
