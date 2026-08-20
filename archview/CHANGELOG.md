@@ -3,6 +3,27 @@
 All notable changes to `archview` are documented here. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v1.79.0] — 2026-08-20 — M22 sidebar tabs (evidence / relations)
+
+### Added
+- **`src/components/primitives/Tabs.tsx`** — `<TabBar>` / `<TabPanel>`
+  ARIA APG tablist primitive: automatic activation, ArrowRight/Left/Home/End
+  keyboard nav, Space/Enter activates, badge support, disabled state.
+- **`src/components/Sidebar.tsx`** — replaces Evidence / Relations headers
+  with `<TabBar>` + two `<TabPanel>` instances; `SourceDrawer` moved inside
+  the Evidence panel. Local `activeTab` signal reset per node via
+  `createEffect`.
+- **`src/styles.css`** — `.tab-bar`, `.tab`, `.tab.is-active`, `.tab-badge`
+  styles using existing design tokens (M22).
+- **`src/__tests__/Sidebar.tabs.test.tsx`** — 4 integration tests:
+  default=evidence, click switch, badge counts, reset per node.
+- **`src/components/primitives/__tests__/Tabs.test.tsx`** — 6 unit tests:
+  render, click, keyboard nav, badge, disabled, ARIA roles.
+- **`src/components/__tests__/Sidebar.virtualizer.test.tsx`** — updated to
+  pre-select Relations tab before asserting VirtualList (M22 compat).
+- **`src/__tests__/sidebar-actions.test.tsx`** — updated to click Relations
+  tab before asserting relations list (M22 compat).
+
 ## [v1.32.0] — 2026-08-10 — H1 durable workspace state (PR #2 of cycle M71)
 
 ### Added

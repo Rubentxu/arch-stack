@@ -90,9 +90,13 @@ pnpm format           # prettier write
 - **No `Co-Authored-By` en commits**
 - **No cierres en rama compartida**: este repo tiene 1 autor.
 
-## Próximo ciclo (M17.1)
+## Conventions
+
+- **Tabs pattern**: see `<TabBar>` in `components/primitives/Tabs.tsx` for reusable two-or-more panel switching with ARIA APG keyboard nav.
+
+## Ciclo M17.1 — ship done (M22)
 
 - Semantic zoom C4 (Context → Container → Component → Code)
 - Layout jerárquico ELK.js en Web Worker
 - Virtualización de DOM para >1k nodos
-- Sidebar con tabs (evidence vs relations)
+- Sidebar con tabs (evidence vs relations) ✅ shipped v1.79.0

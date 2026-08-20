@@ -2,19 +2,18 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-20, post-release v1.78.0 (M21
-> G6 culling + LOD: CullingService DI seam + zoom LOD + viewport
-> detection; +29 tests archview; 225 archview tests total).
-> Tip tras PR #268 (Cargo.lock follow-up squash): `fec8130`.
+> Última actualización: 2026-08-20, post-release v1.79.0 (M22
+> sidebar tabs: TabBar/TabPanel ARIA primitive + Sidebar integration;
+> +14 tests archview; 239 archview tests total).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `fec8130` (PR #268 squash — Cargo.lock follow-up; v1.78.0 tag peels here) |
-| Versión | `v1.78.0` (latest tag, M21 G6 culling + LOD) |
-| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `225 @ m21-g6-culling-lod`; re-cuenta en cada verify; clippy clean |
+| Tip | `82552c5` (post-release v1.79.0; M22 sidebar tabs merged) |
+| Versión | `v1.79.0` (latest tag, M22 sidebar tabs) |
+| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `239 @ m22-sidebar-tabs`; re-cuenta en cada verify; clippy clean |
 | Working tree | clean (`main`); tags v1.65.0–v1.78.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | 52,576 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.67.0; incluye unit tests inline) |
@@ -115,6 +114,7 @@
 | `v1.75.0` | m18-c4-semantic-zoom | Semantic-zoom pill bar para C4 view (PR #260, M18): barra de pills sobre el canvas (`All levels` + 1 por nivel C4 con ≥1 nodo, badge de conteo) que filtra el visible set globalmente. Re-click o `All levels` toggle off. Persistencia en localStorage `archview.c4.lastLevel`. Helpers nuevos en `C4Graph.ts` (`nodesAtLevel`, `levelCounts`, `visibleNodesWithLevel`); UI con tokens del design system. Sample multi-nivel `c4-semantic-zoom.json` (3+4+5 nodes, 14 edges) entra en `SAMPLE_BUNDLES`. 173/173 tests, 0 lint errors, build OK. |
 | `v1.76.0` | m19-elk-worker-layout | ELK layered layout en Web Worker (PR #262, M19): sustituye el dagre built-in de G6 por `elkjs 0.12` corriendo en worker via `workerUrl` (Vite `?url`). 4 archivos nuevos (`layout-presets.ts` con TB/LR/RL_LAYERED, `layout-client.ts` con `LayoutService` interface + `ElkLayoutService` real, `preset-layout.ts` con custom G5 v6 layout no-op) + 1 refactor de `g6.ts` (setData internamente async, DI seam `layoutService`, generation counter anti-race) + 7 vistas migradas (cada `layout: { type: "dagre", rankdir }` → `layoutOptions: TB_LAYERED | LR_LAYERED`). 184/184 tests pass (+11: 5 layout-presets + 6 layout-client), lint 0 errors, 7/7 vistas verificadas con Playwright. |
 | `v1.78.0` | m21-g6-culling-lod | G6 viewport culling + zoom LOD (PR #266, M21): reduce overdraw en bundles 1000+ nodos. Dos capas: (1) Zoom LOD always-on — labels ocultos a zoom<0.5, edges a zoom<0.25 via `setElementVisibility` post-render; (2) Viewport culling opt-in — `CullingService` DI seam con `isInViewport` predicate, debounce 100ms en `wheel`/`drag-canvas:end`. `optimize-viewport-transform` behavior appended a G6 config (free FPS win para los 8 views). M18 orthogonality guard: C4View solo activa culling cuando `levelFilter === null` (sin pill activo). `c4-stress-1k.json` asset commiteado (1221 nodos / 3920 edges, hub con 500 incoming). 225/225 archview tests pass (+29: 26 CullingService unit + 3 C4View culling integration). Perf gate `bench/perf-cull.mjs` manual pre-PR; TTFP y FPS validados. Nota: `enableCulling` = false por defecto en CallGraph/Impact (gate-gated post-perf-gate). |
+| `v1.79.0` | m22-sidebar-tabs | Sidebar tabs (evidence vs relations) con ARIA tablist (PR #1, M22): nuevo primitive `<TabBar>/<TabPanel>` en `components/primitives/Tabs.tsx` — automatic activation, ArrowRight/Left/Home/End keyboard nav, Space/Enter, badge, disabled. Sidebar.tsx integra el primitive con `activeTab` signal reset per node; Evidence panel conserva `<SourceDrawer>`. +14 tests (6 unit + 4 integration + 2 M20 compat + 2 sidebar-actions compat). 239/239 archview tests pass. Cierra el sprint M17.1 (último item: "Sidebar con tabs"). |
 
 ## Capacidades shipped (v0.x — historical)
 
