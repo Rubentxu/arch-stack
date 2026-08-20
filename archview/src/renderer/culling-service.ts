@@ -22,7 +22,7 @@
  * DI seam contract.
  */
 
-import type { Graph,type NodeData } from "@antv/g6";
+import type { Graph, type NodeData } from "@antv/g6";
 import type { RendererBundle } from "../types";
 import type { Viewport } from "./g6";
 
@@ -88,7 +88,12 @@ const DEFAULTS: Required<CullingOptions> = {
  * - Degenerate viewport (zero width/height) → outside
  */
 export function isInViewport(b: BBox, vp: Viewport, m = 0.1): boolean {
-  if (!isFinite(b.minX) || !isFinite(b.minY) || !isFinite(b.maxX) || !isFinite(b.maxY)) {
+  if (
+    !isFinite(b.minX) ||
+    !isFinite(b.minY) ||
+    !isFinite(b.maxX) ||
+    !isFinite(b.maxY)
+  ) {
     return false;
   }
   if (b.maxX <= b.minX || b.maxY <= b.minY) return false;
@@ -173,7 +178,12 @@ class RealCullingService implements CullingService {
 
     const doRecompute = () => {
       const viewport = this.getViewport(graph);
-      const visibility = this.computeVisibility(graph, bundle, viewport, marginPct);
+      const visibility = this.computeVisibility(
+        graph,
+        bundle,
+        viewport,
+        marginPct,
+      );
       graph.setElementVisibility(visibility);
       this.pendingTimer = null;
     };

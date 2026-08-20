@@ -25,15 +25,36 @@ function makeC4Data() {
 
   const systems = ["sys-a", "sys-b", "sys-c"];
   for (const id of systems) {
-    nodes.push({ id, label: id, kind: "software_system", level: 1 } as GraphNode);
+    nodes.push({
+      id,
+      label: id,
+      kind: "software_system",
+      level: 1,
+    } as GraphNode);
   }
-  edges.push({ id: "r1", source: "sys-a", target: "sys-b", kind: "depends-on" });
+  edges.push({
+    id: "r1",
+    source: "sys-a",
+    target: "sys-b",
+    kind: "depends-on",
+  });
 
   for (const sys of systems) {
     for (let i = 0; i < 2; i++) {
       const cid = `${sys}-ct-${i}`;
-      nodes.push({ id: cid, label: cid, kind: "container", level: 2, parentId: sys } as GraphNode);
-      edges.push({ id: `r-${cid}`, source: sys, target: cid, kind: "contains" });
+      nodes.push({
+        id: cid,
+        label: cid,
+        kind: "container",
+        level: 2,
+        parentId: sys,
+      } as GraphNode);
+      edges.push({
+        id: `r-${cid}`,
+        source: sys,
+        target: cid,
+        kind: "contains",
+      });
     }
   }
 
@@ -42,8 +63,19 @@ function makeC4Data() {
       const cid = `${sys}-ct-${i}`;
       for (let j = 0; j < 3; j++) {
         const cmid = `${cid}-cp-${j}`;
-        nodes.push({ id: cmid, label: cmid, kind: "component", level: 3, parentId: cid } as GraphNode);
-        edges.push({ id: `r-${cmid}`, source: cid, target: cmid, kind: "contains" });
+        nodes.push({
+          id: cmid,
+          label: cmid,
+          kind: "component",
+          level: 3,
+          parentId: cid,
+        } as GraphNode);
+        edges.push({
+          id: `r-${cmid}`,
+          source: cid,
+          target: cmid,
+          kind: "contains",
+        });
       }
     }
   }
@@ -53,7 +85,11 @@ function makeC4Data() {
 
 describe("C4View culling opt-in (M21)", () => {
   beforeEach(() => {
-    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    });
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -62,7 +98,12 @@ describe("C4View culling opt-in (M21)", () => {
   it("renders no level filter pill when levelFilter is null (drill-down mode)", () => {
     const { nodes, edges } = makeC4Data();
     const { container } = render(() => (
-      <C4View nodes={nodes} edges={edges} selectedId={null} onSelect={() => {}} />
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
     ));
     // "All levels" pill should be active (aria-pressed=true) when no filter is set.
     const allLevelsPill = container.querySelector('[aria-pressed="true"]');
@@ -80,7 +121,12 @@ describe("C4View culling opt-in (M21)", () => {
 
     const { nodes, edges } = makeC4Data();
     const { container } = render(() => (
-      <C4View nodes={nodes} edges={edges} selectedId={null} onSelect={() => {}} />
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
     ));
     // The "Component" pill should now be active.
     const pills = container.querySelectorAll('[aria-pressed="true"]');
@@ -99,10 +145,17 @@ describe("C4View culling opt-in (M21)", () => {
 
     const { nodes, edges } = makeC4Data();
     const { container } = render(() => (
-      <C4View nodes={nodes} edges={edges} selectedId={null} onSelect={() => {}} />
+      <C4View
+        nodes={nodes}
+        edges={edges}
+        selectedId={null}
+        onSelect={() => {}}
+      />
     ));
     // Breadcrumb "All systems" button should be disabled when level filter is active.
-    const breadcrumbBtn = container.querySelector(".breadcrumb-root") as HTMLButtonElement;
+    const breadcrumbBtn = container.querySelector(
+      ".breadcrumb-root",
+    ) as HTMLButtonElement;
     expect(breadcrumbBtn).toBeTruthy();
     expect(breadcrumbBtn.disabled).toBe(true);
   });

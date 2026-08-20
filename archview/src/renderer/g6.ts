@@ -37,10 +37,7 @@ import {
   type LayoutOptions,
   type LayoutService,
 } from "./layout-client";
-import {
-  createCullingService,
-  type CullingService,
-} from "./culling-service";
+import { createCullingService, type CullingService } from "./culling-service";
 import { DEFAULT_LAYOUT } from "./layout-presets";
 
 /** G6 v5 layout config — kept as `unknown` to avoid pulling the
@@ -267,7 +264,8 @@ export class GraphRenderer {
     };
     // M21: initialise culling service
     this.cullingService =
-      options.cullingService ?? createCullingService({ enabled: options.enableCulling ?? false });
+      options.cullingService ??
+      createCullingService({ enabled: options.enableCulling ?? false });
     ensurePresetLayoutRegistered();
     this.init();
   }
@@ -594,7 +592,9 @@ export class GraphRenderer {
   private subscribeCullingHandlers(): void {
     if (!this.graph) return;
     const graph = this.graph;
-    const bundle: RendererBundle = this.currentBundle ?? ({ nodes: [], edges: [] } as unknown as RendererBundle);
+    const bundle: RendererBundle =
+      this.currentBundle ??
+      ({ nodes: [], edges: [] } as unknown as RendererBundle);
 
     // Wheel: user scrolls/zooms — recompute culling after debounce.
     const onWheelHandler = () => {

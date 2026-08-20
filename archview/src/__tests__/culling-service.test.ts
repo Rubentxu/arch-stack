@@ -96,7 +96,10 @@ describe("computeBboxUnion", () => {
 
   it("returns correct bbox for single node", () => {
     const nodes = [
-      { id: "a", style: { x: 100, y: 200, size: 20 } } as unknown as import("@antv/g6").NodeData,
+      {
+        id: "a",
+        style: { x: 100, y: 200, size: 20 },
+      } as unknown as import("@antv/g6").NodeData,
     ];
     const result = computeBboxUnion(nodes);
     // size=20, half=10 → minX=90, maxX=110, minY=190, maxY=210
@@ -108,8 +111,14 @@ describe("computeBboxUnion", () => {
 
   it("returns correct union bbox for multiple nodes", () => {
     const nodes = [
-      { id: "a", style: { x: 0, y: 0, size: 10 } } as unknown as import("@antv/g6").NodeData,
-      { id: "b", style: { x: 100, y: 100, size: 10 } } as unknown as import("@antv/g6").NodeData,
+      {
+        id: "a",
+        style: { x: 0, y: 0, size: 10 },
+      } as unknown as import("@antv/g6").NodeData,
+      {
+        id: "b",
+        style: { x: 100, y: 100, size: 10 },
+      } as unknown as import("@antv/g6").NodeData,
     ];
     const result = computeBboxUnion(nodes);
     // First: [-5, -5, 5, 5], Second: [95, 95, 105, 105]
@@ -122,7 +131,10 @@ describe("computeBboxUnion", () => {
 
   it("uses default size when style.size is missing", () => {
     const nodes = [
-      { id: "a", style: { x: 50, y: 50 } } as unknown as import("@antv/g6").NodeData,
+      {
+        id: "a",
+        style: { x: 50, y: 50 },
+      } as unknown as import("@antv/g6").NodeData,
     ];
     const result = computeBboxUnion(nodes);
     // Default size 18, half=9 → [41, 41, 59, 59]
@@ -135,7 +147,10 @@ describe("computeBboxUnion", () => {
   it("ignores nodes without position data", () => {
     const nodes = [
       { id: "a", style: {} } as unknown as import("@antv/g6").NodeData,
-      { id: "b", style: { x: 50, y: 50, size: 10 } } as unknown as import("@antv/g6").NodeData,
+      {
+        id: "b",
+        style: { x: 50, y: 50, size: 10 },
+      } as unknown as import("@antv/g6").NodeData,
     ];
     const result = computeBboxUnion(nodes);
     // Only node b contributes → [45, 45, 55, 55]
@@ -193,14 +208,20 @@ describe("CullingService debounce (fake timers)", () => {
   it("debounces recompute calls by 100ms", () => {
     const svc = createCullingService({ enabled: true, debounceMs: 100 });
     const graph = {
-      getCanvas: () => ({ getViewport: () => ({ minX: 0, minY: 0, maxX: 100, maxY: 100 }) }),
+      getCanvas: () => ({
+        getViewport: () => ({ minX: 0, minY: 0, maxX: 100, maxY: 100 }),
+      }),
       getNodeData: () => [],
       getEdgeData: () => [],
       setElementVisibility: vi.fn(),
       getContainer: () => ({ clientWidth: 100, clientHeight: 100 }),
     } as unknown as import("@antv/g6").Graph;
 
-    svc.recompute(graph, { nodes: [], edges: [] } as import("../types").RendererBundle, {});
+    svc.recompute(
+      graph,
+      { nodes: [], edges: [] } as import("../types").RendererBundle,
+      {},
+    );
 
     // setElementVisibility should NOT have been called yet (still debouncing)
     expect(graph.setElementVisibility).not.toHaveBeenCalled();
@@ -217,16 +238,26 @@ describe("CullingService debounce (fake timers)", () => {
   it("cancels previous pending recompute when called again within debounce window", () => {
     const svc = createCullingService({ enabled: true, debounceMs: 100 });
     const graph = {
-      getCanvas: () => ({ getViewport: () => ({ minX: 0, minY: 0, maxX: 100, maxY: 100 }) }),
+      getCanvas: () => ({
+        getViewport: () => ({ minX: 0, minY: 0, maxX: 100, maxY: 100 }),
+      }),
       getNodeData: () => [],
       getEdgeData: () => [],
       setElementVisibility: vi.fn(),
       getContainer: () => ({ clientWidth: 100, clientHeight: 100 }),
     } as unknown as import("@antv/g6").Graph;
 
-    svc.recompute(graph, { nodes: [], edges: [] } as import("../types").RendererBundle, {});
+    svc.recompute(
+      graph,
+      { nodes: [], edges: [] } as import("../types").RendererBundle,
+      {},
+    );
     vi.advanceTimersByTime(50);
-    svc.recompute(graph, { nodes: [], edges: [] } as import("../types").RendererBundle, {});
+    svc.recompute(
+      graph,
+      { nodes: [], edges: [] } as import("../types").RendererBundle,
+      {},
+    );
     vi.advanceTimersByTime(50);
     // Second call at t=50 should cancel first (at t=0) and reschedule
     expect(graph.setElementVisibility).not.toHaveBeenCalled();
@@ -237,14 +268,20 @@ describe("CullingService debounce (fake timers)", () => {
   it("teardown cancels any pending timer", () => {
     const svc = createCullingService({ enabled: true, debounceMs: 100 });
     const graph = {
-      getCanvas: () => ({ getViewport: () => ({ minX: 0, minY: 0, maxX: 100, maxY: 100 }) }),
+      getCanvas: () => ({
+        getViewport: () => ({ minX: 0, minY: 0, maxX: 100, maxY: 100 }),
+      }),
       getNodeData: () => [],
       getEdgeData: () => [],
       setElementVisibility: vi.fn(),
       getContainer: () => ({ clientWidth: 100, clientHeight: 100 }),
     } as unknown as import("@antv/g6").Graph;
 
-    svc.recompute(graph, { nodes: [], edges: [] } as import("../types").RendererBundle, {});
+    svc.recompute(
+      graph,
+      { nodes: [], edges: [] } as import("../types").RendererBundle,
+      {},
+    );
     svc.teardown();
     vi.advanceTimersByTime(200);
     expect(graph.setElementVisibility).not.toHaveBeenCalled();
@@ -264,7 +301,11 @@ describe("CullingService debounce (fake timers)", () => {
       getContainer: () => ({ clientWidth: 100, clientHeight: 100 }),
     } as unknown as import("@antv/g6").Graph;
 
-    svc.recompute(graph, { nodes: [], edges: [] } as import("../types").RendererBundle, {});
+    svc.recompute(
+      graph,
+      { nodes: [], edges: [] } as import("../types").RendererBundle,
+      {},
+    );
     // Use runAllTimers to flush pending setTimeout
     vi.runAllTimers();
 
