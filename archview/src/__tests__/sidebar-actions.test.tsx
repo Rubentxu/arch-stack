@@ -104,6 +104,9 @@ describe("Sidebar action palette", () => {
 
   it("lists only the relations touching the selected node (S3)", () => {
     renderSidebar({ node: CONTAINER_NODE, edges: EDGES });
+    // M22: click the Relations tab to reveal the virtual list.
+    const tabs = document.querySelectorAll('[role="tab"]');
+    fireEvent.click(tabs[1]); // relations tab is index 1
     const list = document.querySelector(".relations-list");
     expect(list).not.toBeNull();
     expect(list!.textContent).toContain("elm:container-b");
