@@ -11,16 +11,16 @@
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `82552c5` (post-release v1.79.0; M22 sidebar tabs merged) |
+| Tip | `a86c3f5` (PR #270 squash — M22 sidebar tabs) |
 | Versión | `v1.79.0` (latest tag, M22 sidebar tabs) |
 | Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `239 @ m22-sidebar-tabs`; re-cuenta en cada verify; clippy clean |
-| Working tree | clean (`main`); tags v1.65.0–v1.78.0 verificados en origin |
+| Working tree | clean (`main`); tags v1.65.0–v1.79.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
 | LOC src | 52,576 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.67.0; incluye unit tests inline) |
 | LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
 | Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 149 (v0.1.0 → v1.78.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Tags | 150 (v0.1.0 → v1.79.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
