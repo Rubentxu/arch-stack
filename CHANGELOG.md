@@ -1,5 +1,71 @@
 ## [Unreleased] — pending
 
+Cycle `no-stubs-mocks-placeholders-hardcoded` — registers the
+"production-ready 100%, no stubs/mocks/placeholders/hardcoded" rule
+in AGENTS.md and closes a 17-commit cleanup chain across
+`archctl/src/`. Followed by `test-fixture-svg-extension` to repair
+the integration suite hidden since cycle 2.
+
+### Added
+- **AGENTS.md "no stubs" rule** (line 463): any commit that
+  introduces a stub/mock/placeholder/hardcoded value is blocked at
+  verify. Includes audit greps (stubs/TODO/mocks-for-non-external-
+  ports/hardcoded-values) and a list of legitimate hits behind the
+  rule (doctor default URLs behind env vars, view.rs loopback per
+  ADR-011, xdg/environment test fixtures).
+
+### Changed
+- `StubAgent` renamed to `NoopObserver` (`archctl/src/cognitive/
+  observer.rs`).
+- 1×1 PNG placeholder icons in `archctl/src/diagram/` replaced with
+  real C4 SVGs in `archctl/src/diagram/icons/`. The validator at
+  `archctl/src/diagram/validate.rs` now checks
+  `assets/{icon}.{ICON_EXTENSION}` where `ICON_EXTENSION = "svg"`.
+- `archctl doctor --scopes` default URLs externalized to env vars
+  `ARCHCTL_DOCTOR_STRUCTURIZR_URL` / `ARCHCTL_DOCTOR_PLANTUML_URL`.
+  Defaults `http://localhost:18080/` and `http://localhost:18000/`
+  preserved for local-renderer convention.
+- `MockStrategy` (5 explicit `unimplemented!()` calls) deleted;
+  replaced with two real `InjectStrategy` instances.
+- `FakeAdapter` (with `unreachable!()`) renamed to `TestIdeAdapter`.
+- `MockGraphStore` (~470 LOC, 5 port impls, ~25 `unimplemented!()`)
+  in `archctl/src/diagram/export.rs` replaced with
+  `seeded_graph_store()` helper that opens a real `LbugStore` in a
+  TempDir and seeds via production write ports.
+- 5 `FakeRepo`/`MockStore`/`MockRepo` shadows in
+  `archctl/src/architecture/{explain,relevance,coverage,
+  task_context,policy,intent}.rs` replaced with `SeededStore`
+  builders that persist into a real `LbugStore`. Two tests use raw
+  Cypher for scenarios unreachable through normal write ports
+  (empty `current_version_id` defensive guard, non-ASCII identifier
+  names that `validate_identifier` rejects); comments explain each
+  bypass.
+- `archctl/tests/diagram_validate.rs` fixture writes
+  `assets/{icon}.svg` instead of `assets/{icon}.png` to match the
+  validator (had silently failed since cycle 2 because the
+  integration suite requires `--features test-fixtures`).
+
+### Removed
+- 5 unjustified `#[ignore]` markers (`*_ignored` tests without
+  CI-justification comments). Each removal is paired with a
+  doc-comment explaining why the test now runs in CI.
+
+### Hardened
+- **Definition of Done + Validation Matrix** (AGENTS.md) now require
+  `cargo test --features test-fixtures --tests` instead of plain
+  `cargo test --quiet`. Without `--features test-fixtures` the
+  integration suite doesn't compile (`execute_raw_cypher_for_test`
+  is gated); without `--tests` only the lib suite (~859 tests)
+  runs and the 56 integration test files (~345 tests) are
+  silently skipped. Total suite now: **1204 tests passing, 0
+  failed**.
+
+### Notes
+- The lbug 0.18.x implicit STRING→TIMESTAMP workaround in
+  `archctl/src/migrations.rs:344-350` is the chosen path (documented
+  in-code); the lbug bump to 0.19.x is deferred to a future
+  maintenance cycle. Decision recorded here for traceability.
+
 Cycle `trust-008-m30-bridge-promotion` — closes REQ-M25-006 (deferred from TRUST-005; named in TRUST-007's archive-manifest). Six chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-008-m30-bridge-promotion/`.
 
 ### Added
