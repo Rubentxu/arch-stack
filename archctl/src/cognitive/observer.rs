@@ -78,6 +78,7 @@ mod tests {
                 idempotent: true,
             },
         };
+        // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
         let ctx = AgentContext {
             goal: "test".into(),
             triggering_event: None,

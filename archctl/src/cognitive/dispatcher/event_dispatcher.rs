@@ -217,6 +217,7 @@ mod tests {
     }
 
     fn make_ctx() -> AgentContext {
+        // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
         AgentContext {
             goal: "test goal".into(),
             triggering_event: None,

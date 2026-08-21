@@ -1196,6 +1196,8 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 let reg = AgentRegistry::new();
                 // v1.0: no agents registered yet, dispatcher returns NoAction
                 let disp = SyncDispatcher::new(&reg);
+                // REQ-T06-003: feedback_history pre-populated by SyncDispatcher::build_context
+                // (TRUST-007); struct-literal form retained here — no store handle in scope.
                 let ctx = AgentContext {
                     goal,
                     triggering_event: None,

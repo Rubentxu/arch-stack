@@ -162,6 +162,7 @@ mod tests {
     use crate::cognitive::context::GraphView;
 
     fn make_ctx(elements: Vec<Element>) -> AgentContext {
+        // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
         AgentContext {
             goal: "analyze architecture".into(),
             triggering_event: None,
