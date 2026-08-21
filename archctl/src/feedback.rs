@@ -188,6 +188,50 @@ impl Feedback {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FeedbackSummary — slim view for re-invoked agents (TRUST-006)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Slim, read-only view of a [`Feedback`] suitable for inclusion in an
+/// agent's [`crate::cognitive::context::AgentContext`].
+///
+/// Carries only the fields a re-invoked agent needs to avoid repeating a
+/// rejected false claim:
+/// - `id`, `target`, `verdict` — identity
+/// - `replacement` — the canonical replacement text (for `Reject`/`Supersede`)
+/// - `actor` — who issued the verdict (for audit/context)
+/// - `revision` — graph revision at feedback time (for ordering)
+/// - `timestamp` — when the verdict was issued
+///
+/// Does NOT carry `evidence` or `correlation_id` — those are pipeline-internal
+/// and not relevant to the agent's next decision.
+///
+/// Spec: spec REQ-T06-001 (TRUST-006).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FeedbackSummary {
+    pub id: FeedbackId,
+    pub target: TargetClaimId,
+    pub verdict: FeedbackVerdict,
+    pub replacement: Option<ReplacementPayload>,
+    pub actor: ActorId,
+    pub revision: GraphRevision,
+    pub timestamp: String,
+}
+
+impl From<&Feedback> for FeedbackSummary {
+    fn from(fb: &Feedback) -> Self {
+        Self {
+            id: fb.id.clone(),
+            target: fb.target.clone(),
+            verdict: fb.verdict,
+            replacement: fb.replacement.clone(),
+            actor: fb.actor.clone(),
+            revision: fb.revision.clone(),
+            timestamp: fb.timestamp.clone(),
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
