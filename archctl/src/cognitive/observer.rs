@@ -79,6 +79,8 @@ mod tests {
             },
         };
         // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
+        // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). Observer contexts
+        // are read-only; the field is intentionally empty.
         let ctx = AgentContext {
             goal: "test".into(),
             triggering_event: None,
@@ -89,6 +91,7 @@ mod tests {
             available_tools: vec![],
             budget: AgentBudget::default(),
             feedback_history: vec![],
+            pending_adjudications: vec![],
         };
         let out = stub.observe(&ctx).unwrap();
         assert!(matches!(out, AgentOutput::NoAction(_)));

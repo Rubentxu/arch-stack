@@ -163,6 +163,10 @@ mod tests {
 
     fn make_ctx(elements: Vec<Element>) -> AgentContext {
         // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
+        // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). See
+        // archctl/src/cognitive/context.rs::with_pending_adjudications. Struct literal
+        // intentionally empty at this site — agent-level contexts do not pre-fetch the
+        // adjudication queue.
         AgentContext {
             goal: "analyze architecture".into(),
             triggering_event: None,
@@ -176,6 +180,7 @@ mod tests {
             available_tools: vec![],
             budget: AgentBudget::default(),
             feedback_history: vec![],
+            pending_adjudications: vec![],
         }
     }
 

@@ -111,6 +111,8 @@ mod tests {
 
     fn make_ctx(goal: &str) -> AgentContext {
         // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
+        // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). Registry-level
+        // context construction leaves the field empty; re-invoked agents fetch via dispatcher.
         AgentContext {
             goal: goal.into(),
             triggering_event: None,
@@ -121,6 +123,7 @@ mod tests {
             available_tools: vec![],
             budget: AgentBudget::default(),
             feedback_history: vec![],
+            pending_adjudications: vec![],
         }
     }
 

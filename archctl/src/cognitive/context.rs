@@ -33,6 +33,14 @@ pub struct AgentContext {
     /// Default: empty.
     #[serde(default)]
     pub feedback_history: Vec<crate::feedback::FeedbackSummary>,
+    /// Prior open adjudications surfaced at context-build time so re-invoked
+    /// agents see which FusedClaims still need a human verdict (REQ-M25-006).
+    /// Mirrors `feedback_history` (TRUST-006-b). Default: empty.
+    ///
+    /// Ordered deterministically by `(decided_at DESC, id ASC)` — same as
+    /// `AdjudicationRepository::list_pending_adjudications`.
+    #[serde(default)]
+    pub pending_adjudications: Vec<crate::adjudication::AdjudicationEvent>,
 }
 
 impl AgentContext {
@@ -68,6 +76,41 @@ impl AgentContext {
             available_tools,
             budget,
             feedback_history,
+            pending_adjudications: vec![],
+        }
+    }
+
+    /// Build an `AgentContext` with its `pending_adjudications` field
+    /// populated from a pre-fetched `Vec<AdjudicationEvent>`. Mirrors
+    /// `with_feedback_history` (TRUST-006-b). The struct-literal form
+    /// `pending_adjudications: vec![]` remains valid at sites that
+    /// intentionally construct an adjudication-blind context.
+    ///
+    /// Spec: REQ-T08-005 (TRUST-008), invariant ADR-063.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_pending_adjudications(
+        goal: String,
+        triggering_event: Option<String>,
+        graph_view: GraphView,
+        source_fragments: Vec<SourceFragment>,
+        evidence: Vec<Evidence>,
+        applicable_rules: Vec<crate::cognitive::Rule>,
+        available_tools: Vec<crate::cognitive::ToolDescriptor>,
+        budget: AgentBudget,
+        feedback_history: Vec<crate::feedback::FeedbackSummary>,
+        pending_adjudications: Vec<crate::adjudication::AdjudicationEvent>,
+    ) -> Self {
+        Self {
+            goal,
+            triggering_event,
+            graph_view,
+            source_fragments,
+            evidence,
+            applicable_rules,
+            available_tools,
+            budget,
+            feedback_history,
+            pending_adjudications,
         }
     }
 }
@@ -148,6 +191,7 @@ mod tests {
             available_tools: vec![],
             budget: AgentBudget::default(),
             feedback_history: vec![],
+            pending_adjudications: vec![],
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
