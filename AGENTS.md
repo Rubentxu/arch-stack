@@ -461,6 +461,79 @@ cd archctl && cargo test --features test-fixtures && \
   en el código (e.g. `// allow: serde renombra el campo para
   compat con bundle v1`).
 
+## No Stubs, Mocks, Placeholders, or Hardcoded Values
+
+**Regla absoluta**: ningún stub, mock, placeholder, valor hardcoded
+o trabajo a medias. Todo lo que se entrega debe ser 100% productivo.
+
+- **Sin stubs**: una función, struct, módulo, nodo de vault, ADR,
+  spec, test o comando cuyo cuerpo diga "no implementado", "TODO",
+  "placeholder", "WIP", "stub", "temporal", "pending review" es
+  rechazado. Si falta contenido, no se publica hasta tenerlo.
+- **Sin mocks injustificados**: solo se permite un mock cuando el
+  adaptador real tiene I/O externo (network, clock, subprocess) y
+  testearlo requiere entorno. Para bases de datos (lbug), filesystem
+  o cualquier otro adapter interno, usar el adapter real con
+  `tempfile::TempDir`. Ningún `MockStore` / `FakeRepo` / `StubAgent`
+  para puertos no externos.
+- **Sin placeholders en docs**: ningún nodo del vault en
+  `~/.sddk-knowledge/` con `status: stub`, `type: stub`, ni cuerpo
+  marcado como placeholder. Si una wikilink apunta a contenido que
+  no existe, o bien (a) se crea el contenido real, o bien (b) se
+  elimina la wikilink del nodo fuente. La tercera opción (stub)
+  está prohibida.
+- **Sin valores hardcoded**: paths absolutos del sistema, puertos,
+  URLs de servicios externos, secretos y credenciales deben venir
+  de configuración, env vars, o el port `Filesystem`. Lo único
+  hardcoded permitido son constantes de protocolo del propio
+  binario (e.g. `"ARCHCTL"` para el prefijo de tag, `0o600` para
+  permisos de credenciales).
+- **Sin tests deshabilitados**: ningún `#[ignore]` sin justificación
+  explícita en el código (e.g. necesita red real, depende de un
+  binario externo del usuario). Si un test no se puede ejecutar en
+  CI, abrir issue en lugar de silenciarlo.
+- **Sin código muerto "por si acaso"**: cualquier función pública
+  no usada en 2 minor versions se elimina (preaviso de 1 minor
+  con `#[deprecated]`). Las internas se eliminan de inmediato.
+- **Sin "scaffolding" para "futuro trabajo"**: si una funcionalidad
+  no se implementa en este ciclo, no se deja el esqueleto. Se
+  implementa o no se toca.
+
+### Cómo manejar contenido que falta
+
+Cuando un adaptador o comando necesita una pieza de información que
+no está disponible:
+
+1. **Pedirla al usuario** o consultar el corpus de conocimiento
+   verificado (`vault`, CHANGELOG, docs/adr/, código fuente).
+2. **Fallar con error claro**: `anyhow!("required: {missing}")` o
+   `bail!("...")` con contexto. Nunca devolver un valor tonto.
+3. **Eliminar el camino**: si no se puede implementar 100%, no se
+  implementa. Se documenta la limitación en el spec.
+
+### Auditoría
+
+Cualquier PR o commit que introduzca un stub/mock/placeholder/
+hardcoded value es **bloqueado en verify**. El ciclo verify debe
+incluir un grep explícito por patrones prohibidos:
+
+```bash
+# Stubs y placeholders
+grep -rEn "status:\s*stub|type:\s*stub|TODO|FIXME|XXX|HACK|placeholder|tbd" \
+  archctl/src/ ~/.sddk-knowledge/
+
+# Mocks para puertos no externos
+grep -rEn "struct (Mock|Fake|Stub)(Store|Repo|Agent|Adapter)" archctl/src/
+
+# Valores hardcoded (paths/URLs/secrets)
+grep -rEn 'localhost|127\.0\.0\.1|/home/|/var/' archctl/src/ | \
+  grep -v "tests\|fixtures"
+```
+
+Si el grep encuentra coincidencias, justificar cada una en el
+commit o en el artifact `apply-progress.md`. Sin justificación,
+el commit se rechaza.
+
 ## Testing Principles
 
 - **Comportamiento observable**: testea la salida del CLI o el
