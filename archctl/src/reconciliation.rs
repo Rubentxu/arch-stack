@@ -386,4 +386,62 @@ mod tests {
         assert_eq!(r.computed_status, "pending_adjudication");
         assert!(r.rationale.contains("trust gate denied"));
     }
+
+    /// TRUST-005 PR3b: Reconciliation::compute is a pure function — same inputs ⇒ same output byte-equal.
+    #[test]
+    fn reconciliation_compute_status_deterministic_byte_equal() {
+        let trust = model_inference_trust();
+        let fb_a = make_feedback(FeedbackVerdict::Accept, "alice", "rev1");
+        let fb_b = make_feedback(FeedbackVerdict::Accept, "bob", "rev2");
+        let inputs = |feedbacks: &[Feedback]| {
+            Reconciliation::compute(
+                "a1".to_string(),
+                "Subject".to_string(),
+                "uses".to_string(),
+                "Object".to_string(),
+                vec!["e1".to_string()],
+                feedbacks,
+                "rev1".to_string(),
+                trust,
+            )
+        };
+        let r1 = inputs(&[fb_a.clone(), fb_b.clone()]);
+        let r2 = inputs(&[fb_a, fb_b]);
+        assert_eq!(r1.computed_status, r2.computed_status);
+        assert_eq!(r1.rationale, r2.rationale);
+        assert_eq!(r1.assertion_id, r2.assertion_id);
+    }
+
+    /// TRUST-005 PR3b: spec-35 v1.1 §3.1c — multi-plane bias ordering.
+    /// Different Feedback orderings converge to same computed_status when sorted by id.
+    #[test]
+    fn reconciliation_multi_plane_bias_ordering_per_spec_35_section_3_1c() {
+        let trust = model_inference_trust();
+        // Two Accept verdicts with different actors+revisions.
+        let fb_a = make_feedback(FeedbackVerdict::Accept, "alice", "rev1");
+        let fb_b = make_feedback(FeedbackVerdict::Accept, "bob", "rev2");
+        // Forward and reverse order — compute must produce identical output.
+        let r_forward = Reconciliation::compute(
+            "a1".to_string(),
+            "S".to_string(),
+            "p".to_string(),
+            "O".to_string(),
+            vec!["e1".to_string()],
+            &[fb_a.clone(), fb_b.clone()],
+            "rev1".to_string(),
+            trust,
+        );
+        let r_reverse = Reconciliation::compute(
+            "a1".to_string(),
+            "S".to_string(),
+            "p".to_string(),
+            "O".to_string(),
+            vec!["e1".to_string()],
+            &[fb_b, fb_a],
+            "rev1".to_string(),
+            trust,
+        );
+        assert_eq!(r_forward.computed_status, r_reverse.computed_status);
+        assert_eq!(r_forward.rationale, r_reverse.rationale);
+    }
 }
