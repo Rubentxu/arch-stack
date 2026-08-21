@@ -1205,6 +1205,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     applicable_rules: vec![],
                     available_tools: vec![],
                     budget: Default::default(),
+                    feedback_history: vec![],
                 };
                 let out = disp.dispatch(&ctx)?;
                 if json {

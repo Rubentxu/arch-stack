@@ -171,6 +171,7 @@ mod tests {
             applicable_rules: vec![],
             available_tools: vec![],
             budget: AgentBudget::default(),
+            feedback_history: vec![],
         }
     }
 
