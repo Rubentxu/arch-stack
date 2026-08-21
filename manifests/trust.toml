@@ -57,6 +57,9 @@ must_hold = [
   "pub fn canonical_promotion_allowed(",
   # Two-stage gate semantics (Option D)
   "ModelInference × Suggested",
+  # TRUST-005: m30 bridge column. FusedClaim.pending_adjudication_event
+  # flag is consulted by fusion_bridge.rs and store.rs FeedbackRepository.
+  "pending_adjudication_event",
 ]
 
 # Minimum number of #[test] items in trust.rs.

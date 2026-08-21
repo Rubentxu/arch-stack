@@ -509,6 +509,31 @@ pub trait EvaluationRepository: Send + Sync {
     fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()>;
 }
 
+/// Feedback write port (spec-35 v1.1 §2). Persists `(:Feedback)` nodes
+/// and links them to target `(:FusedClaim)` via `[:VERDICTS_ON]`.
+///
+/// The trait is implemented by [`LbugStore`] next to [`EvidenceRepository`];
+/// the co-location lets `FeedbackError` be wrapped to `StoreError` at the
+/// adapter boundary without `feedback.rs` depending on `store.rs`.
+pub trait FeedbackRepository: Send + Sync {
+    /// Persist a [`crate::feedback::Feedback`] record and link it to its
+    /// target `(:FusedClaim)` via `[:VERDICTS_ON]`.
+    ///
+    /// Idempotent: `MERGE` on both node and edge.
+    fn put_feedback(&mut self, feedback: &crate::feedback::Feedback) -> Result<()>;
+
+    /// Read all [`crate::feedback::Feedback`] rows that target the given
+    /// `FusedClaim` id, ordered by `timestamp ASC`.
+    fn read_feedback_for_claim(&mut self, claim_id: &str) -> Result<Vec<crate::feedback::Feedback>>;
+
+    /// List all [`crate::reconciliation::Reconciliation`] rows, optionally
+    /// filtered by assertion_id. Ordered by `revision DESC`.
+    fn list_reconciliations(
+        &mut self,
+        assertion_id: Option<&str>,
+    ) -> Result<Vec<crate::reconciliation::Reconciliation>>;
+}
+
 /// Diagram read port (P1-03). Replaces the former `diagram::queries` free
 /// functions (removed in v1.69.0) with typed reads that return owned domain
 /// structs.
@@ -2684,6 +2709,172 @@ impl EvaluationRepository for LbugStore {
 
     fn link_evaluates(&mut self, evaluation_id: &str, evidence_id: &str) -> Result<()> {
         SourceOps::link_evaluates(self, evaluation_id, evidence_id)
+    }
+}
+
+impl FeedbackRepository for LbugStore {
+    fn put_feedback(&mut self, feedback: &crate::feedback::Feedback) -> Result<()> {
+        use crate::feedback::FeedbackVerdict;
+        use crate::graph::validate_identifier;
+        let session = self.session_mut_inner()?;
+        let id = validate_identifier(&feedback.id)
+            .context("put_feedback: id failed validation")?;
+        let target = validate_identifier(&feedback.target)
+            .context("put_feedback: target failed validation")?;
+        let verdict_label = match feedback.verdict {
+            FeedbackVerdict::Accept => "accept",
+            FeedbackVerdict::Reject => "reject",
+            FeedbackVerdict::Uncertain => "uncertain",
+            FeedbackVerdict::Supersede => "supersede",
+            FeedbackVerdict::Correct => "correct",
+        };
+        let replacement = feedback
+            .replacement
+            .as_ref()
+            .map(|r| r.replace('\'', "\\'"))
+            .unwrap_or_default();
+        let actor = feedback.actor.replace('\'', "\\'");
+        let revision = feedback.revision.replace('\'', "\\'");
+        let timestamp = &feedback.timestamp;
+        // evidence and correlation_id live in props (ADR-016-B3)
+        let props = serde_json::json!({
+            "evidence": feedback.evidence,
+            "correlation_id": feedback.correlation_id,
+        });
+        let props_json =
+            serde_json::to_string(&props).context("serialize feedback props")?;
+        let safe_props = props_json.replace('\'', "\\'");
+        // MERGE node + edge idempotently
+        let cypher = format!(
+            "MERGE (f:Feedback {{id: '{id}'}}) \
+             SET f.target = '{target}', \
+                 f.verdict = '{verdict_label}', \
+                 f.replacement = '{replacement}', \
+                 f.actor = '{actor}', \
+                 f.revision = '{revision}', \
+                 f.timestamp = '{timestamp}', \
+                 f.props = '{safe_props}' \
+             WITH f \
+             MATCH (c:FusedClaim {{id: '{target}'}}) \
+             MERGE (f)-[:VERDICTS_ON]->(c);"
+        );
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("put_feedback {id}"))?;
+        Ok(())
+    }
+
+    fn read_feedback_for_claim(
+        &mut self,
+        claim_id: &str,
+    ) -> Result<Vec<crate::feedback::Feedback>> {
+        use crate::feedback::FeedbackVerdict;
+        let session = self.session_mut_inner()?;
+        let cid = crate::graph::validate_identifier(claim_id)
+            .context("read_feedback_for_claim: claim_id failed validation")?;
+        let cypher = format!(
+            "MATCH (f:Feedback)-[:VERDICTS_ON]->(c:FusedClaim {{id: '{cid}'}}) \
+             RETURN f.id, f.target, f.verdict, f.replacement, f.actor, \
+                    f.revision, f.timestamp, f.props \
+             ORDER BY f.timestamp ASC"
+        );
+        let rows = run_query(&session.conn, &cypher)
+            .with_context(|| format!("read_feedback_for_claim {cid}"))?;
+        let mut results = Vec::new();
+        for row in rows {
+            let id = row.get("f.id").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let target = row.get("f.target").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let verdict_str = row.get("f.verdict").and_then(|c| c.as_str()).unwrap_or("uncertain");
+            let verdict = FeedbackVerdict::parse_label(verdict_str)
+                .unwrap_or(FeedbackVerdict::Uncertain);
+            let replacement = row.get("f.replacement")
+                .and_then(|c| c.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let actor = row.get("f.actor").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let revision = row.get("f.revision").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let timestamp = row.get("f.timestamp").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let props_str = row.get("f.props").and_then(|c| c.as_str()).unwrap_or("{}");
+            let props: serde_json::Value = props_str.parse().unwrap_or(serde_json::Value::Null);
+            let evidence: Option<Vec<String>> = props
+                .get("evidence")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                });
+            let correlation_id = props
+                .get("correlation_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            results.push(crate::feedback::Feedback {
+                id,
+                target,
+                verdict,
+                replacement,
+                actor,
+                revision,
+                timestamp,
+                evidence,
+                correlation_id,
+            });
+        }
+        Ok(results)
+    }
+
+    fn list_reconciliations(
+        &mut self,
+        assertion_id: Option<&str>,
+    ) -> Result<Vec<crate::reconciliation::Reconciliation>> {
+        let session = self.session_mut_inner()?;
+        let filter = assertion_id
+            .map(|a| format!("WHERE r.assertion_id = '{}'", a.replace('\'', "\\'")))
+            .unwrap_or_default();
+        let cypher = format!(
+            "MATCH (r:Reconciliation) \
+             {} \
+             RETURN r.id, r.assertion_id, r.subject, r.predicate, r.object, \
+                    r.evidence_set, r.computed_status, r.rationale, r.revision \
+             ORDER BY r.revision DESC",
+             filter
+        );
+        let rows = run_query(&session.conn, &cypher)
+            .with_context(|| "list_reconciliations query")?;
+        let mut results = Vec::new();
+        for row in rows {
+            let id = row.get("r.id").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let assertion_id = row.get("r.assertion_id").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let subject = row.get("r.subject").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let predicate = row.get("r.predicate").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let object = row.get("r.object").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            // evidence_set is a LIST<STRING> column — deserialize from JSON array string
+            let evidence_set: Vec<String> = row
+                .get("r.evidence_set")
+                .and_then(|c| c.as_str())
+                .map(|s| {
+                    serde_json::from_str::<Vec<String>>(s).unwrap_or_else(|_| Vec::new())
+                })
+                .unwrap_or_default();
+            let computed_status = row.get("r.computed_status").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let rationale = row.get("r.rationale").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let revision = row.get("r.revision").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            results.push(crate::reconciliation::Reconciliation {
+                id,
+                assertion_id,
+                subject,
+                predicate,
+                object,
+                evidence_set,
+                planes: Vec::new(),
+                computed_status,
+                rationale,
+                revision,
+            });
+        }
+        Ok(results)
     }
 }
 
