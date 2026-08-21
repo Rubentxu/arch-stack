@@ -439,581 +439,153 @@ mod tests {
     use crate::clock::FixedClock;
     use crate::diagram::export_types::{EvidenceBundle, Manifest, Projection, Styles};
     use crate::filesystem::MemoryFilesystem;
+    use crate::graph::{Element, ElementVersion, StructuralEvidence};
     use crate::row::{Cell, Row};
+    use crate::store::{
+        ElementRepository, EvidenceRepository, GraphStore, LbugStore, SemanticEdgeRepository,
+    };
 
-    /// A minimal GraphStore stub that returns pre-configured query results.
-    struct MockGraphStore {
+    /// Build a real `LbugStore` (production adapter) seeded with the
+    /// test fixture. Replaces the in-memory `MockGraphStore` that
+    /// previously shadowed `LbugStore`'s Cypher filter logic — the
+    /// production filter now runs against the production store, so
+    /// tests exercise the same path as `archctl diagram export`.
+    fn seeded_graph_store(
+        project_dir: &std::path::Path,
         elements: Vec<Row>,
         edges: Vec<Row>,
         evidence: Vec<Row>,
         version_props: Vec<Row>,
-        view_members: Vec<crate::diagram::view_types::ViewMember>,
-    }
+    ) -> LbugStore {
+        let mut store = LbugStore::open(project_dir).expect("LbugStore::open");
+        store.init().expect("LbugStore::init");
 
-    impl crate::store::DiagramRepository for MockGraphStore {
-        fn list_elements(
-            &self,
-            category: &str,
-            scope: Option<&str>,
-            kind: Option<&str>,
-        ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
-            // Filter self.elements the same way LbugStore::list_elements filters via Cypher.
-            let cat_upper = category.to_uppercase();
-            let key_upper = scope.map(|s| s.to_uppercase());
-            let kind_upper = kind.map(|k| k.to_uppercase());
-            let filtered: Vec<crate::graph::ElementRow> = self
-                .elements
-                .iter()
-                .filter(|row| {
-                    let row_cat = row
-                        .get("e.category")
-                        .and_then(|c| c.as_str())
-                        .map(|s| s.to_uppercase())
-                        .unwrap_or_default();
-                    let row_key = row
-                        .get("e.canonical_key")
-                        .and_then(|c| c.as_str())
-                        .map(|s| s.to_uppercase())
-                        .unwrap_or_default();
-                    let row_kind = row
-                        .get("e.kind_id")
-                        .and_then(|c| c.as_str())
-                        .map(|s| s.to_uppercase())
-                        .unwrap_or_default();
-                    let cat_match = row_cat == cat_upper;
-                    let key_match = key_upper
-                        .as_ref()
-                        .filter(|k| !k.is_empty() && *k != "*")
-                        .map(|k| row_key.starts_with(k))
-                        .unwrap_or(true);
-                    let kind_match = kind_upper
-                        .as_ref()
-                        .map(|k| row_kind.contains(k))
-                        .unwrap_or(true);
-                    cat_match && key_match && kind_match
-                })
-                .map(|row| crate::graph::ElementRow {
-                    id: row
-                        .get("e.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    kind_id: row
-                        .get("e.kind_id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    category: row
-                        .get("e.category")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    canonical_key: row
-                        .get("e.canonical_key")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    current_name: row
-                        .get("e.current_name")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    current_status: row
-                        .get("e.current_status")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    current_confidence: row
-                        .get("e.current_confidence")
-                        .and_then(|c| c.as_f64())
-                        .unwrap_or(0.0),
-                    current_version_id: row
-                        .get("e.current_version_id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                })
-                .collect();
-            Ok(filtered)
-        }
-        fn list_semantic_edges(
-            &self,
-            _category: &str,
-        ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
-            // Return all edges for now (category filtering happens at the Cypher level in the real impl)
-            Ok(self
-                .edges
-                .iter()
-                .map(|row| crate::graph::SemanticEdgeRow {
-                    relation_id: row
-                        .get("edge.relation_id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    predicate_id: row
-                        .get("edge.predicate_id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    source_id: row
-                        .get("src.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    target_id: row
-                        .get("tgt.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    order_key: row
-                        .get("edge.order_key")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    props: row
-                        .get("edge.props")
-                        .and_then(|c| c.to_map())
-                        .unwrap_or_default(),
-                })
-                .collect())
-        }
-        fn list_evidence_for_versions(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
-            let ids_upper: std::collections::HashSet<String> =
-                version_ids.iter().map(|s| s.to_uppercase()).collect();
-            Ok(self
-                .evidence
-                .iter()
-                .filter(|row| {
-                    let vid = row
-                        .get("v.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_uppercase();
-                    ids_upper.contains(&vid)
-                })
-                .map(|row| crate::diagram::export_types::EvidenceEntry {
-                    id: row
-                        .get("e.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    kind: row
-                        .get("e.kind")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    claim: row
-                        .get("e.claim")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    path: row
-                        .get("e.path")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    start_line: row
-                        .get("e.start_line")
-                        .and_then(|c| c.as_i64())
-                        .unwrap_or(0) as u64,
-                    end_line: row.get("e.end_line").and_then(|c| c.as_i64()).unwrap_or(0) as u64,
-                    tool_name: row
-                        .get("e.tool_name")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    tool_version: row
-                        .get("e.tool_version")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    rule_id: row
-                        .get("e.rule_id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    content_hash: row
-                        .get("e.content_hash")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    observed_at: row
-                        .get("e.observed_at")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    status: row.get("e.props").and_then(|p| {
-                        if let crate::row::Cell::Object(kvs) = p {
-                            kvs.iter().find(|(k, _)| *k == "status").and_then(|(_, v)| {
-                                if let crate::row::Cell::String(s) = v {
-                                    Some(s.clone())
-                                } else {
-                                    None
-                                }
-                            })
-                        } else {
-                            None
-                        }
-                    }),
-                })
-                .collect())
-        }
-        fn list_version_props(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            let ids_upper: std::collections::HashSet<String> =
-                version_ids.iter().map(|s| s.to_uppercase()).collect();
-            Ok(self
-                .version_props
-                .iter()
-                .filter(|row| {
-                    let vid = row
-                        .get("v.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_uppercase();
-                    ids_upper.contains(&vid)
-                })
-                .map(|row| crate::graph::VersionPropsRow {
-                    id: row
-                        .get("v.id")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    name: row
-                        .get("v.name")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    description: row
-                        .get("v.description")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    props: row
-                        .get("v.props")
-                        .and_then(|c| c.to_map())
-                        .unwrap_or_default(),
-                })
-                .collect())
-        }
-        fn read_relation_by_id(
-            &self,
-            _id: &str,
-        ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
-            // MockGraphStore does not exercise relation reads
-            Ok(None)
-        }
-        fn list_evidence_for_relation_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
-            // MockGraphStore does not exercise relation evidence
-            Ok(vec![])
-        }
-    }
-
-    impl MockGraphStore {
-        fn new(
-            elements: Vec<Row>,
-            edges: Vec<Row>,
-            evidence: Vec<Row>,
-            version_props: Vec<Row>,
-            view_members: Vec<crate::diagram::view_types::ViewMember>,
-        ) -> Self {
-            Self {
-                elements,
-                edges,
-                evidence,
-                version_props,
-                view_members,
-            }
-        }
-    }
-
-    impl crate::store::GraphStore for MockGraphStore {
-        fn open(_: &std::path::Path) -> anyhow::Result<Self>
-        where
-            Self: Sized,
-        {
-            unimplemented!()
-        }
-        fn init(&mut self) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn stat(&self) -> anyhow::Result<crate::GraphStat> {
-            unimplemented!()
-        }
-        // M32 D1: MockGraphStore does not persist, so transaction primitives
-        // are no-ops. Tests that exercise writers (call_graph, etc.) use the
-        // real `LbugStore` via `open_and_init` and do not touch the mock.
-        fn begin_transaction(&mut self) -> Result<(), crate::store::StoreError> {
-            Ok(())
-        }
-        fn commit_transaction(&mut self) -> Result<(), crate::store::StoreError> {
-            Ok(())
-        }
-        fn rollback_transaction(&mut self) -> Result<(), crate::store::StoreError> {
-            Ok(())
-        }
-    }
-
-    impl crate::store::UnitOfWork for MockGraphStore {
-        fn begin_transaction<'a>(
-            &'a mut self,
-        ) -> std::result::Result<crate::store::Transaction<'a>, crate::store::StoreError> {
-            // MockGraphStore is in-memory; transaction semantics are a no-op.
-            // Return an error to indicate transactions are not supported.
-            Err(crate::store::StoreError::Transaction(
-                "MockGraphStore does not support transactions".to_string(),
-            ))
-        }
-    }
-
-    impl crate::store::SnapshotRepository for MockGraphStore {
-        fn create_snapshot(&mut self, _: &crate::store::Snapshot) -> anyhow::Result<String> {
-            unimplemented!()
-        }
-        fn get_snapshot(&self, _: &str) -> anyhow::Result<crate::store::Snapshot> {
-            unimplemented!()
-        }
-        fn list_snapshots(&self) -> anyhow::Result<Vec<crate::store::Snapshot>> {
-            Ok(vec![])
-        }
-        fn update_snapshot_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn update_snapshot_pin(&mut self, _: &str, _: bool) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn delete_snapshots(&mut self, _: &[String]) -> anyhow::Result<usize> {
-            Ok(0)
-        }
-        fn next_sequence(&mut self) -> anyhow::Result<i64> {
-            Ok(1)
-        }
-    }
-
-    // Query-parsing helpers (dead code after RawGraphQuery removal in P1-05 2.5).
-    #[allow(dead_code)]
-    impl MockGraphStore {
-        /// Extract category, canonical_key prefix, and kind_id prefix from a query_elements cypher.
-        fn extract_query_filters(cypher: &str) -> (Option<String>, Option<String>, Option<String>) {
-            let category = Self::extract_quoted(cypher, "E.CATEGORY");
-            // SCN-417: support STARTS WITH prefix matching for canonical_key
-            let canonical_key = Self::extract_key_from_starts_with(cypher, "E.CANONICAL_KEY")
-                .or_else(|| Self::extract_quoted(cypher, "E.CANONICAL_KEY"));
-            // ADR-024: kind_id STARTS WITH filter
-            let kind_id = Self::extract_key_from_starts_with(cypher, "E.KIND_ID");
-            (category, canonical_key, kind_id)
-        }
-
-        fn extract_key_from_starts_with(s: &str, key: &str) -> Option<String> {
-            let upper = s.to_uppercase();
-            let pattern = format!("{} STARTS WITH '", key);
-            let start = upper.find(&pattern)?;
-            let value_start = start + pattern.len();
-            let value_end = s[value_start..].find('\'')?;
-            Some(s[value_start..value_start + value_end].to_string())
-        }
-
-        fn extract_quoted(s: &str, key: &str) -> Option<String> {
-            let upper = s.to_uppercase();
-            let pattern = format!("{} = '", key);
-            let start = upper.find(&pattern)?;
-            let value_start = start + pattern.len();
-            let value_end = s[value_start..].find('\'')?;
-            Some(s[value_start..value_start + value_end].to_string())
-        }
-
-        /// Extract a list of IDs from `KEY IN ['id1', 'id2', ...]`.
-        fn extract_id_list(s: &str, key: &str) -> Vec<String> {
-            let upper = s.to_uppercase();
-            let pattern = format!("{} IN [", key);
-            let start = match upper.find(&pattern) {
-                Some(s) => s,
-                None => return vec![],
+        // ElementVersion nodes + CURRENT_VERSION edges first (Element rows
+        // reference them via current_version_id).
+        for row in &version_props {
+            let version_id = cell_string(row, "v.id");
+            let element_id = derive_element_id_from_version(&version_id);
+            let name = cell_string(row, "v.name");
+            let description = cell_string(row, "v.description");
+            let v = ElementVersion {
+                id: version_id.clone(),
+                element_id: element_id.clone(),
+                name,
+                status: "accepted".into(),
+                origin: "test".into(),
+                confidence: 0.9,
+                props: serde_json::Map::new(),
             };
-            let values_start = start + pattern.len();
-            let values_end = s[values_start..].find(']').map(|i| values_start + i);
-            let values_str = values_end
-                .map(|end| &s[values_start..end])
-                .unwrap_or_default();
-            values_str
-                .split(',')
-                .filter_map(|item| {
-                    let trimmed = item.trim().trim_start_matches('\'');
-                    let end = trimmed.find('\'').map(|i| &trimmed[..i]).unwrap_or(trimmed);
-                    if end.is_empty() {
-                        None
-                    } else {
-                        Some(end.to_string())
-                    }
-                })
-                .collect()
+            store
+                .upsert_element_version(&v)
+                .expect("upsert_element_version");
+            store
+                .link_current_version(&element_id, &version_id)
+                .expect("link_current_version");
+            // Description lives on ElementVersion.props under "description"
+            // so list_version_props can surface it.
+            let desc_cypher = format!(
+                "MATCH (v:ElementVersion {{id: '{vid}'}}) SET v.description = '{desc}';",
+                vid = escape(&version_id),
+                desc = escape(&description),
+            );
+            store
+                .execute_raw_cypher_for_test(&desc_cypher)
+                .expect("set description");
         }
+
+        for row in &elements {
+            let e = Element {
+                id: cell_string(row, "e.id"),
+                kind_id: cell_string(row, "e.kind_id"),
+                category: cell_string(row, "e.category"),
+                canonical_key: cell_string(row, "e.canonical_key"),
+                current_name: cell_string(row, "e.current_name"),
+                current_status: cell_string_or(row, "e.current_status", "accepted"),
+                current_confidence: cell_f64_or(row, "e.current_confidence", 0.9),
+                current_version_id: cell_string(row, "e.current_version_id"),
+            };
+            store.upsert_element(&e).expect("upsert_element");
+        }
+
+        for row in &edges {
+            let src = cell_string(row, "src.id");
+            let tgt = cell_string(row, "tgt.id");
+            let relation_id = cell_string(row, "edge.relation_id");
+            let predicate_id = cell_string_or(row, "edge.predicate_id", "calls");
+            store
+                .link_semantic_edge(
+                    &src,
+                    &tgt,
+                    &relation_id,
+                    &predicate_id,
+                    &serde_json::Map::new(),
+                    true,
+                )
+                .expect("link_semantic_edge");
+        }
+
+        for row in &evidence {
+            // ADR-005: evidence must have `status: "accepted"` in props
+            // to pass the build_bundle filter that only emits canonical
+            // evidence to the bundle.
+            let mut props = serde_json::Map::new();
+            props.insert(
+                "status".into(),
+                serde_json::Value::String("accepted".into()),
+            );
+            let ev = StructuralEvidence {
+                id: cell_string(row, "e.id"),
+                kind: cell_string_or(row, "e.kind", "structural"),
+                claim: cell_string_or(row, "e.claim", "test claim"),
+                file: cell_string_or(row, "e.path", "src/lib.rs"),
+                line: cell_i64_or(row, "e.start_line", 1) as u64,
+                confidence: 0.9,
+                rule_id: cell_string_or(row, "e.rule_id", "test:rule"),
+                props,
+            };
+            store
+                .put_structural_evidence(&ev)
+                .expect("put_structural_evidence");
+            let version_id = cell_string(row, "v.id");
+            store
+                .link_supported_by(&version_id, &ev.id)
+                .expect("link_supported_by");
+        }
+
+        store
     }
 
-    // Sub-trait impls (see diagram_queries.rs for rationale).
-    impl crate::store::EvidenceOps for MockGraphStore {
-        fn put_evidence(
-            &mut self,
-            _: &[crate::evidence::Evidence],
-        ) -> anyhow::Result<crate::store::PutEvidenceResult> {
-            unimplemented!()
-        }
-        fn list_evidence(&self, _: Option<&str>) -> anyhow::Result<Vec<Row>> {
-            unimplemented!()
-        }
-        fn accept_evidence(&mut self, _: &str, _: &dyn crate::clock::Clock) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn supersede_evidence(&mut self, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn list_evidence_by_status(
-            &self,
-            _: crate::evidence::EvidenceStatus,
-            _: Option<&str>,
-        ) -> anyhow::Result<Vec<Row>> {
-            unimplemented!()
-        }
+    fn cell_string(row: &Row, key: &str) -> String {
+        row.get(key)
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string()
     }
 
-    impl crate::store::SourceOps for MockGraphStore {
-        fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
+    fn cell_string_or(row: &Row, key: &str, default: &str) -> String {
+        row.get(key)
+            .and_then(|c| c.as_str())
+            .unwrap_or(default)
+            .to_string()
     }
 
-    impl crate::store::DiagramOps for MockGraphStore {
-        fn put_diagram(&mut self, _: &crate::diagram::view_types::Diagram) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn get_diagram(&self, _: &str) -> anyhow::Result<crate::diagram::view_types::Diagram> {
-            unimplemented!()
-        }
-        fn put_view_member(
-            &mut self,
-            _: &crate::diagram::view_types::ViewMember,
-        ) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_member_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_renders(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn put_view_group(
-            &mut self,
-            _: &crate::diagram::view_types::ViewGroup,
-        ) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_group_contains(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn get_view_members(
-            &self,
-            _: &str,
-        ) -> anyhow::Result<Vec<crate::diagram::view_types::ViewMember>> {
-            Ok(self.view_members.clone())
-        }
-        fn update_view_member_label(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
+    fn cell_f64_or(row: &Row, key: &str, default: f64) -> f64 {
+        row.get(key).and_then(|c| c.as_f64()).unwrap_or(default)
     }
 
-    impl crate::store::ElementRepository for MockGraphStore {
-        fn upsert_element(&mut self, _: &crate::graph::Element) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn upsert_element_version(
-            &mut self,
-            _: &crate::graph::ElementVersion,
-        ) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_current_version(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_version_of(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_of_type(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn ensure_metatype(&mut self, _: &str, _: &str, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn existing_canonical_keys(&self) -> anyhow::Result<std::collections::HashSet<String>> {
-            let mut out = std::collections::HashSet::new();
-            for row in &self.elements {
-                if let Some(crate::row::Cell::String(k)) = row.get("e.canonical_key") {
-                    out.insert(k.clone());
-                }
-            }
-            Ok(out)
-        }
-        fn batch_upsert_elements(&mut self, _: &[crate::graph::Element]) -> anyhow::Result<usize> {
-            unimplemented!()
-        }
-        fn batch_upsert_element_versions(
-            &mut self,
-            _: &[crate::graph::ElementVersion],
-        ) -> anyhow::Result<usize> {
-            unimplemented!()
-        }
-        fn batch_link_of_type(&mut self, _: &[(String, String)]) -> anyhow::Result<usize> {
-            unimplemented!()
-        }
+    fn cell_i64_or(row: &Row, key: &str, default: i64) -> i64 {
+        row.get(key).and_then(|c| c.as_i64()).unwrap_or(default)
     }
 
-    impl crate::store::EvidenceRepository for MockGraphStore {
-        fn put_structural_evidence(
-            &mut self,
-            _: &crate::graph::StructuralEvidence,
-        ) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_supported_by(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
+    /// Test convention: `v:1` → element `el:1`, `v:2` → element `el:2`.
+    /// Mirrors the convention used by the make_*_row helpers in tests.
+    fn derive_element_id_from_version(version_id: &str) -> String {
+        version_id.replacen("v:", "el:", 1)
     }
 
-    impl crate::store::SourceRepository for MockGraphStore {
-        fn put_source(&mut self, _: &crate::source::SourceArtifact) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_extracted_from(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-    }
-
-    impl crate::store::EvaluationRepository for MockGraphStore {
-        fn put_evaluation(&mut self, _: &crate::evaluation::Evaluation) -> anyhow::Result<()> {
-            unimplemented!()
-        }
-        fn link_evaluates(&mut self, _: &str, _: &str) -> anyhow::Result<()> {
-            unimplemented!()
-        }
+    fn escape(s: &str) -> String {
+        s.replace('\'', "\\'")
     }
 
     fn make_element_row(
@@ -1086,6 +658,7 @@ mod tests {
 
     #[test]
     fn export_produces_all_bundle_files() {
+        let tmp = tempfile::tempdir().unwrap();
         // Per ADR-024: category must be "c4" (diagram family), not "container" (C4 kind).
         // The kind filter is passed via the kind parameter to query_elements.
         // For "container:orders" selector, we need:
@@ -1120,7 +693,7 @@ mod tests {
             make_version_row("v:2", "PaymentService", "Handles payment processing"),
         ];
 
-        let store = MockGraphStore::new(elements, edges, evidence, version_props, vec![]);
+        let store = seeded_graph_store(tmp.path(), elements, edges, evidence, version_props);
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -1185,13 +758,14 @@ mod tests {
 
     #[test]
     fn export_with_all_scope_returns_only_matching_category() {
+        let tmp = tempfile::tempdir().unwrap();
         // Per ADR-024: category must be "c4" (diagram family).
         // For "container:*", the query filters by category='c4' AND kind_id STARTS WITH 'container'
         let elements = vec![
             make_element_row("el:1", "c4", "ServiceA", "v:1", "mt.container", "svc-a"),
             make_element_row("el:2", "c4", "ServiceB", "v:2", "mt.container", "svc-b"),
         ];
-        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new(), vec![]);
+        let store = seeded_graph_store(tmp.path(), elements, Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -1219,6 +793,7 @@ mod tests {
 
     #[test]
     fn export_idempotent_on_same_input() {
+        let tmp = tempfile::tempdir().unwrap();
         // Per ADR-024: category must be "c4" (diagram family).
         // kind_id must match the query filter (container:*)
         let elements = vec![make_element_row(
@@ -1229,7 +804,7 @@ mod tests {
             "mt.container",
             "svc",
         )];
-        let store = MockGraphStore::new(elements, Vec::new(), Vec::new(), Vec::new(), vec![]);
+        let store = seeded_graph_store(tmp.path(), elements, Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out2");
@@ -1261,7 +836,8 @@ mod tests {
 
     #[test]
     fn export_rejects_malformed_selector() {
-        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new(), vec![]);
+        let tmp = tempfile::tempdir().unwrap();
+        let store = seeded_graph_store(tmp.path(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -1293,8 +869,9 @@ mod tests {
 
     #[test]
     fn export_empty_graph_sets_empty_true() {
-        // Mock store with zero elements — empty graph
-        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new(), vec![]);
+        let tmp = tempfile::tempdir().unwrap();
+        // Empty graph: no elements, no versions, no edges, no evidence
+        let store = seeded_graph_store(tmp.path(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let fs = MemoryFilesystem::new();
         let out_dir = std::path::PathBuf::from("/out");
@@ -1334,7 +911,8 @@ mod tests {
     fn envelope_is_schema_valid() {
         use crate::diagram::schema_embed::SCHEMA;
 
-        let store = MockGraphStore::new(Vec::new(), Vec::new(), Vec::new(), Vec::new(), vec![]);
+        let tmp = tempfile::tempdir().unwrap();
+        let store = seeded_graph_store(tmp.path(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let clock = FixedClock::new("2026-07-30T12:00:00Z");
         let bundle = build_bundle(&store, "container:*", &clock).unwrap();
         let envelope = build_export_envelope(&bundle);
