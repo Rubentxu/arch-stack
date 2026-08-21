@@ -92,7 +92,10 @@ fn write_valid_bundle(dir: &TempDir) {
     let assets = dir.path().join("assets");
     fs::create_dir_all(&assets).unwrap();
     for icon in ["context", "container", "component", "dynamic", "deployment"] {
-        fs::write(assets.join(format!("{icon}.png")), [0u8; 16]).unwrap();
+        // Validator checks file existence only (not content), so the
+        // 16-byte placeholder is enough. Extension must match
+        // `diagram::assets::ICON_EXTENSION` ("svg") — see validate.rs.
+        fs::write(assets.join(format!("{icon}.svg")), [0u8; 16]).unwrap();
     }
 }
 
