@@ -389,10 +389,11 @@ pub fn run_export(
         .with_context(|| format!("creating assets directory {}", assets_dir.display()))?;
 
     // Write icons — the 5 canonical C4 levels (shared with validate.rs).
-    // Single source of truth: `assets::CANONICAL_C4_ICONS`.
+    // Single source of truth: `assets::CANONICAL_C4_ICONS` + `ICON_EXTENSION`.
     for icon_name in crate::diagram::assets::CANONICAL_C4_ICONS {
-        let icon_bytes = crate::diagram::assets::icon_for(icon_name).unwrap_or_default();
-        write_atomic_bytes(fs, &assets_dir.join(format!("{icon_name}.png")), icon_bytes)?;
+        let icon_svg = crate::diagram::assets::icon_for(icon_name).unwrap_or_default();
+        let icon_filename = format!("{icon_name}.{}", crate::diagram::assets::ICON_EXTENSION);
+        write_atomic_bytes(fs, &assets_dir.join(&icon_filename), icon_svg.as_bytes())?;
     }
 
     let empty = bundle.projection.nodes.is_empty();
@@ -1174,9 +1175,10 @@ mod tests {
         // Verify assets directory and icons — must match the canonical C4 set shared with validate.rs.
         assert!(fs.exists(&out_dir.join("assets")));
         for icon in crate::diagram::assets::CANONICAL_C4_ICONS {
+            let icon_filename = format!("{icon}.{}", crate::diagram::assets::ICON_EXTENSION);
             assert!(
-                fs.exists(&out_dir.join("assets").join(format!("{icon}.png"))),
-                "icon {icon}.png should exist"
+                fs.exists(&out_dir.join("assets").join(&icon_filename)),
+                "icon {icon_filename} should exist"
             );
         }
     }
