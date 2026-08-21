@@ -259,10 +259,24 @@ impl EventLog {
 
     /// Append a serialised event to the log (low-level, preserves caller responsibility
     /// for identity fields). Prefer [`EventLog::append`] for new code.
+    ///
+    /// After successful append, the persisted sequence is updated to
+    /// `event.envelope.seq` if it is greater than the current persisted seq
+    /// (monotonic). This keeps `EventLog::seq()` consistent with the highest
+    /// seq recorded in the log, so the dispatcher contract holds: after
+    /// `dispatch`, `log.seq()` reflects the last dispatched envelope's seq.
     pub fn append_serialized(&mut self, event: &SerializedEvent) -> io::Result<()> {
         let mut file = OpenOptions::new().append(true).open(&self.path)?;
         let json = serde_json::to_string(event)?;
-        writeln!(file, "{}", json)
+        writeln!(file, "{}", json)?;
+
+        // Persist seq monotonically — only raise, never lower.
+        let current = Sequence::load(&self.seq_path)?.0;
+        let incoming = event.envelope.seq;
+        if incoming > current {
+            Sequence(incoming).store(&self.seq_path)?;
+        }
+        Ok(())
     }
 
     /// Returns an iterator over all events in the log, in order.
