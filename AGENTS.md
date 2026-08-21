@@ -167,11 +167,11 @@ archctl/                          # workspace root
 │   │   ├── diagram_apply.rs      # apply pipeline (T15)
 │   │   └── …                     # un test file por bounded context
 │   └── Cargo.toml
-├── manifests/                    # 23 manifest gates (uno por módulo)
+├── manifests/                    # 34 manifest gates (uno por módulo)
 │   ├── diagram.toml              # editable + must_hold + must_not_contain
 │   ├── store.toml
 │   ├── evidence.toml
-│   └── …                         # 23 archivos, ver `ls manifests/`
+│   └── …                         # 34 archivos, ver `ls manifests/`
 ├── schemas/                      # JSON Schemas versionados
 │   ├── projection.schema.json
 │   ├── changeset.schema.json     # PR2
@@ -847,7 +847,7 @@ Cada item debe responderse con **sí** o **no**:
 - [`CHANGELOG.md`](CHANGELOG.md) — historial de versiones.
 - [`README.md`](README.md) — entrada principal.
 - [`Cargo.toml`](archctl/Cargo.toml) — deps y MSRV.
-- [`manifests/`](manifests/) — manifest gates (23 archivos).
+- [`manifests/`](manifests/) — manifest gates (34 archivos).
 
 ## Open Questions
 
