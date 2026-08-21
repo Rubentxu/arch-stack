@@ -340,131 +340,165 @@ fn fused_claims_for_subject(
 mod tests {
     use super::*;
     use crate::diagram::export_types::EvidenceEntry;
-    use crate::graph::{ElementRow, RelationRow};
-    use crate::store::DiagramRepository;
+    use crate::store::{ElementRepository, EvidenceRepository, GraphStore, LbugStore};
 
-    /// A minimal DiagramRepository stub for unit tests.
-    struct FakeRepo {
-        elements: Vec<ElementRow>,
-        relations: Vec<RelationRow>,
-        element_evidence: Vec<(String, Vec<EvidenceEntry>)>, // (version_id, evidence)
-        relation_evidence: Vec<(String, Vec<EvidenceEntry>)>, // (version_id, evidence)
+    /// Builder-style seeder that persists the test fixture into a
+    /// real `LbugStore` opened in a TempDir. Mirrors the previous
+    /// FakeRepo builder ergonomics. Element relations use raw Cypher
+    /// because there is no high-level writer for the
+    /// `(:SemanticRelation)` table (see ADR-022 / store.rs:5354).
+    struct SeededStore {
+        project_dir: std::path::PathBuf,
+        elements: Vec<(String, String, String)>, // id, version_id, name
+        element_evidence: Vec<(String, EvidenceEntry)>,
+        relations: Vec<(String, String, String)>, // id, version_id, label
+        relation_evidence: Vec<(String, EvidenceEntry)>,
     }
 
-    impl FakeRepo {
-        fn new() -> Self {
+    impl SeededStore {
+        fn new(project_dir: &std::path::Path) -> Self {
             Self {
+                project_dir: project_dir.to_path_buf(),
                 elements: vec![],
-                relations: vec![],
                 element_evidence: vec![],
+                relations: vec![],
                 relation_evidence: vec![],
             }
         }
         fn with_element(mut self, id: &str, version_id: &str, name: &str) -> Self {
-            let category = if id.starts_with("c4:") {
-                "c4".to_string()
-            } else if id.starts_with("uml") {
-                "uml".to_string()
-            } else if id.starts_with("behavior:") {
-                "behavior".to_string()
-            } else {
-                "c4".to_string()
-            };
-            self.elements.push(ElementRow {
-                id: id.to_string(),
-                kind_id: "container".to_string(),
-                category,
-                canonical_key: id.to_string(),
-                current_name: name.to_string(),
-                current_status: "active".to_string(),
-                current_confidence: 0.9,
-                current_version_id: version_id.to_string(),
-            });
+            self.elements
+                .push((id.to_string(), version_id.to_string(), name.to_string()));
             self
         }
         fn with_element_evidence(mut self, version_id: &str, evidence: EvidenceEntry) -> Self {
             self.element_evidence
-                .push((version_id.to_string(), vec![evidence]));
+                .push((version_id.to_string(), evidence));
             self
         }
         fn with_relation(mut self, id: &str, version_id: &str, label: &str) -> Self {
-            self.relations.push(RelationRow {
-                id: id.to_string(),
-                current_version_id: version_id.to_string(),
-                current_label: label.to_string(),
-            });
+            self.relations
+                .push((id.to_string(), version_id.to_string(), label.to_string()));
             self
         }
         fn with_relation_evidence(mut self, version_id: &str, evidence: EvidenceEntry) -> Self {
             self.relation_evidence
-                .push((version_id.to_string(), vec![evidence]));
+                .push((version_id.to_string(), evidence));
             self
         }
-    }
+        fn build(self) -> LbugStore {
+            let mut store = LbugStore::open(&self.project_dir).expect("LbugStore::open");
+            store.init().expect("LbugStore::init");
 
-    impl DiagramRepository for FakeRepo {
-        fn list_elements(
-            &self,
-            category: &str,
-            _scope: Option<&str>,
-            _kind: Option<&str>,
-        ) -> anyhow::Result<Vec<ElementRow>> {
-            Ok(self
-                .elements
-                .iter()
-                .filter(|e| e.category == category)
-                .cloned()
-                .collect())
-        }
+            for (id, version_id, name) in &self.elements {
+                let category = if id.starts_with("c4:") {
+                    "c4"
+                } else if id.starts_with("uml") {
+                    "uml"
+                } else if id.starts_with("behavior:") {
+                    "behavior"
+                } else {
+                    "c4"
+                };
+                let v = crate::graph::ElementVersion {
+                    id: version_id.clone(),
+                    element_id: id.clone(),
+                    name: name.clone(),
+                    status: "accepted".to_string(),
+                    origin: "test".to_string(),
+                    confidence: 0.9,
+                    props: Default::default(),
+                };
+                store
+                    .upsert_element_version(&v)
+                    .expect("upsert_element_version");
+                store
+                    .link_current_version(id, version_id)
+                    .expect("link_current_version");
+                let e = crate::graph::Element {
+                    id: id.clone(),
+                    kind_id: "container".to_string(),
+                    category: category.to_string(),
+                    canonical_key: id.clone(),
+                    current_name: name.clone(),
+                    current_status: "active".to_string(),
+                    current_confidence: 0.9,
+                    current_version_id: version_id.clone(),
+                };
+                store.upsert_element(&e).expect("upsert_element");
+            }
 
-        fn list_semantic_edges(
-            &self,
-            _category: &str,
-        ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
-            Ok(vec![])
-        }
+            for (version_id, evidence) in &self.element_evidence {
+                let mut props = serde_json::Map::new();
+                if let Some(s) = &evidence.status {
+                    props.insert("status".into(), serde_json::Value::String(s.clone()));
+                }
+                let ev = crate::graph::StructuralEvidence {
+                    id: evidence.id.clone(),
+                    kind: evidence.kind.clone(),
+                    claim: evidence.claim.clone(),
+                    file: evidence.path.clone(),
+                    line: evidence.start_line,
+                    confidence: 0.9,
+                    rule_id: evidence.rule_id.clone(),
+                    props,
+                };
+                store
+                    .put_structural_evidence(&ev)
+                    .expect("put_structural_evidence");
+                store
+                    .link_supported_by(version_id, &evidence.id)
+                    .expect("link_supported_by");
+            }
 
-        fn list_evidence_for_versions(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<EvidenceEntry>> {
-            Ok(version_ids
-                .iter()
-                .filter_map(|vid| {
-                    self.element_evidence
-                        .iter()
-                        .find(|(id, _)| id == vid)
-                        .map(|(_, ev)| ev.clone())
-                })
-                .flatten()
-                .collect())
-        }
+            for (id, version_id, label) in &self.relations {
+                // No high-level writer for SemanticRelation — raw Cypher.
+                let cypher = format!(
+                    "CREATE (:SemanticRelation {{id: '{}', current_version_id: '{}', current_label: '{}'}});",
+                    id, version_id, label
+                );
+                store
+                    .execute_raw_cypher_for_test(&cypher)
+                    .expect("create SemanticRelation");
+                // And a RelationVersion node for SUPPORTED_BY traversal.
+                let cypher = format!(
+                    "CREATE (:RelationVersion {{id: '{}', relation_id: '{}'}});",
+                    version_id, id
+                );
+                store
+                    .execute_raw_cypher_for_test(&cypher)
+                    .expect("create RelationVersion");
+            }
 
-        fn list_version_props(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            Ok(vec![])
-        }
+            for (version_id, evidence) in &self.relation_evidence {
+                let mut props = serde_json::Map::new();
+                if let Some(s) = &evidence.status {
+                    props.insert("status".into(), serde_json::Value::String(s.clone()));
+                }
+                let ev = crate::graph::StructuralEvidence {
+                    id: evidence.id.clone(),
+                    kind: evidence.kind.clone(),
+                    claim: evidence.claim.clone(),
+                    file: evidence.path.clone(),
+                    line: evidence.start_line,
+                    confidence: 0.9,
+                    rule_id: evidence.rule_id.clone(),
+                    props,
+                };
+                store
+                    .put_structural_evidence(&ev)
+                    .expect("put_structural_evidence");
+                // SUPPORTED_BY from RelationVersion → Evidence
+                let cypher = format!(
+                    "MATCH (rv:RelationVersion {{id: '{}'}}), (e:Evidence {{id: '{}'}}) \
+                     CREATE (rv)-[:SUPPORTED_BY]->(e);",
+                    version_id, evidence.id
+                );
+                store
+                    .execute_raw_cypher_for_test(&cypher)
+                    .expect("link relation_supported_by");
+            }
 
-        fn read_relation_by_id(&self, id: &str) -> anyhow::Result<Option<RelationRow>> {
-            Ok(self.relations.iter().find(|r| r.id == id).cloned())
-        }
-
-        fn list_evidence_for_relation_versions(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<EvidenceEntry>> {
-            Ok(version_ids
-                .iter()
-                .filter_map(|vid| {
-                    self.relation_evidence
-                        .iter()
-                        .find(|(id, _)| id == vid)
-                        .map(|(_, ev)| ev.clone())
-                })
-                .flatten()
-                .collect())
+            store
         }
     }
 
@@ -491,9 +525,11 @@ mod tests {
 
     #[test]
     fn explain_element_with_evidence_returns_evidence_list() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:orders", "v:1", "OrderService")
-            .with_element_evidence("v:1", make_evidence("ev:1"));
+            .with_element_evidence("v:1", make_evidence("ev:1"))
+            .build();
 
         let result = explain(&repo, "c4:container:orders").unwrap();
         assert_eq!(result.subject.kind, "element");
@@ -505,7 +541,10 @@ mod tests {
 
     #[test]
     fn explain_element_without_evidence_returns_unsubstantiated() {
-        let repo = FakeRepo::new().with_element("c4:container:orders", "v:1", "OrderService");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
+            .with_element("c4:container:orders", "v:1", "OrderService")
+            .build();
         // No evidence added
 
         let result = explain(&repo, "c4:container:orders").unwrap();
@@ -516,16 +555,32 @@ mod tests {
 
     #[test]
     fn explain_element_unknown_id_returns_error() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let result = explain(&repo, "c4:container:unknown");
         assert!(matches!(result, Err(ExplainError::SubjectNotFound(_))));
     }
 
     #[test]
     fn explain_element_no_version_id_returns_unsubstantiated_with_warning() {
-        let repo = FakeRepo::new().with_element("c4:container:orders", "", "OrderService");
+        // Defensive path: `build_element_report` treats an empty
+        // `current_version_id` as "no version". Production's
+        // `validate_identifier` rejects empty ids so this scenario is
+        // unreachable through the normal write ports; raw Cypher is
+        // used to seed the unreachable state and exercise the guard.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = LbugStore::open(tmp.path()).expect("LbugStore::open");
+        store.init().expect("LbugStore::init");
+        store
+            .execute_raw_cypher_for_test(
+                "CREATE (:Element {id: 'c4:container:orders', kind_id: 'container', \
+                 category: 'c4', canonical_key: 'c4:container:orders', \
+                 current_name: 'OrderService', current_status: 'active', \
+                 current_confidence: 0.9, current_version_id: ''});",
+            )
+            .expect("seed element with empty version");
 
-        let result = explain(&repo, "c4:container:orders").unwrap();
+        let result = explain(&store, "c4:container:orders").unwrap();
         assert!(result.provenance.unsubstantiated);
         assert!(
             result
@@ -541,9 +596,11 @@ mod tests {
 
     #[test]
     fn explain_relation_with_evidence_returns_evidence_list() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_relation("rel:orders-payment", "rv:1", "calls")
-            .with_relation_evidence("rv:1", make_evidence("ev:rel:1"));
+            .with_relation_evidence("rv:1", make_evidence("ev:rel:1"))
+            .build();
 
         let result = explain(&repo, "rel:orders-payment").unwrap();
         assert_eq!(result.subject.kind, "relation");
@@ -554,14 +611,18 @@ mod tests {
 
     #[test]
     fn explain_relation_unknown_id_returns_error() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let result = explain(&repo, "rel:nonexistent");
         assert!(matches!(result, Err(ExplainError::RelationNotFound(_))));
     }
 
     #[test]
     fn explain_relation_without_evidence_returns_unsubstantiated() {
-        let repo = FakeRepo::new().with_relation("rel:orders-payment", "rv:1", "calls");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
+            .with_relation("rel:orders-payment", "rv:1", "calls")
+            .build();
         // No evidence added
 
         let result = explain(&repo, "rel:orders-payment").unwrap();
@@ -572,9 +633,21 @@ mod tests {
 
     #[test]
     fn explain_relation_no_version_id_returns_unsubstantiated_with_warning() {
-        let repo = FakeRepo::new().with_relation("rel:orders-payment", "", "calls");
+        // Defensive path: production's validate_identifier rejects
+        // empty version ids, so this scenario is unreachable through
+        // the normal write ports. Raw Cypher seeds the unreachable
+        // state to exercise the guard.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = LbugStore::open(tmp.path()).expect("LbugStore::open");
+        store.init().expect("LbugStore::init");
+        store
+            .execute_raw_cypher_for_test(
+                "CREATE (:SemanticRelation {id: 'rel:orders-payment', \
+                 current_version_id: '', current_label: 'calls'});",
+            )
+            .expect("seed relation with empty version");
 
-        let result = explain(&repo, "rel:orders-payment").unwrap();
+        let result = explain(&store, "rel:orders-payment").unwrap();
         assert!(result.provenance.unsubstantiated);
         assert!(
             result
@@ -590,9 +663,11 @@ mod tests {
 
     #[test]
     fn explain_report_has_correct_schema_version() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:orders", "v:1", "OrderService")
-            .with_element_evidence("v:1", make_evidence("ev:1"));
+            .with_element_evidence("v:1", make_evidence("ev:1"))
+            .build();
 
         let result = explain(&repo, "c4:container:orders").unwrap();
         assert_eq!(result.schema_version, "1.1");
@@ -605,9 +680,11 @@ mod tests {
 
     #[test]
     fn explain_routes_uml_id_to_element_path() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("uml:class:OrderService", "v:2", "OrderService")
-            .with_element_evidence("v:2", make_evidence("ev:2"));
+            .with_element_evidence("v:2", make_evidence("ev:2"))
+            .build();
 
         let result = explain(&repo, "uml:class:OrderService").unwrap();
         assert_eq!(result.subject.kind, "element");
@@ -615,9 +692,11 @@ mod tests {
 
     #[test]
     fn explain_routes_behavior_id_to_element_path() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("behavior:user:login", "v:3", "login")
-            .with_element_evidence("v:3", make_evidence("ev:3"));
+            .with_element_evidence("v:3", make_evidence("ev:3"))
+            .build();
 
         let result = explain(&repo, "behavior:user:login").unwrap();
         assert_eq!(result.subject.kind, "element");
