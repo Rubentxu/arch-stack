@@ -90,6 +90,7 @@ must_hold = [
   "pub trait FeedbackRepository",
   "fn put_feedback",
   "fn read_feedback_for_claim",
+  "fn summaries_for_claims",
   "fn list_reconciliations",
 ]
 
