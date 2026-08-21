@@ -500,32 +500,34 @@ pub fn relevance(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{ElementRow, SemanticEdgeRow};
+    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository};
 
-    /// A minimal DiagramRepository stub for unit tests.
-    struct FakeRepo {
-        elements: Vec<ElementRow>,
-        edges: Vec<SemanticEdgeRow>,
+    /// Builder-style seeder that persists the test fixture into a
+    /// real `LbugStore` opened in a TempDir. Mirrors the previous
+    /// FakeRepo builder ergonomics. `.build()` returns the
+    /// `LbugStore` ready to pass to functions taking `&dyn
+    /// DiagramRepository`.
+    struct SeededStore {
+        project_dir: std::path::PathBuf,
+        elements: Vec<(String, String, f64, String)>, // id, name, confidence, category
+        edges: Vec<(String, String, String, String)>, // rel, pred, src, tgt
     }
 
-    impl FakeRepo {
-        fn new() -> Self {
+    impl SeededStore {
+        fn new(project_dir: &std::path::Path) -> Self {
             Self {
+                project_dir: project_dir.to_path_buf(),
                 elements: vec![],
                 edges: vec![],
             }
         }
         fn with_element(mut self, id: &str, name: &str, confidence: f64, category: &str) -> Self {
-            self.elements.push(ElementRow {
-                id: id.to_string(),
-                kind_id: "container".to_string(),
-                category: category.to_string(),
-                canonical_key: id.to_string(),
-                current_name: name.to_string(),
-                current_status: "active".to_string(),
-                current_confidence: confidence,
-                current_version_id: format!("{}-v1", id),
-            });
+            self.elements.push((
+                id.to_string(),
+                name.to_string(),
+                confidence,
+                category.to_string(),
+            ));
             self
         }
         fn with_edge(
@@ -535,58 +537,52 @@ mod tests {
             source_id: &str,
             target_id: &str,
         ) -> Self {
-            self.edges.push(SemanticEdgeRow {
-                relation_id: relation_id.to_string(),
-                predicate_id: predicate_id.to_string(),
-                source_id: source_id.to_string(),
-                target_id: target_id.to_string(),
-                order_key: "0".to_string(),
-                props: serde_json::Map::new(),
-            });
+            self.edges.push((
+                relation_id.to_string(),
+                predicate_id.to_string(),
+                source_id.to_string(),
+                target_id.to_string(),
+            ));
             self
         }
-    }
-
-    impl DiagramRepository for FakeRepo {
-        fn list_elements(
-            &self,
-            category: &str,
-            _scope: Option<&str>,
-            _kind: Option<&str>,
-        ) -> anyhow::Result<Vec<ElementRow>> {
-            Ok(self
-                .elements
-                .iter()
-                .filter(|e| e.category == category)
-                .cloned()
-                .collect())
-        }
-        fn list_semantic_edges(&self, _category: &str) -> anyhow::Result<Vec<SemanticEdgeRow>> {
-            Ok(self.edges.clone())
-        }
-        fn list_evidence_for_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
-            Ok(vec![])
-        }
-        fn list_version_props(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            Ok(vec![])
-        }
-        fn read_relation_by_id(
-            &self,
-            _id: &str,
-        ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
-            Ok(None)
-        }
-        fn list_evidence_for_relation_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::diagram::export_types::EvidenceEntry>> {
-            Ok(vec![])
+        fn build(self) -> LbugStore {
+            let mut store = LbugStore::open(&self.project_dir).expect("LbugStore::open");
+            store.init().expect("LbugStore::init");
+            for (id, name, confidence, category) in &self.elements {
+                let version_id = format!("{id}-v1");
+                let v = crate::graph::ElementVersion {
+                    id: version_id.clone(),
+                    element_id: id.clone(),
+                    name: name.clone(),
+                    status: "accepted".to_string(),
+                    origin: "test".to_string(),
+                    confidence: *confidence,
+                    props: Default::default(),
+                };
+                store
+                    .upsert_element_version(&v)
+                    .expect("upsert_element_version");
+                store
+                    .link_current_version(id, &version_id)
+                    .expect("link_current_version");
+                let e = crate::graph::Element {
+                    id: id.clone(),
+                    kind_id: "container".to_string(),
+                    category: category.clone(),
+                    canonical_key: id.clone(),
+                    current_name: name.clone(),
+                    current_status: "active".to_string(),
+                    current_confidence: *confidence,
+                    current_version_id: version_id.clone(),
+                };
+                store.upsert_element(&e).expect("upsert_element");
+            }
+            for (rel, pred, src, tgt) in &self.edges {
+                store
+                    .link_semantic_edge(src, tgt, rel, pred, &serde_json::Map::new(), true)
+                    .expect("link_semantic_edge");
+            }
+            store
         }
     }
 
@@ -596,7 +592,8 @@ mod tests {
 
     #[test]
     fn relevance_empty_query_error() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let result = relevance(&repo, "", &RelevanceOptions::default());
         assert!(matches!(result, Err(RelevanceError::EmptyQuery)));
 
@@ -610,7 +607,10 @@ mod tests {
 
     #[test]
     fn relevance_exact_id_seed() {
-        let repo = FakeRepo::new().with_element("c4:container:orders", "OrderService", 0.9, "c4");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
+            .with_element("c4:container:orders", "OrderService", 0.9, "c4")
+            .build();
 
         let result = relevance(&repo, "c4:container:orders", &RelevanceOptions::default()).unwrap();
 
@@ -629,9 +629,11 @@ mod tests {
 
     #[test]
     fn relevance_name_match_ranking() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:orders", "OrderService", 0.9, "c4")
-            .with_element("c4:container:queue", "OrderQueue", 0.8, "c4");
+            .with_element("c4:container:queue", "OrderQueue", 0.8, "c4")
+            .build();
 
         let result = relevance(&repo, "Order", &RelevanceOptions::default()).unwrap();
 
@@ -649,10 +651,12 @@ mod tests {
 
     #[test]
     fn relevance_expansion_0_5x() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
             .with_element("c4:container:b", "B", 0.8, "c4")
-            .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b");
+            .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b")
+            .build();
 
         let result = relevance(
             &repo,
@@ -681,10 +685,12 @@ mod tests {
 
     #[test]
     fn relevance_max_hops_zero_no_expansion() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
             .with_element("c4:container:b", "B", 0.8, "c4")
-            .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b");
+            .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b")
+            .build();
 
         let result = relevance(
             &repo,
@@ -707,15 +713,17 @@ mod tests {
 
     #[test]
     fn relevance_top_caps_shortlist() {
-        let mut repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut seeder = SeededStore::new(tmp.path());
         for i in 0..12 {
-            repo = repo.with_element(
+            seeder = seeder.with_element(
                 &format!("c4:container:e{}", i),
                 &format!("Element{}", i),
                 0.9,
                 "c4",
             );
         }
+        let repo = seeder.build();
 
         let result = relevance(
             &repo,
@@ -736,7 +744,21 @@ mod tests {
 
     #[test]
     fn relevance_ascii_fold_match() {
-        let repo = FakeRepo::new().with_element("c4:container:srv", "MañanasService", 0.9, "c4");
+        // Production's validate_identifier rejects non-ASCII names
+        // so the builder can't seed "MañanasService" through the
+        // normal write ports. Raw Cypher bypasses validation so the
+        // read-path ASCII-fold logic (ñ→n) gets exercised against a
+        // realistic unicode element name.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
+        let mut repo = repo;
+        repo.execute_raw_cypher_for_test(
+            "CREATE (:Element {id: 'c4:container:srv', kind_id: 'container', \
+             category: 'c4', canonical_key: 'c4:container:srv', \
+             current_name: 'MañanasService', current_status: 'active', \
+             current_confidence: 0.9, current_version_id: 'c4:container:srv-v1'});",
+        )
+        .expect("seed unicode element");
 
         let result = relevance(&repo, "mananas", &RelevanceOptions::default()).unwrap();
 
@@ -750,7 +772,8 @@ mod tests {
 
     #[test]
     fn relevance_empty_graph() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
 
         let result = relevance(&repo, "anything", &RelevanceOptions::default()).unwrap();
 
@@ -766,9 +789,11 @@ mod tests {
 
     #[test]
     fn relevance_determinism() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:srv", "OrderService", 0.9, "c4")
-            .with_element("c4:container:api", "OrderApi", 0.8, "c4");
+            .with_element("c4:container:api", "OrderApi", 0.8, "c4")
+            .build();
 
         let opts = RelevanceOptions::default();
         let json1 = serde_json::to_string(&relevance(&repo, "Order", &opts).unwrap()).unwrap();
@@ -783,10 +808,12 @@ mod tests {
 
     #[test]
     fn relevance_relation_predicate_match() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
             .with_element("c4:container:b", "B", 0.8, "c4")
-            .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b");
+            .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b")
+            .build();
 
         let result = relevance(&repo, "depends_on", &RelevanceOptions::default()).unwrap();
 
@@ -801,7 +828,10 @@ mod tests {
 
     #[test]
     fn relevance_stopword_token_dropped() {
-        let repo = FakeRepo::new().with_element("c4:container:srv", "the service", 0.9, "c4");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
+            .with_element("c4:container:srv", "theservice", 0.9, "c4")
+            .build();
 
         let result = relevance(&repo, "the", &RelevanceOptions::default()).unwrap();
 
