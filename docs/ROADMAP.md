@@ -1753,6 +1753,26 @@ Razones:
   - `phase.release.complete` no es transition válida (terminal `RELEASE_PENDING`). `release-passed` gate sin evaluador registrado. Bookkeeping, no bloquea el release real.
 - **Próximo candidato**: M22 (Sidebar con tabs evidence vs relations) o iterar sobre UX del culling con métricas del perf gate en CI (issue `#perf-ci-gate`).
 
+## Cycle cerrado — `trust-005-observation-fusion` (v1.84.0)
+
+- **Fecha**: 2026-08-21
+- **Cycle id**: `p-38e02210a9f14317/trust-005-observation-fusion`
+- **Branch**: `feat/trust-005-pr1-docs` → `feat/trust-005-pr2a-types` → `feat/trust-005-pr2b-bridge` → `feat/trust-005-pr3a-uat-7-9` → `feat/trust-005-pr3b-uat-13-15` (5 chained PRs)
+- **Tag**: `v1.84.0` (pending)
+- **Output**:
+  - **ADR-064** (PR1): Fusion Bounded Context. Promoted from Proposed → Accepted. Documents the trust-gated FusedClaim recompute + Feedback/Reconciliation as first-class types + m30 bridge contract.
+  - **spec-35 v1.1 + spec-12 v1.1** (PR1): Full implementable specs with field shapes, validation rules, determinism contract, m30 bridge.
+  - **feedback.rs + reconciliation.rs** (PR2a): New bounded context modules. `Feedback`, `FeedbackVerdict {Accept, Reject, Uncertain, Supersede, Correct}`, `FeedbackError`, `validate()`. `Reconciliation`, `PlaneEvidence`, `Reconciliation::compute()` pure function.
+  - **fusion_bridge.rs** (PR2b): Trust-gated `recompute_status()` seam. Single source of truth for FusedClaim status derivation consumed by both `fuse_observations_with` and `FeedbackRepository::put_feedback`.
+  - **Observation struct fields** (PR2b): `evidence_origin`, `confidence`, `status: ObservationStatus`, `written_via_backfill`. Reads persisted columns (was hardcoded 1.0).
+  - **FeedbackRepository trait** (PR2b): `put_feedback`, `read_feedback_for_claim`, `list_reconciliations` in store.rs. m30 bridge: `pending_adjudication_event` flag + `tracing::warn!` on `ModelInference × Suggested × Feedback.accept`.
+  - **v7-observation-status migration** (PR2a): `status STRING` on `(:Observation)`, `pending_adjudication_event BOOLEAN` on `(:FusedClaim)`, `(:Feedback)` / `(:Reconciliation)` tables + typed edges.
+  - **UAT-06 steps 7/9 un-ignore** (PR3a): `seed_orders_stripe_fixture` impl + integration tests verifying `ModelInference` FusedClaim lands as `"drafted"`.
+  - **UAT-06 steps 13/14/15 un-ignore** (PR3b): Feedback/Reconciliation integration tests + `feedback_repository_round_trip`, `v7_migration_forward_only`, `pending_adjudication_event_flag_transition`, `multi_plane_bias_ordering_determinism`.
+- **Tests**: pending (5 PRs in chain)
+- **Loc**: ~1410 total across 5 PRs (< 400 PR)
+- **Decisiones locked**: D1 (schema canonical path: `archctl/migrations/`), D2 (FusedClaim.status rule: `trust::canonical_promotion_allowed`), D7 (`pending_adjudication_event: bool` naming), D12 (5 PR chain, < 400 LOC each).
+
 ## Cycle cerrado — `m25-authority-execution-classes`
 
 - **Fecha**: 2026-08-20
