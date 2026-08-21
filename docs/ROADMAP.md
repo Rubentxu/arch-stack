@@ -1773,6 +1773,27 @@ Razones:
 - **Loc**: ~1410 total across 5 PRs (< 400 PR)
 - **Decisiones locked**: D1 (schema canonical path: `archctl/migrations/`), D2 (FusedClaim.status rule: `trust::canonical_promotion_allowed`), D7 (`pending_adjudication_event: bool` naming), D12 (5 PR chain, < 400 LOC each).
 
+## Cycle cerrado — `trust-006-context-bundle` (v1.85.0)
+
+- **Fecha**: 2026-08-21
+- **Cycle id**: `p-38e02210a9f14317/trust-006-context-bundle`
+- **Branch**: `feat/trust-006-a-bundle-verify` → `feat/trust-006-b-agent-context` (2 chained PRs)
+- **Tag**: `v1.85.0` (annotated, peels `757b946`, pushed + verified remote)
+- **Path**: A-lite
+- **Output**:
+  - **`FeedbackSummary` struct** (PR #299, TRUST-006-a): Slim read-only view of `Feedback` for `AgentContext`. Excludes `evidence`/`correlation_id` pipeline-internal fields. `From<&Feedback> for FeedbackSummary` impl. Backed by serde round-trip tests.
+  - **Bundle projection helpers** (PR #299): `seed_bundle_fixture`, `assert_no_canonical_fact_in_bundle`, `assert_has_canonical_fact_in_bundle`. Enables verifiable assertions that bundle export excludes rejected claims and includes accepted canonical facts.
+  - **`AgentContext.feedback_history`** (PR #300, TRUST-006-b): Additive field `Vec<FeedbackSummary>` with `#[serde(default)]` for backward compat. Plumbs prior feedback verdicts through to re-invoked agents.
+  - **`cognitive::test_support` module** (PR #300): Exposes `FeedbackAwareMockAgent` + `MockOutcome` for deterministic tests. Gated on `test-fixtures` feature.
+  - **UAT-06 steps 16/17 un-ignore** (PR #300): Re-invoke agent after Reject feedback → emits `NoAction`; FeedbackSummary round-trip excludes pipeline-internal fields.
+  - **UAT-06 steps 19/20 un-ignore** (PR #299): Bundle excludes rejected ModelInference claim; bundle includes accepted replacement canonical fact.
+  - **Fixture fix** (PR #299): `seed_orders_stripe_fixture` was storing `source_origin` as PascalCase; `SourceOrigin::parse_label` expects snake_case. Fixed to use `SourceOrigin::ModelInference.as_str()`. Without this fix, `accept_evidence`'s trust guard silently fell back to `UserWorkspace`, which would have masked the trust-first invariant.
+- **Tests**: 843/843 green. Clippy `-D warnings` 0. rustfmt 0. UAT-06: 11/11 active steps.
+- **Loc**: ~+442/-26 across 14 files (< 400 PR).
+- **REQ-T06-001..008**: 7/8 shipped; **REQ-T06-003 (FeedbackRepository::summaries_for_claims) deferred to TRUST-007**.
+- **Decisiones locked**: snake_case `source_origin` contract (parse_label); `#[serde(default)]` on additive AgentContext field; `test_support` placement outside `agents/` module (which is `mod agents;` private).
+- **Próximo candidato**: TRUST-007 — `feedback_repository_summary_port` (REQ-T06-003 closure) + UAT-06 step 18 (workbench crash recovery, currently ignored).
+
 ## Cycle cerrado — `m25-authority-execution-classes`
 
 - **Fecha**: 2026-08-20
