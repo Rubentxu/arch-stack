@@ -55,6 +55,11 @@ pub struct FusedClaim {
     /// always false under `MaxMemberEvaluator`).
     pub stale: bool,
     pub warnings: Vec<String>,
+    /// Trust-classifying source origin of the first member Observation
+    /// (sufficient for trust gate — all members of a fused group share
+    /// provenance). Serialised as the SourceOrigin.as_str() string:
+    /// "user_workspace", "user_input", "tool_output", "model_inference".
+    pub evidence_origin: String,
 }
 
 /// Fusion strategy for a group of observations asserting the same
@@ -325,6 +330,7 @@ pub fn fuse_observations_with(
             status: status.to_string(),
             stale,
             warnings: Vec::new(),
+            evidence_origin: source_origin.as_str().to_string(),
         });
     }
 
@@ -447,7 +453,7 @@ pub fn recompute_fused_for_versions(
 ///
 /// Column names: `f.id, f.kind, f.statement, f.confidence,
 /// f.supports, f.status, f.stale, f.observation_ids,
-/// f.derived_from, f.version_id`.
+/// f.derived_from, f.version_id, f.evidence_origin`.
 pub fn fused_claims_from_rows(
     rows: &[crate::row::Row],
     conflict_edges: &[(String, String)],
@@ -508,6 +514,7 @@ pub fn fused_claims_from_rows(
                 .and_then(|c| c.as_bool())
                 .unwrap_or(false),
             warnings,
+            evidence_origin: str_col("f.evidence_origin"),
         });
     }
     claims

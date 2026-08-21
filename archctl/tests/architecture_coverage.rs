@@ -164,6 +164,7 @@ fn coverage_fused_claim_buckets() {
         status: "accepted".to_string(),
         stale: false,
         warnings: vec![],
+        evidence_origin: "user_workspace".to_string(),
     };
     // Claim B: single-support (1), stale.
     let b = FusedClaim {
@@ -178,6 +179,7 @@ fn coverage_fused_claim_buckets() {
         status: "accepted".to_string(),
         stale: true,
         warnings: vec![],
+        evidence_origin: "user_workspace".to_string(),
     };
     store
         .put_fused_claims("v:1", &[a, b], "2026-08-01T00:00:00Z")

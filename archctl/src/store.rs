@@ -3498,21 +3498,21 @@ impl DiagramRepository for LbugStore {
                 .map(|s| format!("'{}'", escape_cypher_string(s)))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let safe_evidence_origin = escape_cypher_string(&claim.evidence_origin);
             let cypher = format!(
                 "MERGE (f:FusedClaim {{id: '{id}'}}) SET \
                  f.kind = '{kind}', \
                  f.statement = '{statement}', \
-                 f.confidence = {confidence}, \
-                 f.supports = {supports}, \
+                 f.confidence = {}, \
+                 f.supports = {}, \
                  f.status = '{status}', \
-                 f.stale = {stale}, \
+                 f.stale = {}, \
                  f.observation_ids = [{obs_list}], \
                  f.derived_from = [{derived_list}], \
                  f.version_id = '{version_id}', \
-                 f.written_at = '{safe_now}' RETURN f;",
-                confidence = claim.confidence,
-                supports = claim.supports,
-                stale = claim.stale,
+                 f.written_at = '{safe_now}', \
+                 f.evidence_origin = '{safe_evidence_origin}' RETURN f;",
+                claim.confidence, claim.supports, claim.stale,
             );
             session
                 .conn

@@ -94,6 +94,14 @@ pub const MIGRATIONS: &[Migration] = &[
         cypher: include_str!("../../archctl/migrations/v8_adjudication_event_store.cypher"),
         rust_hook: Some(backfill_adjudication_event_diagnostics),
     },
+    // TRUST-008 (cycle p-38e02210a9f14317/trust-008-m30-bridge-promotion):
+    // adds `evidence_origin STRING` column to `FusedClaim` node table
+    // per spec REQ-T08-004 / REQ-M25-006. Pre-v9 graphs are permissive.
+    Migration {
+        version: "v9-fused-claim-evidence-origin",
+        cypher: include_str!("../../archctl/migrations/v9_fused_claim_evidence_origin.cypher"),
+        rust_hook: None,
+    },
 ];
 
 /// Marker filename written to the project root after a successful run.
@@ -534,7 +542,8 @@ mod tests {
         // P2-09b PR-A added v4, PR-B adds v5; fusion follow-ups add v6;
         // TRUST-005 adds v7 (Observation.status + Feedback + Reconciliation).
         // TRUST-008 adds v8 (Adjudication node table + ADJUDICATES edge).
-        assert_eq!(MIGRATIONS.len(), 8);
+        // TRUST-008 m30 bridge adds v9 (evidence_origin on FusedClaim).
+        assert_eq!(MIGRATIONS.len(), 9);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
         assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
         assert!(MIGRATIONS[2].version < MIGRATIONS[3].version);
@@ -552,8 +561,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // Fresh graph advances to v8-adjudication-event-store (TRUST-008).
-        assert_eq!(text.trim(), "v8-adjudication-event-store");
+        // Fresh graph advances to v9-fused-claim-evidence-origin (TRUST-008 m30 bridge).
+        assert_eq!(text.trim(), "v9-fused-claim-evidence-origin");
     }
 
     #[test]
@@ -620,8 +629,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // TRUST-008: fresh-graph marker advances to v8-adjudication-event-store.
-        assert_eq!(text.trim(), "v8-adjudication-event-store");
+        // TRUST-008: fresh-graph marker advances to v9-fused-claim-evidence-origin.
+        assert_eq!(text.trim(), "v9-fused-claim-evidence-origin");
     }
 
     /// P2-09b backfill: pre-upgrade Evidence rows (those written BEFORE
