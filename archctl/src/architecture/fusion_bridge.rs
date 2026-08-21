@@ -78,10 +78,15 @@ pub fn recompute_status(
 ///
 /// `true` if the m30 bridge should emit `tracing::warn!` instead of
 /// silently promoting the FusedClaim.
+// `v`-prefixed versions are the project convention (CHANGELOG/ROADMAP/tag),
+// but Rust's `clippy::deprecated_semver` lint rejects non-semver `since`.
+// We use `1.87.0` for the `since` (semver-required) but document the project
+// version as `v1.87.0` in the note.
+#[allow(clippy::deprecated_semver)]
 #[deprecated(
     since = "1.87.0",
-    note = "m30 bridge is now a hard fail (TRUST-008 / REQ-M25-006); use \
-            `promotion_requires_adjudication_event` which returns \
+    note = "m30 bridge is now a hard fail (TRUST-008 / REQ-M25-006, v1.87.0); \
+            use `promotion_requires_adjudication_event` which returns \
             `Result<(), TrustViolation>` and is consulted by \
             `FeedbackRepository::put_feedback`."
 )]
