@@ -368,8 +368,8 @@ mod tests {
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
-        // TRUST-008: fresh-graph marker advances to v8-adjudication-event-store.
-        assert_eq!(text.trim(), "v8-adjudication-event-store");
+        // TRUST-008: fresh-graph marker advances to v9-fused-claim-evidence-origin.
+        assert_eq!(text.trim(), "v9-fused-claim-evidence-origin");
     }
 
     #[test]

@@ -311,6 +311,7 @@ fn explain_omits_non_intersecting_fused_claims() {
         status: "accepted".to_string(),
         stale: false,
         warnings: vec![],
+        evidence_origin: "user_workspace".to_string(),
     };
     store
         .put_fused_claims("v:orders:1", &[claim], "2026-08-01T00:00:00Z")
@@ -342,6 +343,7 @@ fn explain_fused_claims_absent_without_version_link() {
         status: "accepted".to_string(),
         stale: false,
         warnings: vec![],
+        evidence_origin: "user_workspace".to_string(),
     };
     store
         .put_fused_claims("v:orders:1", &[claim], "2026-08-01T00:00:00Z")

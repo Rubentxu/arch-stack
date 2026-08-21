@@ -320,24 +320,25 @@ mod tests {
     }
 
     /// TRUST-005 PR3b: bridge logic — Accept on ModelInference must NOT silently promote.
-    /// `should_warn_pending_adjudication` is the canonical predicate (fusion_bridge.rs).
+    /// `promotion_requires_adjudication_event` is the canonical predicate (fusion_bridge.rs).
     #[test]
-    fn feedback_verdict_accept_emits_pending_adjudication_event_for_model_inference() {
-        use crate::architecture::fusion_bridge::should_warn_pending_adjudication;
+    fn promotion_requires_adjudication_event_for_model_inference() {
+        use crate::architecture::fusion_bridge::promotion_requires_adjudication_event;
         use crate::trust::{AuthorityClass, ExecutionClass, TrustClassification};
 
         let model_trust = TrustClassification {
             execution: ExecutionClass::ModelInference,
             authority: AuthorityClass::Suggested,
         };
+        // ModelInference × Suggested + Accept → Err (m30 bridge hard-fail)
         assert!(
-            should_warn_pending_adjudication(model_trust, FeedbackVerdict::Accept),
-            "ModelInference × Suggested + Accept must warn"
+            promotion_requires_adjudication_event(model_trust, FeedbackVerdict::Accept).is_err(),
+            "ModelInference × Suggested + Accept must err"
         );
         // Reject on ModelInference is a normal reject; no pending adjudication.
         assert!(
-            !should_warn_pending_adjudication(model_trust, FeedbackVerdict::Reject),
-            "ModelInference + Reject must NOT warn"
+            promotion_requires_adjudication_event(model_trust, FeedbackVerdict::Reject).is_ok(),
+            "ModelInference + Reject must be Ok"
         );
         // HumanDecision × Normative + Accept is canonical, no warn needed.
         let human_trust = TrustClassification {
@@ -345,8 +346,8 @@ mod tests {
             authority: AuthorityClass::Normative,
         };
         assert!(
-            !should_warn_pending_adjudication(human_trust, FeedbackVerdict::Accept),
-            "HumanDecision + Accept must NOT warn"
+            promotion_requires_adjudication_event(human_trust, FeedbackVerdict::Accept).is_ok(),
+            "HumanDecision + Accept must be Ok"
         );
     }
 

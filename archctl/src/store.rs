@@ -2804,6 +2804,52 @@ impl FeedbackRepository for LbugStore {
             .conn
             .query(&cypher)
             .with_context(|| format!("put_feedback {id}"))?;
+
+        // TRUST-008 m30 bridge consult (REQ-T08-004 / REQ-M25-006 closure).
+        // For Feedback(Accept) on a ModelInference FusedClaim, gate on the
+        // Adjudication event store: if no Promote decision exists for the
+        // target, propagate Err(TrustViolation::ModelInferenceWithoutAdjudicationEvent).
+        // Pre-v9 data (FusedClaim with empty evidence_origin) is permissive
+        // because we cannot classify its trust without the column.
+        if matches!(feedback.verdict, FeedbackVerdict::Accept) {
+            use crate::adjudication::AdjudicationDecision;
+            use crate::architecture::fusion_bridge::promotion_requires_adjudication_event;
+            use crate::trust::classify;
+
+            let origin_cypher = format!(
+                "MATCH (c:FusedClaim {{id: '{target}'}}) RETURN c.evidence_origin AS origin;"
+            );
+            let origin_rows = run_query(&session.conn, &origin_cypher)
+                .with_context(|| format!("put_feedback {id}: read evidence_origin"))?;
+            let origin_label: String = origin_rows
+                .first()
+                .and_then(|r| {
+                    r.get("origin")
+                        .and_then(|c| c.as_str().map(|s| s.to_string()))
+                })
+                .unwrap_or_default();
+
+            if !origin_label.is_empty()
+                && let Some(origin) = crate::evidence::SourceOrigin::parse_label(&origin_label)
+            {
+                let trust = classify(origin, None);
+                if let Err(violation) =
+                    promotion_requires_adjudication_event(trust, feedback.verdict)
+                {
+                    let events = self.read_adjudications_for_claim(target).with_context(|| {
+                        format!("put_feedback {id}: read_adjudications_for_claim")
+                    })?;
+                    let has_promote = events
+                        .iter()
+                        .any(|e| e.decision == AdjudicationDecision::Promote);
+                    if !has_promote {
+                        return Err(anyhow::Error::new(violation).context(format!(
+                            "put_feedback m30 bridge: {target} (no Promote adjudication event)"
+                        )));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -3498,21 +3544,21 @@ impl DiagramRepository for LbugStore {
                 .map(|s| format!("'{}'", escape_cypher_string(s)))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let safe_evidence_origin = escape_cypher_string(&claim.evidence_origin);
             let cypher = format!(
                 "MERGE (f:FusedClaim {{id: '{id}'}}) SET \
                  f.kind = '{kind}', \
                  f.statement = '{statement}', \
-                 f.confidence = {confidence}, \
-                 f.supports = {supports}, \
+                 f.confidence = {}, \
+                 f.supports = {}, \
                  f.status = '{status}', \
-                 f.stale = {stale}, \
+                 f.stale = {}, \
                  f.observation_ids = [{obs_list}], \
                  f.derived_from = [{derived_list}], \
                  f.version_id = '{version_id}', \
-                 f.written_at = '{safe_now}' RETURN f;",
-                confidence = claim.confidence,
-                supports = claim.supports,
-                stale = claim.stale,
+                 f.written_at = '{safe_now}', \
+                 f.evidence_origin = '{safe_evidence_origin}' RETURN f;",
+                claim.confidence, claim.supports, claim.stale,
             );
             session
                 .conn
