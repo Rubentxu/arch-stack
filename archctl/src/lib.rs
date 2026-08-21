@@ -94,7 +94,7 @@ pub use skills::{
 };
 pub use source::SourceArtifact;
 pub use store::{
-    DiagramRepository, ElementRepository, EvaluationRepository, EvidenceRepository,
-    FeedbackRepository, GraphStoreFactory, LbugStoreFactory, SourceRepository,
+    AdjudicationRepository, DiagramRepository, ElementRepository, EvaluationRepository,
+    EvidenceRepository, FeedbackRepository, GraphStoreFactory, LbugStoreFactory, SourceRepository,
 };
 pub use xdg::{XdgLayout, ensure_xdg, resolve_xdg, user_home};

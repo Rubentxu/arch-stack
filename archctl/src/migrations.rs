@@ -82,6 +82,18 @@ pub const MIGRATIONS: &[Migration] = &[
         cypher: include_str!("../../archctl/migrations/v7_fusion_confidence_status.cypher"),
         rust_hook: Some(backfill_observation_status),
     },
+    // TRUST-008 (cycle p-38e02210a9f14317/trust-008-m30-bridge-promotion):
+    // add (:Adjudication) node table, (:AdjudicationDecision) lookup table,
+    // and ADJUDICATES edge per spec REQ-T08-001. The rust hook
+    // `backfill_adjudication_event_diagnostics` emits a tracing::warn! listing
+    // pre-v8 FusedClaim rows that carry pending_adjudication_event = true
+    // AND have no backing (:Adjudication) event. HITL is preserved;
+    // no auto-decision.
+    Migration {
+        version: "v8-adjudication-event-store",
+        cypher: include_str!("../../archctl/migrations/v8_adjudication_event_store.cypher"),
+        rust_hook: Some(backfill_adjudication_event_diagnostics),
+    },
 ];
 
 /// Marker filename written to the project root after a successful run.
@@ -426,6 +438,35 @@ pub fn backfill_observation_status(store: &mut crate::store::LbugStore) -> Resul
     Ok(())
 }
 
+/// TRUST-008 v8 migration rust hook: emits ONE tracing::warn! listing
+/// pre-v8 (:FusedClaim) offenders (pending_adjudication_event = true AND no
+/// (:Adjudication) event). Does NOT mutate.
+pub fn backfill_adjudication_event_diagnostics(store: &mut crate::store::LbugStore) -> Result<()> {
+    let session = store.session_for_migrations();
+    let cypher = "MATCH (c:FusedClaim) \
+                  WHERE c.pending_adjudication_event = true \
+                    AND NOT EXISTS { MATCH (:Adjudication)-[:ADJUDICATES]->(c) } \
+                  RETURN count(c) AS n;";
+    let rows = crate::store::run_query(&session.conn, cypher)
+        .with_context(|| "v8 backfill: count pre-v8 offenders")?;
+    let count: u64 = rows
+        .first()
+        .and_then(|r| r.get("n").and_then(|c| c.as_i64()))
+        .unwrap_or(0) as u64;
+    if count > 0 {
+        tracing::warn!(
+            offenders = count,
+            "TRUST-008 v8 backfill: {count} pre-v8 FusedClaim row(s) carry \
+             pending_adjudication_event = true AND have no Adjudication event. \
+             Use `archctl adjudication list --pending` then `decide --verdict promote` \
+             to clear each one. Migration is intentionally non-mutating."
+        );
+    } else {
+        tracing::info!("TRUST-008 v8 backfill: 0 pre-v8 offenders");
+    }
+    Ok(())
+}
+
 /// Best-effort mapping from a stored `kind` string back to
 /// `EvidenceKind` for the P2-09a compat derivator. Currently
 /// unused (the backfill body passes the raw `kind` string directly
@@ -492,13 +533,15 @@ mod tests {
     fn migrations_is_ordered() {
         // P2-09b PR-A added v4, PR-B adds v5; fusion follow-ups add v6;
         // TRUST-005 adds v7 (Observation.status + Feedback + Reconciliation).
-        assert_eq!(MIGRATIONS.len(), 7);
+        // TRUST-008 adds v8 (Adjudication node table + ADJUDICATES edge).
+        assert_eq!(MIGRATIONS.len(), 8);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
         assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
         assert!(MIGRATIONS[2].version < MIGRATIONS[3].version);
         assert!(MIGRATIONS[3].version < MIGRATIONS[4].version);
         assert!(MIGRATIONS[4].version < MIGRATIONS[5].version);
         assert!(MIGRATIONS[5].version < MIGRATIONS[6].version);
+        assert!(MIGRATIONS[6].version < MIGRATIONS[7].version);
     }
 
     #[test]
@@ -509,8 +552,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // Fresh graph advances to v7-observation-status (TRUST-005).
-        assert_eq!(text.trim(), "v7-observation-status");
+        // Fresh graph advances to v8-adjudication-event-store (TRUST-008).
+        assert_eq!(text.trim(), "v8-adjudication-event-store");
     }
 
     #[test]
@@ -577,8 +620,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // TRUST-005: fresh-graph marker advances to v7-observation-status.
-        assert_eq!(text.trim(), "v7-observation-status");
+        // TRUST-008: fresh-graph marker advances to v8-adjudication-event-store.
+        assert_eq!(text.trim(), "v8-adjudication-event-store");
     }
 
     /// P2-09b backfill: pre-upgrade Evidence rows (those written BEFORE

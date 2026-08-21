@@ -552,6 +552,32 @@ pub trait FeedbackRepository: Send + Sync {
     ) -> Result<Vec<crate::reconciliation::Reconciliation>>;
 }
 
+/// Adjudication write/read port.
+///
+/// Sealed-by-convention port. Mirrors `FeedbackRepository`; lbug 0.18.3
+/// is the only known adapter. `Send + Sync` mirrors the `FeedbackRepository`
+/// constraint. Trait is `pub` for the crate's re-export.
+pub trait AdjudicationRepository: Send + Sync {
+    /// Persist an [`crate::adjudication::AdjudicationEvent`] and link it to
+    /// its target `(:FusedClaim)` via `[:ADJUDICATES]`.
+    ///
+    /// Idempotent: `MERGE` on both node and edge.
+    fn put_adjudication(&mut self, event: &crate::adjudication::AdjudicationEvent) -> Result<()>;
+
+    /// Read all [`crate::adjudication::AdjudicationEvent`] rows targeting
+    /// the given `FusedClaim` id, ordered by `(decided_at ASC, id ASC)`.
+    fn read_adjudications_for_claim(
+        &mut self,
+        claim_id: &str,
+    ) -> Result<Vec<crate::adjudication::AdjudicationEvent>>;
+
+    /// Adjudication rows whose decision is `Defer` OR whose target
+    /// `FusedClaim` has `status = "drafted"`, ordered by
+    /// `(decided_at DESC, id ASC)` for stable pagination.
+    fn list_pending_adjudications(&mut self)
+    -> Result<Vec<crate::adjudication::AdjudicationEvent>>;
+}
+
 /// Diagram read port (P1-03). Replaces the former `diagram::queries` free
 /// functions (removed in v1.69.0) with typed reads that return owned domain
 /// structs.
@@ -3029,6 +3055,167 @@ impl FeedbackRepository for LbugStore {
                 computed_status,
                 rationale,
                 revision,
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl AdjudicationRepository for LbugStore {
+    fn put_adjudication(&mut self, event: &crate::adjudication::AdjudicationEvent) -> Result<()> {
+        use crate::adjudication::AdjudicationDecision;
+        let session = self.session_mut_inner()?;
+        let id = crate::graph::validate_identifier(&event.id)
+            .context("put_adjudication: id failed validation")?;
+        let target = crate::graph::validate_identifier(&event.target_fused_claim_id)
+            .context("put_adjudication: target failed validation")?;
+        let decision_label = match event.decision {
+            AdjudicationDecision::Promote => "promote",
+            AdjudicationDecision::Reject => "reject",
+            AdjudicationDecision::Defer => "defer",
+        };
+        let adjudicator = event.adjudicator.replace('\'', "\\'");
+        let evidence_refs_json = serde_json::to_string(&event.evidence_refs)
+            .context("put_adjudication: serialize evidence_refs")?;
+        let safe_evidence = evidence_refs_json.replace('\'', "\\'");
+        let cypher = format!(
+            "MERGE (a:Adjudication {{id: '{id}'}}) \
+             SET a.target_fused_claim_id = '{target}', \
+                 a.adjudicator = '{adjudicator}', \
+                 a.evidence_refs = '{safe_evidence}', \
+                 a.decided_at = '{decided_at}', \
+                 a.decision = '{decision_label}' \
+             WITH a \
+             MATCH (c:FusedClaim {{id: '{target}'}}) \
+             MERGE (a)-[:ADJUDICATES]->(c);",
+            decided_at = event.decided_at
+        );
+        session
+            .conn
+            .query(&cypher)
+            .with_context(|| format!("put_adjudication {id}"))?;
+        Ok(())
+    }
+
+    fn read_adjudications_for_claim(
+        &mut self,
+        claim_id: &str,
+    ) -> Result<Vec<crate::adjudication::AdjudicationEvent>> {
+        use crate::adjudication::AdjudicationDecision;
+        let session = self.session_mut_inner()?;
+        let cid = crate::graph::validate_identifier(claim_id)
+            .context("read_adjudications_for_claim: claim_id failed validation")?;
+        let cypher = format!(
+            "MATCH (a:Adjudication)-[:ADJUDICATES]->(c:FusedClaim {{id: '{cid}'}}) \
+             RETURN a.id, a.target_fused_claim_id, a.adjudicator, \
+                    a.evidence_refs, a.decided_at, a.decision \
+             ORDER BY a.decided_at ASC, a.id ASC"
+        );
+        let rows = run_query(&session.conn, &cypher)
+            .with_context(|| format!("read_adjudications_for_claim {cid}"))?;
+        let mut results = Vec::new();
+        for row in rows {
+            let id = row
+                .get("a.id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let target_fused_claim_id = row
+                .get("a.target_fused_claim_id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let adjudicator = row
+                .get("a.adjudicator")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let evidence_refs: Vec<String> = row
+                .get("a.evidence_refs")
+                .and_then(|c| c.as_str())
+                .map(|s| serde_json::from_str(s).unwrap_or_default())
+                .unwrap_or_default();
+            let decided_at = row
+                .get("a.decided_at")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let decision_str = row
+                .get("a.decision")
+                .and_then(|c| c.as_str())
+                .unwrap_or("defer");
+            let decision = match decision_str {
+                "promote" => AdjudicationDecision::Promote,
+                "reject" => AdjudicationDecision::Reject,
+                _ => AdjudicationDecision::Defer,
+            };
+            results.push(crate::adjudication::AdjudicationEvent {
+                id,
+                target_fused_claim_id,
+                adjudicator,
+                evidence_refs,
+                decided_at,
+                decision,
+            });
+        }
+        Ok(results)
+    }
+
+    fn list_pending_adjudications(
+        &mut self,
+    ) -> Result<Vec<crate::adjudication::AdjudicationEvent>> {
+        use crate::adjudication::AdjudicationDecision;
+        let session = self.session_mut_inner()?;
+        let cypher = "MATCH (a:Adjudication)-[:ADJUDICATES]->(c:FusedClaim) \
+                       WHERE a.decision = 'defer' OR c.status = 'drafted' \
+                       RETURN a.id, a.target_fused_claim_id, a.adjudicator, \
+                              a.evidence_refs, a.decided_at, a.decision \
+                       ORDER BY a.decided_at DESC, a.id ASC";
+        let rows =
+            run_query(&session.conn, cypher).with_context(|| "list_pending_adjudications query")?;
+        let mut results = Vec::new();
+        for row in rows {
+            let id = row
+                .get("a.id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let target_fused_claim_id = row
+                .get("a.target_fused_claim_id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let adjudicator = row
+                .get("a.adjudicator")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let evidence_refs: Vec<String> = row
+                .get("a.evidence_refs")
+                .and_then(|c| c.as_str())
+                .map(|s| serde_json::from_str(s).unwrap_or_default())
+                .unwrap_or_default();
+            let decided_at = row
+                .get("a.decided_at")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let decision_str = row
+                .get("a.decision")
+                .and_then(|c| c.as_str())
+                .unwrap_or("defer");
+            let decision = match decision_str {
+                "promote" => AdjudicationDecision::Promote,
+                "reject" => AdjudicationDecision::Reject,
+                _ => AdjudicationDecision::Defer,
+            };
+            results.push(crate::adjudication::AdjudicationEvent {
+                id,
+                target_fused_claim_id,
+                adjudicator,
+                evidence_refs,
+                decided_at,
+                decision,
             });
         }
         Ok(results)
