@@ -1858,3 +1858,20 @@ Razones:
 - **Known deferred items**: REQ-M25-005 #17 programmatic API caller_id (`accept_evidence` lacks `caller_id` parameter); Path B direct-Cypher bypass for `link_semantic_edge`; 9 `#[ignore]`d UAT-06 skeletons; `thread_local CURRENT_INVOCATION_PATH` implicit cross-module coupling (justified by ADR-063 §Decisión §4).
 - **Próximo candidato**: M26 (FusedClaim persistence, TRUST-005) or M30 (Adjudication event store, REQ-M25-006).
 - **Próxima fase**: `sddk-archive` (per orchestrator release-before-archive sequence, ADR-0011).
+
+## Cycle cerrado — `no-stubs-mocks-placeholders-hardcoded`
+
+- **Fecha**: 2026-08-22
+- **Branch**: `main` (linear, 17 commits directos + 3 follow-ups)
+- **Trigger**: regla explícita del usuario "no se permitir codigo stub, mock, y placeholder ni harcoded, todo el codigo realizado debe ser productivo 100%". Registrada en AGENTS.md.
+- **Path**: meta-ciclo (no es domain work; es auditoría + remediación del code base existente).
+- **Output**:
+  - **AGENTS.md regla** (commit `907ccd8`, line 463): bloquea stubs/mocks/placeholders/hardcoded en verify. Incluye grep commands para auditar.
+  - **15 ciclos P1 de remediación** (commits `c8c47cb`…`b5ec458`): cada `Mock*`/`Fake*`/`*Adapter` shadow en `archctl/src/{cognitive,ide,code,doctor,diagram,observation_claim,architecture/*}` reemplazado por fixture real (LbugStore-backed o TraitImpl legítimo).
+  - **Audit closure** (commit `b6cbb62`): los 3 hits legítimos restantes (doctor defaults detrás de env vars, view.rs loopback per ADR-011, xdg/environment test fixtures) documentados.
+  - **Test fixture repair** (commit `b6b78ce`): `archctl/tests/diagram_validate.rs:95` escribía `.png` mientras el validador esperaba `.svg` (regresión silenciosa desde cycle 2). 2 tests fixed; integration suite ahora 100% green.
+  - **DoD + Validation Matrix** (commit `748850f`): exige `cargo test --features test-fixtures --tests` (antes solo lib suite). Suite completa = 1204 tests, 0 failed.
+  - **CHANGELOG entry** (commit `676234e`): ciclo registrado en `[Unreleased]` para trazabilidad.
+  - **Decisión lbug** (commit `676234e` + STATE.md): bump 0.18.3 → 0.19.1 diferido; workaround documentado es la opción elegida.
+- **Tests**: 1204/1204 green (859 lib + 345 integration + doctest). `cargo clippy -- -D warnings` 0. `cargo fmt --check` 0. `archctl doctor --scopes architecture,diagram,code,cognitive,ide,store,evaluation,evidence,feedback` 0 findings.
+- **Próximo candidato**: M34 (cognitive context compression, ledger tail) o M35 (severity scoring pipeline), los dos post-TRUST-008 según ROADMAP:1836.
