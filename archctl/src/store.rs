@@ -527,6 +527,28 @@ pub trait FeedbackRepository: Send + Sync {
     fn read_feedback_for_claim(&mut self, claim_id: &str)
     -> Result<Vec<crate::feedback::Feedback>>;
 
+    /// Load all `FeedbackSummary` rows for the given `FusedClaim` ids,
+    /// projected directly from the persisted `(:Feedback)-[:VERDICTS_ON]->(:FusedClaim)`
+    /// subgraph. Used to populate `AgentContext.feedback_history` at context-build
+    /// time so a re-invoked agent sees prior rejections (REQ-T06-003, ADR-P02).
+    ///
+    /// Ordering is deterministic across multiple claim ids:
+    ///   (c.id ASC, f.revision ASC, f.timestamp ASC, f.id ASC)
+    /// extending the single-claim ordering from REQ-T06-002 with a leading
+    /// `target ASC` clause.
+    ///
+    /// `claim_ids` is bounded by the cognitive `AgentBudget` (typically 1-10).
+    /// `claim_ids == &[]` MUST return `Ok(Vec::new())` without issuing a query.
+    fn summaries_for_claims(
+        &mut self,
+        claim_ids: &[&str],
+    ) -> Result<Vec<crate::feedback::FeedbackSummary>> {
+        let _ = claim_ids;
+        Err(anyhow::anyhow!(
+            "summaries_for_claims: not supported by this repository"
+        ))
+    }
+
     /// List all [`crate::reconciliation::Reconciliation`] rows, optionally
     /// filtered by assertion_id. Ordered by `revision DESC`.
     fn list_reconciliations(
