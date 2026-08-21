@@ -133,7 +133,7 @@ pub fn current_version(marker_path: &Path, fs: &dyn Filesystem) -> Result<Option
 ///
 /// Returns the list of version strings that were applied (empty if
 /// already up-to-date).
-pub(crate) fn apply_pending(
+pub fn apply_pending(
     session: &LbugSession,
     fs: &dyn Filesystem,
     marker_path: &Path,

@@ -31,6 +31,8 @@ public_symbols = [
   "classify",
   "canonical_write_allowed",
   "canonical_promotion_allowed",
+  "should_warn_pending_adjudication",
+  "promotion_requires_adjudication_event",
 ]
 
 # Textual invariants that prove the module does what its scope
@@ -71,7 +73,8 @@ must_hold = [
 
 # Minimum number of #[test] items in trust.rs.
 # 8 existed prior to m25; Option D added 2 more.
-minimum_tests = 10
+# TRUST-008 m30 bridge added 2 more (promotion_requires_adjudication_event).
+minimum_tests = 12
 
 # Prohibitions: things this scope must NOT contain.
 # These catch regressions that would undermine the ADR-063 invariant.

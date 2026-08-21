@@ -36,6 +36,7 @@ public_symbols = [
   "open_default",
   "StoreError",
   "Snapshot",
+  "AdjudicationRepository",
 ]
 
 # What `store` must keep doing, proved by a literal line in source.
@@ -92,6 +93,12 @@ must_hold = [
   "fn read_feedback_for_claim",
   "fn summaries_for_claims",
   "fn list_reconciliations",
+  # TRUST-008 (cycle p-38e02210a9f14317/trust-008-m30-bridge-promotion):
+  # AdjudicationRepository trait (next to FeedbackRepository).
+  "pub trait AdjudicationRepository",
+  "fn put_adjudication",
+  "fn read_adjudications_for_claim",
+  "fn list_pending_adjudications",
 ]
 
 # Minimum tests for store.rs. We currently have 7.

@@ -1140,7 +1140,7 @@ impl LbugStore {
     /// Borrow the inner lbug session (test + migrations runner only).
     /// Caller MUST hold the borrow for no longer than the store.
     #[allow(dead_code)]
-    pub(crate) fn session_for_migrations(&mut self) -> &LbugSession {
+    pub fn session_for_migrations(&mut self) -> &LbugSession {
         if self.session.is_none() {
             // Lazy-init so tests that bypass `init()` still get a session.
             self.session = Some(
