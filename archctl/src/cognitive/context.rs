@@ -24,6 +24,15 @@ pub struct AgentContext {
     pub available_tools: Vec<crate::cognitive::ToolDescriptor>,
     /// Budget for this invocation.
     pub budget: AgentBudget,
+    /// Prior feedback verdicts sourced from the store at context-build time
+    /// (TRUST-006). Re-invoked agents see this and must respect `Reject`
+    /// verdicts — they do not re-propose rejected claims as candidates.
+    ///
+    /// Ordered deterministically by `(target ASC, revision ASC, timestamp ASC, id ASC)`
+    /// so agents receive the same history across calls given the same store state.
+    /// Default: empty.
+    #[serde(default)]
+    pub feedback_history: Vec<crate::feedback::FeedbackSummary>,
 }
 
 /// A subgraph extracted for agent consumption.
@@ -101,6 +110,7 @@ mod tests {
             applicable_rules: vec![],
             available_tools: vec![],
             budget: AgentBudget::default(),
+            feedback_history: vec![],
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
