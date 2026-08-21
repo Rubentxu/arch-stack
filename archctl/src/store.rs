@@ -542,12 +542,7 @@ pub trait FeedbackRepository: Send + Sync {
     fn summaries_for_claims(
         &mut self,
         claim_ids: &[&str],
-    ) -> Result<Vec<crate::feedback::FeedbackSummary>> {
-        let _ = claim_ids;
-        Err(anyhow::anyhow!(
-            "summaries_for_claims: not supported by this repository"
-        ))
-    }
+    ) -> Result<Vec<crate::feedback::FeedbackSummary>>;
 
     /// List all [`crate::reconciliation::Reconciliation`] rows, optionally
     /// filtered by assertion_id. Ordered by `revision DESC`.
@@ -2863,6 +2858,94 @@ impl FeedbackRepository for LbugStore {
                 timestamp,
                 evidence,
                 correlation_id,
+            });
+        }
+        Ok(results)
+    }
+
+    fn summaries_for_claims(
+        &mut self,
+        claim_ids: &[&str],
+    ) -> Result<Vec<crate::feedback::FeedbackSummary>> {
+        use crate::feedback::FeedbackVerdict;
+
+        // Empty input short-circuit — no query dispatched
+        if claim_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Validate all claim ids before issuing the query
+        for cid in claim_ids {
+            let _ = crate::graph::validate_identifier(cid)
+                .with_context(|| format!("summaries_for_claims {cid}: validation"));
+        }
+
+        let session = self.session_mut_inner()?;
+
+        // Build the Cypher query with IN clause
+        let ids_sql: Vec<String> = claim_ids
+            .iter()
+            .map(|s| format!("'{}'", s.replace('\'', "\\'")))
+            .collect();
+        let cypher = format!(
+            "MATCH (f:Feedback)-[:VERDICTS_ON]->(c:FusedClaim) \
+             WHERE c.id IN [{}] \
+             RETURN f.id, f.target, f.verdict, f.replacement, f.actor, \
+                    f.revision, f.timestamp \
+             ORDER BY c.id ASC, f.revision ASC, f.timestamp ASC, f.id ASC",
+            ids_sql.join(", ")
+        );
+
+        let rows =
+            run_query(&session.conn, &cypher).with_context(|| "summaries_for_claims query")?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let id = row
+                .get("f.id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let target = row
+                .get("f.target")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let verdict_str = row
+                .get("f.verdict")
+                .and_then(|c| c.as_str())
+                .unwrap_or("uncertain");
+            let verdict =
+                FeedbackVerdict::parse_label(verdict_str).unwrap_or(FeedbackVerdict::Uncertain);
+            let replacement = row
+                .get("f.replacement")
+                .and_then(|c| c.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let actor = row
+                .get("f.actor")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let revision = row
+                .get("f.revision")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let timestamp = row
+                .get("f.timestamp")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+
+            results.push(crate::feedback::FeedbackSummary {
+                id,
+                target,
+                verdict,
+                replacement,
+                actor,
+                revision,
+                timestamp,
             });
         }
         Ok(results)
