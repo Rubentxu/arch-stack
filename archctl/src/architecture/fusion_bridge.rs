@@ -11,10 +11,11 @@
 //! One function, two callers — eliminates connascence-of-algorithm smell
 //! between FusedClaim recompute and Reconciliation derivation.
 
-use crate::observation_claim::Observation;
-use crate::trust::{canonical_promotion_allowed, classify, AuthorityClass, ExecutionClass,
-                   TrustClassification};
 use crate::evidence::SourceOrigin as EvSourceOrigin;
+use crate::observation_claim::Observation;
+use crate::trust::{
+    AuthorityClass, ExecutionClass, TrustClassification, canonical_promotion_allowed, classify,
+};
 
 /// Trust-gated FusedClaim.status derivation.
 ///
@@ -42,7 +43,10 @@ use crate::evidence::SourceOrigin as EvSourceOrigin;
 ///
 /// `(&str, TrustClassification)` — the status string and the trust classification
 /// for use by callers that need the classification (e.g. m30 bridge).
-pub fn recompute_status(group: &[&Observation], source_origin: EvSourceOrigin) -> (String, TrustClassification) {
+pub fn recompute_status(
+    group: &[&Observation],
+    source_origin: EvSourceOrigin,
+) -> (String, TrustClassification) {
     // Classify from the first observation's origin. All observations in a
     // fused group share the same provenance, so one classification is sufficient.
     let tool_name = group.first().map(|o| o.tool_name.as_str());
@@ -91,8 +95,8 @@ pub fn should_warn_pending_adjudication(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observation_claim::Observation;
     use crate::evidence::SourceOrigin;
+    use crate::observation_claim::Observation;
 
     fn make_obs(origin: SourceOrigin, tool: &str) -> Observation {
         Observation {
@@ -130,5 +134,52 @@ mod tests {
         let (status, trust) = recompute_status(&[&obs], SourceOrigin::UserWorkspace);
         assert_eq!(status, "accepted");
         assert_eq!(trust.execution, ExecutionClass::PureDeterministic);
+    }
+
+    /// TRUST-005 PR3a: green cell explicit check (PureDeterministic × Observed → "accepted").
+    #[test]
+    fn recompute_status_trust_gated_accepted_for_pure_deterministic_observed() {
+        // UserWorkspace + unknown tool = PureDeterministic × Observed (green cell).
+        // canonical_promotion_allowed(PureDeterministic, Observed) = Ok(()).
+        let obs = make_obs(SourceOrigin::UserWorkspace, "unknown-tool");
+        let (status, trust) = recompute_status(&[&obs], SourceOrigin::UserWorkspace);
+        assert_eq!(status, "accepted");
+        assert_eq!(trust.execution, ExecutionClass::PureDeterministic);
+        assert_eq!(trust.authority, AuthorityClass::Observed);
+    }
+
+    /// TRUST-005 PR3a: ModelInference execution is blocked by the trust gate.
+    #[test]
+    fn recompute_status_blocks_model_inference_to_observed_with_trust_violation() {
+        let obs = make_obs(SourceOrigin::ModelInference, "some-other-tool");
+        let (status, trust) = recompute_status(&[&obs], SourceOrigin::ModelInference);
+        assert_eq!(status, "drafted");
+        assert_eq!(trust.execution, ExecutionClass::ModelInference);
+    }
+
+    /// TRUST-005 PR3a: m30 bridge — ModelInference × Suggested + Accept must warn.
+    #[test]
+    fn recompute_status_sets_pending_adjudication_event_on_feedback_accept_for_model_inference() {
+        let trust = TrustClassification {
+            execution: ExecutionClass::ModelInference,
+            authority: AuthorityClass::Suggested,
+        };
+        let verdict = crate::feedback::FeedbackVerdict::Accept;
+        assert!(
+            should_warn_pending_adjudication(trust, verdict),
+            "ModelInference × Suggested + Accept must trigger m30 bridge warning"
+        );
+        let human_trust = TrustClassification {
+            execution: ExecutionClass::HumanDecision,
+            authority: AuthorityClass::Normative,
+        };
+        assert!(
+            !should_warn_pending_adjudication(human_trust, verdict),
+            "HumanDecision must NOT trigger pending adjudication"
+        );
+        assert!(
+            !should_warn_pending_adjudication(trust, crate::feedback::FeedbackVerdict::Reject),
+            "ModelInference + Reject must NOT trigger pending adjudication"
+        );
     }
 }

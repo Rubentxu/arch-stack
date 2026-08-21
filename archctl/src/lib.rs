@@ -16,7 +16,6 @@ pub mod feedback;
 pub mod filesystem;
 pub mod graph;
 pub mod ide;
-pub mod reconciliation;
 pub mod identity;
 pub mod inventory;
 pub mod lifecycle;
@@ -24,6 +23,7 @@ pub mod migrations;
 pub mod observation_claim;
 pub mod plugin;
 pub mod project;
+pub mod reconciliation;
 pub mod render;
 pub mod row;
 pub mod scope; // M73: CLI lifecycle (asdf-inspired versioned installs).
@@ -64,8 +64,9 @@ pub use environment::{
     Environment, FixedEnvironment, SystemEnvironment, fixed_environment, system_environment,
 };
 pub use evaluation::Evaluation;
-pub use feedback::{Feedback, FeedbackError, FeedbackId, FeedbackVerdict, TargetClaimId, feedback_from_evidence};
-pub use reconciliation::{Reconciliation, reconciliation_status};
+pub use feedback::{
+    Feedback, FeedbackError, FeedbackId, FeedbackVerdict, TargetClaimId, feedback_from_evidence,
+};
 pub use filesystem::{
     DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem, memory_filesystem,
     system_filesystem,
@@ -80,6 +81,7 @@ pub use identity::{
     portable_project_id, resolve_repository_identity, resolve_source_identity,
 };
 pub use project::{ProjectInfo, resolve_project};
+pub use reconciliation::{Reconciliation, reconciliation_status};
 pub use row::{Cell, Row};
 pub use scope::{
     ScopeCheckReport, ScopeFinding, ScopeGate, ScopeManifest, ScopeSeverity, check_all_scopes,

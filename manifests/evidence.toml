@@ -18,7 +18,13 @@ cargo_dir = "archctl"
 # Files that may be edited freely within this scope. Other files in
 # archctl/src/ are out of scope; touching them requires either a new
 # scope manifest or removing this one.
-editable = ["archctl/src/evidence.rs"]
+editable = [
+    "archctl/src/evidence.rs",
+    # TRUST-005: ObservationStatus enum (Drafted/Accepted/Superseded)
+    # mirrors EvidenceStatus; lives in observation_claim.rs alongside
+    # the Observation carrier that derives from Evidence.
+    "archctl/src/observation_claim.rs",
+]
 
 # Public symbols that consumers depend on. If any of these disappear
 # the CLI subcommands `archctl evidence extract|put|list` break.

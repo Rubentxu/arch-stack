@@ -17,8 +17,9 @@
 
 use crate::feedback::{Feedback, FeedbackVerdict};
 #[allow(unused_imports)]
-use crate::trust::{canonical_promotion_allowed, AuthorityClass, ExecutionClass,
-                   TrustClassification};
+use crate::trust::{
+    AuthorityClass, ExecutionClass, TrustClassification, canonical_promotion_allowed,
+};
 use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -170,9 +171,7 @@ impl Reconciliation {
             let status_for_denied = match trust.execution {
                 ExecutionClass::ModelInference => {
                     // Check if there's a Feedback.accept in history
-                    let has_accept = sorted
-                        .iter()
-                        .any(|f| f.verdict == FeedbackVerdict::Accept);
+                    let has_accept = sorted.iter().any(|f| f.verdict == FeedbackVerdict::Accept);
                     if has_accept {
                         "pending_adjudication".to_string()
                     } else {

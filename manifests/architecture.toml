@@ -27,6 +27,11 @@ editable = [
     "archctl/src/architecture/report_formats.rs",
     "archctl/src/architecture/task_context.rs",
     "archctl/src/observation_claim.rs",
+    # TRUST-005: feedback + reconciliation are architecture-domain logic
+    # (Feedback/Reconciliation live alongside Observation/Claim/FusedClaim),
+    # so the files are part of this scope's contract surface.
+    "archctl/src/feedback.rs",
+    "archctl/src/reconciliation.rs",
     # P2-09b backfill hook lives in the migration runner (ADR-017);
     # it is architecture-domain logic (Observation/Claim backfill),
     # so the file is part of this scope's contract surface.

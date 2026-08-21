@@ -100,9 +100,7 @@ pub fn feedback_verdict_to_evidence_status(
 }
 
 /// Alias for `feedback_verdict_to_evidence_status`. Name pinned in architecture.toml.
-pub fn feedback_from_evidence(
-    v: FeedbackVerdict,
-) -> Option<crate::evidence::EvidenceStatus> {
+pub fn feedback_from_evidence(v: FeedbackVerdict) -> Option<crate::evidence::EvidenceStatus> {
     feedback_verdict_to_evidence_status(v)
 }
 
@@ -229,7 +227,10 @@ mod tests {
     fn feedback_accept_with_replacement_is_contradictory() {
         let fb = make_feedback(FeedbackVerdict::Accept, Some("correct replacement"));
         let err = fb.validate().unwrap_err();
-        assert!(matches!(err, FeedbackError::ContradictoryFields(FeedbackVerdict::Accept)));
+        assert!(matches!(
+            err,
+            FeedbackError::ContradictoryFields(FeedbackVerdict::Accept)
+        ));
     }
 
     #[test]
@@ -252,8 +253,14 @@ mod tests {
             feedback_verdict_to_evidence_status(FeedbackVerdict::Supersede),
             Some(crate::evidence::EvidenceStatus::Superseded)
         );
-        assert_eq!(feedback_verdict_to_evidence_status(FeedbackVerdict::Uncertain), None);
-        assert_eq!(feedback_verdict_to_evidence_status(FeedbackVerdict::Correct), None);
+        assert_eq!(
+            feedback_verdict_to_evidence_status(FeedbackVerdict::Uncertain),
+            None
+        );
+        assert_eq!(
+            feedback_verdict_to_evidence_status(FeedbackVerdict::Correct),
+            None
+        );
     }
 
     #[test]

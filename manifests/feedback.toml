@@ -33,7 +33,8 @@ must_hold = [
   "FeedbackVerdict::Supersede",
   "FeedbackVerdict::Correct",
   "FeedbackError::ContradictoryFields",
-  "FeedbackError::TargetNotFound",
+  # TargetNotFound variant (qualified as FeedbackError::TargetNotFound in test names).
+  "TargetNotFound(",
   "pub fn validate(",
   # m30 bridge invariant: feedback accepted on ModelInference does not
   # silently promote; see trust.rs + fusion_bridge.rs for the
