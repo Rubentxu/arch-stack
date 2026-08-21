@@ -524,7 +524,8 @@ pub trait FeedbackRepository: Send + Sync {
 
     /// Read all [`crate::feedback::Feedback`] rows that target the given
     /// `FusedClaim` id, ordered by `timestamp ASC`.
-    fn read_feedback_for_claim(&mut self, claim_id: &str) -> Result<Vec<crate::feedback::Feedback>>;
+    fn read_feedback_for_claim(&mut self, claim_id: &str)
+    -> Result<Vec<crate::feedback::Feedback>>;
 
     /// List all [`crate::reconciliation::Reconciliation`] rows, optionally
     /// filtered by assertion_id. Ordered by `revision DESC`.
@@ -2717,8 +2718,7 @@ impl FeedbackRepository for LbugStore {
         use crate::feedback::FeedbackVerdict;
         use crate::graph::validate_identifier;
         let session = self.session_mut_inner()?;
-        let id = validate_identifier(&feedback.id)
-            .context("put_feedback: id failed validation")?;
+        let id = validate_identifier(&feedback.id).context("put_feedback: id failed validation")?;
         let target = validate_identifier(&feedback.target)
             .context("put_feedback: target failed validation")?;
         let verdict_label = match feedback.verdict {
@@ -2741,8 +2741,7 @@ impl FeedbackRepository for LbugStore {
             "evidence": feedback.evidence,
             "correlation_id": feedback.correlation_id,
         });
-        let props_json =
-            serde_json::to_string(&props).context("serialize feedback props")?;
+        let props_json = serde_json::to_string(&props).context("serialize feedback props")?;
         let safe_props = props_json.replace('\'', "\\'");
         // MERGE node + edge idempotently
         let cypher = format!(
@@ -2783,24 +2782,46 @@ impl FeedbackRepository for LbugStore {
             .with_context(|| format!("read_feedback_for_claim {cid}"))?;
         let mut results = Vec::new();
         for row in rows {
-            let id = row.get("f.id").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let target = row.get("f.target").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let verdict_str = row.get("f.verdict").and_then(|c| c.as_str()).unwrap_or("uncertain");
-            let verdict = FeedbackVerdict::parse_label(verdict_str)
-                .unwrap_or(FeedbackVerdict::Uncertain);
-            let replacement = row.get("f.replacement")
+            let id = row
+                .get("f.id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let target = row
+                .get("f.target")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let verdict_str = row
+                .get("f.verdict")
+                .and_then(|c| c.as_str())
+                .unwrap_or("uncertain");
+            let verdict =
+                FeedbackVerdict::parse_label(verdict_str).unwrap_or(FeedbackVerdict::Uncertain);
+            let replacement = row
+                .get("f.replacement")
                 .and_then(|c| c.as_str())
                 .filter(|s| !s.is_empty())
                 .map(String::from);
-            let actor = row.get("f.actor").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let revision = row.get("f.revision").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let timestamp = row.get("f.timestamp").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let actor = row
+                .get("f.actor")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let revision = row
+                .get("f.revision")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let timestamp = row
+                .get("f.timestamp")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
             let props_str = row.get("f.props").and_then(|c| c.as_str()).unwrap_or("{}");
             let props: serde_json::Value = props_str.parse().unwrap_or(serde_json::Value::Null);
-            let evidence: Option<Vec<String>> = props
-                .get("evidence")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
+            let evidence: Option<Vec<String>> =
+                props.get("evidence").and_then(|v| v.as_array()).map(|arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str().map(String::from))
                         .collect()
@@ -2839,28 +2860,58 @@ impl FeedbackRepository for LbugStore {
              RETURN r.id, r.assertion_id, r.subject, r.predicate, r.object, \
                     r.evidence_set, r.computed_status, r.rationale, r.revision \
              ORDER BY r.revision DESC",
-             filter
+            filter
         );
-        let rows = run_query(&session.conn, &cypher)
-            .with_context(|| "list_reconciliations query")?;
+        let rows =
+            run_query(&session.conn, &cypher).with_context(|| "list_reconciliations query")?;
         let mut results = Vec::new();
         for row in rows {
-            let id = row.get("r.id").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let assertion_id = row.get("r.assertion_id").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let subject = row.get("r.subject").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let predicate = row.get("r.predicate").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let object = row.get("r.object").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let id = row
+                .get("r.id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let assertion_id = row
+                .get("r.assertion_id")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let subject = row
+                .get("r.subject")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let predicate = row
+                .get("r.predicate")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let object = row
+                .get("r.object")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
             // evidence_set is a LIST<STRING> column — deserialize from JSON array string
             let evidence_set: Vec<String> = row
                 .get("r.evidence_set")
                 .and_then(|c| c.as_str())
-                .map(|s| {
-                    serde_json::from_str::<Vec<String>>(s).unwrap_or_else(|_| Vec::new())
-                })
+                .map(|s| serde_json::from_str::<Vec<String>>(s).unwrap_or_else(|_| Vec::new()))
                 .unwrap_or_default();
-            let computed_status = row.get("r.computed_status").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let rationale = row.get("r.rationale").and_then(|c| c.as_str()).unwrap_or_default().to_string();
-            let revision = row.get("r.revision").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+            let computed_status = row
+                .get("r.computed_status")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let rationale = row
+                .get("r.rationale")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let revision = row
+                .get("r.revision")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
             results.push(crate::reconciliation::Reconciliation {
                 id,
                 assertion_id,

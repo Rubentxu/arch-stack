@@ -22,8 +22,8 @@
 //! confidence factor when any member observation is older than the
 //! 90-day staleness cutoff and flags the claim as `stale`.
 
-use crate::observation_claim::Observation;
 use crate::architecture::fusion_bridge::recompute_status;
+use crate::observation_claim::Observation;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -307,7 +307,8 @@ pub fn fuse_observations_with(
         // Status: TRUST-005 trust-gated derivation.
         // Parse evidence_origin from the first observation; default to
         // UserWorkspace for pre-v7 rows where the column is empty.
-        let source_origin = member_refs.first()
+        let source_origin = member_refs
+            .first()
             .and_then(|o| crate::evidence::SourceOrigin::parse_label(&o.evidence_origin))
             .unwrap_or(crate::evidence::SourceOrigin::UserWorkspace);
         let (status, _trust) = recompute_status(&member_refs, source_origin);

@@ -12,7 +12,14 @@ description = "Trust classification and canonical-write policy (ADR-063)"
 cargo_dir = "archctl"
 
 # Files that may be edited freely within this scope.
-editable = ["archctl/src/trust.rs"]
+editable = [
+    "archctl/src/trust.rs",
+    # TRUST-005: fusion_bridge consults canonical_promotion_allowed;
+    # the bridge emits pending_adjudication_event when the trust gate
+    # denies promotion. The bridge file is in this scope's contract
+    # surface because it is the trust-policy chokepoint.
+    "archctl/src/architecture/fusion_bridge.rs",
+]
 
 # Public symbols that consumers depend on.
 # canonical_promotion_allowed added by Option D (m25).

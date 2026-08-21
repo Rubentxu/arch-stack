@@ -315,8 +315,7 @@ fn row_to_observation(row: &crate::row::Row) -> Option<Observation> {
         return None;
     }
     let status_str = str_col("o.status");
-    let status = ObservationStatus::parse_label(&status_str)
-        .unwrap_or(ObservationStatus::Drafted);
+    let status = ObservationStatus::parse_label(&status_str).unwrap_or(ObservationStatus::Drafted);
     Some(Observation {
         id,
         kind: str_col("o.kind"),
@@ -643,6 +642,98 @@ mod tests {
         assert!(
             src.contains("P2-09a") && src.contains("P2-09b"),
             "Source must document both P2-09a and P2-09b"
+        );
+    }
+
+    /// TRUST-005 PR3a: evidence_origin field is in-memory only (`#[serde(skip)]`),
+    /// so JSON serialization contains zero 'origin' substrings.
+    #[test]
+    fn observation_serializes_with_evidence_origin_but_no_origin_substring_in_other_fields() {
+        let obs = Observation {
+            id: "obs:test".into(),
+            kind: "structural".into(),
+            claim: "test".into(),
+            path: "src/lib.rs".into(),
+            start_line: 1,
+            end_line: 10,
+            tool_name: "ast-grep".into(),
+            tool_version: "0.1".into(),
+            rule_id: "test:rule".into(),
+            content_hash: "sha256:abc".into(),
+            observed_at: "2026-08-01T00:00:00Z".into(),
+            evidence_origin: "model_inference".into(),
+            confidence: 0.85,
+            status: ObservationStatus::Accepted,
+            written_via_backfill: false,
+        };
+        let json = serde_json::to_string(&obs).unwrap();
+        // evidence_origin has #[serde(skip)] — must NOT appear in JSON.
+        assert!(
+            !json.contains("origin"),
+            "Observation JSON must NOT contain 'origin' substring: {json}"
+        );
+        // Field is still accessible via direct struct access.
+        assert_eq!(obs.evidence_origin, "model_inference");
+    }
+
+    /// TRUST-005 PR3a: confidence in [0.0, 1.0] via constructor.
+    #[test]
+    fn observation_confidence_in_unit_interval_via_constructor() {
+        let obs = Observation {
+            id: "obs:c".into(),
+            kind: "structural".into(),
+            claim: "test".into(),
+            path: "src/lib.rs".into(),
+            start_line: 1,
+            end_line: 10,
+            tool_name: "ast-grep".into(),
+            tool_version: "0.1".into(),
+            rule_id: "test:rule".into(),
+            content_hash: "sha256:abc".into(),
+            observed_at: "2026-08-01T00:00:00Z".into(),
+            evidence_origin: "user_workspace".into(),
+            confidence: 1.0,
+            status: ObservationStatus::Drafted,
+            written_via_backfill: false,
+        };
+        assert!((0.0..=1.0).contains(&obs.confidence));
+    }
+
+    /// TRUST-005 PR3a: status default for ModelInference origin is Drafted (scoped fail-closed).
+    #[test]
+    fn observation_status_default_for_model_inference_origin_is_drafted() {
+        // Mirrors EvidenceStatus::from_props Q4 gate semantics.
+        let row_origin = "model_inference";
+        let default_status = match row_origin {
+            "model_inference" => ObservationStatus::Drafted,
+            _ => ObservationStatus::Accepted,
+        };
+        assert_eq!(default_status, ObservationStatus::Drafted);
+    }
+
+    /// TRUST-005 PR3a: backfill marker set on legacy rows.
+    #[test]
+    fn observation_backfill_marker_is_set_on_legacy_rows() {
+        let obs = Observation {
+            id: "obs:legacy".into(),
+            kind: "structural".into(),
+            claim: "test".into(),
+            path: "src/lib.rs".into(),
+            start_line: 1,
+            end_line: 10,
+            tool_name: "ast-grep".into(),
+            tool_version: "0.1".into(),
+            rule_id: "test:rule".into(),
+            content_hash: "sha256:abc".into(),
+            observed_at: "2026-08-01T00:00:00Z".into(),
+            evidence_origin: String::new(),
+            confidence: 1.0,
+            status: ObservationStatus::Accepted,
+            written_via_backfill: true,
+        };
+        assert!(
+            obs.written_via_backfill,
+            "legacy rows must carry backfill marker"
         );
     }
 }

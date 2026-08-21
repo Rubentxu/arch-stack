@@ -409,13 +409,17 @@ pub fn backfill_observation_status(store: &mut crate::store::LbugStore) -> Resul
 
     // Backfill Observation.status = "accepted" for pre-v7 rows lacking it.
     let cypher_obs = "MATCH (o:Observation) WHERE o.status IS NULL SET o.status = 'accepted';";
-    session.conn.query(cypher_obs)
+    session
+        .conn
+        .query(cypher_obs)
         .with_context(|| "v7 backfill: Observation.status default")?;
 
     // Backfill FusedClaim.pending_adjudication_event = false for pre-v7 rows.
     let cypher_fc = "MATCH (f:FusedClaim) WHERE f.pending_adjudication_event IS NULL \
                      SET f.pending_adjudication_event = false;";
-    session.conn.query(cypher_fc)
+    session
+        .conn
+        .query(cypher_fc)
         .with_context(|| "v7 backfill: FusedClaim.pending_adjudication_event default")?;
 
     tracing::info!("TRUST-005 v7 backfill complete");
