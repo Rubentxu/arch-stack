@@ -472,31 +472,175 @@ fn uat_06_step_09_assert_candidate_visible() {
     );
 }
 
-/// UAT-06 step 13: human-feedback verdict: reject — blocked on spec-35 (FEEDBACK-AND-RECONCILIATION).
+/// Persist a single fused claim derived from two inline Observations,
+/// returning its canonical id. Mirrors the step_7 pattern but persists
+/// the claim so `FeedbackRepository` can link a `:Feedback` edge to it.
+fn persist_one_fused_claim(store: &mut LbugStore, version_id: &str) -> String {
+    use archctl::DiagramRepository;
+    use archctl::architecture::fusion::fuse_observations;
+    use archctl::observation_claim::{Observation, ObservationStatus};
+
+    // Two Observations: one UserWorkspace (canonical) + one ModelInference
+    // (rejected false claim). Fused into a single FusedClaim.
+    let obs_wp = Observation {
+        id: format!("obs:ev:ws:{version_id}"),
+        kind: "structural".into(),
+        claim: "Orders uses PaymentProvider for checkout".into(),
+        path: "src/orders.rs".into(),
+        start_line: 1,
+        end_line: 10,
+        tool_name: "tree-sitter".into(),
+        tool_version: "0.1".into(),
+        rule_id: "struct:dependency".into(),
+        content_hash: "sha256:ws001".into(),
+        observed_at: "2026-08-20T12:00:00Z".into(),
+        evidence_origin: "UserWorkspace".into(),
+        confidence: 1.0,
+        status: ObservationStatus::Accepted,
+        written_via_backfill: false,
+    };
+    let obs_llm = Observation {
+        id: format!("obs:ev:llm:{version_id}"),
+        kind: "structural".into(),
+        claim: "Orders uses PaymentProvider for checkout".into(),
+        path: "src/orders.rs".into(),
+        start_line: 1,
+        end_line: 10,
+        tool_name: "llm_analyst".into(),
+        tool_version: "0.1".into(),
+        rule_id: "struct:dependency".into(),
+        content_hash: "sha256:llm001".into(),
+        observed_at: "2026-08-20T12:00:00Z".into(),
+        evidence_origin: "ModelInference".into(),
+        confidence: 0.0,
+        status: ObservationStatus::Drafted,
+        written_via_backfill: false,
+    };
+    let fused = fuse_observations(&[obs_wp, obs_llm]);
+    assert_eq!(fused.len(), 1, "fixture must yield exactly one fused claim");
+    let claim_id = fused[0].id.clone();
+    store
+        .put_fused_claims(version_id, &fused, "2026-08-20T12:00:00Z")
+        .expect("persist fused claim");
+    claim_id
+}
+
+/// UAT-06 step 13: human-feedback verdict: reject.
 #[test]
-#[ignore]
 fn uat_06_step_13_human_feedback_reject() {
-    // spec-35: human feedback verdict must be recordable and must mark
-    // the FusedClaim as rejected, not accepted.
-    todo!("step 13 blocked on spec-35: FEEDBACK-AND-RECONCILIATION")
+    use archctl::feedback::{Feedback, FeedbackVerdict};
+    use archctl::store::FeedbackRepository;
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+    let claim_id = persist_one_fused_claim(&mut store, "v:orders-stripe-step13");
+
+    let fb = Feedback {
+        id: "fdbk:test:reject".into(),
+        target: claim_id.clone(),
+        verdict: FeedbackVerdict::Reject,
+        replacement: Some("Orders uses PaymentProvider for checkout".into()),
+        actor: "alice".into(),
+        revision: "rev1".into(),
+        timestamp: "2026-08-20T12:00:00Z".into(),
+        evidence: None,
+        correlation_id: None,
+    };
+    store.put_feedback(&fb).unwrap();
+    let read = store.read_feedback_for_claim(&claim_id).unwrap();
+    assert_eq!(read.len(), 1, "exactly one feedback row recorded");
+    assert_eq!(read[0].verdict, FeedbackVerdict::Reject);
+    assert_eq!(
+        read[0].replacement.as_deref(),
+        Some("Orders uses PaymentProvider for checkout")
+    );
 }
 
-/// UAT-06 step 14: replacement claim — blocked on spec-35.
+/// UAT-06 step 14: replacement claim is the new canonical fact after rejection.
 #[test]
-#[ignore]
 fn uat_06_step_14_replacement_claim() {
-    // spec-35: the replacement "Orders uses PaymentProvider" must appear
-    // as the new canonical fact after rejection.
-    todo!("step 14 blocked on spec-35")
+    use archctl::feedback::{Feedback, FeedbackVerdict};
+    use archctl::reconciliation::Reconciliation;
+    use archctl::store::FeedbackRepository;
+    use archctl::trust::{AuthorityClass, ExecutionClass, TrustClassification};
+
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+    let claim_id = persist_one_fused_claim(&mut store, "v:orders-stripe-step14");
+
+    // HumanDecision × Normative — canonical trust tier; the bridge allows promotion.
+    let trust = TrustClassification {
+        execution: ExecutionClass::HumanDecision,
+        authority: AuthorityClass::Normative,
+    };
+    let fb = Feedback {
+        id: "fdbk:test:reject-replace".into(),
+        target: claim_id,
+        verdict: FeedbackVerdict::Reject,
+        replacement: Some("Orders uses PaymentProvider for checkout".into()),
+        actor: "alice".into(),
+        revision: "rev1".into(),
+        timestamp: "2026-08-20T12:00:00Z".into(),
+        evidence: None,
+        correlation_id: None,
+    };
+    store.put_feedback(&fb).unwrap();
+
+    // Compute reconciliation — replacement must drive the derived assertion.
+    let r = Reconciliation::compute(
+        "a1".into(),
+        "Orders".into(),
+        "uses".into(),
+        "PaymentProvider".into(),
+        vec!["ev:ws:orders-payment".into()],
+        std::slice::from_ref(&fb),
+        "rev1".into(),
+        trust,
+    );
+    assert_eq!(
+        r.computed_status, "rejected",
+        "Reject + replacement → computed_status=rejected"
+    );
+    assert!(
+        r.rationale.contains("replacement") || r.rationale.contains("reject"),
+        "rationale must mention rejection basis: {}",
+        r.rationale
+    );
 }
 
-/// UAT-06 step 15: restart-workbench — blocked on spec-35.
+/// UAT-06 step 15: rejection persists across workbench restart.
 #[test]
-#[ignore]
 fn uat_06_step_15_restart_workbench() {
-    // spec-35: after restart, the rejection must persist (FusedClaim state
-    // survived the workbench restart).
-    todo!("step 15 blocked on spec-35")
+    use archctl::feedback::{Feedback, FeedbackVerdict};
+    use archctl::store::FeedbackRepository;
+    let tmp = TempDir::new().unwrap();
+
+    // Session 1: open + record reject feedback.
+    let claim_id = {
+        let mut store = open_store(&tmp);
+        let cid = persist_one_fused_claim(&mut store, "v:orders-stripe-step15");
+        let fb = Feedback {
+            id: "fdbk:test:reject-persist".into(),
+            target: cid.clone(),
+            verdict: FeedbackVerdict::Reject,
+            replacement: Some("Orders uses PaymentProvider for checkout".into()),
+            actor: "alice".into(),
+            revision: "rev1".into(),
+            timestamp: "2026-08-20T12:00:00Z".into(),
+            evidence: None,
+            correlation_id: None,
+        };
+        store.put_feedback(&fb).unwrap();
+        cid
+    };
+
+    // Session 2: reopen same store and verify the feedback row is still there.
+    let project = tmp.path().join("proj");
+    let mut store = LbugStore::open(&project).unwrap();
+    let read = store.read_feedback_for_claim(&claim_id).unwrap();
+    assert_eq!(read.len(), 1, "feedback row must survive store restart");
+    assert_eq!(read[0].verdict, FeedbackVerdict::Reject);
+    assert_eq!(read[0].actor, "alice");
+    assert_eq!(read[0].revision, "rev1");
 }
 
 /// UAT-06 step 16: invoke-agent re-evaluation — blocked on spec-35 + spec-39 (SEARCH-CONTEXT-BUNDLE).
