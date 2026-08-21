@@ -1198,6 +1198,9 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 let disp = SyncDispatcher::new(&reg);
                 // REQ-T06-003: feedback_history pre-populated by SyncDispatcher::build_context
                 // (TRUST-007); struct-literal form retained here — no store handle in scope.
+                // REQ-M25-006: pending_adjudications pre-populated by SyncDispatcher::build_context (TRUST-008).
+                // Struct literal intentionally empty at this site — the dispatcher re-populates from
+                // AdjudicationRepository::list_pending_adjudications.
                 let ctx = AgentContext {
                     goal,
                     triggering_event: None,
@@ -1208,6 +1211,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     available_tools: vec![],
                     budget: Default::default(),
                     feedback_history: vec![],
+                    pending_adjudications: vec![],
                 };
                 let out = disp.dispatch(&ctx)?;
                 if json {

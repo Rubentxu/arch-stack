@@ -249,3 +249,52 @@ fn invalid_identifier_surfaces_validation_error() {
          `validation`; got: {msg}"
     );
 }
+
+/// SCN-T08-005a: pending_adjudications round-trips through AgentContext serde.
+///
+/// Verifies that an AgentContext carrying a non-empty pending_adjudications Vec
+/// survives JSON serialisation + deserialisation with the field intact.
+///
+/// See: specification.md REQ-T08-005 / design.md SCN-T08-005a.
+#[test]
+fn pending_adjudications_round_trips_through_agent_context_serde() {
+    use archctl::adjudication::AdjudicationDecision;
+    use archctl::cognitive::context::AgentContext;
+    use archctl::cognitive::descriptor::AgentBudget;
+
+    let adj_event = AdjudicationEvent {
+        id: "adj:test:2026-08-21T12:00:00Z".into(),
+        target_fused_claim_id: "claim:dr:ws:test-001".into(),
+        adjudicator: "operator".into(),
+        evidence_refs: vec![],
+        decided_at: "2026-08-21T12:00:00Z".into(),
+        decision: AdjudicationDecision::Defer,
+    };
+
+    let ctx = AgentContext::with_pending_adjudications(
+        "audit pending adjudications".into(),
+        None,
+        Default::default(),
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        AgentBudget::default(),
+        vec![],
+        vec![adj_event.clone()],
+    );
+
+    let json = serde_json::to_string(&ctx).expect("serialise must succeed");
+    let back: AgentContext = serde_json::from_str(&json).expect("deserialise must succeed");
+
+    assert_eq!(
+        back.pending_adjudications.len(),
+        1,
+        "must preserve one event"
+    );
+    assert_eq!(back.pending_adjudications[0].id, adj_event.id);
+    assert_eq!(
+        back.pending_adjudications[0].decision,
+        AdjudicationDecision::Defer
+    );
+}
