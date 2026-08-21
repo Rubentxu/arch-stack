@@ -1,7 +1,7 @@
 ## [Unreleased] — pending
 
 Cycle `trust-007-feedback-port` — closes REQ-T06-003 deferred from TRUST-006.
-Five chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-port/`.
+Seven chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-port/`.
 
 ### Added
 - `FeedbackRepository::summaries_for_claims` port method on the trait — loads `FeedbackSummary` rows for multiple claim ids in a single Cypher query with deterministic ordering `(c.id ASC, f.revision ASC, f.timestamp ASC, f.id ASC)`.
