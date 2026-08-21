@@ -363,18 +363,18 @@ cd archctl && cargo test --doc
 # Manifest gate (validación de contrato de scope)
 cd archctl && cargo run --bin archctl -- doctor --scopes <id> --cwd <repo_root>
 
-# Validación mínima durante desarrollo
-cd archctl && cargo test --features test-fixtures --quiet && \
+# Validación mínima durante desarrollo (lib + integration + doctest)
+cd archctl && cargo test --features test-fixtures --tests --quiet && \
   cargo run --bin archctl -- doctor --scopes <scope> --cwd <repo_root>
 
 # Validación completa antes de PR (sin CI)
-cd archctl && cargo test --features test-fixtures --quiet && \
+cd archctl && cargo test --features test-fixtures --tests --quiet && \
   cargo clippy --quiet --features test-fixtures -- -D warnings && \
   cargo fmt --check && \
   cargo run --bin archctl -- doctor --scopes <id>,<id2> --cwd <repo_root>
 
 # Validación de CI (los mismos comandos que corren en la nube)
-cd archctl && cargo test --features test-fixtures && \
+cd archctl && cargo test --features test-fixtures --tests && \
   cargo clippy --features test-fixtures --all-targets -- -D warnings
 ```
 
@@ -753,8 +753,16 @@ en el commit o reabrir el cleanup.
 Cada item debe responderse con **sí** o **no**:
 
 - [ ] `cargo build --quiet` termina con código 0.
-- [ ] `cargo test --quiet` pasa todos los tests (lib + integration
-      + doctest).
+- [ ] `cargo test --features test-fixtures --tests --quiet` pasa
+      todos los tests (lib + 56 integration test files + doctest).
+      **Sin `--features test-fixtures`** la suite de integración no
+      compila (el helper `execute_raw_cypher_for_test` está bajo
+      `#[cfg(any(test, feature = "test-fixtures"))]`). **Sin
+      `--tests`** solo corre la lib suite (~859 tests) y se pierde
+      la cobertura de los tests de integración (~345 tests).
+      Histórico: cycle-2/cycle-8 work dejó el fixture `.png` mientras
+      el validador esperaba `.svg`; sobrevivió al lib run hasta el
+      commit b6b78ce (2026-08-22).
 - [ ] `cargo clippy --quiet -- -D warnings` pasa sin warnings.
 - [ ] `cargo fmt --check` pasa.
 - [ ] Si el scope aplica: `cargo run --bin archctl -- doctor
