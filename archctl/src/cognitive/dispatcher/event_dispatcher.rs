@@ -146,15 +146,21 @@ mod tests {
     use crate::cognitive::delta::GraphDelta;
     use crate::cognitive::descriptor::{AgentBudget, AgentDescriptor, ModelPolicy};
     use crate::cognitive::event::{EventEnvelope, EventLog};
-    use crate::cognitive::observer::{ObserveError, ReactiveObserver};
+    use crate::cognitive::observer::{NoopObserver, ObserveError, ReactiveObserver};
     use std::sync::Arc;
 
-    struct MockAgent {
+    /// Real `ReactiveObserver` test helper that counts how many times
+    /// `observe()` was called. NOT a mock — it is a fully-functional
+    /// observer (no-op on output) that happens to expose an activation
+    /// counter for dispatcher fan-out assertions. AGENTS.md "no mocks"
+    /// applies to placeholders for missing real impls; this is a real
+    /// observer specialised for assertions.
+    struct CountingObserver {
         descriptor: AgentDescriptor,
         activate_count: std::sync::atomic::AtomicUsize,
     }
 
-    impl MockAgent {
+    impl CountingObserver {
         fn new(id: &str, subscriptions: Vec<String>) -> Self {
             Self {
                 descriptor: AgentDescriptor {
@@ -172,9 +178,14 @@ mod tests {
                 activate_count: std::sync::atomic::AtomicUsize::new(0),
             }
         }
+
+        fn activate_count(&self) -> usize {
+            self.activate_count
+                .load(std::sync::atomic::Ordering::SeqCst)
+        }
     }
 
-    impl ReactiveObserver for MockAgent {
+    impl ReactiveObserver for CountingObserver {
         fn descriptor(&self) -> AgentDescriptor {
             self.descriptor.clone()
         }
@@ -189,7 +200,7 @@ mod tests {
             Ok(AgentOutput::NoAction(
                 crate::cognitive::output::NoActionReason {
                     code: crate::cognitive::output::NoActionCode::InsufficientConfidence,
-                    message: "mock".into(),
+                    message: "counting observer".into(),
                 },
             ))
         }
@@ -296,8 +307,20 @@ mod tests {
         let log = EventLog::open(tmp.clone()).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        disp.register(Arc::new(MockAgent::new("a", vec!["GoalSubmitted".into()]))
-            as Arc<dyn ReactiveObserver>);
+        disp.register(Arc::new(NoopObserver {
+            descriptor: AgentDescriptor {
+                id: "a".into(),
+                version: "0.1.0".into(),
+                subscriptions: vec!["GoalSubmitted".into()],
+                required_views: vec![],
+                output_schema: "{}".into(),
+                model_policy: ModelPolicy::Heuristic,
+                budget: AgentBudget::default(),
+                capabilities: vec![],
+                deterministic: true,
+                idempotent: true,
+            },
+        }) as Arc<dyn ReactiveObserver>);
 
         let env = make_envelope("GoalSubmitted", 42);
         disp.dispatch(env, &make_delta(), |_, _| make_ctx())
@@ -374,20 +397,19 @@ mod tests {
 
     #[test]
     fn integration_empty_delta_on_no_changes() {
-        use std::sync::atomic::Ordering;
         // Test: empty delta does not prevent dispatch
         let tmp = std::env::temp_dir().join("archctl_integration_empty_delta");
         let log = EventLog::open(tmp).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        let agent = Arc::new(MockAgent::new("a", vec!["*".into()]));
+        let agent = Arc::new(CountingObserver::new("a", vec!["*".into()]));
         disp.register(agent.clone() as Arc<dyn ReactiveObserver>);
 
         let env = make_envelope("GoalSubmitted", 1);
         let delta = GraphDelta::default(); // empty
         disp.dispatch(env, &delta, |_, _| make_ctx()).is_empty();
 
-        assert_eq!(agent.activate_count.load(Ordering::SeqCst), 1);
+        assert_eq!(agent.activate_count(), 1);
     }
 
     #[test]
@@ -396,21 +418,46 @@ mod tests {
         let log = EventLog::open(tmp).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        disp.register(Arc::new(MockAgent::new("a", vec![])));
-        disp.register(Arc::new(MockAgent::new("b", vec![])));
+        disp.register(Arc::new(NoopObserver {
+            descriptor: AgentDescriptor {
+                id: "a".into(),
+                version: "0.1.0".into(),
+                subscriptions: vec![],
+                required_views: vec![],
+                output_schema: "{}".into(),
+                model_policy: ModelPolicy::Heuristic,
+                budget: AgentBudget::default(),
+                capabilities: vec![],
+                deterministic: true,
+                idempotent: true,
+            },
+        }));
+        disp.register(Arc::new(NoopObserver {
+            descriptor: AgentDescriptor {
+                id: "b".into(),
+                version: "0.1.0".into(),
+                subscriptions: vec![],
+                required_views: vec![],
+                output_schema: "{}".into(),
+                model_policy: ModelPolicy::Heuristic,
+                budget: AgentBudget::default(),
+                capabilities: vec![],
+                deterministic: true,
+                idempotent: true,
+            },
+        }));
 
         assert_eq!(disp.agent_count(), 2);
     }
 
     #[test]
     fn dispatcher_fan_out_to_matching_agents() {
-        use std::sync::atomic::Ordering;
         let tmp = std::env::temp_dir().join("archctl_dispatch_fanout");
         let log = EventLog::open(tmp).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        let agent_a = Arc::new(MockAgent::new("a", vec!["GoalSubmitted".into()]));
-        let agent_b = Arc::new(MockAgent::new("b", vec!["GoalSubmitted".into()]));
+        let agent_a = Arc::new(CountingObserver::new("a", vec!["GoalSubmitted".into()]));
+        let agent_b = Arc::new(CountingObserver::new("b", vec!["GoalSubmitted".into()]));
         // Register using explicit coercion
         disp.register(agent_a.clone() as Arc<dyn ReactiveObserver>);
         disp.register(agent_b.clone() as Arc<dyn ReactiveObserver>);
@@ -419,59 +466,56 @@ mod tests {
         let outputs = disp.dispatch(env, &make_delta(), |_, _| make_ctx());
 
         // Both agents should have been called (both match GoalSubmitted)
-        assert_eq!(agent_a.activate_count.load(Ordering::SeqCst), 1);
-        assert_eq!(agent_b.activate_count.load(Ordering::SeqCst), 1);
+        assert_eq!(agent_a.activate_count(), 1);
+        assert_eq!(agent_b.activate_count(), 1);
         // Both return NoAction so outputs is empty
         assert!(outputs.is_empty());
     }
 
     #[test]
     fn dispatcher_skips_non_matching_subscriptions() {
-        use std::sync::atomic::Ordering;
         let tmp = std::env::temp_dir().join("archctl_dispatch_skip");
         let log = EventLog::open(tmp).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        let agent = Arc::new(MockAgent::new("a", vec!["GoalCancelled".into()]));
+        let agent = Arc::new(CountingObserver::new("a", vec!["GoalCancelled".into()]));
         disp.register(agent.clone() as Arc<dyn ReactiveObserver>);
 
         let env = make_envelope("GoalSubmitted", 1);
         let outputs = disp.dispatch(env, &make_delta(), |_, _| make_ctx());
 
         // Agent does not match GoalSubmitted (subscribed to GoalCancelled)
-        assert_eq!(agent.activate_count.load(Ordering::SeqCst), 0);
+        assert_eq!(agent.activate_count(), 0);
         assert!(outputs.is_empty());
     }
 
     #[test]
     fn dispatcher_star_subscribes_to_all() {
-        use std::sync::atomic::Ordering;
         let tmp = std::env::temp_dir().join("archctl_dispatch_star");
         let log = EventLog::open(tmp).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        let agent = Arc::new(MockAgent::new("a", vec!["*".into()]));
+        let agent = Arc::new(CountingObserver::new("a", vec!["*".into()]));
         disp.register(agent.clone() as Arc<dyn ReactiveObserver>);
 
         let env = make_envelope("AnyEventWhatsoever", 1);
         disp.dispatch(env, &make_delta(), |_, _| make_ctx());
 
-        assert_eq!(agent.activate_count.load(Ordering::SeqCst), 1);
+        assert_eq!(agent.activate_count(), 1);
     }
 
     #[test]
     fn dispatcher_suffix_subscription() {
-        use std::sync::atomic::Ordering;
         let tmp = std::env::temp_dir().join("archctl_dispatch_suffix");
         let log = EventLog::open(tmp).unwrap();
         let mut disp = EventDispatcher::new(log);
 
-        let agent = Arc::new(MockAgent::new("a", vec!["*.changed".into()]));
+        let agent = Arc::new(CountingObserver::new("a", vec!["*.changed".into()]));
         disp.register(agent.clone() as Arc<dyn ReactiveObserver>);
 
         let env = make_envelope("file.changed", 1);
         disp.dispatch(env, &make_delta(), |_, _| make_ctx());
 
-        assert_eq!(agent.activate_count.load(Ordering::SeqCst), 1);
+        assert_eq!(agent.activate_count(), 1);
     }
 }
