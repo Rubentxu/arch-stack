@@ -1,3 +1,29 @@
+## [Unreleased] — pending
+
+Cycle `trust-005-observation-fusion` — closes the epistemic plumbing gap (TRUST-005):
+real confidence/status threaded into Observation/FusedClaim + Feedback/Reconciliation as first-class types.
+Five chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-005-observation-fusion/`.
+
+### Added
+- `Feedback` and `FeedbackVerdict` types in new `archctl/src/feedback.rs` bounded context. Carries human (or programmatic) verdict intent on a `FusedClaim` target. Persisted as `(:Feedback)` node with typed edge `(:Feedback)-[:VERDICTS_ON]->(:FusedClaim)`. 5 validation rules + serde round-trip tests.
+- `Reconciliation` and `PlaneEvidence` types in new `archctl/src/reconciliation.rs` bounded context. Computed status derivation from trust classification + Feedback history. Deterministic sort order: `feedback.id ASC, revision ASC, timestamp ASC`.
+- `archctl/src/fusion_bridge.rs` — trust-gated `recompute_status()` seam consumed by both `fuse_observations_with` and `FeedbackRepository::put_feedback`. Single source of truth for FusedClaim status derivation.
+- `Observation` struct gains `evidence_origin`, `confidence`, `status: ObservationStatus`, `written_via_backfill` fields. Column already shipped in v4; struct now reads it.
+- `FeedbackRepository` trait in `archctl/src/store.rs`: `put_feedback`, `read_feedback_for_claim`, `list_reconciliations`. LbugStore implementation with m30 bridge (`pending_adjudication_event` flag + `tracing::warn!` on ModelInference × Suggested × Feedback.accept).
+- `v7-observation-status` migration: adds `status STRING` to `(:Observation)`, `pending_adjudication_event BOOLEAN` to `(:FusedClaim)`, creates `(:Feedback)` / `(:Reconciliation)` node tables + typed edges.
+- `manifests/feedback.toml` (NEW): 5 public_symbols, 8 must_hold, 1 minimum_tests, 2 must_not_contain for the new bounded context.
+
+### Changed
+- `fuse_observations_with` now consults `trust::canonical_promotion_allowed` before stamping `FusedClaim.status`. `ModelInference × Suggested` FusedClaims land as `"drafted"` (never `"accepted"`).
+- `Observation.confidence` reads the persisted column (was hardcoded `1.0` in `observation_confidence()`).
+- `manifests/store.toml`: +5 must_hold lines (`FeedbackRepository` trait + 3 methods).
+- `manifests/architecture.toml`: +4 public_symbols + 5 must_hold + 3 editable entries (`feedback.rs`, `reconciliation.rs`, `fusion_bridge.rs`).
+- `manifests/evidence.toml`: +1 must_hold line (`ObservationStatus::Drafted`).
+- `manifests/trust.toml`: +1 must_hold line (`pending_adjudication_event`).
+
+### Deprecated
+- `trust::canonical_promotion_allowed` usage note: the m30 bridge is deferred. `Feedback.accept` on `ModelInference` targets sets `pending_adjudication_event = true` and emits `tracing::warn!` instead of silently promoting.
+
 ## [1.83.0] — 2026-08-20
 
 Cycle `m25-authority-execution-classes` — closes the first live breach of
