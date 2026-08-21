@@ -1,5 +1,17 @@
 ## [Unreleased] — pending
 
+Cycle `trust-007-feedback-port` — closes REQ-T06-003 deferred from TRUST-006.
+Five chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-port/`.
+
+### Added
+- `FeedbackRepository::summaries_for_claims` port method on the trait — loads `FeedbackSummary` rows for multiple claim ids in a single Cypher query with deterministic ordering `(c.id ASC, f.revision ASC, f.timestamp ASC, f.id ASC)`.
+- `LbugStore` implementation of `summaries_for_claims` — single Cypher `MATCH (f:Feedback)-[:VERDICTS_ON]->(c:FusedClaim) WHERE c.id IN $claim_ids`, validates each id, short-circuits on empty input.
+- `AgentContext::with_feedback_history` constructor for building `AgentContext` with pre-fetched feedback history (REQ-T06-003, ADR-P02 trust-first invariant).
+- `archctl/tests/feedback_summaries_port.rs` — regression tests covering empty-input short-circuit, deterministic revision-ASC per-claim ordering, and non-requested claim exclusion.
+
+### Changed
+- 7 `AgentContext` construction sites updated with `// REQ-T06-003: feedback_history plumbing` comment (findability pass; `vec![]` unchanged).
+
 Cycle `trust-006-context-bundle` — closes UAT-06 steps 16/17/19/20 (TRUST-006).
 AgentContext now carries prior feedback verdicts so re-invoked agents respect
 rejections; bundle export verified to exclude rejected claims.
