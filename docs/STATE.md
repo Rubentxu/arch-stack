@@ -2,7 +2,9 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-20, post-release v1.82.0 (TRUST-002
+> Última actualización: 2026-08-22, post-ciclo `no-stubs-mocks-placeholders-hardcoded`
+> + fix `test-fixture-svg-extension` + decisión lbug bump (1204 tests verde,
+> 8/8 doctor scopes OK). Próxima iteración: M34 / M35 (post-TRUST-008).
 > shipped: event IDs + causation/correlation + per-consumer checkpoint infra;
 > v1.81.0 was TRUST-001 EventLog reopen fix).
 
@@ -307,7 +309,12 @@ Candidatos futuros (reopen triggers documentados en Anti-roadmap):
 Pendientes menores out-of-scope:
 - Report de redacciones en strict bundles.
 - Persistir cutoff de staleness por proyecto (XDG).
-- Bump lbug (implicit cast STRING→TIMESTAMP o workaround documentado).
+- **Bump lbug 0.18.3 → 0.19.1**: **decisión tomada** 2026-08-22:
+  workaround en `archctl/src/migrations.rs:344-350` es la opción
+  elegida (workaround documentado en código + decisión registrada en
+  CHANGELOG). Bump diferido a ciclo de mantenimiento futuro; el
+  delta de beneficio (eliminar ~10 líneas de workaround) no compensa
+  el riesgo de regresión sobre los 1204 tests.
 
 Sigue válido el catálogo de items en
 `docs/arch-stack-proposals-2026-08-13/`.
