@@ -35,6 +35,43 @@ pub struct AgentContext {
     pub feedback_history: Vec<crate::feedback::FeedbackSummary>,
 }
 
+impl AgentContext {
+    /// Build an `AgentContext` with its `feedback_history` field populated
+    /// from a pre-fetched `Vec<FeedbackSummary>`. Use this chokepoint when
+    /// `summaries_for_claims` was already called (e.g. by `SyncDispatcher::build_context`)
+    /// or when a test path supplies feedback without a live store handle.
+    ///
+    /// The struct-literal form `feedback_history: vec![]` remains valid for
+    /// sites that intentionally construct a feedback-blind context (e.g. the
+    /// round-trip serde test at `context.rs:104`).
+    ///
+    /// Spec: REQ-T06-003 (TRUST-007), invariant ADR-P02.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_feedback_history(
+        goal: String,
+        triggering_event: Option<String>,
+        graph_view: GraphView,
+        source_fragments: Vec<SourceFragment>,
+        evidence: Vec<Evidence>,
+        applicable_rules: Vec<crate::cognitive::Rule>,
+        available_tools: Vec<crate::cognitive::ToolDescriptor>,
+        budget: AgentBudget,
+        feedback_history: Vec<crate::feedback::FeedbackSummary>,
+    ) -> Self {
+        Self {
+            goal,
+            triggering_event,
+            graph_view,
+            source_fragments,
+            evidence,
+            applicable_rules,
+            available_tools,
+            budget,
+            feedback_history,
+        }
+    }
+}
+
 /// A subgraph extracted for agent consumption.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GraphView {
