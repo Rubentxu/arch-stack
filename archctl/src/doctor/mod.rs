@@ -47,6 +47,30 @@ pub enum Severity {
     Fail,
 }
 
+/// Default URL for the Structurizr-Lite local renderer (per the official
+/// Structurizr-Lite Docker image / local install default port).
+pub const DEFAULT_STRUCTURIZR_URL: &str = "http://localhost:18080/";
+
+/// Default URL for a local PlantUML server (per the official plantuml/server
+/// Docker image default port).
+pub const DEFAULT_PLANTUML_URL: &str = "http://localhost:18000/";
+
+/// Env var that overrides the Structurizr probe endpoint in `archctl doctor`.
+pub const STRUCTURIZR_URL_ENV: &str = "ARCHCTL_DOCTOR_STRUCTURIZR_URL";
+
+/// Env var that overrides the PlantUML probe endpoint in `archctl doctor`.
+pub const PLANTUML_URL_ENV: &str = "ARCHCTL_DOCTOR_PLANTUML_URL";
+
+/// Resolve a renderer probe URL: returns the env var value if set and
+/// non-empty, otherwise the default.
+fn resolve_renderer_url(env_var: &str, default: &str) -> String {
+    std::env::var(env_var)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
 /// Run the main doctor diagnostics (XDG, renderers, binaries).
 pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
     let layout = resolve_xdg();
@@ -76,9 +100,12 @@ pub fn run(ctx: &CliContext) -> Result<i32, anyhow::Error> {
 
     findings.push(http_finding(
         "renderer.structurizr",
-        "http://localhost:18080/",
+        &resolve_renderer_url(STRUCTURIZR_URL_ENV, DEFAULT_STRUCTURIZR_URL),
     ));
-    findings.push(http_finding("renderer.plantuml", "http://localhost:18000/"));
+    findings.push(http_finding(
+        "renderer.plantuml",
+        &resolve_renderer_url(PLANTUML_URL_ENV, DEFAULT_PLANTUML_URL),
+    ));
     findings.push(binary_finding("opencode.cli", "opencode"));
     findings.push(binary_finding("archctl.cli", "archctl"));
 
@@ -298,5 +325,54 @@ mod tests {
     #[test]
     fn doctor_scope_display() {
         assert_eq!(DoctorScope::Storage.to_string(), "storage");
+    }
+
+    #[test]
+    fn resolve_renderer_url_uses_default_when_env_unset() {
+        // SAFETY: test-only env var mutation in a single-threaded test context.
+        unsafe {
+            std::env::remove_var("ARCHCTL_DOCTOR_TEST_URL");
+        }
+        let url = resolve_renderer_url("ARCHCTL_DOCTOR_TEST_URL", "http://default/");
+        assert_eq!(url, "http://default/");
+    }
+
+    #[test]
+    fn resolve_renderer_url_uses_env_when_set() {
+        // SAFETY: test-only env var mutation in a single-threaded test context.
+        unsafe {
+            std::env::set_var("ARCHCTL_DOCTOR_TEST_URL", "http://override:9999/");
+        }
+        let url = resolve_renderer_url("ARCHCTL_DOCTOR_TEST_URL", "http://default/");
+        unsafe {
+            std::env::remove_var("ARCHCTL_DOCTOR_TEST_URL");
+        }
+        assert_eq!(url, "http://override:9999/");
+    }
+
+    #[test]
+    fn resolve_renderer_url_falls_back_on_empty_env() {
+        // SAFETY: test-only env var mutation in a single-threaded test context.
+        unsafe {
+            std::env::set_var("ARCHCTL_DOCTOR_TEST_URL", "");
+        }
+        let url = resolve_renderer_url("ARCHCTL_DOCTOR_TEST_URL", "http://default/");
+        unsafe {
+            std::env::remove_var("ARCHCTL_DOCTOR_TEST_URL");
+        }
+        assert_eq!(url, "http://default/");
+    }
+
+    #[test]
+    fn resolve_renderer_url_trims_whitespace_env() {
+        // SAFETY: test-only env var mutation in a single-threaded test context.
+        unsafe {
+            std::env::set_var("ARCHCTL_DOCTOR_TEST_URL", "   ");
+        }
+        let url = resolve_renderer_url("ARCHCTL_DOCTOR_TEST_URL", "http://default/");
+        unsafe {
+            std::env::remove_var("ARCHCTL_DOCTOR_TEST_URL");
+        }
+        assert_eq!(url, "http://default/");
     }
 }
