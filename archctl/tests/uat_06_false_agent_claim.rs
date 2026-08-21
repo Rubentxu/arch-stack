@@ -16,8 +16,11 @@
 use tempfile::TempDir;
 
 use archctl::clock::FixedClock;
+use archctl::diagram::export_types::EvidenceEntry;
 use archctl::evidence::{Evidence, EvidenceKind, EvidenceStatus, SourceOrigin};
-use archctl::store::{EvidenceOps, GraphStore, LbugStore, RawGraphQuery};
+use archctl::store::{
+    ElementRepository, EvidenceOps, EvidenceRepository, GraphStore, LbugStore, RawGraphQuery,
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helper functions (mirror tests/diagram_apply.rs:1-5 pattern)
@@ -76,6 +79,10 @@ fn seed_orders_stripe_fixture(store: &mut LbugStore) {
                 "status".to_string(),
                 serde_json::Value::String("drafted".into()),
             );
+            p.insert(
+                "source_origin".to_string(),
+                serde_json::Value::String(SourceOrigin::UserWorkspace.as_str().into()),
+            );
             p
         },
         status: EvidenceStatus::Drafted,
@@ -107,6 +114,10 @@ fn seed_orders_stripe_fixture(store: &mut LbugStore) {
             p.insert(
                 "status".to_string(),
                 serde_json::Value::String("drafted".into()),
+            );
+            p.insert(
+                "source_origin".to_string(),
+                serde_json::Value::String(SourceOrigin::ModelInference.as_str().into()),
             );
             p
         },
@@ -643,40 +654,224 @@ fn uat_06_step_15_restart_workbench() {
     assert_eq!(read[0].revision, "rev1");
 }
 
-/// UAT-06 step 16: invoke-agent re-evaluation — blocked on spec-35 + spec-39 (SEARCH-CONTEXT-BUNDLE).
+/// UAT-06 step 16: invoke-agent re-evaluation — TRUST-006-b (deferred).
+/// Requires `AgentContext.feedback_history` field; shipped in PR-006-b.
 #[test]
-#[ignore]
+#[ignore = "TRUST-006-b: AgentContext.feedback_history; see PR-006-b"]
 fn uat_06_step_16_reinvoke_agent() {
-    // spec-35 + spec-39: when the agent re-evaluates Orders payment dependency,
-    // it must see the prior rejection in context (SEARCH-CONTEXT-BUNDLE) and
-    // NOT repeat the false claim.
-    todo!("step 16 blocked on spec-35 + spec-39: SEARCH-CONTEXT-BUNDLE")
+    todo!("step 16 ships in TRUST-006-b")
 }
 
-/// UAT-06 step 17: assert prior-rejection-in-context — blocked on spec-39.
+/// UAT-06 step 17: assert prior-rejection-in-context — TRUST-006-b (deferred).
+/// Requires `AgentContext.feedback_history` field; shipped in PR-006-b.
 #[test]
-#[ignore]
+#[ignore = "TRUST-006-b: AgentContext.feedback_history; see PR-006-b"]
 fn uat_06_step_17_assert_prior_rejection_in_context() {
-    // spec-39: the SEARCH-CONTEXT-BUNDLE must include the rejected FusedClaim
-    // in the agent's context for step 16.
-    todo!("step 17 blocked on spec-39: SEARCH-CONTEXT-BUNDLE")
+    todo!("step 17 ships in TRUST-006-b")
 }
 
-/// UAT-06 step 19: verify bundle projection — blocked on TRUST-005 + spec-35.
+/// Seed an Element + ElementVersion + SUPPORTED_BY chain so the bundle
+/// export query (`(ev:ElementVersion)-[r:SUPPORTED_BY]->(e:Evidence)`) can
+/// reach the Evidence rows. TRUST-006-a step 19/20 fixture.
+fn seed_bundle_fixture(store: &mut LbugStore) {
+    use archctl::Element;
+    use archctl::ElementVersion;
+
+    // Element rows: Orders, Stripe (false), PaymentProvider (replacement).
+    let elements = vec![
+        Element {
+            id: "el:orders".into(),
+            kind_id: "mt.container".into(),
+            category: "c4".into(),
+            canonical_key: "orders".into(),
+            current_name: "Orders".into(),
+            current_status: "active".into(),
+            current_confidence: 1.0,
+            current_version_id: "ev:orders:v1".into(),
+        },
+        Element {
+            id: "el:stripe".into(),
+            kind_id: "mt.container".into(),
+            category: "c4".into(),
+            canonical_key: "stripe".into(),
+            current_name: "Stripe".into(),
+            current_status: "active".into(),
+            current_confidence: 0.0,
+            current_version_id: "ev:stripe:v1".into(),
+        },
+        Element {
+            id: "el:payment".into(),
+            kind_id: "mt.container".into(),
+            category: "c4".into(),
+            canonical_key: "payment".into(),
+            current_name: "PaymentProvider".into(),
+            current_status: "active".into(),
+            current_confidence: 1.0,
+            current_version_id: "ev:payment:v1".into(),
+        },
+    ];
+    store.batch_upsert_elements(&elements).unwrap();
+
+    // ElementVersion rows.
+    let versions = vec![
+        ElementVersion {
+            id: "ev:orders:v1".into(),
+            element_id: "el:orders".into(),
+            name: "Orders".into(),
+            status: "active".into(),
+            origin: "UserWorkspace".into(),
+            confidence: 1.0,
+            props: serde_json::Map::new(),
+        },
+        ElementVersion {
+            id: "ev:stripe:v1".into(),
+            element_id: "el:stripe".into(),
+            name: "Stripe".into(),
+            status: "active".into(),
+            origin: "ModelInference".into(),
+            confidence: 0.0,
+            props: serde_json::Map::new(),
+        },
+        ElementVersion {
+            id: "ev:payment:v1".into(),
+            element_id: "el:payment".into(),
+            name: "PaymentProvider".into(),
+            status: "active".into(),
+            origin: "UserWorkspace".into(),
+            confidence: 1.0,
+            props: serde_json::Map::new(),
+        },
+    ];
+    store.batch_upsert_element_versions(&versions).unwrap();
+
+    // SUPPORTED_BY edges: link each ElementVersion to its Evidence row.
+    store
+        .link_supported_by("ev:payment:v1", "ev:ws:orders-payment")
+        .unwrap();
+    store
+        .link_supported_by("ev:stripe:v1", "ev:llm:orders-stripe")
+        .unwrap();
+}
+
+/// Assert the bundle does NOT contain a canonical fact whose text
+/// contains the given needle. Checks the bundle's evidence section
+/// (filtered to status=accepted by the export layer).
+fn assert_no_canonical_fact_in_bundle(
+    bundle: &archctl::diagram::BundleEnvelope,
+    needle: &str,
+    bundle_json: &str,
+) {
+    // The evidence section is filtered to accepted entries (ADR-005).
+    let in_evidence = bundle
+        .evidence
+        .evidence
+        .iter()
+        .any(|e: &EvidenceEntry| e.claim.contains(needle));
+    assert!(
+        !in_evidence,
+        "bundle MUST NOT contain canonical fact containing '{needle}' in its evidence section; bundle has {} entries",
+        bundle.evidence.evidence.len()
+    );
+    // Belt-and-suspenders: also assert the literal string is absent from the
+    // serialized bundle. This catches regressions where claim text leaks via
+    // an unexpected path.
+    assert!(
+        !bundle_json.contains(needle),
+        "bundle JSON MUST NOT contain literal '{needle}' (any leak path); bundle_json length = {}",
+        bundle_json.len()
+    );
+}
+
+/// Assert the bundle DOES contain a canonical fact whose text contains
+/// the given needle. Checks the bundle's evidence section.
+fn assert_has_canonical_fact_in_bundle(
+    bundle: &archctl::diagram::BundleEnvelope,
+    needle: &str,
+    bundle_json: &str,
+) {
+    let in_evidence = bundle
+        .evidence
+        .evidence
+        .iter()
+        .any(|e: &EvidenceEntry| e.claim.contains(needle));
+    assert!(
+        in_evidence,
+        "bundle MUST contain canonical fact containing '{needle}' in its evidence section; bundle has {} entries",
+        bundle.evidence.evidence.len()
+    );
+    assert!(
+        bundle_json.contains(needle),
+        "bundle JSON MUST contain literal '{needle}'"
+    );
+}
+
+/// UAT-06 step 19: verify bundle projection — un-ignored in TRUST-006-a.
 #[test]
-#[ignore]
 fn uat_06_step_19_verify_bundle_no_false_canonical() {
     // After all previous steps, the bundle must NOT contain the false
     // Orders->Stripe canonical fact. This is the end-to-end verification
     // of the full pipeline.
-    todo!("step 19 blocked on TRUST-005 + spec-35")
+    //
+    // TRUST-006-a: build a bundle via `build_bundle` and assert the bundle's
+    // evidence section does NOT include the rejected false claim.
+    //
+    // We build a minimal fixture (Element + ElementVersion + Evidence +
+    // SUPPORTED_BY edge) that lets the bundle export query traverse the
+    // canonical-promotion chain. The ModelInference claim stays Drafted
+    // (trust guard rejects accept_evidence); the bundle's evidence filter
+    // (ADR-005: only canonical evidence in projections) excludes it.
+    use archctl::diagram::export::build_bundle;
+
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+    let clock: &dyn archctl::clock::Clock = &fixed_clock();
+
+    seed_orders_stripe_fixture(&mut store);
+
+    // Seed Element + ElementVersion + SUPPORTED_BY for both claims so the
+    // bundle's evidence query (ElementVersion -> SUPPORTED_BY -> Evidence)
+    // can traverse to the Evidence rows.
+    seed_bundle_fixture(&mut store);
+
+    // Try to accept ModelInference evidence (false). Trust guard rejects.
+    let accept_result = store.accept_evidence("ev:llm:orders-stripe", clock);
+    assert!(
+        accept_result.is_err(),
+        "ModelInference accept MUST be rejected by trust guard; got {:?}",
+        accept_result
+    );
+
+    // Build bundle and verify the false claim is excluded.
+    let bundle = build_bundle(&store, "container:*", clock).expect("build_bundle");
+    let bundle_json = serde_json::to_string(&bundle.evidence).expect("evidence serialization");
+
+    assert_no_canonical_fact_in_bundle(&bundle, "Orders calls Stripe", &bundle_json);
 }
 
-/// UAT-06 step 20: verify replacement canonical — blocked on spec-35.
+/// UAT-06 step 20: verify replacement canonical — un-ignored in TRUST-006-a.
 #[test]
-#[ignore]
 fn uat_06_step_20_verify_replacement_canonical() {
     // The replacement "Orders uses PaymentProvider" must appear as a
     // canonical fact in the bundle after step 14.
-    todo!("step 20 blocked on spec-35")
+    //
+    // TRUST-006-a: build a bundle and assert the bundle's evidence section
+    // DOES include the accepted replacement claim text.
+    use archctl::diagram::export::build_bundle;
+
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+    let clock: &dyn archctl::clock::Clock = &fixed_clock();
+
+    seed_orders_stripe_fixture(&mut store);
+    seed_bundle_fixture(&mut store);
+
+    // Accept the UserWorkspace evidence (the replacement canonical fact).
+    store
+        .accept_evidence("ev:ws:orders-payment", clock)
+        .expect("UserWorkspace accept must succeed");
+
+    let bundle = build_bundle(&store, "container:*", clock).expect("build_bundle");
+    let bundle_json = serde_json::to_string(&bundle.evidence).expect("evidence serialization");
+
+    assert_has_canonical_fact_in_bundle(&bundle, "Orders uses PaymentProvider", &bundle_json);
 }
