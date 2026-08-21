@@ -368,8 +368,8 @@ mod tests {
         let marker = project.join(".archctl-schema");
         assert!(marker.exists());
         let text = std::fs::read_to_string(marker).unwrap();
-        // Fusion follow-ups: fresh-graph marker advances to v6-fusion-persistence.
-        assert_eq!(text.trim(), "v6-fusion-persistence");
+        // TRUST-005: fresh-graph marker advances to v7-observation-status.
+        assert_eq!(text.trim(), "v7-observation-status");
     }
 
     #[test]

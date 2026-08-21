@@ -71,6 +71,17 @@ pub const MIGRATIONS: &[Migration] = &[
         cypher: include_str!("../../docs/schema/006_fusion_persistence.cypher"),
         rust_hook: None,
     },
+    // TRUST-005 (cycle p-38e02210a9f14317/trust-005-observation-fusion):
+    // add `status STRING` to Observation; backfill existing rows with
+    // status="accepted" (legacy-compatible default per the v5 backfill
+    // convention). Plus create Feedback + Reconciliation node tables
+    // and their edge tables (VERDICTS_ON, RECONCILES) per spec-35 v1.1.
+    // Canonical schema path: archctl/migrations/ (per design D1).
+    Migration {
+        version: "v7-observation-status",
+        cypher: include_str!("../../archctl/migrations/v7_fusion_confidence_status.cypher"),
+        rust_hook: Some(backfill_observation_status),
+    },
 ];
 
 /// Marker filename written to the project root after a successful run.
@@ -386,6 +397,31 @@ pub fn backfill_observation_claim_from_evidence(store: &mut crate::store::LbugSt
     Ok(())
 }
 
+/// TRUST-005 v7 migration rust hook: idempotent backfill of `status`
+/// on existing `(:Observation)` rows. Sets status="accepted" for
+/// every pre-v7 Observation that lacks a status column (the legacy-
+/// compatible default; mirrors the v5 backfill's `written_via_backfill`
+/// convention). Also sets `pending_adjudication_event = false` on
+/// every existing `(:FusedClaim)` row so the m30 bridge column has a
+/// deterministic starting state.
+pub fn backfill_observation_status(store: &mut crate::store::LbugStore) -> Result<()> {
+    let session = store.session_for_migrations();
+
+    // Backfill Observation.status = "accepted" for pre-v7 rows lacking it.
+    let cypher_obs = "MATCH (o:Observation) WHERE o.status IS NULL SET o.status = 'accepted';";
+    session.conn.query(cypher_obs)
+        .with_context(|| "v7 backfill: Observation.status default")?;
+
+    // Backfill FusedClaim.pending_adjudication_event = false for pre-v7 rows.
+    let cypher_fc = "MATCH (f:FusedClaim) WHERE f.pending_adjudication_event IS NULL \
+                     SET f.pending_adjudication_event = false;";
+    session.conn.query(cypher_fc)
+        .with_context(|| "v7 backfill: FusedClaim.pending_adjudication_event default")?;
+
+    tracing::info!("TRUST-005 v7 backfill complete");
+    Ok(())
+}
+
 /// Best-effort mapping from a stored `kind` string back to
 /// `EvidenceKind` for the P2-09a compat derivator. Currently
 /// unused (the backfill body passes the raw `kind` string directly
@@ -450,13 +486,15 @@ mod tests {
 
     #[test]
     fn migrations_is_ordered() {
-        // P2-09b PR-A added v4, PR-B adds v5; fusion follow-ups add v6.
-        assert_eq!(MIGRATIONS.len(), 6);
+        // P2-09b PR-A added v4, PR-B adds v5; fusion follow-ups add v6;
+        // TRUST-005 adds v7 (Observation.status + Feedback + Reconciliation).
+        assert_eq!(MIGRATIONS.len(), 7);
         assert!(MIGRATIONS[0].version < MIGRATIONS[1].version);
         assert!(MIGRATIONS[1].version < MIGRATIONS[2].version);
         assert!(MIGRATIONS[2].version < MIGRATIONS[3].version);
         assert!(MIGRATIONS[3].version < MIGRATIONS[4].version);
         assert!(MIGRATIONS[4].version < MIGRATIONS[5].version);
+        assert!(MIGRATIONS[5].version < MIGRATIONS[6].version);
     }
 
     #[test]
@@ -467,8 +505,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // Fresh graph advances to v6-fusion-persistence.
-        assert_eq!(text.trim(), "v6-fusion-persistence");
+        // Fresh graph advances to v7-observation-status (TRUST-005).
+        assert_eq!(text.trim(), "v7-observation-status");
     }
 
     #[test]
@@ -535,8 +573,8 @@ mod tests {
         graph_init(&project, &fs).unwrap();
         let marker = project.join(SCHEMA_MARKER_FILENAME);
         let text = std::fs::read_to_string(&marker).unwrap();
-        // Fusion follow-ups: fresh-graph marker advances to v6-fusion-persistence.
-        assert_eq!(text.trim(), "v6-fusion-persistence");
+        // TRUST-005: fresh-graph marker advances to v7-observation-status.
+        assert_eq!(text.trim(), "v7-observation-status");
     }
 
     /// P2-09b backfill: pre-upgrade Evidence rows (those written BEFORE

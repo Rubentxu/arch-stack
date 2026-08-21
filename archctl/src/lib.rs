@@ -12,9 +12,11 @@ pub mod doctor;
 pub mod environment;
 pub mod evaluation;
 pub mod evidence;
+pub mod feedback;
 pub mod filesystem;
 pub mod graph;
 pub mod ide;
+pub mod reconciliation;
 pub mod identity;
 pub mod inventory;
 pub mod lifecycle;
@@ -62,6 +64,8 @@ pub use environment::{
     Environment, FixedEnvironment, SystemEnvironment, fixed_environment, system_environment,
 };
 pub use evaluation::Evaluation;
+pub use feedback::{Feedback, FeedbackError, FeedbackId, FeedbackVerdict, TargetClaimId};
+pub use reconciliation::Reconciliation;
 pub use filesystem::{
     DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem, memory_filesystem,
     system_filesystem,
