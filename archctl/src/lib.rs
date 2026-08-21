@@ -1,3 +1,4 @@
+pub mod adjudication;
 pub mod architecture;
 pub mod astgrep;
 pub use architecture::digest::extractor_set_digest;
