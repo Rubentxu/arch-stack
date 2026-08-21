@@ -42,7 +42,7 @@ pub enum AdjudicationDecision {
 // Error
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum AdjudicationEventError {
     #[error("invalid id: {0}")]
     InvalidId(String),

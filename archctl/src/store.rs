@@ -1440,6 +1440,7 @@ impl EvidenceOps for LbugStore {
                 .to_string();
             let safe_ch = hash_json.replace('\'', "\\'");
             let safe_oa = ev.observed_at.replace('\'', "\\'");
+            let safe_source_origin = ev.source_origin.as_str().replace('\'', "\\'");
             let obs_cypher = format!(
                 "MERGE (o:Observation {{id: '{obs_id}'}}) SET \
                  o.kind = '{kind}', \
@@ -1454,7 +1455,7 @@ impl EvidenceOps for LbugStore {
                  o.observed_at = '{safe_oa}', \
                  o.confidence = CASE \
                      WHEN '{status_lower}' = 'accepted' THEN 1.0 ELSE 0.0 END, \
-                 o.source_origin = 'evidence_entry_derivation', \
+                 o.source_origin = '{safe_source_origin}', \
                  o.written_via_backfill = false, \
                  o.written_at = {oa_cypher} RETURN o;",
                 obs_sl = ev.start_line,

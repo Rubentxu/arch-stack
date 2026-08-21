@@ -1814,6 +1814,27 @@ Razones:
 - **Decisiones locked**: snake_case `source_origin` contract preserved; `#[serde(default)]` on additive `AgentContext.feedback_history` field preserved; trait extension without default impl (sealed-in-practice); SCN-T07-002b Err propagation via `?`.
 - **Próximo candidato**: TRUST-008 — `m30_bridge_promotion` (REQ-M25-006 closure; promote `pending_adjudication_event = true` + `tracing::warn!` to hard fail on `ModelInference × Feedback.reject`).
 
+## Cycle cerrado — `trust-008-m30-bridge-promotion` (v1.87.0)
+
+- **Fecha**: 2026-08-21
+- **Cycle id**: `p-38e02210a9f14317/trust-008-m30-bridge-promotion`
+- **Branch**: `feat/trust-008-wu{1..6}-*` (6 chained PRs #312-#317) + `feat/trust-008-verify-fixes` (verify findings fixes)
+- **Tag**: `v1.87.0` (pending — see `release.complete` transition)
+- **Path**: A-lite (skips debt-verify; goes verify → release → archive)
+- **Closes**: REQ-M25-006 (deferred from TRUST-005; named in TRUST-007's `archive-manifest`).
+- **Output**:
+  - **`AdjudicationEvent` carrier + bounded context** (PR #312): `archctl/src/adjudication.rs` with `AdjudicationEvent` (8 fields: id, target_fused_claim_id, adjudicator, evidence_refs, decided_at, decision) + `AdjudicationDecision` enum (Promote | Reject | Defer) + `AdjudicationEventError` (now `PartialEq + Eq`).
+  - **`AdjudicationRepository` port + `LbugStore` impl + v8 migration** (PR #313): trait with 3 methods (`put_adjudication`, `read_adjudications_for_claim`, `list_pending_adjudications`) + `archctl/migrations/v8_adjudication_event_store.cypher` (28 LOC; `evidence_refs STRING` JSON-encoded — deviation from spec §3.4.2 `STRING[]`, accepted by maintainer) + `backfill_adjudication_event_diagnostics` rust migration hook (HITL preserved; non-mutating; emits `tracing::warn!` for pre-v8 offenders) + 4 integration tests in `archctl/tests/adjudication_events_port.rs`.
+  - **`AgentContext.pending_adjudications`** (PR #314): additive field with `#[serde(default)]` + `with_pending_adjudications` constructor + 8-site REQ-M25-006 doc pass + SCN-T08-005a serde round-trip test.
+  - **m30 bridge hard fail** (PR #315): new `promotion_requires_adjudication_event(trust, verdict) -> Result<(), TrustViolation>` predicate at `archctl/src/architecture/fusion_bridge.rs:108` returns `Err(TrustViolation::ModelInferenceWithoutAdjudicationEvent)` for `ModelInference × Suggested + Accept`. `should_warn_pending_adjudication` marked `#[deprecated(since = "v1.87.0")]`. v9 migration adds `(:FusedClaim).evidence_origin STRING`. `FeedbackRepository::put_feedback` chokepoint consults the predicate + `AdjudicationRepository::read_adjudications_for_claim`. **`put_evidence` regression fix**: now reads `ev.source_origin.as_str()` instead of hardcoding `'evidence_entry_derivation'` (carried from TRUST-007 verification).
+  - **CLI surface** (PR #316): `archctl adjudication { list [--pending] [--json] | decide --claim <id> --verdict promote|reject|defer --adjudicator <id> [--evidence-refs <a,b,c>] [--json] | show --claim <id> [--json] }`. 167 LOC. `--pending` restricts to events whose target FusedClaim still has `pending_adjudication_event = true` (operational view for triaging the m30 bridge backlog).
+  - **Manifests + migration tests** (PR #317): `manifests/store.toml` (+7 LOC) + `manifests/trust.toml` (+5/-1 LOC, public_symbol addition + minimum_tests 10→12) + new `manifests/adjudication.toml` (44 LOC) + `archctl/tests/migrations_v8.rs` (3 tests covering SCN-T08-003a/b/c). 2 visibility bumps `pub(crate)`→`pub` on `session_for_migrations` and `apply_pending` for test access.
+- **Tests**: 853+ lib + integration tests green (final tally at `phase.verify.complete.a-lite` gate). 12 `trust::tests` (added 2). 7 `adjudication_events_port.rs` tests (added 2 for SCN-T08-004a+b+d). 3 `migrations_v8.rs` tests (rewrote v7_to_v8 hook-direct form to avoid `apply_pending` + `store.init()` interaction).
+- **Loc**: ~+1500/-40 across 38 files (< 400 PR per WU).
+- **DQS**: passed (no critical/major debt findings at `sddk-verify`).
+- **Decisiones locked**: `AdjudicationEvent.id` is content-addressable via `blake3(target + adjudicator + decided_at)`; HITL preserved (no auto-decide); v9 graph writes `evidence_origin` for every FusedClaim; pre-v9 graphs are permissive (empty `evidence_origin` skips bridge consult); `evidence_refs` column type is STRING (JSON-encoded) — deviation from spec §3.4.2 STRING[] accepted.
+- **Próximo candidato**: M34 (cognitive context compression, ledger tail) or M35 (severity scoring pipeline).
+
 ## Cycle cerrado — `m25-authority-execution-classes`
 
 - **Fecha**: 2026-08-20

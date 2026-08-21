@@ -13,7 +13,7 @@ use crate::ide::builtin_adapters;
 use crate::project::resolve_project;
 use crate::skills;
 use crate::source::SourceArtifact;
-use crate::store::{AdjudicationRepository, GraphStore, LbugStore};
+use crate::store::{AdjudicationRepository, GraphStore, LbugStore, RawGraphQuery};
 use crate::{doctor, environment, filesystem, graph, inventory, render};
 
 /// Container for the ports a CLI handler needs.
@@ -691,6 +691,9 @@ pub enum GraphAction {
 pub enum AdjudicationCmd {
     /// List pending adjudication rows (decision = Defer OR target status = "drafted").
     List {
+        /// Restrict to rows whose target FusedClaim still requires adjudication.
+        #[arg(long)]
+        pending: bool,
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
@@ -1130,7 +1133,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             } => evidence_put_cmd(cwd, file.as_ref(), json, kind, ctx),
         },
         Command::Adjudication { action } => match action {
-            AdjudicationCmd::List { json } => adjudication_list_cmd(json, ctx),
+            AdjudicationCmd::List { pending, json } => adjudication_list_cmd(pending, json, ctx),
             AdjudicationCmd::Decide {
                 claim,
                 verdict,
@@ -2457,14 +2460,33 @@ fn open_adjudication_store(project_dir: &std::path::Path) -> anyhow::Result<Lbug
     Ok(store)
 }
 
-fn adjudication_list_cmd(json: bool, ctx: &CliContext) -> Result<i32> {
+fn adjudication_list_cmd(pending: bool, json: bool, ctx: &CliContext) -> Result<i32> {
     let cwd = ctx.resolve_cwd(None);
     let info = resolve_project(&cwd.to_string_lossy());
     let mut store = open_adjudication_store(&info.project_dir)?;
 
-    let events = store
+    let mut events = store
         .list_pending_adjudications()
         .context("adjudication list")?;
+
+    // `--pending` restricts to events whose target FusedClaim still has
+    // `pending_adjudication_event = true` (i.e. m30 bridge still blocks
+    // a feedback Accept). This is the operational view operators need to
+    // triage the m30 bridge backlog.
+    if pending {
+        let pending_claim_ids: std::collections::BTreeSet<String> = {
+            let rows = store
+                .query(
+                    "MATCH (c:FusedClaim) WHERE c.pending_adjudication_event = true \
+                     RETURN c.id;",
+                )
+                .context("adjudication list (pending claim ids)")?;
+            rows.iter()
+                .filter_map(|r| r.get("c.id").and_then(|c| c.as_str().map(String::from)))
+                .collect()
+        };
+        events.retain(|e| pending_claim_ids.contains(&e.target_fused_claim_id));
+    }
 
     if json {
         println!("{}", serde_json::to_string_pretty(&events)?);

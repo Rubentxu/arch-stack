@@ -507,4 +507,47 @@ mod tests {
             Ok(())
         );
     }
+
+    /// TRUST-008 REQ-T08-008b: ModelInference × Suggested + Accept
+    /// requires an Adjudication event (the m30 bridge predicate returns
+    /// Err for the one dangerous combination).
+    #[test]
+    fn model_inference_x_suggested_x_accept_requires_adjudication_event() {
+        use crate::architecture::fusion_bridge::promotion_requires_adjudication_event;
+        let trust = TrustClassification {
+            execution: ExecutionClass::ModelInference,
+            authority: AuthorityClass::Suggested,
+        };
+        let result =
+            promotion_requires_adjudication_event(trust, crate::feedback::FeedbackVerdict::Accept);
+        assert!(
+            matches!(
+                result,
+                Err(TrustViolation::ModelInferenceWithoutAdjudicationEvent)
+            ),
+            "ModelInference × Suggested + Accept must require Adjudication event; got {result:?}"
+        );
+        // The promotion gate remains closed at the type system.
+        assert!(
+            canonical_promotion_allowed(ExecutionClass::ModelInference, AuthorityClass::Suggested)
+                .is_err()
+        );
+    }
+
+    /// TRUST-008 REQ-T08-008c: ModelInference × Suggested + Reject is NOT
+    /// a promotion — the bridge predicate returns Ok(()).
+    #[test]
+    fn model_inference_x_suggested_x_reject_is_not_a_promotion() {
+        use crate::architecture::fusion_bridge::promotion_requires_adjudication_event;
+        let trust = TrustClassification {
+            execution: ExecutionClass::ModelInference,
+            authority: AuthorityClass::Suggested,
+        };
+        let result =
+            promotion_requires_adjudication_event(trust, crate::feedback::FeedbackVerdict::Reject);
+        assert!(
+            result.is_ok(),
+            "ModelInference × Suggested + Reject is not a promotion; bridge must allow; got {result:?}"
+        );
+    }
 }

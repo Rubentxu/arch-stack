@@ -5,7 +5,10 @@
 //! See: sddk/p-38e02210a9f14317/trust-008-m30-bridge-promotion/specification.md REQ-T08-002.
 
 use archctl::adjudication::{AdjudicationDecision, AdjudicationEvent, id_for};
-use archctl::store::{AdjudicationRepository, DiagramRepository, GraphStore, LbugStore};
+use archctl::store::{
+    AdjudicationRepository, DiagramRepository, FeedbackRepository, GraphStore, LbugStore,
+    RawGraphQuery,
+};
 use tempfile::TempDir;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,5 +299,156 @@ fn pending_adjudications_round_trips_through_agent_context_serde() {
     assert_eq!(
         back.pending_adjudications[0].decision,
         AdjudicationDecision::Defer
+    );
+}
+
+/// SCN-T08-004a+b: decide_promote_unblocks_next_feedback_accept.
+///
+/// Persists a `(:FusedClaim)` with `evidence_origin = "model_inference"`,
+/// then calls `put_feedback(Accept)` — must return `Err` with the
+/// substring `ModelInferenceWithoutAdjudicationEvent` (the bridge blocks).
+/// Then persists a Promote AdjudicationEvent via `put_adjudication`,
+/// then calls `put_feedback(Accept)` again — must now return `Ok`.
+#[test]
+fn decide_promote_unblocks_next_feedback_accept() {
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+    let claim_id = "clm:model-inference-1";
+
+    // Seed a FusedClaim with model_inference evidence_origin.
+    store
+        .execute_raw_cypher_for_test(&format!(
+            "MERGE (c:FusedClaim {{id: '{claim_id}'}}) SET \
+             c.evidence_origin = 'model_inference', c.status = 'drafted';",
+        ))
+        .expect("seed FusedClaim");
+
+    // First Accept without Promote event → bridge blocks (Err).
+    let feedback_accept_no_promote = archctl::feedback::Feedback {
+        id: "fb:1".into(),
+        target: claim_id.into(),
+        verdict: archctl::feedback::FeedbackVerdict::Accept,
+        actor: "operator@local".into(),
+        evidence: None,
+        correlation_id: None,
+        replacement: None,
+        revision: "rev1".into(),
+        timestamp: "2026-08-21T00:00:00Z".into(),
+    };
+    let result_blocked = store.put_feedback(&feedback_accept_no_promote);
+    assert!(
+        result_blocked.is_err(),
+        "Accept without Promote must be blocked by the m30 bridge"
+    );
+    let err_msg = format!("{:#}", result_blocked.unwrap_err());
+    assert!(
+        err_msg.contains("no Adjudication event accompanies the row")
+            || err_msg.contains("ModelInferenceWithoutAdjudicationEvent")
+            || err_msg.contains("put_feedback m30 bridge"),
+        "error chain must reference the bridge; got: {err_msg}"
+    );
+
+    // Persist a Promote adjudication event.
+    let promote_event = archctl::adjudication::AdjudicationEvent {
+        id: archctl::adjudication::id_for(claim_id, "operator@local", "2026-08-21T00:00:00Z"),
+        target_fused_claim_id: claim_id.into(),
+        adjudicator: "operator@local".into(),
+        evidence_refs: vec![],
+        decided_at: "2026-08-21T00:00:00Z".into(),
+        decision: AdjudicationDecision::Promote,
+    };
+    store
+        .put_adjudication(&promote_event)
+        .expect("put_adjudication");
+
+    // Second Accept WITH Promote event → bridge unblocks (Ok).
+    let feedback_accept_with_promote = archctl::feedback::Feedback {
+        id: "fb:2".into(),
+        target: claim_id.into(),
+        verdict: archctl::feedback::FeedbackVerdict::Accept,
+        actor: "operator@local".into(),
+        evidence: None,
+        correlation_id: None,
+        replacement: None,
+        revision: "rev1".into(),
+        timestamp: "2026-08-21T00:01:00Z".into(),
+    };
+    let result_ok = store.put_feedback(&feedback_accept_with_promote);
+    assert!(
+        result_ok.is_ok(),
+        "Accept WITH Promote must succeed (bridge unblocked); got {result_ok:?}"
+    );
+}
+
+/// SCN-T08-004d: decide_reject_persists_without_changing_fused_claim_status.
+///
+/// Persists a Reject AdjudicationEvent, then calls put_feedback(Accept).
+/// The bridge must still block (Reject is NOT sufficient — only Promote
+/// unblocks). The Reject event itself is persisted without modifying the
+/// FusedClaim's status.
+#[test]
+fn decide_reject_persists_without_changing_fused_claim_status() {
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+    let claim_id = "clm:model-inference-reject";
+
+    // Seed FusedClaim.
+    store
+        .execute_raw_cypher_for_test(&format!(
+            "MERGE (c:FusedClaim {{id: '{claim_id}'}}) SET \
+             c.evidence_origin = 'model_inference', c.status = 'drafted';",
+        ))
+        .expect("seed FusedClaim");
+
+    // Persist a Reject adjudication event.
+    let reject_event = archctl::adjudication::AdjudicationEvent {
+        id: archctl::adjudication::id_for(claim_id, "operator@local", "2026-08-21T00:00:00Z"),
+        target_fused_claim_id: claim_id.into(),
+        adjudicator: "operator@local".into(),
+        evidence_refs: vec![],
+        decided_at: "2026-08-21T00:00:00Z".into(),
+        decision: AdjudicationDecision::Reject,
+    };
+    store
+        .put_adjudication(&reject_event)
+        .expect("put_adjudication");
+
+    // FusedClaim status must still be 'drafted'.
+    let status: String = store
+        .query(&format!(
+            "MATCH (c:FusedClaim {{id: '{claim_id}'}}) RETURN c.status AS s;",
+        ))
+        .expect("query status")
+        .first()
+        .and_then(|r| r.get("s").and_then(|c| c.as_str().map(String::from)))
+        .unwrap_or_default();
+    assert_eq!(
+        status, "drafted",
+        "FusedClaim status must be unchanged after Reject adjudication"
+    );
+
+    // Accept feedback must STILL be blocked (Reject is not sufficient).
+    let feedback = archctl::feedback::Feedback {
+        id: "fb:reject".into(),
+        target: claim_id.into(),
+        verdict: archctl::feedback::FeedbackVerdict::Accept,
+        actor: "operator@local".into(),
+        evidence: None,
+        correlation_id: None,
+        replacement: None,
+        revision: "rev1".into(),
+        timestamp: "2026-08-21T00:01:00Z".into(),
+    };
+    let result = store.put_feedback(&feedback);
+    assert!(
+        result.is_err(),
+        "Accept must STILL be blocked after Reject adjudication; only Promote unblocks"
+    );
+    let err_msg = format!("{:#}", result.unwrap_err());
+    assert!(
+        err_msg.contains("no Adjudication event accompanies the row")
+            || err_msg.contains("ModelInferenceWithoutAdjudicationEvent")
+            || err_msg.contains("put_feedback m30 bridge"),
+        "error chain must reference the bridge; got: {err_msg}"
     );
 }

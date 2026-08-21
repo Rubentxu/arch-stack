@@ -1,5 +1,25 @@
 ## [Unreleased] — pending
 
+Cycle `trust-008-m30-bridge-promotion` — closes REQ-M25-006 (deferred from TRUST-005; named in TRUST-007's archive-manifest). Six chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-008-m30-bridge-promotion/`.
+
+### Added
+- New `adjudication` bounded context: `AdjudicationEvent` carrier + `AdjudicationDecision` enum + `AdjudicationRepository` trait (3 methods: `put_adjudication`, `read_adjudications_for_claim`, `list_pending_adjudications`) + `LbugStore` implementation.
+- `archctl/src/adjudication.rs` module + `AdjudicationCmd` CLI subcommand group (`list` / `decide` / `show`) — `archctl adjudication list [--pending] [--json]`, `archctl adjudication decide --claim <id> --verdict promote|reject|defer --adjudicator <id> [--evidence-refs <a,b,c>]`, `archctl adjudication show --claim <id>`.
+- `AgentContext.pending_adjudications: Vec<AdjudicationEvent>` field with `#[serde(default)]` + `with_pending_adjudications` constructor (8-site plumbing pass).
+- `archctl/migrations/v8_adjudication_event_store.cypher` — `(:Adjudication)`, `(:AdjudicationDecision)`, `(:ADJUDICATES)` tables.
+- `archctl/migrations/v9_fused_claim_evidence_origin.cypher` — `(:FusedClaim).evidence_origin STRING` column for trust classification lookup without graph traversal.
+- `backfill_adjudication_event_diagnostics` rust migration hook (HITL preserved; non-mutating; surfaces pre-v8 offenders via `tracing::warn!`).
+- `manifests/adjudication.toml` (new) — public-symbols + minimum_tests gate.
+- Integration coverage: `archctl/tests/adjudication_events_port.rs` (7 tests) + `archctl/tests/migrations_v8.rs` (3 tests) + 2 new `trust::tests` for the predicate.
+
+### Hardened
+- **m30 bridge hard fail**: `archctl/src/architecture/fusion_bridge.rs::promotion_requires_adjudication_event(trust, verdict)` returns `Err(TrustViolation::ModelInferenceWithoutAdjudicationEvent)` for the one dangerous combination `ModelInference × Suggested + Accept`. `FeedbackRepository::put_feedback` consults the predicate + `AdjudicationRepository::read_adjudications_for_claim` before writing canonical rows.
+- `put_evidence` now reads `ev.source_origin` directly instead of hardcoding `evidence_entry_derivation` (regression fix carried forward from TRUST-007 verification).
+- Pre-v9 graphs remain permissive (empty `evidence_origin` skips the bridge consult); v9 migration surfaces historical offenders via `tracing::warn!`.
+
+### Deprecated
+- `should_warn_pending_adjudication` (TRUST-005 heuristic) marked `#[deprecated(since = "v1.87.0", note = "use promotion_requires_adjudication_event")]`.
+
 Cycle `trust-007-feedback-port` — closes REQ-T06-003 deferred from TRUST-006.
 Seven chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-port/`.
 
