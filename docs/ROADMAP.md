@@ -1758,7 +1758,7 @@ Razones:
 - **Fecha**: 2026-08-21
 - **Cycle id**: `p-38e02210a9f14317/trust-005-observation-fusion`
 - **Branch**: `feat/trust-005-pr1-docs` → `feat/trust-005-pr2a-types` → `feat/trust-005-pr2b-bridge` → `feat/trust-005-pr3a-uat-7-9` → `feat/trust-005-pr3b-uat-13-15` (5 chained PRs)
-- **Tag**: `v1.84.0` (pending)
+- **Tag**: `v1.84.0` (annotated, peels `9205ec7`, pushed + verified remote)
 - **Output**:
   - **ADR-064** (PR1): Fusion Bounded Context. Promoted from Proposed → Accepted. Documents the trust-gated FusedClaim recompute + Feedback/Reconciliation as first-class types + m30 bridge contract.
   - **spec-35 v1.1 + spec-12 v1.1** (PR1): Full implementable specs with field shapes, validation rules, determinism contract, m30 bridge.
