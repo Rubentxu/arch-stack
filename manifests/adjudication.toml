@@ -1,0 +1,44 @@
+# scope: adjudication
+#
+# adjudication.rs encodes the Adjudication bounded context
+# (ADR-063 TRUST-008 cycle). It is the data-plane enforcement
+# layer: it persists AdjudicationEvent records and provides
+# read adapters used by the trust-gate decision in fusion_bridge.rs.
+
+id = "adjudication"
+version = "0.1.0"
+description = "Adjudication bounded context: data-plane enforcement layer for ADR-063 (REQ-M25-006 closure, TRUST-008)"
+cargo_dir = "archctl"
+
+editable = ["archctl/src/adjudication.rs"]
+
+public_symbols = [
+    "AdjudicationEvent",
+    "AdjudicationDecision",
+    "AdjudicationId",
+    "AdjudicationEventError",
+    "id_for",
+]
+
+must_hold = [
+    "pub struct AdjudicationEvent",
+    "pub enum AdjudicationDecision",
+    "pub enum AdjudicationEventError",
+    "pub type AdjudicationId",
+    "AdjudicationDecision::Promote",
+    "AdjudicationDecision::Reject",
+    "AdjudicationDecision::Defer",
+    "pub fn id_for(",
+    "InvalidId(",
+    "InvalidTarget(",
+    "MissingDecision",
+]
+
+minimum_tests = 6
+
+must_not_contain = [
+    "reqwest",
+    "tokio::",
+    "unsafe",
+    "serde_json::Value",
+]
