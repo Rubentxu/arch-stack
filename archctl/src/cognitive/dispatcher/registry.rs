@@ -107,7 +107,7 @@ impl<'a> SyncDispatcher<'a> {
 mod tests {
     use super::*;
     use crate::cognitive::descriptor::{AgentBudget, ModelPolicy};
-    use crate::cognitive::observer::StubAgent;
+    use crate::cognitive::observer::NoopObserver;
 
     fn make_ctx(goal: &str) -> AgentContext {
         // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn registry_register_and_get() {
         let mut reg = AgentRegistry::new();
-        let stub = StubAgent {
+        let stub = NoopObserver {
             descriptor: AgentDescriptor {
                 id: "test-agent".into(),
                 version: "0.1.0".into(),
@@ -162,9 +162,9 @@ mod tests {
     #[test]
     fn dispatcher_picks_first_actionable() {
         let mut reg = AgentRegistry::new();
-        reg.register(StubAgent {
+        reg.register(NoopObserver {
             descriptor: AgentDescriptor {
-                id: "stub-1".into(),
+                id: "noop-1".into(),
                 version: "0.1.0".into(),
                 subscriptions: vec![],
                 required_views: vec![],
@@ -180,7 +180,7 @@ mod tests {
         let disp = SyncDispatcher::new(&reg);
         let ctx = make_ctx("coupling analysis");
         let out = disp.dispatch(&ctx).unwrap();
-        // StubAgent always returns NoAction
+        // NoopObserver always returns NoAction
         assert!(matches!(out, AgentOutput::NoAction(_)));
     }
 }

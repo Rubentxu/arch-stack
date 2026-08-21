@@ -39,12 +39,15 @@ pub trait ReactiveObserver: Send + Sync {
     fn observe(&self, context: &AgentContext) -> Result<AgentOutput, ObserveError>;
 }
 
-/// A no-op agent used for testing and scaffolding.
-pub struct StubAgent {
+/// A no-op observer that always returns NoAction with a low-confidence
+/// reason. Implements the NullObject pattern: useful as a placeholder
+/// during agent registration tests and as a deterministic fallback in
+/// production when no real observer is configured for a given event.
+pub struct NoopObserver {
     pub descriptor: AgentDescriptor,
 }
 
-impl ReactiveObserver for StubAgent {
+impl ReactiveObserver for NoopObserver {
     fn descriptor(&self) -> AgentDescriptor {
         self.descriptor.clone()
     }
@@ -52,7 +55,7 @@ impl ReactiveObserver for StubAgent {
     fn observe(&self, _context: &AgentContext) -> Result<AgentOutput, ObserveError> {
         Ok(AgentOutput::NoAction(super::output::NoActionReason {
             code: super::output::NoActionCode::InsufficientConfidence,
-            message: "stub agent".into(),
+            message: "noop observer".into(),
         }))
     }
 }
@@ -62,9 +65,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stub_agent_returns_no_action() {
+    fn noop_observer_returns_no_action() {
         use super::super::descriptor::{AgentBudget, ModelPolicy};
-        let stub = StubAgent {
+        let stub = NoopObserver {
             descriptor: AgentDescriptor {
                 id: "stub".into(),
                 version: "0.1.0".into(),
