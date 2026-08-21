@@ -91,10 +91,19 @@ impl FeedbackVerdict {
 
 /// Bridge function: maps FeedbackVerdict to EvidenceStatus where they overlap.
 /// Returns `None` for the three Feedback-only verdicts.
+///
+/// Alias: `feedback_from_evidence` (name pinned in architecture.toml).
 pub fn feedback_verdict_to_evidence_status(
     v: FeedbackVerdict,
 ) -> Option<crate::evidence::EvidenceStatus> {
     v.to_evidence_status()
+}
+
+/// Alias for `feedback_verdict_to_evidence_status`. Name pinned in architecture.toml.
+pub fn feedback_from_evidence(
+    v: FeedbackVerdict,
+) -> Option<crate::evidence::EvidenceStatus> {
+    feedback_verdict_to_evidence_status(v)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

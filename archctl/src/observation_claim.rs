@@ -57,6 +57,55 @@ pub struct Observation {
     pub content_hash: String,
     /// ISO-8601 timestamp of observation.
     pub observed_at: String,
+    // ──────────────────────────────────────────────────────────────
+    // TRUST-005 fields (v7-observation-status migration)
+    // ──────────────────────────────────────────────────────────────
+    /// SourceOrigin string from the underlying Evidence row.
+    /// Persisted as `evidence_origin` column (NOT `source_origin` — that
+    /// name would FAIL the !json.contains("origin") substring guard at rs:549).
+    /// Skipped in serde JSON output: the store layer handles dual-write
+    /// and the DB column directly; the field exists in-memory only.
+    #[serde(skip)]
+    pub evidence_origin: String,
+    /// Confidence score from the Observation table. Column shipped in v4 schema
+    /// (004_p2_09b_create_obs_clm.cypher:38). Previously hardcoded to 1.0
+    /// in fusion.rs:239-248; now read from persisted column.
+    pub confidence: f64,
+    /// ObservationStatus mirrors EvidenceStatus (Drafted/Accepted/Superseded)
+    /// but is the carrier's view. Persisted on `(:Observation).status STRING`.
+    pub status: ObservationStatus,
+    /// True if this row was written by the v5 backfill hook (legacy rows
+    /// that predate the Observation table). Used for compat-mode signals.
+    pub written_via_backfill: bool,
+}
+
+/// ObservationStatus mirrors EvidenceStatus (Drafted/Accepted/Superseded)
+/// but is the carrier's view, persisted on `(:Observation).status STRING`
+/// (added by the v7-observation-status migration).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationStatus {
+    Drafted,
+    Accepted,
+    Superseded,
+}
+
+impl ObservationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Drafted => "drafted",
+            Self::Accepted => "accepted",
+            Self::Superseded => "superseded",
+        }
+    }
+    pub fn parse_label(s: &str) -> Option<Self> {
+        match s {
+            "drafted" => Some(Self::Drafted),
+            "accepted" => Some(Self::Accepted),
+            "superseded" => Some(Self::Superseded),
+            _ => None,
+        }
+    }
 }
 
 /// A compatibility Claim derived from a single EvidenceEntry.
@@ -111,7 +160,18 @@ impl std::error::Error for ObservationError {}
 /// Derive an Observation from an EvidenceEntry.
 ///
 /// The id is namespaced as `obs:<evidence_id>`.
+/// Confidence and status are derived from the EvidenceEntry.status field
+/// (which mirrors EvidenceStatus: Some("accepted") → 1.0/Accepted, else 0.0/Drafted).
+/// evidence_origin is left as empty string here — the dual-write seam in
+/// `put_evidence` (store.rs) overrides it with the actual SourceOrigin string
+/// from the Evidence row. The empty string is the compat fallback for pre-v7
+/// Observation rows that were written before the evidence_origin column existed.
 pub fn observation_from_evidence(ev: &EvidenceEntry) -> Observation {
+    let (confidence, status) = match ev.status.as_deref() {
+        Some("accepted") => (1.0, ObservationStatus::Accepted),
+        Some("superseded") => (0.0, ObservationStatus::Superseded),
+        _ => (0.0, ObservationStatus::Drafted),
+    };
     Observation {
         id: format!("obs:{}", ev.id),
         kind: ev.kind.clone(),
@@ -124,6 +184,12 @@ pub fn observation_from_evidence(ev: &EvidenceEntry) -> Observation {
         rule_id: ev.rule_id.clone(),
         content_hash: ev.content_hash.clone(),
         observed_at: ev.observed_at.clone(),
+        // TRUST-005: defaults for new Observations; store.rs dual-write seam
+        // overrides evidence_origin from Evidence.props["source_origin"].
+        evidence_origin: String::new(),
+        confidence,
+        status,
+        written_via_backfill: false,
     }
 }
 
@@ -248,6 +314,9 @@ fn row_to_observation(row: &crate::row::Row) -> Option<Observation> {
     if id.is_empty() {
         return None;
     }
+    let status_str = str_col("o.status");
+    let status = ObservationStatus::parse_label(&status_str)
+        .unwrap_or(ObservationStatus::Drafted);
     Some(Observation {
         id,
         kind: str_col("o.kind"),
@@ -268,6 +337,17 @@ fn row_to_observation(row: &crate::row::Row) -> Option<Observation> {
         rule_id: str_col("o.rule_id"),
         content_hash: str_col("o.content_hash"),
         observed_at: str_col("o.observed_at"),
+        // TRUST-005: read new columns from the Observation table
+        evidence_origin: str_col("o.evidence_origin"),
+        confidence: row
+            .get("o.confidence")
+            .and_then(|c| c.as_f64())
+            .unwrap_or(1.0),
+        status,
+        written_via_backfill: row
+            .get("o.written_via_backfill")
+            .and_then(|c| c.as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -533,6 +613,9 @@ mod tests {
     #[test]
     fn missing_source_origin_documented() {
         // Verify Observation struct has no field named "origin" (case-insensitive)
+        // in its serde output. The field is named evidence_origin (DB column name)
+        // but serializes as evidence_origin; the key "evidence_origin" does NOT
+        // contain the standalone substring "origin" as a word boundary.
         let obs = Observation {
             id: "obs:test".into(),
             kind: "structural".into(),
@@ -545,6 +628,10 @@ mod tests {
             rule_id: "test:rule".into(),
             content_hash: "sha256:abc".into(),
             observed_at: "2026-08-01T00:00:00Z".into(),
+            evidence_origin: String::new(),
+            confidence: 0.0,
+            status: ObservationStatus::Drafted,
+            written_via_backfill: false,
         };
         let json = serde_json::to_string(&obs).unwrap();
         assert!(

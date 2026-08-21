@@ -19,6 +19,7 @@ editable = [
     "archctl/src/architecture/explain.rs",
     "archctl/src/architecture/coverage.rs",
     "archctl/src/architecture/fusion.rs",
+    "archctl/src/architecture/fusion_bridge.rs",
     "archctl/src/architecture/intent.rs",
     "archctl/src/architecture/intent_loader.rs",
     "archctl/src/architecture/policy.rs",
@@ -89,6 +90,11 @@ public_symbols = [
     "observation_from_evidence",
     "compat_claim_from_evidence",
     "observations_and_claims_for_version",
+    # TRUST-005: feedback module re-exports (ADR-064).
+    "Feedback",
+    "FeedbackVerdict",
+    "feedback_from_evidence",    # compat mapping helper (EvidenceStatus ↔ FeedbackVerdict)
+    "reconciliation_status",     # computed_status derivation helper
     "load_intent",
 ]
 
@@ -151,6 +157,11 @@ must_hold = [
      # Evidence rows and produces one Observation + one compat Claim
      # per row that lacks a backing canonical Observation.
      "backfill_observation_claim_from_evidence(",
+     # TRUST-005: trust-gated FusedClaim recompute + new helpers.
+     "pub mod fusion_bridge",
+     "pub fn feedback_from_evidence(",
+     "pub fn reconciliation_status(",
+     "trust::canonical_promotion_allowed",
 ]
 
 # Minimum number of #[test] items in the architecture module.

@@ -97,6 +97,21 @@ pub struct Reconciliation {
 /// Graph revision id (mirrors feedback.rs for consistency).
 pub type GraphRevision = String;
 
+/// Derive a computed_status string from a TrustClassification.
+/// Used by the reconciliation compute path and by fusion_bridge.
+/// The name is pinned in architecture.toml.
+pub fn reconciliation_status(trust: TrustClassification) -> &'static str {
+    use crate::trust::ExecutionClass;
+    if canonical_promotion_allowed(trust.execution, trust.authority).is_ok() {
+        "accepted"
+    } else {
+        match trust.execution {
+            ExecutionClass::ModelInference => "pending_adjudication",
+            _ => "drafted",
+        }
+    }
+}
+
 impl Reconciliation {
     /// Pure function: given identical inputs, returns identical output.
     ///

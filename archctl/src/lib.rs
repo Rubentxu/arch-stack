@@ -64,8 +64,8 @@ pub use environment::{
     Environment, FixedEnvironment, SystemEnvironment, fixed_environment, system_environment,
 };
 pub use evaluation::Evaluation;
-pub use feedback::{Feedback, FeedbackError, FeedbackId, FeedbackVerdict, TargetClaimId};
-pub use reconciliation::Reconciliation;
+pub use feedback::{Feedback, FeedbackError, FeedbackId, FeedbackVerdict, TargetClaimId, feedback_from_evidence};
+pub use reconciliation::{Reconciliation, reconciliation_status};
 pub use filesystem::{
     DirEntry, EntryKind, Filesystem, MemoryFilesystem, SystemFilesystem, memory_filesystem,
     system_filesystem,
@@ -92,6 +92,6 @@ pub use skills::{
 pub use source::SourceArtifact;
 pub use store::{
     DiagramRepository, ElementRepository, EvaluationRepository, EvidenceRepository,
-    GraphStoreFactory, LbugStoreFactory, SourceRepository,
+    FeedbackRepository, GraphStoreFactory, LbugStoreFactory, SourceRepository,
 };
 pub use xdg::{XdgLayout, ensure_xdg, resolve_xdg, user_home};

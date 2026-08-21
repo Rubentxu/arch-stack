@@ -23,6 +23,7 @@
 //! 90-day staleness cutoff and flags the claim as `stale`.
 
 use crate::observation_claim::Observation;
+use crate::architecture::fusion_bridge::recompute_status;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -225,26 +226,14 @@ fn normalize_claim(claim: &str) -> String {
         .to_lowercase()
 }
 
-/// Member confidence rule (matches the compat claim rule):
-/// accepted → 1.0, anything else → 0.0.
+/// Member confidence rule: read the persisted `obs.confidence` field.
 ///
-/// The Observation carrier itself does not carry a status; the
-/// compat confidence convention maps to 1.0 for accepted evidence.
-/// We use the same convention here: an observation whose evidence
-/// is accepted (observed via its status in the canonical row path)
-/// contributes 1.0, otherwise 0.0. Since the Observation struct
-/// lacks the status field, we conservatively derive it from the
-/// observation id namespace + claim provenance; v1 uses the
-/// observation confidence default documented below.
-fn observation_confidence(_obs: &Observation) -> f64 {
-    // P2-09a/b compatibility: the Observation carrier does not
-    // expose an evidence status directly. The canonical row path
-    // stores `confidence` on the Observation node; for the pure
-    // in-memory projection we default to 1.0 (the common case for
-    // accepted evidence) and document this as the v1 rule.
-    // A future cycle can thread status/confidence through the
-    // Observation carrier itself.
-    1.0
+/// TRUST-005: the Observation carrier now carries the confidence
+/// from the v4-p2-09b schema (the column was always there but
+/// the struct field was added in this cycle). Previously defaulted
+/// to 1.0 (hardcoded).
+fn observation_confidence(obs: &Observation) -> f64 {
+    obs.confidence
 }
 
 /// Extract the evidence id from an observation id (`obs:<evid>`).
@@ -315,13 +304,13 @@ pub fn fuse_observations_with(
         let confidence = evaluator.confidence(&member_refs, now);
         let stale = evaluator.stale(&member_refs, now);
 
-        // Status: accepted if any member observation's evidence is
-        // accepted (v1: always true per the confidence rule).
-        let status = if confidence > 0.0 {
-            "accepted"
-        } else {
-            "drafted"
-        };
+        // Status: TRUST-005 trust-gated derivation.
+        // Parse evidence_origin from the first observation; default to
+        // UserWorkspace for pre-v7 rows where the column is empty.
+        let source_origin = member_refs.first()
+            .and_then(|o| crate::evidence::SourceOrigin::parse_label(&o.evidence_origin))
+            .unwrap_or(crate::evidence::SourceOrigin::UserWorkspace);
+        let (status, _trust) = recompute_status(&member_refs, source_origin);
 
         claims.push(FusedClaim {
             id: fused_id(&observation_ids),
@@ -540,6 +529,10 @@ mod tests {
             rule_id: "test:rule".to_string(),
             content_hash: String::new(),
             observed_at: "2026-08-01T00:00:00Z".to_string(),
+            evidence_origin: String::new(),
+            confidence: 1.0,
+            status: crate::observation_claim::ObservationStatus::Accepted,
+            written_via_backfill: false,
         }
     }
 
