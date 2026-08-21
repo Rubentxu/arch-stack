@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::adjudication::{self, AdjudicationDecision, AdjudicationEvent};
 use crate::astgrep::Lang;
 use crate::evidence::{self, Evidence, EvidenceKind, EvidenceStatus};
 use crate::filesystem::Filesystem;
@@ -12,6 +13,7 @@ use crate::ide::builtin_adapters;
 use crate::project::resolve_project;
 use crate::skills;
 use crate::source::SourceArtifact;
+use crate::store::{AdjudicationRepository, GraphStore, LbugStore};
 use crate::{doctor, environment, filesystem, graph, inventory, render};
 
 /// Container for the ports a CLI handler needs.
@@ -684,6 +686,40 @@ pub enum GraphAction {
     },
 }
 
+/// Adjudication bounded context (REQ-M25-006 closure, TRUST-008).
+#[derive(Debug, Subcommand)]
+pub enum AdjudicationCmd {
+    /// List pending adjudication rows (decision = Defer OR target status = "drafted").
+    List {
+        /// Emit JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Record an adjudication decision (promote | reject | defer).
+    Decide {
+        #[arg(long)]
+        claim: String,
+        #[arg(long, value_parser = ["promote", "reject", "defer"])]
+        verdict: String,
+        #[arg(long)]
+        adjudicator: String,
+        /// Comma-separated list of evidence refs.
+        #[arg(long, value_delimiter = ',')]
+        evidence_refs: Vec<String>,
+        /// Emit JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the full adjudication history for a single claim id.
+    Show {
+        #[arg(long)]
+        claim: String,
+        /// Emit JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "archctl",
@@ -738,6 +774,11 @@ pub enum Command {
     Evidence {
         #[command(subcommand)]
         action: EvidenceAction,
+    },
+    /// Adjudication bounded context (REQ-M25-006 closure, TRUST-008).
+    Adjudication {
+        #[command(subcommand)]
+        action: AdjudicationCmd,
     },
     Render {
         source: PathBuf,
@@ -1087,6 +1128,17 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 json,
                 kind,
             } => evidence_put_cmd(cwd, file.as_ref(), json, kind, ctx),
+        },
+        Command::Adjudication { action } => match action {
+            AdjudicationCmd::List { json } => adjudication_list_cmd(json, ctx),
+            AdjudicationCmd::Decide {
+                claim,
+                verdict,
+                adjudicator,
+                evidence_refs,
+                json,
+            } => adjudication_decide_cmd(&claim, &verdict, &adjudicator, evidence_refs, json, ctx),
+            AdjudicationCmd::Show { claim, json } => adjudication_show_cmd(&claim, json, ctx),
         },
         Command::Render {
             source,
@@ -2393,6 +2445,121 @@ fn evidence_put_cmd(
     }
 
     // SCN-402: exit 0 if ≥1 succeeded
+    Ok(0)
+}
+
+/// Open and initialize an LbugStore at project_dir, returning the concrete type
+/// so that AdjudicationRepository methods (not on dyn GraphStore) are accessible.
+fn open_adjudication_store(project_dir: &std::path::Path) -> anyhow::Result<LbugStore> {
+    let mut store =
+        LbugStore::open(project_dir).context("failed to acquire DB lock for adjudication")?;
+    store.init().context("graph init for adjudication")?;
+    Ok(store)
+}
+
+fn adjudication_list_cmd(json: bool, ctx: &CliContext) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(None);
+    let info = resolve_project(&cwd.to_string_lossy());
+    let mut store = open_adjudication_store(&info.project_dir)?;
+
+    let events = store
+        .list_pending_adjudications()
+        .context("adjudication list")?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&events)?);
+    } else {
+        // Human-readable table: id, target, decision, decided_at, adjudicator
+        for e in &events {
+            println!(
+                "{}\t{}\t{}\t{}\t{}",
+                e.id,
+                e.target_fused_claim_id,
+                format!("{:?}", e.decision).to_lowercase(),
+                e.decided_at,
+                e.adjudicator
+            );
+        }
+    }
+    Ok(0)
+}
+
+fn adjudication_decide_cmd(
+    claim: &str,
+    verdict: &str,
+    adjudicator: &str,
+    evidence_refs: Vec<String>,
+    json: bool,
+    ctx: &CliContext,
+) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(None);
+    let info = resolve_project(&cwd.to_string_lossy());
+    let mut store = open_adjudication_store(&info.project_dir)?;
+
+    let decision = match verdict {
+        "promote" => AdjudicationDecision::Promote,
+        "reject" => AdjudicationDecision::Reject,
+        "defer" => AdjudicationDecision::Defer,
+        _ => unreachable!("clap value_parser constrains verdict to promote|reject|defer"),
+    };
+
+    let now = ctx.clock.now_rfc3339();
+    let id = adjudication::id_for(claim, adjudicator, &now);
+
+    let event = AdjudicationEvent {
+        id: id.clone(),
+        target_fused_claim_id: claim.to_string(),
+        adjudicator: adjudicator.to_string(),
+        evidence_refs,
+        decided_at: now,
+        decision,
+    };
+
+    store
+        .put_adjudication(&event)
+        .context("adjudication decide")?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "claim": claim,
+                "verdict": verdict,
+                "id": id,
+            }))?
+        );
+    } else {
+        println!(
+            "Recorded adjudication {} on claim {} (decision={})",
+            id, claim, verdict
+        );
+    }
+    Ok(0)
+}
+
+fn adjudication_show_cmd(claim: &str, json: bool, ctx: &CliContext) -> Result<i32> {
+    let cwd = ctx.resolve_cwd(None);
+    let info = resolve_project(&cwd.to_string_lossy());
+    let mut store = open_adjudication_store(&info.project_dir)?;
+
+    let events = store
+        .read_adjudications_for_claim(claim)
+        .context("adjudication show")?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&events)?);
+    } else {
+        for e in &events {
+            println!(
+                "{}\t{}\t{}\t{}\t{}",
+                e.id,
+                e.target_fused_claim_id,
+                format!("{:?}", e.decision).to_lowercase(),
+                e.decided_at,
+                e.adjudicator
+            );
+        }
+    }
     Ok(0)
 }
 
