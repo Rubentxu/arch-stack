@@ -64,7 +64,7 @@ fn prepare_go_fixture(tmp: &std::path::Path) -> std::path::PathBuf {
 /// Echo (labstack/echo) — 1,307 Go elements. Primary regression gate.
 /// Threshold: D1 < 10s, D1+D2 < 3s.
 /// Dataset: ~/.cache/archctl-smoke/labstack-echo-1307.json
-#[ignore]
+#[ignore = "criterion default: skip on `cargo bench`; opt-in via `cargo bench -- --ignored`"]
 fn bench_call_graph_apply_echo(c: &mut Criterion) {
     let dataset_path = smoke_path("labstack-echo-1307.json");
     // Skip the bench (not a panic) if the dataset isn't cached. This
@@ -105,7 +105,7 @@ fn bench_call_graph_apply_echo(c: &mut Criterion) {
 /// Zustand (pmndrs/zustand) — 212 TypeScript elements.
 /// Threshold: D1+D2 < 5s.
 /// Dataset: ~/.cache/archctl-smoke/pmndrs-zustand-212.json
-#[ignore]
+#[ignore = "criterion default: skip on `cargo bench`; opt-in via `cargo bench -- --ignored`"]
 fn bench_call_graph_apply_zustand(c: &mut Criterion) {
     let dataset_path = smoke_path("pmndrs-zustand-212.json");
     if !dataset_path.exists() {
@@ -144,7 +144,7 @@ fn bench_call_graph_apply_zustand(c: &mut Criterion) {
 /// This bench extracts from the committed .go file (mimicking real CLI usage).
 ///
 /// T4.1: per-element throughput assertion added.
-#[ignore]
+#[ignore = "criterion default: skip on `cargo bench`; opt-in via `cargo bench -- --ignored`"]
 fn bench_call_graph_apply_go_fixture(c: &mut Criterion) {
     // Go fixture has 6 elements. ADR-036 §D4 target: ≤ 30 ms/element post-D2.
     const ELEMENT_COUNT: usize = 6;

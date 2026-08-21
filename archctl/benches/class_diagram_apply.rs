@@ -31,7 +31,7 @@ fn load_gold_report() -> ClassDiagramReport {
 
 /// Apply bench: 10 nodes, gold fixture.
 /// Threshold: < 500ms (smoke gate, ADR-036 §D4 + ADR-019).
-#[ignore]
+#[ignore = "criterion default: skip on `cargo bench`; opt-in via `cargo bench -- --ignored`"]
 fn bench_class_diagram_apply_gold(c: &mut Criterion) {
     let report = load_gold_report();
     let node_count = report.nodes.len();
