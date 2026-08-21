@@ -200,3 +200,25 @@ fn summaries_for_claims_excludes_non_persisted_feedback() {
         "returned row must belong to the requested claim"
     );
 }
+
+/// SCN-T07-002b: invalid identifier in `claim_ids` returns `Err` with
+/// `"summaries_for_claims"` and `"validation"` in the context chain; no
+/// Cypher query is dispatched. Regression for the `let _ = …` validation
+/// bug flagged in TRUST-007 verify-report (lens: spec-compliance).
+#[test]
+fn summaries_for_claims_rejects_invalid_identifier() {
+    let tmp = TempDir::new().unwrap();
+    let mut store = open_store(&tmp);
+
+    // Identifier with a disallowed char (space). `validate_identifier`
+    // rejects anything outside `[A-Za-z0-9_.:-]+`.
+    let bad = "clm bad id";
+    let result = store.summaries_for_claims(&[bad]);
+
+    let err = result.expect_err("invalid identifier must surface Err");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("summaries_for_claims") && msg.contains("validation"),
+        "error context must reference both `summaries_for_claims` and `validation`; got: {msg}"
+    );
+}

@@ -2874,10 +2874,11 @@ impl FeedbackRepository for LbugStore {
             return Ok(Vec::new());
         }
 
-        // Validate all claim ids before issuing the query
+        // Validate all claim ids before issuing the query (propagates per
+        // SCN-T07-002b; mirrors `read_feedback_for_claim`'s validation path).
         for cid in claim_ids {
-            let _ = crate::graph::validate_identifier(cid)
-                .with_context(|| format!("summaries_for_claims {cid}: validation"));
+            crate::graph::validate_identifier(cid)
+                .with_context(|| format!("summaries_for_claims {cid}: validation"))?;
         }
 
         let session = self.session_mut_inner()?;
