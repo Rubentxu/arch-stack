@@ -534,6 +534,24 @@ Si el grep encuentra coincidencias, justificar cada una en el
 commit o en el artifact `apply-progress.md`. Sin justificación,
 el commit se rechaza.
 
+### Estado actual del audit (2026-08-22, cierre de la cadena P1)
+
+Los 15 ciclos P1 eliminaron todos los MockStore/MockRepo/FakeRepo
+del árbol (`archctl/src/architecture/*` y `archctl/src/diagram/export.rs`).
+Las únicas coincidencias legítimas de los grep anteriores son:
+
+- `doctor/mod.rs`: `localhost:18080/18000` como **defaults** detrás
+  de las env vars `ARCHCTL_DOCTOR_*_URL` (override por env var en
+  ciclo 4).
+- `view.rs`: `127.0.0.1` es la decisión de seguridad obligatoria
+  per ADR-011 (loopback-only, nunca público).
+- `xdg.rs` y `environment.rs`: paths `/home/user/...` son fixtures
+  de tests unitarios (no producción) — el rule permite
+  "constantes de protocolo del propio binario".
+
+Cualquier futura adición que dispare uno de los grep debe justificarse
+en el commit o reabrir el cleanup.
+
 ## Testing Principles
 
 - **Comportamiento observable**: testea la salida del CLI o el
