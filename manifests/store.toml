@@ -85,6 +85,12 @@ must_hold = [
   "pub fn rollback",
   "impl<'a> Drop for Transaction<'a>",
   "pub enum StoreError",
+  # TRUST-005 (cycle p-38e02210a9f14317/trust-005-observation-fusion):
+  # FeedbackRepository trait (next to EvidenceRepository at L50).
+  "pub trait FeedbackRepository",
+  "fn put_feedback",
+  "fn read_feedback_for_claim",
+  "fn list_reconciliations",
 ]
 
 # Minimum tests for store.rs. We currently have 7.

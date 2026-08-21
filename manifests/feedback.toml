@@ -1,0 +1,52 @@
+# scope: feedback
+#
+# feedback.rs encodes the Feedback bounded context (ADR-064).
+# Per spec-35 v1.1 §2: Feedback is a graph-native record of human
+# (or programmatic) intent on a FusedClaim target. Carries intent,
+# NOT state — the trust gate (trust::canonical_promotion_allowed)
+# remains the authoritative promotion predicate (ADR-063 + ADR-064).
+
+id = "feedback"
+version = "0.1.0"
+description = "Feedback bounded context: graph-native human-intent record (ADR-064, spec-35 v1.1)"
+
+cargo_dir = "archctl"
+
+editable = ["archctl/src/feedback.rs"]
+
+public_symbols = [
+  "Feedback",
+  "FeedbackVerdict",
+  "FeedbackId",
+  "FeedbackError",
+  "validate",
+]
+
+must_hold = [
+  "pub struct Feedback",
+  "pub enum FeedbackVerdict",
+  "pub enum FeedbackError",
+  "pub type FeedbackId",
+  "FeedbackVerdict::Accept",
+  "FeedbackVerdict::Reject",
+  "FeedbackVerdict::Uncertain",
+  "FeedbackVerdict::Supersede",
+  "FeedbackVerdict::Correct",
+  "FeedbackError::ContradictoryFields",
+  "FeedbackError::TargetNotFound",
+  "pub fn validate(",
+  # m30 bridge invariant: feedback accepted on ModelInference does not
+  # silently promote; see trust.rs + fusion_bridge.rs for the
+  # canonical_promotion_allowed consult.
+  "trust::canonical_promotion_allowed",
+]
+
+# Minimum number of #[test] items in feedback.rs (5 per spec §4).
+minimum_tests = 5
+
+must_not_contain = [
+  "reqwest",     # network by default is blocked (ADR-011)
+  "tokio::",     # sync CLI today; no async runtime in feedback.rs
+  "unsafe",      # pure-data module
+  "serde_json::Value", # typed wrappers only (m25 precedent)
+]
