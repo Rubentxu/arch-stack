@@ -17,8 +17,9 @@
 
 use crate::feedback::{Feedback, FeedbackVerdict};
 #[allow(unused_imports)]
-use crate::trust::{canonical_promotion_allowed, AuthorityClass, ExecutionClass,
-                   TrustClassification};
+use crate::trust::{
+    AuthorityClass, ExecutionClass, TrustClassification, canonical_promotion_allowed,
+};
 use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,6 +98,21 @@ pub struct Reconciliation {
 /// Graph revision id (mirrors feedback.rs for consistency).
 pub type GraphRevision = String;
 
+/// Derive a computed_status string from a TrustClassification.
+/// Used by the reconciliation compute path and by fusion_bridge.
+/// The name is pinned in architecture.toml.
+pub fn reconciliation_status(trust: TrustClassification) -> &'static str {
+    use crate::trust::ExecutionClass;
+    if canonical_promotion_allowed(trust.execution, trust.authority).is_ok() {
+        "accepted"
+    } else {
+        match trust.execution {
+            ExecutionClass::ModelInference => "pending_adjudication",
+            _ => "drafted",
+        }
+    }
+}
+
 impl Reconciliation {
     /// Pure function: given identical inputs, returns identical output.
     ///
@@ -155,9 +171,7 @@ impl Reconciliation {
             let status_for_denied = match trust.execution {
                 ExecutionClass::ModelInference => {
                     // Check if there's a Feedback.accept in history
-                    let has_accept = sorted
-                        .iter()
-                        .any(|f| f.verdict == FeedbackVerdict::Accept);
+                    let has_accept = sorted.iter().any(|f| f.verdict == FeedbackVerdict::Accept);
                     if has_accept {
                         "pending_adjudication".to_string()
                     } else {

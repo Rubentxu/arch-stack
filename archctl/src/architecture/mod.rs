@@ -22,6 +22,7 @@ pub mod digest;
 pub mod errors;
 pub mod explain;
 pub mod fusion;
+pub mod fusion_bridge;
 pub mod intent;
 pub mod intent_loader;
 pub mod policy;

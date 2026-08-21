@@ -63,6 +63,10 @@ must_hold = [
   "EvidenceStatus::Accepted",
   "EvidenceStatus::Superseded",
   "default_for_origin(",
+  # TRUST-005: ObservationStatus enum (Drafted/Accepted/Superseded).
+  # The enum is owned by observation_claim.rs (architecture scope), but
+  # the wire string literals are pinned here for the read-side caller.
+  "ObservationStatus::Drafted",
 ]
 
 # Minimum number of `#[test]` items in evidence.rs. We currently
