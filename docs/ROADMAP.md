@@ -1794,6 +1794,26 @@ Razones:
 - **Decisiones locked**: snake_case `source_origin` contract (parse_label); `#[serde(default)]` on additive AgentContext field; `test_support` placement outside `agents/` module (which is `mod agents;` private).
 - **Próximo candidato**: TRUST-007 — `feedback_repository_summary_port` (REQ-T06-003 closure) + UAT-06 step 18 (workbench crash recovery, currently ignored).
 
+## Cycle cerrado — `trust-007-feedback-port` (v1.86.0)
+
+- **Fecha**: 2026-08-21
+- **Cycle id**: `p-38e02210a9f14317/trust-007-feedback-port`
+- **Branch**: `feat/trust-007-wu-{1..5}` + `fix/trust-007-validate-claim-ids` + `docs/changelog-trust-007` (7 chained PRs)
+- **Tag**: `v1.86.0` (annotated, peels `eded594`, pushed + verified remote)
+- **Path**: A-lite
+- **Output**:
+  - **`FeedbackRepository::summaries_for_claims`** (PR #303): new port method on the trait. Signature `fn summaries_for_claims(&mut self, claim_ids: &[&str]) -> Result<Vec<FeedbackSummary>>`. No default impl (trait sealed in practice; only `LbugStore` implements it).
+  - **`LbugStore` implementation** (PR #304): single Cypher `MATCH (f:Feedback)-[:VERDICTS_ON]->(c:FusedClaim) WHERE c.id IN $claim_ids RETURN … ORDER BY c.id ASC, f.revision ASC, f.timestamp ASC, f.id ASC`. Reuses `validate_identifier` per claim id; reuses `FeedbackVerdict::parse_label` per row. Empty-input short-circuit (`Ok(vec![])` without dispatching a query).
+  - **`AgentContext::with_feedback_history`** (PR #305): ergonomic constructor in `cognitive/context.rs` that takes pre-fetched `Vec<FeedbackSummary>`. Struct-literal form `feedback_history: vec![]` remains valid (no `#[non_exhaustive]`).
+  - **8-site documentation pass** (PR #306): 7 sites got `// REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history` comment block. The 8th site (round-trip serde test at context.rs:104) keeps `vec![]` (wire-format stability test).
+  - **Regression tests** (PR #307 + #309): `archctl/tests/feedback_summaries_port.rs` with 4 tests — empty input short-circuit, deterministic ordering (out-of-order insertion → sorted output), non-requested claim exclusion, invalid-identifier surfaces Err (SCN-T07-002b).
+  - **SCN-T07-002b fix** (PR #309): the `LbugStore::summaries_for_claims` validation loop used `let _ = …` which silently discarded the Err from `validate_identifier`. Replaced with `?` propagation. Mirrors `read_feedback_for_claim` (store.rs:2790-2791).
+  - **`manifests/store.toml`** updated: `must_hold += ["fn summaries_for_claims"]`.
+- **Tests**: 846/846 green. Clippy `-D warnings` 0. rustfmt 0. UAT-06: 11/11 active steps.
+- **Loc**: ~+431/-9 across 12 files (< 400 PR per WU).
+- **Decisiones locked**: snake_case `source_origin` contract preserved; `#[serde(default)]` on additive `AgentContext.feedback_history` field preserved; trait extension without default impl (sealed-in-practice); SCN-T07-002b Err propagation via `?`.
+- **Próximo candidato**: TRUST-008 — `m30_bridge_promotion` (REQ-M25-006 closure; promote `pending_adjudication_event = true` + `tracing::warn!` to hard fail on `ModelInference × Feedback.reject`).
+
 ## Cycle cerrado — `m25-authority-execution-classes`
 
 - **Fecha**: 2026-08-20
