@@ -144,6 +144,7 @@ mod tests {
     use crate::cognitive::AgentBudget;
 
     fn make_ctx(goal: &str) -> AgentContext {
+        // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
         AgentContext {
             goal: goal.into(),
             triggering_event: None,
