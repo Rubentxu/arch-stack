@@ -1,5 +1,23 @@
 ## [Unreleased] — pending
 
+Cycle `trust-006-context-bundle` — closes UAT-06 steps 16/17/19/20 (TRUST-006).
+AgentContext now carries prior feedback verdicts so re-invoked agents respect
+rejections; bundle export verified to exclude rejected claims.
+
+### Added
+- `FeedbackSummary` struct in `archctl/src/feedback.rs` — slim read-only view of `Feedback` for `AgentContext` (excludes `evidence`/`correlation_id` pipeline-internal fields).
+- `AgentContext.feedback_history: Vec<FeedbackSummary>` field (additive, `#[serde(default)]` for backward compat).
+- `cognitive::test_support` module (`test-fixtures` feature): exposes `FeedbackAwareMockAgent` + `MockOutcome` for deterministic tests.
+
+### Changed
+- 8 `AgentContext` construction sites updated to add `feedback_history: vec![]` (additive field).
+- `seed_orders_stripe_fixture`: store `source_origin` as snake_case in `Evidence.props` so `SourceOrigin::parse_label` resolves correctly (was PascalCase — silently fell back to `UserWorkspace` in `accept_evidence`'s trust guard, masking the trust-first invariant).
+
+### Fixed
+- Test fixture `seed_orders_stripe_fixture` had PascalCase `source_origin` in props (`"ModelInference"`); `parse_label` expects snake_case (`"model_inference"`). Fixed in PR #299. Without this fix, `accept_evidence` on ModelInference evidence silently fell back to `UserWorkspace` and would have accepted the false claim.
+
+## [1.85.0] — pending release
+
 Cycle `trust-005-observation-fusion` — closes the epistemic plumbing gap (TRUST-005):
 real confidence/status threaded into Observation/FusedClaim + Feedback/Reconciliation as first-class types.
 Five chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-005-observation-fusion/`.
