@@ -848,9 +848,17 @@ minutos.
 `archctl/src/store.rs` (L384-391 `query`, L420 comentario erróneo),
 lbug 0.18.3 `src/connection.rs`, M30 amendment (este documento)
 
-## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **NUEVO (2026-08-06)**
+## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **CERRADO ✅**
 
-**Estado:** NUEVO — detectado durante M30 (primer push tras el repair).
+**Estado:** Cerrado ✅ — code landed **v1.3.1** (PR #80, commit tip
+`5fb2be1`, merge 2026-08-07). El commit `44d7261 docs(roadmap): M33
+archived v1.3.1` ya había intentado archivar este cuerpo pero solo
+añadió la fila al cycle-log; este commit cierra el drift restante en
+el cuerpo del ciclo. `scripts/verify-local.sh` cheap tier ahora ejecuta
+`scripts/embed-stack.sh` si `archctl/assets-stack/` no existe
+(idempotente); pre-push pasa en worktree fresco sin `--no-verify` per
+acceptance criteria. Cycle-log row al final de este ROADMAP referencia
+el tag y los 6 PRs.
 
 **Objetivo:** el pre-push hook (ADR-025, `.githooks/pre-push`) pueda pasar
 en worktrees frescos sin intervención manual.
