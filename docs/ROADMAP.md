@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.87.0 ALCANZADO (2026-08-22) — TRUST-008 m30 bridge hard fail + Adjudication bounded context shipped (closes REQ-M25-006); T0 Trust cerrado end-to-end (TRUST-001..008). Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes. Pendiente menor: report de redacciones en strict bundles + persistir cutoff de staleness por proyecto en XDG.
-**Versión:** 2.16
+**Estado:** v1.87.3 ALCANZADO (2026-08-22) — cognitive-layer-coverage v1 cierra los 2 huecos más profundos del audit M61 (`mcp/gateway.rs` 1.8% → 3.4%, `dispatcher/event_dispatcher.rs` 1.7% → 3.3%); 1279 → 1298 tests; bonus `archview/package.json` lock-step con `archctl/Cargo.toml` + 3 `--lang` help string fixes. T0 Trust cerrado end-to-end (v1.81.0 → v1.87.0). Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes. Pendiente menor: report de redacciones en strict bundles + persistir cutoff de staleness por proyecto en XDG.
+**Versión:** 2.17
 **Fecha:** 22 de agosto de 2026
-**Cambios vs 2.15:** 8 cycle log rows (`t0-trust-001-eventlog-reopen` v1.81.0 / `t0-trust-002-event-ids-causation` v1.82.0 / `m25-authority-execution-classes` v1.83.0 / `trust-005-observation-fusion` v1.84.0 / `trust-006-context-bundle` v1.85.0 / `trust-007-feedback-port` v1.86.0 / `trust-008-m30-bridge-promotion` v1.87.0 / `no-stubs-mocks-placeholders-hardcoded` documentation rule) + bump de `docs/STATE.md` (Estado del trunk rows Tip/Versión/Tests/LOC/Tags) y añadidas las 7 filas v1.81.0–v1.87.0 en la tabla "Capacidades shipped" (que terminaba en v1.80.0).
+**Cambios vs 2.16:** 3 cycle log rows nuevas (`sprint-housekeeping-1` v1.87.1 / `m84-ide-install-root` v1.87.2 / `cognitive-layer-coverage-v1` v1.87.3) + bump de `docs/STATE.md` (Estado del trunk rows Tip/Versión/Tests/LOC/Tags apuntando a `afbc801`/v1.87.3/1298 tests/59,046 src LOC/161 tags) y añadidas las 3 filas v1.87.1–v1.87.3 en la tabla "Capacidades shipped".
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
