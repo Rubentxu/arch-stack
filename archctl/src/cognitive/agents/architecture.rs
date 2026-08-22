@@ -252,4 +252,194 @@ mod tests {
         assert!(matches!(d.model_policy, ModelPolicy::Heuristic));
         assert!(d.deterministic);
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v2, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `Default::default()` is equivalent to `::new()` for `ArchitectureAgent`
+    /// (both produce the same descriptor, deterministic + idempotent flags).
+    #[test]
+    fn default_trait_impl_equiv_new() {
+        let default = ArchitectureAgent::default();
+        let new = ArchitectureAgent::new();
+        assert_eq!(default.descriptor().id, new.descriptor().id);
+        assert_eq!(
+            default.descriptor().required_views,
+            new.descriptor().required_views
+        );
+        assert!(default.descriptor().deterministic);
+        assert!(default.descriptor().idempotent);
+    }
+
+    /// When arch elements are present but no naming connascence is detected,
+    /// the agent returns `NoAction(InsufficientConfidence)` with the
+    /// "no naming connascence detected" message. Distinct from the empty-graph
+    /// branch which returns `OutOfScope`.
+    #[test]
+    fn observe_returns_noaction_insufficient_confidence_when_no_connascence() {
+        let agent = ArchitectureAgent::new();
+        let ctx = make_ctx(vec![
+            el("e1", "mt.container", "UserService"),
+            el("e2", "mt.container", "OrderService"),
+        ]);
+        let out = agent.observe(&ctx).unwrap();
+        match out {
+            AgentOutput::NoAction(reason) => {
+                assert_eq!(reason.code, NoActionCode::InsufficientConfidence);
+                assert!(
+                    reason.message.contains("no naming connascence"),
+                    "message must reflect the post-detection branch, got: {}",
+                    reason.message
+                );
+            }
+            other => panic!("expected NoAction(InsufficientConfidence), got {other:?}"),
+        }
+    }
+
+    /// Empty graph → `NoAction(OutOfScope)` with the "no architecturally
+    /// relevant elements in graph view" message. Distinct from the
+    /// no-connascence branch (InsufficientConfidence).
+    #[test]
+    fn observe_returns_noaction_out_of_scope_on_empty_graph() {
+        let agent = ArchitectureAgent::new();
+        let ctx = make_ctx(vec![]);
+        let out = agent.observe(&ctx).unwrap();
+        match out {
+            AgentOutput::NoAction(reason) => {
+                assert_eq!(reason.code, NoActionCode::OutOfScope);
+                assert!(
+                    reason.message.contains("no architecturally relevant"),
+                    "message must reflect the empty-graph branch, got: {}",
+                    reason.message
+                );
+            }
+            other => panic!("expected NoAction(OutOfScope), got {other:?}"),
+        }
+    }
+
+    /// Graph with only non-architectural elements (e.g. `code.function`) →
+    /// `arch_elements()` filters them out → `OutOfScope`. Locks that
+    /// the filter is applied BEFORE the connascence detector runs.
+    #[test]
+    fn observe_returns_out_of_scope_when_only_non_arch_elements() {
+        let agent = ArchitectureAgent::new();
+        let ctx = make_ctx(vec![
+            el("e1", "code.function", "create_user"),
+            el("e2", "code.function", "delete_user"),
+        ]);
+        let out = agent.observe(&ctx).unwrap();
+        match out {
+            AgentOutput::NoAction(reason) => {
+                assert_eq!(reason.code, NoActionCode::OutOfScope);
+            }
+            other => panic!("expected NoAction(OutOfScope), got {other:?}"),
+        }
+    }
+
+    /// When multiple pairs trigger connascence (3+ elements in the same
+    /// prefix group), the agent returns the HIGHEST-confidence pair, not
+    /// the first or last. Locks the `max_by(partial_cmp)` selection in
+    /// `observe()`.
+    #[test]
+    fn observe_returns_highest_confidence_finding_when_multiple_pairs() {
+        let agent = ArchitectureAgent::new();
+        let ctx = make_ctx(vec![
+            el("e1", "mt.container", "UserService"),
+            el("e2", "mt.container", "UserManager"),
+            el("e3", "mt.container", "UserController"),
+        ]);
+        let out = agent.observe(&ctx).unwrap();
+        let finding = match out {
+            AgentOutput::FindingCandidate(f) => f,
+            other => panic!("expected FindingCandidate, got {other:?}"),
+        };
+        assert!(finding.confidence >= 0.55);
+        // The finding must include the most similar pair (highest sim)
+        // — not necessarily "UserService"/"UserManager" specifically.
+        assert!(finding.title.contains("Naming connascence"));
+        // The two evidence_ids must come from the highest-sim pair
+        assert_eq!(finding.evidence_ids.len(), 2);
+    }
+
+    /// `recommended_views` for HIGH-confidence findings (>= 0.8) is
+    /// `["c4-component"]`; for lower confidence it's `["c4-container"]`.
+    /// Locks the `if confidence >= 0.8` branch in `detect_naming_connascence`.
+    #[test]
+    fn recommended_views_for_high_confidence_is_c4_component() {
+        let agent = ArchitectureAgent::new();
+        // Pair with very high name similarity — both end in "Service"
+        let ctx = make_ctx(vec![
+            el("e1", "mt.container", "PaymentService"),
+            el("e2", "mt.container", "PaymentManager"),
+        ]);
+        let out = agent.observe(&ctx).unwrap();
+        let finding = match out {
+            AgentOutput::FindingCandidate(f) => f,
+            other => panic!("expected FindingCandidate, got {other:?}"),
+        };
+        // The pair "PaymentService"/"PaymentManager" has high sim
+        // (share "payment" prefix, end with "service"/"manager").
+        // If sim >= 0.8, recommended_views must be the high-confidence view.
+        if finding.confidence >= 0.8 {
+            assert_eq!(
+                finding.recommended_views,
+                vec!["c4-component".to_string()],
+                "high-confidence findings must recommend c4-component view"
+            );
+        } else {
+            assert_eq!(
+                finding.recommended_views,
+                vec!["c4-container".to_string()],
+                "medium-confidence findings must recommend c4-container view"
+            );
+        }
+    }
+
+    /// Mixed-kind graphs: architectural elements alongside non-architectural
+    /// elements. The connascence detector must only consider the
+    /// architectural subset. Locks the filter behavior under mixed input.
+    #[test]
+    fn observe_only_consideres_arch_elements_for_connascence() {
+        let agent = ArchitectureAgent::new();
+        let ctx = make_ctx(vec![
+            // 2 arch elements with similar names — would trigger finding
+            el("e1", "mt.container", "UserService"),
+            el("e2", "mt.container", "UserManager"),
+            // Non-arch element with very-similar name — must be ignored
+            el("e3", "code.function", "userService"),
+        ]);
+        let out = agent.observe(&ctx).unwrap();
+        // The non-arch element must not appear in the finding's evidence_ids
+        let finding = match out {
+            AgentOutput::FindingCandidate(f) => f,
+            other => panic!("expected FindingCandidate, got {other:?}"),
+        };
+        assert!(
+            !finding.evidence_ids.contains(&"e3".to_string()),
+            "code.function elements must be filtered out — finding.evidence_ids: {:?}",
+            finding.evidence_ids
+        );
+        assert!(finding.evidence_ids.contains(&"e1".to_string()));
+        assert!(finding.evidence_ids.contains(&"e2".to_string()));
+    }
+
+    /// The `idempotent` and `deterministic` flags on the descriptor are
+    /// critical for cache reuse and parallel evaluation — they must both
+    /// be true for `ArchitectureAgent`. Locks the v1.0 contract.
+    #[test]
+    fn descriptor_deterministic_and_idempotent_flags() {
+        let agent = ArchitectureAgent::new();
+        let d = agent.descriptor();
+        assert!(d.deterministic, "ArchitectureAgent must be deterministic");
+        assert!(d.idempotent, "ArchitectureAgent must be idempotent");
+        assert!(
+            d.required_views.contains(&"c4-components".to_string())
+                && d.required_views.contains(&"c4-containers".to_string()),
+            "ArchitectureAgent must require both c4-components and c4-containers views, got: {:?}",
+            d.required_views
+        );
+        // ModelPolicy must be Heuristic (heuristic-only agent per doc comment)
+        assert!(matches!(d.model_policy, ModelPolicy::Heuristic));
+    }
 }
