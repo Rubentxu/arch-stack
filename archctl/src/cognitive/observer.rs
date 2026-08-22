@@ -99,4 +99,113 @@ mod tests {
         let out = stub.observe(&ctx).unwrap();
         assert!(matches!(out, AgentOutput::NoAction(_)));
     }
+
+    // -----------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage, 2026-08-22)
+    // -----------------------------------------------------------------------
+
+    fn descriptor_fixture() -> AgentDescriptor {
+        use super::super::descriptor::{AgentBudget, ModelPolicy};
+        AgentDescriptor {
+            id: "stub".into(),
+            version: "0.1.0".into(),
+            subscriptions: vec![],
+            required_views: vec![],
+            output_schema: "{}".into(),
+            model_policy: ModelPolicy::Heuristic,
+            budget: AgentBudget::default(),
+            capabilities: vec![],
+            deterministic: true,
+            idempotent: true,
+        }
+    }
+
+    fn ctx_fixture() -> AgentContext {
+        AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: Default::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: super::super::descriptor::AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+        }
+    }
+
+    #[test]
+    fn observe_error_budget_exceeded_display() {
+        let err = ObserveError::BudgetExceeded("tokens=50000".into());
+        assert_eq!(err.to_string(), "budget exceeded: tokens=50000");
+    }
+
+    #[test]
+    fn observe_error_tool_unavailable_display() {
+        let err = ObserveError::ToolUnavailable("ast-grep".into());
+        assert_eq!(err.to_string(), "tool unavailable: ast-grep");
+    }
+
+    #[test]
+    fn observe_error_insufficient_context_display() {
+        let err = ObserveError::InsufficientContext("missing goal".into());
+        assert_eq!(err.to_string(), "context insufficient: missing goal");
+    }
+
+    #[test]
+    fn observe_error_internal_display() {
+        let err = ObserveError::Internal("panic during parse".into());
+        assert_eq!(err.to_string(), "internal: panic during parse");
+    }
+
+    #[test]
+    fn noop_observer_descriptor_returns_stored_value() {
+        let stub = NoopObserver {
+            descriptor: descriptor_fixture(),
+        };
+        let d = stub.descriptor();
+        assert_eq!(d.id, "stub");
+        assert_eq!(d.version, "0.1.0");
+    }
+
+    #[test]
+    fn reactive_observer_default_matches_returns_true() {
+        struct TrivialObserver;
+        impl ReactiveObserver for TrivialObserver {
+            fn descriptor(&self) -> AgentDescriptor {
+                descriptor_fixture()
+            }
+            fn observe(&self, _ctx: &AgentContext) -> Result<AgentOutput, ObserveError> {
+                Ok(AgentOutput::NoAction(
+                    super::super::output::NoActionReason {
+                        code: super::super::output::NoActionCode::NoRelevantData,
+                        message: "trivial".into(),
+                    },
+                ))
+            }
+        }
+        let obs = TrivialObserver;
+        assert!(
+            obs.matches(&ctx_fixture()),
+            "default ReactiveObserver::matches() must return true"
+        );
+    }
+
+    #[test]
+    fn noop_observer_observe_returns_insufficient_confidence() {
+        let stub = NoopObserver {
+            descriptor: descriptor_fixture(),
+        };
+        let out = stub.observe(&ctx_fixture()).unwrap();
+        if let AgentOutput::NoAction(reason) = out {
+            assert!(matches!(
+                reason.code,
+                super::super::output::NoActionCode::InsufficientConfidence
+            ));
+            assert_eq!(reason.message, "noop observer");
+        } else {
+            panic!("expected NoAction, got {:?}", out);
+        }
+    }
 }
