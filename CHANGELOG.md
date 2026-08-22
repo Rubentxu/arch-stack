@@ -29,6 +29,18 @@ silently accepted by the CLI parser but destructured as ignored in
   `ide/codex.rs:23-25` comments). For these adapters, `--install-root`
   is the only way to install to a custom location.
 
+### Changed (additive — non-breaking)
+
+- **`PartialEq, Eq` derived on 6 cognitive-layer enums** (cycle
+  cognitive-layer-coverage, commit `2ff53d4`). The following public enums
+  in `archctl::cognitive::output` gained `PartialEq` + `Eq` derives to
+  enable direct `assert_eq!` in tests:
+  `Severity`, `ViewKind`, `DiagramFormat`, `LayoutDirection`, `PatchType`,
+  `NoActionCode`. No behavioural change — these derives are additive and
+  do not affect any existing API contract. Matches the precedent pattern
+  already in tree (`DeploymentEnv`, `SecurityImpact`, `ApprovalLevel`,
+  `ApprovalRequirement`, `AgentId`, `EventId`, `UserId`, `ProposalId`).
+
 ### Scope notes (NOT in this cycle)
 
 - **`IdeAction::Update` is unchanged**: the `update` subcommand
