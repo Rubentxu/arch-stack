@@ -193,4 +193,161 @@ mod tests {
         let parsed: PolicyResult = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, result);
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v5, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `PolicyDecision` derives `PartialEq`. Two variants of different kinds
+    /// are NOT equal — locks the derive contract for `is_allow` shortcuts.
+    #[test]
+    fn policy_decision_partial_eq_across_variants() {
+        let allow = PolicyDecision::Allow;
+        let deny = PolicyDecision::Deny { reason: "x".into() };
+        let allow2 = PolicyDecision::Allow;
+        assert_eq!(allow, allow2);
+        assert_ne!(allow, deny);
+        assert_ne!(
+            PolicyDecision::Allow,
+            PolicyDecision::AllowWithNotify(vec!["a".into()])
+        );
+    }
+
+    /// `PolicyDecision` Clone preserves all fields. Locks the clone contract
+    /// across all 5 variants.
+    #[test]
+    fn policy_decision_clone_preserves_all_fields() {
+        let original = PolicyDecision::RequireApproval {
+            level: ApprovalLevel::MultiPartyApproval {
+                required: 2,
+                total: 3,
+            },
+            reason: "low confidence".into(),
+        };
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+
+        let escalate = PolicyDecision::Escalate {
+            target: "human-board".into(),
+        };
+        let cloned_esc = escalate.clone();
+        assert_eq!(escalate, cloned_esc);
+    }
+
+    /// `PolicyDecision::Debug` includes the variant name for tracing. Locks
+    /// the `#[derive(Debug)]` contract.
+    #[test]
+    fn policy_decision_debug_includes_variant() {
+        let allow = PolicyDecision::Allow;
+        let dbg = format!("{allow:?}");
+        assert!(dbg.contains("Allow"), "got: {dbg}");
+
+        let deny = PolicyDecision::Deny {
+            reason: "policy".into(),
+        };
+        let dbg = format!("{deny:?}");
+        assert!(dbg.contains("Deny"), "got: {dbg}");
+        assert!(dbg.contains("policy"), "got: {dbg}");
+
+        let multiparty = PolicyDecision::RequireApproval {
+            level: ApprovalLevel::MultiPartyApproval {
+                required: 2,
+                total: 3,
+            },
+            reason: "low conf".into(),
+        };
+        let dbg = format!("{multiparty:?}");
+        assert!(dbg.contains("RequireApproval"), "got: {dbg}");
+        assert!(dbg.contains("MultiPartyApproval"), "got: {dbg}");
+    }
+
+    /// All 5 `PolicyDecision` variants serialize + deserialize cleanly.
+    /// Locks the wire format for each variant.
+    #[test]
+    fn policy_decision_all_variants_serde() {
+        let decisions = vec![
+            PolicyDecision::Allow,
+            PolicyDecision::AllowWithNotify(vec!["alice".into(), "bob".into()]),
+            PolicyDecision::RequireApproval {
+                level: ApprovalLevel::TechLeadApproval,
+                reason: "deploy to production".into(),
+            },
+            PolicyDecision::Deny {
+                reason: "policy violation".into(),
+            },
+            PolicyDecision::Escalate {
+                target: "human-ethics-board".into(),
+            },
+        ];
+        for d in &decisions {
+            let json = serde_json::to_string(d).expect("serialize");
+            let back: PolicyDecision = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(&back, d, "round-trip mismatch for {:?}", d);
+        }
+    }
+
+    /// `to_approval_requirement()` for `Escalate` always returns
+    /// `Review(TechLeadApproval)` regardless of the `target` field. Locks
+    /// the deliberate simplification (escalation maps to a fixed level,
+    /// not a parsed-from-target level).
+    #[test]
+    fn escalate_to_approval_requirement_ignores_target() {
+        for target in ["alice", "bob", "human-board", "policy-admin", ""] {
+            let decision = PolicyDecision::Escalate {
+                target: target.into(),
+            };
+            let req = decision.to_approval_requirement();
+            assert_eq!(
+                req,
+                ApprovalRequirement::Review(ApprovalLevel::TechLeadApproval),
+                "target '{target}' must map to TechLeadApproval"
+            );
+        }
+    }
+
+    /// `PolicyResult` with `matched_rule: None` roundtrips. Distinct from
+    /// `policy_result_serialization_round_trip` which uses `Escalate` +
+    /// None, this uses `Allow` + None.
+    #[test]
+    fn policy_result_with_allow_and_no_matched_rule() {
+        let result = PolicyResult {
+            decision: PolicyDecision::Allow,
+            matched_rule: None,
+        };
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(json.contains(r#""matched_rule":null"#), "got: {json}");
+        let back: PolicyResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.decision, PolicyDecision::Allow);
+        assert!(back.matched_rule.is_none());
+    }
+
+    /// `PolicyResult` Debug includes both the decision and the rule name.
+    #[test]
+    fn policy_result_debug_includes_fields() {
+        let result = PolicyResult {
+            decision: PolicyDecision::Deny {
+                reason: "blocked".into(),
+            },
+            matched_rule: Some("no-prod-deploys".into()),
+        };
+        let dbg = format!("{result:?}");
+        assert!(dbg.contains("PolicyResult"), "got: {dbg}");
+        assert!(dbg.contains("Deny"), "got: {dbg}");
+        assert!(dbg.contains("no-prod-deploys"), "got: {dbg}");
+    }
+
+    /// `to_approval_requirement()` for `AllowWithNotify` preserves user
+    /// order (not sorted).
+    #[test]
+    fn allow_with_notify_preserves_user_order() {
+        let decision =
+            PolicyDecision::AllowWithNotify(vec!["zara".into(), "alice".into(), "bob".into()]);
+        match decision.to_approval_requirement() {
+            ApprovalRequirement::Notify(users) => {
+                let names: Vec<&str> = users.iter().map(|u| u.0.as_str()).collect();
+                assert_eq!(names, vec!["zara", "alice", "bob"]);
+            }
+            other => panic!("expected Notify, got {other:?}"),
+        }
+    }
 }
