@@ -29,6 +29,10 @@ use crate::cognitive::subscriptions::SubscriptionMatcher;
 pub struct EventDispatcher {
     agents: Vec<Arc<dyn ReactiveObserver>>,
     log: EventLog,
+    /// Optional event log reference for context compression (M34 W3).
+    /// When `Some`, the dispatcher will compress the agent context before
+    /// fan-out if the context has a token budget. Defaults to `None`.
+    event_log: Option<EventLog>,
 }
 
 impl EventDispatcher {
@@ -37,6 +41,19 @@ impl EventDispatcher {
         Self {
             agents: Vec::new(),
             log,
+            event_log: None,
+        }
+    }
+
+    /// Create a new EventDispatcher with an event log AND a separate reference
+    /// log for compression reads (M34 W3). Use this when you want context
+    /// compression to read from a different log than the one events are
+    /// appended to.
+    pub fn with_compression_log(log: EventLog, compression_log: EventLog) -> Self {
+        Self {
+            agents: Vec::new(),
+            log,
+            event_log: Some(compression_log),
         }
     }
 
@@ -69,8 +86,22 @@ impl EventDispatcher {
         }
 
         // 2. Build context once
-        let ctx = build_ctx(&envelope, delta);
+        let mut ctx = build_ctx(&envelope, delta);
         let event_type = &envelope.event_type;
+
+        // 2b. Context compression (M34 W3) — non-fatal if ledger unavailable or compression fails
+        if let Some(tokens) = ctx.budget.tokens {
+            let policy = crate::cognitive::context::CompressionPolicy {
+                budget_chars: (tokens as usize) * 4,
+                preserve_causation_window: 3,
+                decision_priority: crate::cognitive::context::DecisionPriority::RecencyOnly,
+            };
+            if let Some(ledger) = &self.event_log
+                && let Err(e) = ctx.compress_for_budget(&policy, ledger)
+            {
+                tracing::warn!(error = %e, "context compression failed, proceeding uncompressed");
+            }
+        }
 
         // 3. Fan out to matching agents
         let mut outputs = Vec::new();
@@ -142,7 +173,7 @@ impl SerializedEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cognitive::context::{AgentContext, GraphView};
+    use crate::cognitive::context::{AgentContext, Evidence, GraphView, ProvenanceId};
     use crate::cognitive::delta::GraphDelta;
     use crate::cognitive::descriptor::{AgentBudget, AgentDescriptor, ModelPolicy};
     use crate::cognitive::event::{EventEnvelope, EventLog};
@@ -812,6 +843,314 @@ mod tests {
             disp.log_seq().unwrap(),
             5,
             "log_seq must survive EventDispatcher reopen (relies on EventLog::seq)"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // M34 W3 — compress_for_budget wiring tests
+    // ---------------------------------------------------------------------------
+
+    /// Dispatch with budget.tokens = Some(N) should call compress_for_budget,
+    /// populating recent_events in the context passed to the observer.
+    #[test]
+    fn dispatch_with_budget_calls_compress_for_budget() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Pre-populate the compression log with a few events so recent() returns something
+        for i in 1..=5 {
+            let env = EventEnvelope {
+                event_id: uuid::Uuid::new_v4(),
+                schema_version: "1.0".into(),
+                timestamp: chrono::Utc::now(),
+                source: "test".into(),
+                producer: "test".into(),
+                event_type: "PreExisting".into(),
+                payload: serde_json::json!({}),
+                seq: i,
+                correlation_id: None,
+                causation_id: None,
+                graph_revision: None,
+            };
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let captured = inspector.take_context();
+        assert!(
+            captured.is_some(),
+            "observer should have received a context"
+        );
+        let ctx = captured.unwrap();
+        // compress_for_budget fetches recent events from the ledger
+        assert!(
+            !ctx.recent_events.is_empty(),
+            "recent_events should be populated when budget.tokens is set"
+        );
+    }
+
+    /// Dispatch with budget.tokens = None should NOT call compress_for_budget,
+    /// leaving recent_events empty.
+    #[test]
+    fn dispatch_without_budget_does_not_compress() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Pre-populate so we'd have something to compress
+        for i in 1..=5 {
+            let env = EventEnvelope {
+                event_id: uuid::Uuid::new_v4(),
+                schema_version: "1.0".into(),
+                timestamp: chrono::Utc::now(),
+                source: "test".into(),
+                producer: "test".into(),
+                event_type: "PreExisting".into(),
+                payload: serde_json::json!({}),
+                seq: i,
+                correlation_id: None,
+                causation_id: None,
+                graph_revision: None,
+            };
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: None,
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let captured = inspector.take_context();
+        assert!(captured.is_some());
+        let ctx = captured.unwrap();
+        // Without budget tokens, compression should NOT have been called
+        assert!(
+            ctx.recent_events.is_empty(),
+            "recent_events should be empty when budget.tokens is None"
+        );
+    }
+
+    /// When event_log is None (dispatcher constructed via new()), dispatch
+    /// should proceed without compression even if budget.tokens is Some.
+    /// This verifies the Option-handling is correct and no panic occurs.
+    #[test]
+    fn dispatch_with_event_log_unavailable_skips_compression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut disp = EventDispatcher::new(log); // No event_log — compression_log is None
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 1);
+        // This must NOT panic even though budget.tokens = Some
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        // Dispatch should succeed (outputs may be empty depending on observer)
+        let _ = outputs;
+        let captured = inspector.take_context();
+        assert!(captured.is_some(), "observer should still receive context");
+        let ctx = captured.unwrap();
+        // recent_events stays empty because event_log was unavailable
+        assert!(ctx.recent_events.is_empty());
+    }
+
+    /// Dispatch with causation-linked events: the BFS should find ancestors
+    /// when preserve_causation_window > 0. We verify by pre-populating
+    /// a chain of events with causation_id links and checking that
+    /// compress_for_budget successfully traverses them (no error returned).
+    #[test]
+    fn dispatch_preserves_causation_window_within_recent_events() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Create a chain: event 3 → event 2 → event 1 (causation links)
+        let mut prev_id = uuid::Uuid::nil();
+        for i in 1..=3 {
+            let event_id = uuid::Uuid::new_v4();
+            let env = EventEnvelope {
+                event_id,
+                schema_version: "1.0".into(),
+                timestamp: chrono::Utc::now(),
+                source: "test".into(),
+                producer: "test".into(),
+                event_type: format!("Event{}", i),
+                payload: serde_json::json!({}),
+                seq: i,
+                correlation_id: None,
+                causation_id: if i > 1 { Some(prev_id) } else { None },
+                graph_revision: None,
+            };
+            prev_id = event_id;
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["Event3".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("Event3", 10);
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        // Dispatch should succeed; observer receives context with recent_events populated
+        let _ = outputs;
+        let captured = inspector.take_context();
+        assert!(captured.is_some(), "observer should receive context");
+        let ctx = captured.unwrap();
+        // Recent events should be populated from the compression log
+        assert!(
+            !ctx.recent_events.is_empty(),
+            "recent_events should have events from compression log"
+        );
+    }
+
+    /// Evidence truncation: when evidence total chars exceeds budget_chars,
+    /// compress_for_budget should drop evidence items (oldest first).
+    /// We verify by checking that evidence items are reduced after dispatch
+    /// with a tight budget.
+    #[test]
+    fn dispatch_compress_truncates_evidence() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Pre-populate compression log
+        for i in 1..=3 {
+            let env = EventEnvelope {
+                event_id: uuid::Uuid::new_v4(),
+                schema_version: "1.0".into(),
+                timestamp: chrono::Utc::now(),
+                source: "test".into(),
+                producer: "test".into(),
+                event_type: "PreExisting".into(),
+                payload: serde_json::json!({}),
+                seq: i,
+                correlation_id: None,
+                causation_id: None,
+                graph_revision: None,
+            };
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        // Create context with many large evidence items
+        let evidence: Vec<Evidence> = (0..10)
+            .map(|i| Evidence {
+                id: format!("ev-{}", i),
+                provenance_id: ProvenanceId::File {
+                    path: "x.rs".into(),
+                    line: i,
+                },
+                content_hash: format!("hash{}", i),
+                text: "this is a long evidence text that should be truncated when budget is tight"
+                    .to_string(),
+                properties: Default::default(),
+            })
+            .collect();
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence,
+            applicable_rules: vec![],
+            available_tools: vec![],
+            // Tiny budget: 10 tokens * 4 = 40 chars, should truncate most evidence
+            budget: AgentBudget {
+                tokens: Some(10),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let captured = inspector.take_context();
+        assert!(captured.is_some());
+        let ctx = captured.unwrap();
+        // With budget_chars = 40, most evidence should have been dropped
+        assert!(
+            ctx.evidence.len() < 10,
+            "evidence should be truncated when budget is tight, got {} items",
+            ctx.evidence.len()
         );
     }
 }

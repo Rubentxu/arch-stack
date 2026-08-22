@@ -255,11 +255,14 @@ impl AgentContext {
 
         let recent_events_used = recent_events.len() as u32;
 
+        // Populate self.recent_events so agents can see the causal tail (M34 W2)
+        self.recent_events = recent_events;
+
         // Step 4: causation BFS
         let mut preserved_causation_links = 0u32;
         let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
-        for event in &recent_events {
+        for event in &self.recent_events {
             let Some(causation_id) = event.envelope.causation_id else {
                 continue;
             };
@@ -871,6 +874,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
@@ -913,6 +917,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
@@ -955,6 +960,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![fb],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
@@ -995,6 +1001,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![adj],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
@@ -1060,6 +1067,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
@@ -1108,6 +1116,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
@@ -1142,6 +1151,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
 
         let policy = CompressionPolicy {
