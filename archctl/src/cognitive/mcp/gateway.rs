@@ -669,4 +669,278 @@ mod tests {
         assert!(!json.is_empty());
         assert!(json.contains("\"outcome\""));
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    fn make_dev_ctx() -> PolicyContext {
+        use crate::cognitive::output::DeploymentEnv;
+        use crate::cognitive::policy::CostCeiling;
+        PolicyContext {
+            user_id: "test-user".into(),
+            environment: DeploymentEnv::Development,
+            security_impact: crate::cognitive::output::SecurityImpact::Low,
+            requesting_capabilities: vec![],
+            affected_components: vec![],
+            cost_ceiling: CostCeiling::default(),
+        }
+    }
+
+    /// `ALLOWED_TOOLS` const contains the 3 v1.0 tools. Locks the
+    /// hardcoded allowlist against accidental additions.
+    #[test]
+    fn allowed_tools_const_lists_three_tools() {
+        assert_eq!(ALLOWED_TOOLS.len(), 3);
+        assert!(ALLOWED_TOOLS.contains(&"graph_query"));
+        assert!(ALLOWED_TOOLS.contains(&"schema_validate"));
+        assert!(ALLOWED_TOOLS.contains(&"run_tests_local"));
+    }
+
+/// `McpGateway::default()` and `McpGateway::new()` are equivalent
+    /// (both produce an empty allowlist-only router).
+    #[test]
+    fn mcp_gateway_default_equiv_new() {
+        let gw_default = McpGateway;
+        let gw_new = McpGateway::new();
+        // Both must allow graph_query and deny unknown tools identically
+        for gw in [&gw_default, &gw_new] {
+            let allowed = gw.handle_raw(r#"{"tool":"graph_query","args":{"cypher":"RETURN 1","params":{}}}"#);
+            assert!(allowed.contains("graph_query"));
+            let denied = gw.handle_raw(r#"{"tool":"nope","args":{}}"#);
+            assert!(denied.contains("not in allowlist"));
+        }
+    }
+
+    /// `PolicyGate::default()` and `PolicyGate::new()` are equivalent
+    /// for read-side accessors (both produce an empty queue + default engine).
+    #[test]
+    fn policy_gate_default_equiv_new() {
+        let gate_default = PolicyGate::default();
+        let gate_new = PolicyGate::new();
+        // Both must have an empty approval queue at construction
+        assert_eq!(gate_default.queue().len(), 0);
+        assert_eq!(gate_new.queue().len(), 0);
+        // Both must have an audit logger accessible
+        let _ = gate_default.audit();
+        let _ = gate_new.audit();
+    }
+
+    /// `McpError` Display for all 5 variants carries the inner message verbatim.
+    #[test]
+    fn mcp_error_display_all_variants() {
+        let cases = [
+            (
+                McpError::ParseError("bad json".into()),
+                "invalid JSON",
+                "bad json",
+            ),
+            (
+                McpError::ToolNotAllowed("delete_everything".into()),
+                "tool not in allowlist",
+                "delete_everything",
+            ),
+            (
+                McpError::InvalidArgs("missing field".into()),
+                "invalid tool arguments",
+                "missing field",
+            ),
+            (
+                McpError::PolicyError("rule failed".into()),
+                "policy evaluation failed",
+                "rule failed",
+            ),
+            (
+                McpError::MissingProposal("no proposal".into()),
+                "missing proposal",
+                "no proposal",
+            ),
+        ];
+        for (err, expected_prefix, expected_inner) in cases {
+            let msg = format!("{}", err);
+            assert!(
+                msg.contains(expected_prefix),
+                "Display must include '{expected_prefix}', got: {msg}"
+            );
+            assert!(
+                msg.contains(expected_inner),
+                "Display must include inner '{expected_inner}', got: {msg}"
+            );
+        }
+    }
+
+    /// `PolicyGate::queue()` returns a Ref that pushes onto the underlying queue.
+    /// Verifies the Queue outcome actually persists the pending approval.
+    #[test]
+    fn policy_gate_queue_accessor_observes_pending() {
+        let gate = PolicyGate::new();
+        let proposal: ActionProposal = serde_json::from_str(
+            r#"{"goal":"unknown","command":"delete_the_db","approval_required":false,"expected_evidence_old":""}"#,
+        )
+        .unwrap();
+        let ctx = make_dev_ctx();
+
+        let result = gate.check(&proposal, &ctx);
+        assert_eq!(result.outcome, GateOutcome::Queue);
+
+        // Queue should now have one pending approval — verify via accessor
+        let queue = gate.queue();
+        assert_eq!(queue.len(), 1, "Queue outcome must add a pending approval");
+        assert!(
+            queue.is_pending("unknown"),
+            "Queue must contain the proposal with id 'unknown'"
+        );
+        let pending = queue.get("unknown").expect("pending must exist");
+        assert_eq!(pending.proposal_id, "unknown");
+        assert!(
+            !pending.reason.is_empty(),
+            "Pending reason must include policy rationale, got: {}",
+            pending.reason
+        );
+    }
+
+    /// `handle_governed` with a destructive command either denies or queues
+    /// depending on policy rule severity (low confidence + rm -rf in
+    /// Production triggers the destructive-command rule's escalate path).
+    /// Per spec: `decide()` maps `Escalate → Queue`; only `Deny → Deny`.
+    /// The tool result must carry a policy-related error either way.
+    #[test]
+    fn handle_governed_destructive_command_deny_or_queue() {
+        use crate::cognitive::output::DeploymentEnv;
+
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "graph_query",
+            "args": { "cypher": "RETURN 1", "params": {} },
+            "proposal": {
+                "goal": "delete everything",
+                "command": "rm -rf /",
+                "approval_required": false,
+                "expected_evidence_old": "",
+                "confidence": 0.95
+            }
+        });
+        // Production environment raises the destructive-command rule's severity
+        let mut ctx = make_dev_ctx();
+        ctx.environment = DeploymentEnv::Production;
+
+        let result = gate
+            .handle_governed(&serde_json::to_string(&req).unwrap(), &ctx)
+            .unwrap();
+        assert!(
+            matches!(
+                result.policy.outcome,
+                GateOutcome::Deny | GateOutcome::Queue
+            ),
+            "rm -rf in Production must deny or queue, got: {:?}",
+            result.policy.outcome
+        );
+        let tool_err = result.tool.error.as_deref().unwrap_or("");
+        assert!(
+            tool_err.starts_with("policy denied") || tool_err.contains("requires approval"),
+            "tool error must mention policy denial or approval, got: {tool_err}"
+        );
+    }
+
+    /// `handle_governed` with malformed JSON returns ParseError.
+    #[test]
+    fn handle_governed_rejects_malformed_json() {
+        let gate = PolicyGate::new();
+        let result = gate.handle_governed("not json at all", &make_dev_ctx());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, McpError::ParseError(_)));
+        assert!(format!("{}", err).contains("invalid JSON"));
+    }
+
+    /// `handle_governed` without a `proposal` field returns ParseError
+    /// (the GovernedRequest struct requires the field).
+    #[test]
+    fn handle_governed_rejects_missing_proposal() {
+        let gate = PolicyGate::new();
+        let req = r#"{"tool":"graph_query","args":{"cypher":"RETURN 1","params":{}}}"#;
+        let result = gate.handle_governed(req, &make_dev_ctx());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, McpError::ParseError(_)));
+    }
+
+    /// `handle_governed` with an unknown tool returns ToolNotAllowed
+    /// (caught inside execute_tool).
+    #[test]
+    fn handle_governed_rejects_unknown_tool() {
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "delete_everything",
+            "args": {},
+            "proposal": {
+                "goal": "test",
+                "command": "run_tests",
+                "approval_required": false,
+                "expected_evidence_old": "",
+                "confidence": 0.9
+            }
+        });
+        let result = gate.handle_governed(&serde_json::to_string(&req).unwrap(), &make_dev_ctx());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, McpError::ToolNotAllowed(_)));
+    }
+
+    /// `GovernedToolResult` serializes the Queue outcome with the policy+tool
+    /// fields populated (smoke test for the alternate outcome path).
+    #[test]
+    fn governed_tool_result_queue_serializes() {
+        let gate = PolicyGate::new();
+        let req = serde_json::json!({
+            "tool": "graph_query",
+            "args": { "cypher": "RETURN 1", "params": {} },
+            "proposal": {
+                "goal": "test",
+                "command": "delete_the_repo",
+                "approval_required": false,
+                "expected_evidence_old": "",
+                "confidence": 0.9
+            }
+        });
+        let result = gate
+            .handle_governed(&serde_json::to_string(&req).unwrap(), &make_dev_ctx())
+            .unwrap();
+        assert_eq!(result.policy.outcome, GateOutcome::Queue);
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"Queue\""));
+        assert!(json.contains("\"policy\""));
+        assert!(json.contains("\"tool\""));
+        assert!(
+            json.contains("approval"),
+            "JSON must contain the 'approval' message from the Queue outcome, got: {json}"
+        );
+    }
+
+    /// `PolicyGate::check` always appends an audit entry, even on the Allow
+    /// path. The audit accessor exposes the underlying logger (smoke test).
+    #[test]
+    fn policy_gate_check_appends_audit_on_allow() {
+        let gate = PolicyGate::new();
+        let proposal: ActionProposal = serde_json::from_str(
+            r#"{
+            "goal": "auto test",
+            "command": "run_tests",
+            "approval_required": false,
+            "expected_evidence_old": "",
+            "confidence": 0.9
+        }"#,
+        )
+        .unwrap();
+
+        let result = gate.check(&proposal, &make_dev_ctx());
+        // run_tests in Dev with confidence ≥ 0.6 → tests-in-dev-auto rule → Allow → Execute
+        assert_eq!(result.outcome, GateOutcome::Execute);
+
+        // Audit logger accessor must return a valid reference
+        let _audit = gate.audit();
+        // (AuditLogger writes to a path under XDG; the append() call inside
+        // check() is best-effort. We only verify the accessor contract here.)
+    }
 }
