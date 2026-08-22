@@ -985,4 +985,219 @@ mod tests {
         let seq = log.consumer_checkpoint("alpha").unwrap();
         assert_eq!(seq, 42, "consumer_checkpoint must return 42 after reopen");
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage tests — invariants, edge cases, and contract verification
+    // ---------------------------------------------------------------------------
+
+    /// `append_serialized` raises the seq marker only when `incoming > current`.
+    /// Per spec: the seq is monotonic — it never lowers even if a caller supplies
+    /// a smaller seq value.
+    #[test]
+    fn event_log_append_serialized_monotonic_seq_raises() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("monotonic_raise.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        // Start at seq=5 (not 1) to bypass the natural monotonic increment
+        log.append_serialized(&make_envelope(5, "Event")).unwrap();
+        assert_eq!(
+            log.seq().unwrap(),
+            5,
+            "seq=5 must be persisted after first append"
+        );
+
+        // Append a higher seq — must raise the marker
+        log.append_serialized(&make_envelope(10, "Event")).unwrap();
+        assert_eq!(
+            log.seq().unwrap(),
+            10,
+            "seq must be raised to 10 when incoming > current"
+        );
+
+        // Append a lower seq — must NOT lower the marker
+        log.append_serialized(&make_envelope(3, "Event")).unwrap();
+        assert_eq!(
+            log.seq().unwrap(),
+            10,
+            "seq marker must be monotonic — must NOT lower from 10 to 3"
+        );
+    }
+
+    /// `EventLog::append` (auto-assigning) followed by `append_serialized`
+    /// (caller-supplied) both write to the same NDJSON log without losing
+    /// or duplicating events.
+    #[test]
+    fn event_log_append_and_append_serialized_coexist() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("mixed_append.jsonl");
+        let mut log = EventLog::open(log_path.clone()).unwrap();
+
+        log.append(
+            "test-producer",
+            "test-source",
+            "GoalSubmitted",
+            serde_json::json!({}),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        log.append_serialized(&make_envelope(99, "ManualEvent"))
+            .unwrap();
+
+        let log = EventLog::open(log_path).unwrap();
+        let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
+        assert_eq!(
+            events.len(),
+            2,
+            "iter must return 2 events (one auto, one manual)"
+        );
+
+        // Event 0 from `append`: schema_version="1.1" auto-assigned
+        assert_eq!(events[0].envelope.schema_version, "1.1");
+        assert_eq!(events[0].envelope.event_type.as_str(), "GoalSubmitted");
+        assert_eq!(events[0].envelope.seq, 1, "append auto-assigns seq=1");
+
+        // Event 1 from `append_serialized`: caller-supplied
+        assert_eq!(events[1].envelope.event_type.as_str(), "ManualEvent");
+        assert_eq!(
+            events[1].envelope.seq, 99,
+            "append_serialized preserves caller seq"
+        );
+    }
+
+    /// Round-trip EventEnvelope with ALL optional fields populated
+    /// (correlation, causation, graph_revision). Confirms `graphRevision` is
+    /// always serialized (no `skip_serializing_if` attribute).
+    #[test]
+    fn event_envelope_roundtrip_with_all_optional_fields() {
+        let env = EventEnvelope {
+            event_id: Uuid::nil(),
+            schema_version: "1.1".to_string(),
+            timestamp: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+            source: "dispatcher".into(),
+            producer: "event_dispatcher".into(),
+            event_type: "GoalCompleted".into(),
+            payload: serde_json::json!({"outcome": "ok"}),
+            seq: 17,
+            correlation_id: Some(Uuid::nil()),
+            causation_id: Some(Uuid::nil()),
+            graph_revision: Some(42),
+        };
+        let json = serde_json::to_string(&env).unwrap();
+        let back: EventEnvelope = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(back.correlation_id, env.correlation_id);
+        assert_eq!(back.causation_id, env.causation_id);
+        assert_eq!(back.graph_revision, env.graph_revision);
+        assert_eq!(back.producer, "event_dispatcher");
+
+        // Verify graphRevision is always serialized
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(
+            val.get("graphRevision").is_some(),
+            "graphRevision must always be serialized (no skip_serializing_if)"
+        );
+        assert_eq!(val["graphRevision"], 42);
+    }
+
+    /// `consumer_checkpoint` returns 0 for a consumer that has never checkpointed.
+    /// Per spec: "Returns `Ok(0)` if the consumer has never checkpointed."
+    #[test]
+    fn consumer_checkpoint_returns_zero_when_never_set() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("never_checkpoint.jsonl");
+        let log = EventLog::open(log_path).unwrap();
+
+        let seq = log.consumer_checkpoint("never-seen-consumer").unwrap();
+        assert_eq!(
+            seq, 0,
+            "consumer_checkpoint must return 0 for new consumers"
+        );
+    }
+
+    /// `validate_consumer_id` rejects empty consumer IDs.
+    #[test]
+    fn validate_consumer_id_rejects_empty() {
+        let result = validate_consumer_id("");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// `validate_consumer_id` rejects consumer IDs longer than 64 characters.
+    #[test]
+    fn validate_consumer_id_rejects_too_long() {
+        let too_long = "a".repeat(65);
+        let result = validate_consumer_id(&too_long);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// `validate_consumer_id` rejects path traversal sequences (`..`).
+    #[test]
+    fn validate_consumer_id_rejects_double_dot() {
+        let result = validate_consumer_id("foo..bar");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// `validate_consumer_id` rejects consumer IDs containing `/`.
+    #[test]
+    fn validate_consumer_id_rejects_slash() {
+        let result = validate_consumer_id("foo/bar");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// `validate_consumer_id` rejects consumer IDs containing NUL byte.
+    #[test]
+    fn validate_consumer_id_rejects_nul_byte() {
+        let result = validate_consumer_id("foo\0bar");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// `validate_consumer_id` accepts well-formed consumer IDs (alphanumeric,
+    /// dashes, underscores; up to 64 chars).
+    #[test]
+    fn validate_consumer_id_accepts_well_formed() {
+        assert!(validate_consumer_id("alpha").is_ok());
+        assert!(validate_consumer_id("with-dashes").is_ok());
+        assert!(validate_consumer_id("with_underscores").is_ok());
+        assert!(validate_consumer_id("MixED123_case").is_ok());
+        // 64-char boundary — exactly the max allowed
+        assert!(validate_consumer_id(&"a".repeat(64)).is_ok());
+    }
+
+    /// `EventEnvelope` deserialization with missing optional fields uses the
+    /// `#[serde(default)]` attribute. correlationId/causationId/graphRevision
+    /// default to None; legacy pre-1.1 lines deserialize cleanly.
+    #[test]
+    fn event_envelope_deserialize_optional_defaults_to_none() {
+        let json = r#"{
+            "eventId": "00000000-0000-0000-0000-000000000000",
+            "schemaVersion": "1.0",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "source": "test",
+            "eventType": "Legacy",
+            "payload": {},
+            "seq": 1
+        }"#;
+        let env: EventEnvelope = serde_json::from_str(json).unwrap();
+        assert!(
+            env.correlation_id.is_none(),
+            "missing correlationId must default to None"
+        );
+        assert!(
+            env.causation_id.is_none(),
+            "missing causationId must default to None"
+        );
+        assert!(
+            env.graph_revision.is_none(),
+            "missing graphRevision must default to None"
+        );
+        assert_eq!(env.schema_version, "1.0");
+    }
 }
