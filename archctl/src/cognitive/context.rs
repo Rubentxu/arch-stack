@@ -486,4 +486,156 @@ mod tests {
         assert_eq!(back.snippet, "pub fn foo() {}");
         assert_eq!(back.line_range.start, 1);
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v4, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `GraphView` with non-empty `elements` and `edges` round-trips through
+    /// serde. Distinct from `graph_view_default_is_empty` which checks the
+    /// empty case.
+    #[test]
+    fn graph_view_with_populated_elements_and_edges_serde() {
+        let gv = GraphView {
+            elements: vec![
+                Element {
+                    id: "e1".into(),
+                    kind_id: "Component".into(),
+                    name: "A".into(),
+                    canonical_key: "a".into(),
+                    properties: serde_json::json!({}),
+                },
+                Element {
+                    id: "e2".into(),
+                    kind_id: "Component".into(),
+                    name: "B".into(),
+                    canonical_key: "b".into(),
+                    properties: serde_json::json!({}),
+                },
+            ],
+            edges: vec![Edge {
+                id: "edge-1".into(),
+                source_id: "e1".into(),
+                target_id: "e2".into(),
+                label: Some("depends_on".into()),
+            }],
+        };
+        let json = serde_json::to_string(&gv).unwrap();
+        let back: GraphView = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.elements.len(), 2);
+        assert_eq!(back.edges.len(), 1);
+        assert_eq!(back.edges[0].label.as_deref(), Some("depends_on"));
+    }
+
+    /// `AgentContext` with `feedback_history` populated roundtrips. The
+    /// `feedback_history` field has `#[serde(default)]` but populated values
+    /// MUST survive serialization (it's not a skip_serializing_if field).
+    #[test]
+    fn agent_context_serde_preserves_populated_feedback_history() {
+        // FeedbackVerdict uses snake_case via `#[serde(rename_all = "snake_case")]`.
+        let fb_json = r#"{
+            "id": "fb-001",
+            "target": "claim-001",
+            "verdict": "accept",
+            "replacement": null,
+            "actor": "alice",
+            "revision": "rev-001",
+            "timestamp": "2026-08-22T00:00:00Z"
+        }"#;
+        let fb: crate::feedback::FeedbackSummary = serde_json::from_str(fb_json).unwrap();
+        let ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![fb],
+            pending_adjudications: vec![],
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: AgentContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.feedback_history.len(), 1);
+        assert_eq!(back.feedback_history[0].id.as_str(), "fb-001");
+        assert_eq!(back.feedback_history[0].target.as_str(), "claim-001");
+    }
+
+    /// `AgentContext` with `pending_adjudications` populated roundtrips.
+    /// Mirrors `agent_context_serde_preserves_populated_feedback_history`
+    /// for the other optional-vec field.
+    #[test]
+    fn agent_context_serde_preserves_populated_pending_adjudications() {
+        // AdjudicationEvent requires id, target_fused_claim_id, adjudicator.
+        let pa_json = r#"{
+            "id": "adj-001",
+            "target_fused_claim_id": "clm:fused:abc",
+            "adjudicator": "alice",
+            "evidence_refs": ["ev1"],
+            "decided_at": "2026-08-22T00:00:00Z",
+            "decision": "promote"
+        }"#;
+        let pa: crate::adjudication::AdjudicationEvent = serde_json::from_str(pa_json).unwrap();
+        let ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![pa],
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: AgentContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.pending_adjudications.len(), 1);
+        assert_eq!(back.pending_adjudications[0].id.as_str(), "adj-001");
+    }
+
+    /// `AgentContext` deserializes from JSON that OMITS both optional
+    /// `#[serde(default)]` fields — they default to empty Vecs. Locks the
+    /// backward-compat contract for older serializations.
+    #[test]
+    fn agent_context_serde_omits_optional_fields_with_defaults() {
+        // Minimal JSON: goal + triggering_event + graph_view + the other required fields.
+        // feedback_history and pending_adjudications are missing → should default.
+        let json = r#"{
+            "goal": "explore",
+            "triggering_event": null,
+            "graph_view": {"elements": [], "edges": []},
+            "source_fragments": [],
+            "evidence": [],
+            "applicable_rules": [],
+            "available_tools": [],
+            "budget": {}
+        }"#;
+        let ctx: AgentContext = serde_json::from_str(json).unwrap();
+        assert_eq!(ctx.goal, "explore");
+        assert!(ctx.feedback_history.is_empty());
+        assert!(ctx.pending_adjudications.is_empty());
+    }
+
+    /// `Evidence` with all 4 required fields populated round-trips. Locks
+    /// the contract for downstream consumers reading serialized evidence
+    /// records.
+    #[test]
+    fn evidence_round_trip_with_minimal_payload() {
+        let ev = Evidence {
+            id: "ev-min".into(),
+            provenance_id: ProvenanceId::SourceArtifact { id: "sa-x".into() },
+            content_hash: "deadbeef".into(),
+            text: "snippet text".into(),
+            properties: serde_json::Map::new(), // empty → skipped
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        // properties is skipped when empty (per `skip_serializing_if`)
+        assert!(!json.contains("properties"));
+        let back: Evidence = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id.as_str(), "ev-min");
+        assert_eq!(back.content_hash, "deadbeef");
+        assert_eq!(back.text, "snippet text");
+    }
 }
