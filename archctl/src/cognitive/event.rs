@@ -139,6 +139,15 @@ pub struct SerializedEvent {
     pub processed: bool,
 }
 
+/// Filter for [`EventLog::recent`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TailFilter {
+    /// Return all recent events.
+    All,
+    /// Return only events matching the given `correlation_id`.
+    CorrelationId(Uuid),
+}
+
 // ---------------------------------------------------------------------------
 // EventLog
 // ---------------------------------------------------------------------------
@@ -277,6 +286,87 @@ impl EventLog {
             Sequence(incoming).store(&self.seq_path)?;
         }
         Ok(())
+    }
+
+    /// Returns the last `n` events from the log in `seq DESC` order (most-recent first).
+    ///
+    /// Uses `BufReader::lines().rev()` internally (D1 from design). Blank lines are
+    /// skipped (mirrors `iter()`). Legacy `"1.0"` schema lines emit `tracing::warn!`
+    /// (mirrors event.rs:293-297).
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the log file cannot be opened or read.
+    pub fn recent(&self, n: usize, filter: TailFilter) -> io::Result<Vec<SerializedEvent>> {
+        if n == 0 {
+            return Ok(Vec::new());
+        }
+        let file = File::open(&self.path)?;
+        let reader = BufReader::new(file);
+        let lines: Vec<io::Result<String>> = reader.lines().collect();
+        // Collect in reverse order (most-recent first)
+        let mut results: Vec<SerializedEvent> = Vec::new();
+        for line_result in lines.into_iter().rev() {
+            let l = match line_result {
+                Ok(l) if l.trim().is_empty() => continue,
+                Ok(l) => l,
+                Err(e) => return Err(e),
+            };
+            let val: serde_json::Value = match serde_json::from_str(&l) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+                }
+            };
+            // Emit warning for legacy lines missing eventId (mirrors iter())
+            if val.get("eventId").is_none() {
+                tracing::warn!(
+                    "legacy pre-1.1 JSONL line encountered; \
+                    deserializing with event_id = Uuid::nil(); \
+                    filter with event_id != Uuid::nil()"
+                );
+            }
+            let event: SerializedEvent = match serde_json::from_value(val) {
+                Ok(e) => e,
+                Err(e) => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+                }
+            };
+            // Apply TailFilter
+            match filter {
+                TailFilter::All => {}
+                TailFilter::CorrelationId(cid) => {
+                    if event.envelope.correlation_id != Some(cid) {
+                        continue;
+                    }
+                }
+            }
+            results.push(event);
+            if results.len() >= n {
+                break;
+            }
+        }
+        Ok(results)
+    }
+
+    /// Look up a single event by its `event_id` (linear scan; O(n)).
+    ///
+    /// Used by the causation BFS in `AgentContext::compress_for_budget` (W2).
+    /// Returns `Ok(None)` if no event with the given `id` exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the log file cannot be read.
+    pub fn find_by_event_id(&self, id: Uuid) -> io::Result<Option<SerializedEvent>> {
+        // Linear scan — acceptable for BFS use case where n_events is bounded
+        // by the causation window (≤ 10 in practice).
+        for line_result in self.iter()? {
+            let event = line_result?;
+            if event.envelope.event_id == id {
+                return Ok(Some(event));
+            }
+        }
+        Ok(None)
     }
 
     /// Returns an iterator over all events in the log, in order.
@@ -1487,6 +1577,242 @@ mod tests {
             events.len(),
             2,
             "both events must be persisted, even with identical seq values"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // W1 tests — EventLog::recent + find_by_event_id + TailFilter
+    // ---------------------------------------------------------------------------
+
+    /// `recent` on an empty log returns an empty Vec.
+    #[test]
+    fn recent_on_empty_log_returns_empty_vec() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("empty_recent.jsonl");
+        let log = EventLog::open(log_path).unwrap();
+
+        let events = log.recent(10, TailFilter::All).unwrap();
+        assert!(events.is_empty(), "empty log must yield zero events");
+    }
+
+    /// `recent` with `n=0` returns an empty Vec regardless of log content.
+    #[test]
+    fn recent_with_n_zero_returns_empty_vec() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("n_zero_recent.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        for i in 1..=5 {
+            log.append_serialized(&make_envelope(i, "Event")).unwrap();
+        }
+
+        let events = log.recent(0, TailFilter::All).unwrap();
+        assert!(events.is_empty(), "n=0 must return empty vec");
+    }
+
+    /// `recent` with `n > len(log)` returns all events in seq DESC order.
+    #[test]
+    fn recent_n_greater_than_len_returns_all_events_desc() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("recent_overfetch.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        for i in 1..=5 {
+            log.append_serialized(&make_envelope(i, &format!("Event{}", i)))
+                .unwrap();
+        }
+
+        // n=100 is larger than the 5 events in the log
+        let events = log.recent(100, TailFilter::All).unwrap();
+        assert_eq!(events.len(), 5, "must return all 5 events");
+        // Must be in seq DESC order (most-recent first)
+        assert_eq!(events[0].envelope.seq, 5);
+        assert_eq!(events[4].envelope.seq, 1);
+    }
+
+    /// `recent` with `n == len(log)` returns all events in seq DESC order.
+    #[test]
+    fn recent_n_equal_to_len_returns_all_events_desc() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("recent_exact.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        for i in 1..=3 {
+            log.append_serialized(&make_envelope(i, &format!("E{}", i)))
+                .unwrap();
+        }
+
+        let events = log.recent(3, TailFilter::All).unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].envelope.seq, 3);
+        assert_eq!(events[1].envelope.seq, 2);
+        assert_eq!(events[2].envelope.seq, 1);
+    }
+
+    /// `recent` with `TailFilter::CorrelationId` returns only matching events.
+    #[test]
+    fn recent_filter_by_correlation_id_matches() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("recent_cid_filter.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        let cid = Uuid::new_v4();
+        let other_cid = Uuid::new_v4();
+
+        // Event with matching correlation
+        let _id1 = log
+            .append(
+                "test",
+                "test",
+                "E1",
+                serde_json::json!({}),
+                Some(cid),
+                None,
+                None,
+            )
+            .unwrap();
+        // Event with different correlation
+        let _id2 = log
+            .append(
+                "test",
+                "test",
+                "E2",
+                serde_json::json!({}),
+                Some(other_cid),
+                None,
+                None,
+            )
+            .unwrap();
+        // Event with matching correlation
+        let _id3 = log
+            .append(
+                "test",
+                "test",
+                "E3",
+                serde_json::json!({}),
+                Some(cid),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = log.recent(10, TailFilter::CorrelationId(cid)).unwrap();
+        assert_eq!(
+            events.len(),
+            2,
+            "must return exactly 2 events with matching correlation"
+        );
+        for e in &events {
+            assert_eq!(
+                e.envelope.correlation_id,
+                Some(cid),
+                "all returned events must have the matching correlation_id"
+            );
+        }
+    }
+
+    /// `recent` with `TailFilter::CorrelationId` returns empty when no match.
+    #[test]
+    fn recent_filter_by_correlation_id_no_match() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("recent_cid_no_match.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        let cid = Uuid::new_v4();
+        let other_cid = Uuid::new_v4();
+
+        log.append(
+            "test",
+            "test",
+            "E1",
+            serde_json::json!({}),
+            Some(other_cid),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let events = log.recent(10, TailFilter::CorrelationId(cid)).unwrap();
+        assert!(events.is_empty(), "no match must return empty vec");
+    }
+
+    /// `find_by_event_id` returns `Ok(Some(event))` when the event exists.
+    #[test]
+    fn find_by_event_id_returns_event_when_found() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("find_by_id.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        let id = log
+            .append(
+                "test",
+                "test",
+                "Target",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let found = log.find_by_event_id(id).unwrap();
+        assert!(
+            found.is_some(),
+            "find_by_event_id must return Some for existing id"
+        );
+        assert_eq!(found.unwrap().envelope.event_id, id);
+    }
+
+    /// `find_by_event_id` returns `Ok(None)` when the event does not exist.
+    #[test]
+    fn find_by_event_id_returns_none_when_not_found() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("find_by_id_missing.jsonl");
+        let log = EventLog::open(log_path).unwrap();
+
+        let nonexistent = Uuid::new_v4();
+        let found = log.find_by_event_id(nonexistent).unwrap();
+        assert!(
+            found.is_none(),
+            "find_by_event_id must return None for missing id"
+        );
+    }
+
+    /// `find_by_event_id` returns the first (oldest) match in log order.
+    #[test]
+    fn find_by_event_id_returns_first_match() {
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("find_by_id_dup.jsonl");
+        let mut log = EventLog::open(log_path).unwrap();
+
+        // Use append_serialized to insert duplicate event_ids (not normally possible
+        // with append() which generates UUIDv7, but possible via append_serialized)
+        let id = Uuid::new_v4();
+        let env1 = make_envelope_with_processed(1, "First", false);
+        let env1_with_id = SerializedEvent {
+            envelope: EventEnvelope {
+                event_id: id,
+                ..env1.envelope.clone()
+            },
+            processed: false,
+        };
+        let env2 = make_envelope_with_processed(2, "Second", false);
+        let env2_with_id = SerializedEvent {
+            envelope: EventEnvelope {
+                event_id: id,
+                ..env2.envelope.clone()
+            },
+            processed: false,
+        };
+        log.append_serialized(&env1_with_id).unwrap();
+        log.append_serialized(&env2_with_id).unwrap();
+
+        let found = log.find_by_event_id(id).unwrap();
+        assert!(found.is_some());
+        assert_eq!(
+            found.unwrap().envelope.seq,
+            1,
+            "must return the first (oldest) match"
         );
     }
 }
