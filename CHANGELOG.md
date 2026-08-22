@@ -1,12 +1,37 @@
 ## [Unreleased] — pending
 
+_(empty — for the next cycle)_
+
+## [1.87.1] — 2026-08-22
+
+Sprint housekeeping — closes the release-pipeline drift accumulated
+since `v1.82.0` (TRUST-002), archives the docs-corrections sprint of
+2026-08-22 (10 commits, 0 Rust touched), and tags the
+`no-stubs-mocks-placeholders-hardcoded` cycle that lived in
+`[Unreleased]` since 2026-08-14. Pure-docs + release-pipeline fix
+forward; no behaviour change. Verified locally: 1204/0/12 tests,
+0 clippy warnings, fmt clean, `archctl --version` reports
+`archctl 1.87.1`.
+
+### Fixed
+- **Release pipeline drift** (`archctl/Cargo.toml`): `version =
+  "1.82.0"` → `"1.87.1"`. The crate version was stuck since
+  TRUST-002 while five minor versions (`v1.83.0` / `v1.84.0` /
+  `v1.85.0` / `v1.86.0` / `v1.87.0`) shipped with corresponding
+  tags. `Cargo.lock` regenerated via `cargo update -p archctl`;
+  no transitive dependency changes (`CARGO_PKG_VERSION` propagation
+  only). Precedent: `84d2a18 fix(release): sync CHANGELOG +
+  Cargo.toml/lock + STATE.md with v1.79.0 bump`.
+
+### Cycle closure — `no-stubs-mocks-placeholders-hardcoded`
+
 Cycle `no-stubs-mocks-placeholders-hardcoded` — registers the
 "production-ready 100%, no stubs/mocks/placeholders/hardcoded" rule
 in AGENTS.md and closes a 17-commit cleanup chain across
 `archctl/src/`. Followed by `test-fixture-svg-extension` to repair
 the integration suite hidden since cycle 2.
 
-### Added
+#### Added
 - **AGENTS.md "no stubs" rule** (line 463): any commit that
   introduces a stub/mock/placeholder/hardcoded value is blocked at
   verify. Includes audit greps (stubs/TODO/mocks-for-non-external-
@@ -14,7 +39,7 @@ the integration suite hidden since cycle 2.
   rule (doctor default URLs behind env vars, view.rs loopback per
   ADR-011, xdg/environment test fixtures).
 
-### Changed
+#### Changed
 - `StubAgent` renamed to `NoopObserver` (`archctl/src/cognitive/
   observer.rs`).
 - 1×1 PNG placeholder icons in `archctl/src/diagram/` replaced with
@@ -45,12 +70,12 @@ the integration suite hidden since cycle 2.
   validator (had silently failed since cycle 2 because the
   integration suite requires `--features test-fixtures`).
 
-### Removed
+#### Removed
 - 5 unjustified `#[ignore]` markers (`*_ignored` tests without
   CI-justification comments). Each removal is paired with a
   doc-comment explaining why the test now runs in CI.
 
-### Hardened
+#### Hardened
 - **Definition of Done + Validation Matrix** (AGENTS.md) now require
   `cargo test --features test-fixtures --tests` instead of plain
   `cargo test --quiet`. Without `--features test-fixtures` the
@@ -60,11 +85,38 @@ the integration suite hidden since cycle 2.
   silently skipped. Total suite now: **1204 tests passing, 0
   failed**.
 
-### Notes
+#### Notes
 - The lbug 0.18.x implicit STRING→TIMESTAMP workaround in
   `archctl/src/migrations.rs:344-350` is the chosen path (documented
   in-code); the lbug bump to 0.19.x is deferred to a future
   maintenance cycle. Decision recorded here for traceability.
+
+### Sprint housekeeping — docs-corrections 2026-08-22
+
+10 commits across two sub-blocks. No Rust touched. Pure-docs cycles
+following the M47/M58/M62 precedent.
+
+#### Morning sub-block (docs corrections)
+- `6d0aedf docs(state): refresh trunk metrics to v1.87.0`
+- `f20f411 docs(state): add shipped v1.81.0–v1.87.0 rows to Capacidades shipped`
+- `f7d53ca docs(roadmap): bump header to v1.87.0 + extend T0 status as shipped`
+- `83843f0 docs(changelog): re-order TRUST-005..008 under correct version headers`
+- `04ec107 docs(state): refresh Plan vigente + drop obsolete M55-M69 cluster + Próxima acción`
+- `7a427b9 docs(blueprint): anchor live trunk (v1.87.0) without rewriting the 2026-08-20 package`
+
+#### Afternoon sub-block (M3X cycle-body archives)
+- `d86b551 docs(roadmap): archive M34 cycle body — code landed v1.6.0 (PR #90)`
+- `2d4f58e docs(roadmap): archive M33 cycle body — code landed v1.3.1 (PR #80)`
+- `f844672 docs(roadmap): archive M32 cycle body — multi-tag lifecycle v1.2.0→v1.47.1`
+- `0337615 docs(roadmap): archive M31 cycle body — code landed v1.5.0+v1.5.1`
+
+The four cycle-body archives fixed a body-vs-cycle-log drift that had
+accumulated since 2026-08-06. Independent verification via
+`sddk-explore` confirmed each cycle (M34, M31) had been closed in code
+before any archive work was attempted; M32 / M33 closed trivially.
+`docs/STATE.md` Plan vigente section also reduced from 327 to 240
+lines (-27%) by dropping duplicated/obsolete items now living in
+CHANGELOG.
 
 ## [1.87.0] — 2026-08-21
 
