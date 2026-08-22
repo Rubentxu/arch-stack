@@ -1,6 +1,19 @@
 ## [Unreleased] — pending
 
-_(empty — for the next cycle)_
+## [v1.88.0] — 2026-08-22
+
+M34 cognitive context compression. New `EventLog::recent(n, TailFilter)` /
+`find_by_event_id`. New `AgentContext::compress_for_budget`. Exempt invariants
+preserve `feedback_history` and `pending_adjudications`. Additive serde, no
+schema migration. ADR-M34 accepted. 2 new integration tests.
+
+### Added
+
+- **M34**: `cognitive/` gains `EventLog::recent` / `find_by_event_id`,
+  `AgentContext::compress_for_budget`, `CompressionPolicy`, `CompressionReport`.
+  New `manifests/cognitive.toml` gate. Spec at
+  `docs/specs/spec-M34-cognitive-context-compression.md`.
+  Pre-M34 `AgentContext` JSON backward-compatible.
 
 ## [1.87.3] — 2026-08-22
 

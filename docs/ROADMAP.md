@@ -1899,6 +1899,11 @@ Razones:
 - **Decisiones locked**: `AdjudicationEvent.id` is content-addressable via `blake3(target + adjudicator + decided_at)`; HITL preserved (no auto-decide); v9 graph writes `evidence_origin` for every FusedClaim; pre-v9 graphs are permissive (empty `evidence_origin` skips bridge consult); `evidence_refs` column type is STRING (JSON-encoded) — deviation from spec §3.4.2 STRING[] accepted.
 - **Próximo candidato**: M34 (cognitive context compression, ledger tail) or M35 (severity scoring pipeline).
 
+## Cycle cerrado — `m34-cognitive-context-compression`
+
+- **Fecha**: 2026-08-22 | **Cycle**: `p-38e02210a9f14317/m34-cognitive-context-compression`
+- **Output**: ADR-M34 accepted. `EventLog::recent(n, TailFilter)` + `find_by_event_id`. `AgentContext::compress_for_budget`. Exempt invariants preserve `feedback_history` / `pending_adjudications`. 2 new integration tests. v1.88.0.
+
 ## Cycle cerrado — `m25-authority-execution-classes`
 
 - **Fecha**: 2026-08-20
