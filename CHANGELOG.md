@@ -66,6 +66,8 @@ the integration suite hidden since cycle 2.
   in-code); the lbug bump to 0.19.x is deferred to a future
   maintenance cycle. Decision recorded here for traceability.
 
+## [1.87.0] — 2026-08-21
+
 Cycle `trust-008-m30-bridge-promotion` — closes REQ-M25-006 (deferred from TRUST-005; named in TRUST-007's archive-manifest). Six chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-008-m30-bridge-promotion/`.
 
 ### Added
@@ -86,6 +88,8 @@ Cycle `trust-008-m30-bridge-promotion` — closes REQ-M25-006 (deferred from TRU
 ### Deprecated
 - `should_warn_pending_adjudication` (TRUST-005 heuristic) marked `#[deprecated(since = "v1.87.0", note = "use promotion_requires_adjudication_event")]`.
 
+## [1.86.0] — 2026-08-21
+
 Cycle `trust-007-feedback-port` — closes REQ-T06-003 deferred from TRUST-006.
 Seven chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-port/`.
 
@@ -97,6 +101,8 @@ Seven chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-p
 
 ### Changed
 - 7 `AgentContext` construction sites updated with `// REQ-T06-003: feedback_history plumbing` comment (findability pass; `vec![]` unchanged).
+
+## [1.85.0] — 2026-08-21
 
 Cycle `trust-006-context-bundle` — closes UAT-06 steps 16/17/19/20 (TRUST-006).
 AgentContext now carries prior feedback verdicts so re-invoked agents respect
@@ -114,7 +120,7 @@ rejections; bundle export verified to exclude rejected claims.
 ### Fixed
 - Test fixture `seed_orders_stripe_fixture` had PascalCase `source_origin` in props (`"ModelInference"`); `parse_label` expects snake_case (`"model_inference"`). Fixed in PR #299. Without this fix, `accept_evidence` on ModelInference evidence silently fell back to `UserWorkspace` and would have accepted the false claim.
 
-## [1.85.0] — pending release
+## [1.84.0] — 2026-08-21
 
 Cycle `trust-005-observation-fusion` — closes the epistemic plumbing gap (TRUST-005):
 real confidence/status threaded into Observation/FusedClaim + Feedback/Reconciliation as first-class types.
