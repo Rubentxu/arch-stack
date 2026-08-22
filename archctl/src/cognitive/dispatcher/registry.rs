@@ -183,4 +183,153 @@ mod tests {
         // NoopObserver always returns NoAction
         assert!(matches!(out, AgentOutput::NoAction(_)));
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    fn descriptor_with_id(id: &str) -> AgentDescriptor {
+        AgentDescriptor {
+            id: id.into(),
+            version: "0.1.0".into(),
+            subscriptions: vec![],
+            required_views: vec![],
+            output_schema: "{}".into(),
+            model_policy: ModelPolicy::Heuristic,
+            budget: AgentBudget::default(),
+            capabilities: vec![],
+            deterministic: true,
+            idempotent: true,
+        }
+    }
+
+    /// Registering the same agent id twice panics with a clear message.
+    /// Per spec: "Panics if id already exists."
+    #[test]
+    #[should_panic(expected = "agent already registered")]
+    fn registry_register_duplicate_panics() {
+        let mut reg = AgentRegistry::new();
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("dup-agent"),
+        });
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("dup-agent"),
+        });
+    }
+
+    /// `ids()` iterates all registered agent ids in insertion order.
+    /// (HashMap preserves no order, but `count()` is order-independent.)
+    #[test]
+    fn registry_ids_iterates_all() {
+        let mut reg = AgentRegistry::new();
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("alpha"),
+        });
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("beta"),
+        });
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("gamma"),
+        });
+
+        let mut ids: Vec<&str> = reg.ids().collect();
+        ids.sort();
+        assert_eq!(ids, vec!["alpha", "beta", "gamma"]);
+    }
+
+    /// A custom observer whose `matches()` returns false short-circuits to
+    /// `NoAction(OutOfScope)` without calling `observe()`.
+    struct MismatchObserver {
+        descriptor: AgentDescriptor,
+    }
+    impl ReactiveObserver for MismatchObserver {
+        fn descriptor(&self) -> AgentDescriptor {
+            self.descriptor.clone()
+        }
+        fn matches(&self, _context: &AgentContext) -> bool {
+            false
+        }
+        fn observe(
+            &self,
+            _context: &AgentContext,
+        ) -> Result<AgentOutput, crate::cognitive::observer::ObserveError> {
+            // Should never be called when matches() returns false.
+            panic!("observe() must not be called when matches() returns false");
+        }
+    }
+
+    #[test]
+    fn registry_invoke_returns_noaction_when_mismatch() {
+        let mut reg = AgentRegistry::new();
+        reg.register(MismatchObserver {
+            descriptor: descriptor_with_id("mismatch"),
+        });
+
+        let ctx = make_ctx("any goal");
+        let out = reg.invoke("mismatch", &ctx).unwrap();
+        assert!(matches!(
+            out,
+            AgentOutput::NoAction(crate::cognitive::output::NoActionReason {
+                code: crate::cognitive::output::NoActionCode::OutOfScope,
+                ..
+            })
+        ));
+    }
+
+    /// `SyncDispatcher::dispatch` returns `NoAction(InsufficientConfidence)` when
+    /// every registered agent declines. Existing test only verifies the broad
+    /// `NoAction(_)` variant; this confirms the specific reason code.
+    #[test]
+    fn dispatcher_dispatch_all_noaction_returns_insufficient_confidence() {
+        let mut reg = AgentRegistry::new();
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("n1"),
+        });
+        reg.register(NoopObserver {
+            descriptor: descriptor_with_id("n2"),
+        });
+
+        let disp = SyncDispatcher::new(&reg);
+        let ctx = make_ctx("any goal");
+        let out = disp.dispatch(&ctx).unwrap();
+        assert!(matches!(
+            out,
+            AgentOutput::NoAction(crate::cognitive::output::NoActionReason {
+                code: crate::cognitive::output::NoActionCode::InsufficientConfidence,
+                ..
+            })
+        ));
+    }
+
+    /// `DispatchError::AgentNotFound` Display includes the agent id.
+    #[test]
+    fn dispatch_error_display_agent_not_found() {
+        let err = DispatchError::AgentNotFound("missing-agent".to_string());
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("agent not found"),
+            "Display must include 'agent not found', got: {msg}"
+        );
+        assert!(
+            msg.contains("missing-agent"),
+            "Display must include the agent id, got: {msg}"
+        );
+    }
+
+    /// `DispatchError::ObserveFailed` Display delegates to the inner `ObserveError`.
+    /// Confirms the wrapping error surfaces the underlying cause verbatim.
+    #[test]
+    fn dispatch_error_display_observe_failed() {
+        let inner = crate::cognitive::observer::ObserveError::Internal("boom".to_string());
+        let err = DispatchError::ObserveFailed(inner);
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("agent observation failed"),
+            "Display must include 'agent observation failed', got: {msg}"
+        );
+        assert!(
+            msg.contains("boom"),
+            "Display must include the inner error message, got: {msg}"
+        );
+    }
 }
