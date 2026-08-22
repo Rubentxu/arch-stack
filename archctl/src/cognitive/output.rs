@@ -882,4 +882,167 @@ mod tests {
         assert!(back.undo_command.is_none());
         assert!(back.undo_args.is_empty());
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v5, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `Step` round-trips through serde with all fields populated.
+    #[test]
+    fn step_serde_with_args_and_reason() {
+        let step = Step {
+            command: "cargo".into(),
+            args: vec!["test".into(), "--lib".into()],
+            reason: "verify unit tests pass".into(),
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        let back: Step = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.command, "cargo");
+        assert_eq!(back.args, vec!["test", "--lib"]);
+        assert_eq!(back.reason, "verify unit tests pass");
+    }
+
+    /// `ActionPlan` with `rollback: None` round-trips. Distinct from
+    /// `agent_output_action_plan_serde` which exercises rollback Some.
+    #[test]
+    fn action_plan_serde_with_rollback_none() {
+        let plan = ActionPlan {
+            steps: vec![Step {
+                command: "ls".into(),
+                args: vec!["-la".into()],
+                reason: "list directory".into(),
+            }],
+            rollback: None,
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        assert!(json.contains(r#""rollback":null"#), "got: {json}");
+        let back: ActionPlan = serde_json::from_str(&json).unwrap();
+        assert!(back.rollback.is_none());
+        assert_eq!(back.steps.len(), 1);
+    }
+
+    /// `CostEstimate` with all 4 fields populated round-trips. Distinct
+    /// from `cost_estimate_default` which checks the empty case.
+    #[test]
+    fn cost_estimate_serde_with_populated_values() {
+        let ce = CostEstimate {
+            tokens: Some(8192),
+            time_ms: Some(2000),
+            cost_cents: Some(50),
+            side_effects: vec!["network".into(), "log".into()],
+        };
+        let json = serde_json::to_string(&ce).unwrap();
+        let back: CostEstimate = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tokens, Some(8192));
+        assert_eq!(back.time_ms, Some(2000));
+        assert_eq!(back.cost_cents, Some(50));
+        assert_eq!(back.side_effects, vec!["network", "log"]);
+    }
+
+    /// `Hypothesis` full roundtrip (statement, confidence, evidence_ids).
+    /// Distinct from `agent_output_hypothesis_serde` which only checks
+    /// the AgentOutput::Hypothesis variant and 2 fields.
+    #[test]
+    fn hypothesis_full_serde_roundtrip() {
+        let h = Hypothesis {
+            statement: "Hypothesis statement".into(),
+            confidence: 0.92,
+            evidence_ids: vec!["ev-001".into(), "ev-002".into(), "ev-003".into()],
+        };
+        let json = serde_json::to_string(&h).unwrap();
+        let back: Hypothesis = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.statement, "Hypothesis statement");
+        assert_eq!(back.confidence, 0.92);
+        assert_eq!(back.evidence_ids.len(), 3);
+    }
+
+    /// `FindingCandidate` full roundtrip with all 6 fields. Distinct
+    /// from `agent_output_serde` which only checks the AgentOutput
+    /// variant tag and one field.
+    #[test]
+    fn finding_candidate_full_serde_roundtrip() {
+        let fc = FindingCandidate {
+            severity: Severity::Critical,
+            title: "Critical coupling".into(),
+            body: "Components A and B have mutual dependency".into(),
+            confidence: 0.95,
+            evidence_ids: vec!["ev-100".into()],
+            recommended_views: vec!["c4-component".into(), "c4-container".into()],
+        };
+        let json = serde_json::to_string(&fc).unwrap();
+        let back: FindingCandidate = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.severity, Severity::Critical);
+        assert_eq!(back.title, "Critical coupling");
+        assert_eq!(back.confidence, 0.95);
+        assert_eq!(back.recommended_views.len(), 2);
+    }
+
+    /// `NoActionReason` round-trips through serde with both fields.
+    #[test]
+    fn no_action_reason_serde_roundtrip() {
+        let nar = NoActionReason {
+            code: NoActionCode::NoRelevantData,
+            message: "graph query returned no rows".into(),
+        };
+        let json = serde_json::to_string(&nar).unwrap();
+        let back: NoActionReason = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.code, NoActionCode::NoRelevantData);
+        assert_eq!(back.message, "graph query returned no rows");
+    }
+
+    /// `OutcomePredicate` with `agent_id: None` and `threshold: None`
+    /// round-trips. Distinct from `outcome_predicate_serde_with_all_fields`
+    /// which uses Some for both. Locks the `#[serde(default)]` contract
+    /// on both Option fields.
+    #[test]
+    fn outcome_predicate_serde_with_none_fields() {
+        let op = OutcomePredicate {
+            event_type: "raw".into(),
+            agent_id: None,
+            threshold: None,
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        // Option fields serialize as `null` (not omitted — no skip_serializing_if)
+        assert!(
+            json.contains(r#""agent_id":null"#),
+            "agent_id None must serialize as null, got: {json}"
+        );
+        assert!(
+            json.contains(r#""threshold":null"#),
+            "threshold None must serialize as null, got: {json}"
+        );
+        let back: OutcomePredicate = serde_json::from_str(&json).unwrap();
+        assert!(back.agent_id.is_none());
+        assert!(back.threshold.is_none());
+    }
+
+    /// `ActionProposal` Debug includes goal and command for tracing.
+    /// Locks the `#[derive(Debug)]` contract.
+    #[test]
+    fn action_proposal_debug_includes_goal_and_command() {
+        let ap = ActionProposal {
+            id: Some(ProposalId("prop-007".into())),
+            cause: None,
+            triggering_agent: None,
+            goal: "deploy prod".into(),
+            command: "deploy".into(),
+            args: vec![],
+            capabilities: vec![],
+            approval: ApprovalRequirement::Auto,
+            expected_evidence: vec![],
+            rollback: None,
+            cost_estimate: CostEstimate::default(),
+            confidence: Some(0.85),
+            ttl_ms: None,
+            security_impact: None,
+            deployment_env: None,
+            policy_rule_matched: None,
+            approval_required: false,
+            expected_evidence_old: String::new(),
+        };
+        let dbg = format!("{ap:?}");
+        assert!(dbg.contains("ActionProposal"), "got: {dbg}");
+        assert!(dbg.contains("deploy prod"), "got: {dbg}");
+        assert!(dbg.contains("deploy"), "got: {dbg}");
+    }
 }
