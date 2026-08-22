@@ -5,24 +5,24 @@
 > Última actualización: 2026-08-22, post-ciclo `no-stubs-mocks-placeholders-hardcoded`
 > + fix `test-fixture-svg-extension` + decisión lbug bump (1204 tests verde,
 > 8/8 doctor scopes OK). Próxima iteración: M34 / M35 (post-TRUST-008).
-> shipped: event IDs + causation/correlation + per-consumer checkpoint infra;
-> v1.81.0 was TRUST-001 EventLog reopen fix).
+> Latest shipped: TRUST-008 (v1.87.0) — m30 bridge hard fail + Adjudication
+> bounded context (closes REQ-M25-006).
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `70c8fbf` (PRs #274–280 squash — M23 perf-ci-gate) |
-| Versión | `v1.80.0` (latest tag, M23 perf-ci-gate) |
-| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `239 @ m23-perf-ci-gate`; re-cuenta en cada verify; clippy clean |
-| Working tree | clean (`main`); tags v1.65.0–v1.80.0 verificados en origin |
+| Tip | `0e250e6` (docs(roadmap): add cycle log entry for no-stubs chain) |
+| Versión | `v1.87.0` (latest tag, TRUST-008 m30 bridge hard fail) |
+| Tests | full-suite `1204 @ v1.87.0` (lib 859 + integration 345); doctest green; 12 `#[ignore]` restantes todos justificados; clippy clean |
+| Working tree | clean (`main`); tags v1.65.0–v1.87.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | 52,576 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.67.0; incluye unit tests inline) |
-| LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
+| LOC src | 56,929 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.87.0; incluye unit tests inline) |
+| LOC tests | 17,541 (`archctl/tests/**/*.rs`, integration, 56 ficheros) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 152 (v0.1.0 → v1.82.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate + T0 TRUST-001..008 — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
+| Tags | 158 (v0.1.0 → v1.87.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
