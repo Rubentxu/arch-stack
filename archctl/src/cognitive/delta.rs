@@ -173,4 +173,122 @@ mod tests {
         let back: GraphDelta = serde_json::from_str(&json).unwrap();
         assert_eq!(back.len(), 2);
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v4, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `DeltaChange::Added` round-trips through serde.
+    #[test]
+    fn delta_change_added_serde_roundtrip() {
+        let original = DeltaChange::Added;
+        let json = serde_json::to_string(&original).unwrap();
+        assert_eq!(json, "\"Added\"", "variant serializes as PascalCase string");
+        let back: DeltaChange = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, original);
+    }
+
+    /// `DeltaChange::Modified` round-trips through serde. Distinct from
+    /// `delta_change_added_serde_roundtrip` to cover both variants.
+    #[test]
+    fn delta_change_modified_serde_roundtrip() {
+        let original = DeltaChange::Modified;
+        let json = serde_json::to_string(&original).unwrap();
+        assert_eq!(json, "\"Modified\"");
+        let back: DeltaChange = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, original);
+    }
+
+    /// `merge()` with an empty `other` is a no-op (existing `added` and
+    /// `modified` are preserved).
+    #[test]
+    fn graph_delta_merge_with_empty_other_is_noop() {
+        let mut delta = GraphDelta::default();
+        delta.added.push(DeltaElement {
+            element: make_element("e1"),
+            change: DeltaChange::Added,
+        });
+        delta.modified.push(DeltaElement {
+            element: make_element("e2"),
+            change: DeltaChange::Modified,
+        });
+
+        let before_len = delta.len();
+        delta.merge(GraphDelta::default());
+        assert_eq!(delta.len(), before_len, "merge with empty is no-op");
+        assert_eq!(delta.added.len(), 1);
+        assert_eq!(delta.modified.len(), 1);
+    }
+
+    /// `merge()` into an empty self appends all entries from `other`.
+    #[test]
+    fn graph_delta_merge_into_empty_appends_all() {
+        let mut delta = GraphDelta::default();
+        let other = GraphDelta {
+            added: vec![
+                DeltaElement {
+                    element: make_element("e1"),
+                    change: DeltaChange::Added,
+                },
+                DeltaElement {
+                    element: make_element("e2"),
+                    change: DeltaChange::Added,
+                },
+            ],
+            modified: vec![DeltaElement {
+                element: make_element("e3"),
+                change: DeltaChange::Modified,
+            }],
+        };
+        delta.merge(other);
+        assert_eq!(delta.added.len(), 2);
+        assert_eq!(delta.modified.len(), 1);
+        assert_eq!(delta.len(), 3);
+    }
+
+    /// `merge()` keeps the `added` and `modified` lists separate — an
+    /// `added` element in `other` is NOT moved to `modified` in self.
+    /// (The merge is a shallow concatenation, not a kind-aware blend.)
+    #[test]
+    fn graph_delta_merge_preserves_change_kinds() {
+        let mut delta = GraphDelta::default();
+        let other = GraphDelta {
+            added: vec![DeltaElement {
+                element: make_element("e1"),
+                change: DeltaChange::Added,
+            }],
+            modified: vec![],
+        };
+        delta.merge(other);
+        // e1 stays in `added`, NOT promoted to `modified`
+        assert_eq!(delta.added.len(), 1);
+        assert_eq!(delta.modified.len(), 0);
+        assert!(matches!(delta.added[0].change, DeltaChange::Added));
+    }
+
+    /// `merge()` does NOT deduplicate duplicate elements. Two deltas with
+    /// the same element-id produce two entries in the result.
+    /// (Locks the comment at delta.rs:64 "duplicate elements are NOT
+    /// deduplicated".)
+    #[test]
+    fn graph_delta_merge_does_not_dedup() {
+        let mut delta = GraphDelta {
+            added: vec![DeltaElement {
+                element: make_element("e1"),
+                change: DeltaChange::Added,
+            }],
+            modified: vec![],
+        };
+        let other = GraphDelta {
+            added: vec![DeltaElement {
+                element: make_element("e1"),
+                change: DeltaChange::Added,
+            }],
+            modified: vec![],
+        };
+        delta.merge(other);
+        // Both e1 entries preserved (no dedup)
+        assert_eq!(delta.added.len(), 2);
+        assert_eq!(delta.len(), 2);
+    }
 }
