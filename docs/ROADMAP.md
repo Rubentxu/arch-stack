@@ -877,9 +877,22 @@ en worktrees frescos sin intervención manual.
 **Referencias:** `.githooks/pre-push`, `scripts/verify-local.sh`,
 `scripts/embed-stack.sh`, ADR-025, ADR-033
 
-## M34 — Call-graph strategy consolidation + test hygiene — **NUEVO (2026-08-06)**
+## M34 — Call-graph strategy consolidation + test hygiene — **CERRADO ✅**
 
-**Estado:** NUEVO — generado por debt-verify de M30 (PASS_WITH_WARNINGS).
+**Estado:** Cerrado ✅ — code landed **v1.6.0** (PR #90, commit tip
+`027527b`, merge 2026-08-07). 5 de 6 items del debt-report M30 cerrados:
+D2 (`928446c`, −244 LOC en `call_graph.rs`), D3 (`d1eaf20`, fixture Go
+unificado), W3 (ADR-037 decidió mantener `InvalidLanguage` con
+`#[allow(dead_code)]`), W4 (`d1eaf20`, test real sobre TempDir), D4
+(`Language::confidence()` centralizado, call_graph.rs:99-111), D6
+(comentario duplicado removido per ADR-037:76-79). D5 (3 help strings
+en `cli.rs`) se cerró inicialmente en `702190f` pero fue revertido por
+`050a9ae` (capability phase 3) — **residual menor**, las strings siguen
+duplicadas en `cli.rs:530, 570, 589` y omiten Java+Kotlin. ADR-037
+aceptado documenta el rechazo explícito del strategy-pattern refactor
+propuesto en este cuerpo. Verificación independiente archivada en
+`sddk/m34-call-graph-strategy-consolidation/explore-report.md` (2026-08-22)
+y cycle-log row al final de este ROADMAP.
 
 **Objetivo:** consolidar la deuda detectada en M30 en un ciclo de limpieza
 coherente. Ningún item es bloqueante; todos son WARN/SUGG del debt-report.
