@@ -326,4 +326,254 @@ mod tests {
             assert_eq!(o, back);
         }
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v2, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `AuditLogger::default()` and `AuditLogger::new()` both produce a logger
+    /// targeting the XDG-resolved `audit.jsonl` path. The XDG path is
+    /// environment-dependent so we only assert they're both constructed
+    /// (no panic, no path mutation visible to the caller).
+    #[test]
+    fn audit_logger_default_equiv_new() {
+        let default = AuditLogger::default();
+        let new = AuditLogger::new();
+        assert_eq!(
+            default.path(),
+            new.path(),
+            "default() must target the same path as new()"
+        );
+        assert!(
+            default.path().ends_with("audit.jsonl"),
+            "default() must resolve to audit.jsonl, got: {:?}",
+            default.path()
+        );
+    }
+
+    /// `path()` accessor returns the path the logger was built for.
+    #[test]
+    fn path_accessor_returns_constructed_path() {
+        let dir = TempDir::new().unwrap();
+        let custom = dir.path().join("nested").join("audit.jsonl");
+        let logger = AuditLogger::with_path(custom.clone());
+        assert_eq!(logger.path(), &custom);
+    }
+
+    /// `len()` reflects the count of entries currently in the log after N
+    /// appends. Confirms the accessor reads the file (not an in-memory
+    /// cache) and updates on each `append()`.
+    #[test]
+    fn len_reflects_appended_count_after_n_appends() {
+        let (logger, _dir) = temp_logger();
+        assert_eq!(logger.len().unwrap(), 0);
+
+        for i in 0..4 {
+            logger
+                .append(&AuditEntry {
+                    timestamp: Utc::now(),
+                    agent_id: format!("a-{i}"),
+                    proposal_id: format!("p-{i}"),
+                    goal: format!("g-{i}"),
+                    policy_decision: PolicyDecisionSummary::Allow,
+                    outcome: ActionOutcome::Executed,
+                    evidence_emitted: vec![],
+                    user_who_approved: None,
+                    rollback_executed: false,
+                    environment: None,
+                    tokens: None,
+                    cost_cents: None,
+                    confidence: None,
+                })
+                .unwrap();
+        }
+        assert_eq!(logger.len().unwrap(), 4, "len must reflect N appends");
+        assert!(!logger.is_empty().unwrap());
+    }
+
+    /// `read_all()` returns an empty Vec when the log file does not exist
+    /// (rather than an error). Distinct path from `len()` because
+    /// `read_all()` short-circuits at `if !self.path.exists() { return Ok(vec![]) }`.
+    #[test]
+    fn read_all_returns_empty_when_file_missing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("never_created.jsonl");
+        let logger = AuditLogger::with_path(path);
+        let entries = logger.read_all().expect("missing file must be Ok(empty)");
+        assert!(entries.is_empty());
+    }
+
+    /// `read_all()` skips blank lines (and lines with only whitespace).
+    /// Locks the `trimmed.is_empty() → continue` branch in the parser.
+    /// This matters for crash recovery: a partial flush before a panic
+    /// can leave trailing newlines or empty lines.
+    #[test]
+    fn read_all_skips_blank_lines() {
+        let (logger, _dir) = temp_logger();
+        // Append 2 valid entries
+        for i in 0..2 {
+            logger
+                .append(&AuditEntry {
+                    timestamp: Utc::now(),
+                    agent_id: format!("a-{i}"),
+                    proposal_id: format!("p-{i}"),
+                    goal: format!("g-{i}"),
+                    policy_decision: PolicyDecisionSummary::Allow,
+                    outcome: ActionOutcome::Executed,
+                    evidence_emitted: vec![],
+                    user_who_approved: None,
+                    rollback_executed: false,
+                    environment: None,
+                    tokens: None,
+                    cost_cents: None,
+                    confidence: None,
+                })
+                .unwrap();
+        }
+        // Inject blank + whitespace-only lines into the JSONL file
+        let raw = std::fs::read_to_string(logger.path()).unwrap();
+        let augmented = format!("{raw}\n\n   \n\t\n{raw}", raw = raw.trim_end());
+        std::fs::write(logger.path(), augmented).unwrap();
+
+        let entries = logger.read_all().unwrap();
+        assert_eq!(
+            entries.len(),
+            4,
+            "4 valid entries must be parsed (2 from each half), blank lines skipped"
+        );
+        assert_eq!(entries[0].proposal_id, "p-0");
+        assert_eq!(entries[3].proposal_id, "p-1");
+    }
+
+    /// `read_all()` returns an `InvalidData` error when a line is malformed
+    /// JSON. The audit log is the source of truth for HITL approvals
+    /// (ADR-005), so a corrupt entry must fail loudly, not silently skip.
+    #[test]
+    fn read_all_returns_error_on_malformed_line() {
+        let (logger, _dir) = temp_logger();
+        // Write a valid entry, then a malformed line
+        logger
+            .append(&AuditEntry {
+                timestamp: Utc::now(),
+                agent_id: "a".into(),
+                proposal_id: "p".into(),
+                goal: "g".into(),
+                policy_decision: PolicyDecisionSummary::Allow,
+                outcome: ActionOutcome::Executed,
+                evidence_emitted: vec![],
+                user_who_approved: None,
+                rollback_executed: false,
+                environment: None,
+                tokens: None,
+                cost_cents: None,
+                confidence: None,
+            })
+            .unwrap();
+        let mut content = std::fs::read_to_string(logger.path()).unwrap();
+        content.push_str("this is not valid json\n");
+        std::fs::write(logger.path(), content).unwrap();
+
+        let err = logger.read_all().expect_err("malformed line must error");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// `PolicyDecisionSummary::reason()` returns the documented string for
+    /// all 5 variants. Locks the contract that audit consumers rely on
+    /// when surfacing decisions to humans.
+    #[test]
+    fn policy_decision_summary_reason_all_5_variants() {
+        assert_eq!(PolicyDecisionSummary::Allow.reason(), "policy allowed");
+        assert_eq!(
+            PolicyDecisionSummary::AllowWithNotify.reason(),
+            "allowed with notification"
+        );
+        assert_eq!(
+            PolicyDecisionSummary::RequireApproval.reason(),
+            "requires human approval"
+        );
+        assert_eq!(PolicyDecisionSummary::Deny.reason(), "policy denied");
+        assert_eq!(
+            PolicyDecisionSummary::Escalate.reason(),
+            "escalated to higher authority"
+        );
+    }
+
+    /// Minimal `AuditEntry` (all optional fields unset) roundtrips through
+    /// JSON. Confirms the `#[serde(default)]` annotations on optional
+    /// fields are honored by `Deserialize`.
+    #[test]
+    fn audit_entry_roundtrip_minimal_all_optional_fields_unset() {
+        let entry = AuditEntry {
+            timestamp: Utc::now(),
+            agent_id: "a".into(),
+            proposal_id: "p".into(),
+            goal: "g".into(),
+            policy_decision: PolicyDecisionSummary::Allow,
+            outcome: ActionOutcome::Executed,
+            evidence_emitted: vec![],
+            user_who_approved: None,
+            rollback_executed: false,
+            environment: None,
+            tokens: None,
+            cost_cents: None,
+            confidence: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: AuditEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.agent_id, entry.agent_id);
+        assert_eq!(back.proposal_id, entry.proposal_id);
+        assert!(back.evidence_emitted.is_empty());
+        assert!(back.user_who_approved.is_none());
+        assert!(back.environment.is_none());
+        assert!(back.tokens.is_none());
+        assert!(!back.rollback_executed);
+    }
+
+    /// Maximal `AuditEntry` (every optional field populated, including a
+    /// populated `evidence_emitted` Vec and `user_who_approved`) roundtrips
+    /// through JSON with values preserved. Locks the camelCase field
+    /// naming and the non-`#[serde(default)]` required-field shape.
+    #[test]
+    fn audit_entry_roundtrip_maximal_all_optional_fields_set() {
+        let entry = AuditEntry {
+            timestamp: Utc::now(),
+            agent_id: "max-agent".into(),
+            proposal_id: "max-prop".into(),
+            goal: "max-goal".into(),
+            policy_decision: PolicyDecisionSummary::RequireApproval,
+            outcome: ActionOutcome::Approved,
+            evidence_emitted: vec!["ev:1".into(), "ev:2".into(), "ev:3".into()],
+            user_who_approved: Some("alice".into()),
+            rollback_executed: true,
+            environment: Some("production".into()),
+            tokens: Some(1500),
+            cost_cents: Some(42),
+            confidence: Some(0.95),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        // camelCase field naming must be honored
+        assert!(
+            json.contains("\"agentId\""),
+            "AuditEntry must serialize as camelCase, got: {json}"
+        );
+        assert!(
+            json.contains("\"userWhoApproved\""),
+            "userWhoApproved must serialize as camelCase, got: {json}"
+        );
+        assert!(
+            json.contains("\"rollbackExecuted\""),
+            "rollbackExecuted must serialize as camelCase, got: {json}"
+        );
+        let back: AuditEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.agent_id, "max-agent");
+        assert_eq!(back.proposal_id, "max-prop");
+        assert_eq!(back.outcome, ActionOutcome::Approved);
+        assert_eq!(back.evidence_emitted, vec!["ev:1", "ev:2", "ev:3"]);
+        assert_eq!(back.user_who_approved.as_deref(), Some("alice"));
+        assert_eq!(back.environment.as_deref(), Some("production"));
+        assert_eq!(back.tokens, Some(1500));
+        assert_eq!(back.cost_cents, Some(42));
+        assert!((back.confidence.unwrap() - 0.95).abs() < f32::EPSILON);
+        assert!(back.rollback_executed);
+    }
 }
