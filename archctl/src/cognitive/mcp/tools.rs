@@ -43,7 +43,7 @@ pub struct GraphQueryArgs {
     pub params: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQueryResult {
     pub rows: Vec<serde_json::Value>,
     pub count: usize,
@@ -333,5 +333,168 @@ mod tests {
         let result: SchemaValidationResult = serde_json::from_value(r.data.unwrap()).unwrap();
         assert!(result.valid);
         assert!(result.errors.is_empty());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `ToolResult::ok` round-trips: deserialize the JSON produced by serialize
+    /// and verify both fields are recovered correctly.
+    #[test]
+    fn tool_result_ok_roundtrip() {
+        let original = ToolResult::ok(
+            "graph_query",
+            GraphQueryResult {
+                rows: vec![serde_json::json!({"k": "v"})],
+                count: 1,
+            },
+        );
+        let json = serde_json::to_string(&original).unwrap();
+        let back: ToolResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tool, "graph_query");
+        assert!(back.error.is_none());
+        assert!(back.data.is_some());
+    }
+
+    /// `ToolResult::err` round-trips and `data` field is omitted in JSON
+    /// (verified by parse + explicit re-serialization).
+    #[test]
+    fn tool_result_err_roundtrip() {
+        let original = ToolResult::err("schema_validate", "invalid bundle");
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(
+            !json.contains("\"data\""),
+            "data field must be omitted on err: {json}"
+        );
+        let back: ToolResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tool, "schema_validate");
+        assert_eq!(back.error.as_deref(), Some("invalid bundle"));
+        assert!(back.data.is_none());
+    }
+
+    /// `TestScope` deserializes from empty JSON to its `Default` values
+    /// via `#[serde(default)]` on the struct.
+    #[test]
+    fn test_scope_default_deserialize() {
+        let scope: TestScope = serde_json::from_str("{}").unwrap();
+        assert!(scope.package.is_none());
+        assert!(scope.files.is_empty());
+    }
+
+    /// `RunTestsArgs` deserializes from empty JSON with default timeout of 300s
+    /// (per `default_timeout()` helper).
+    #[test]
+    fn run_tests_args_default_timeout() {
+        let args: RunTestsArgs = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            args.timeout_secs, 300,
+            "default timeout must be 300 seconds"
+        );
+        assert!(args.scope.package.is_none());
+        assert!(args.scope.files.is_empty());
+    }
+
+    /// `GraphQueryResult` round-trips including non-empty rows.
+    #[test]
+    fn graph_query_result_roundtrip() {
+        let original = GraphQueryResult {
+            rows: vec![
+                serde_json::json!({"id": "a"}),
+                serde_json::json!({"id": "b"}),
+            ],
+            count: 2,
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let back: GraphQueryResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.count, 2);
+        assert_eq!(back.rows.len(), 2);
+    }
+
+    /// Non-object bundles (e.g. array, string, number) are rejected at the
+    /// top level with "bundle must be a JSON object".
+    #[test]
+    fn schema_validate_non_object_bundle() {
+        let bundle = serde_json::json!(["not", "an", "object"]);
+        let args = SchemaValidateArgs { bundle };
+        let r = handle_schema_validate(args);
+        let result: SchemaValidationResult = serde_json::from_value(r.data.unwrap()).unwrap();
+        assert!(!result.valid);
+        assert!(
+            result.errors.iter().any(|e| e.contains("JSON object")),
+            "errors must include 'must be a JSON object', got: {:?}",
+            result.errors
+        );
+    }
+
+    /// `projection.nodes` must be an array; non-array triggers an error.
+    #[test]
+    fn schema_validate_projection_nodes_not_array() {
+        let bundle = serde_json::json!({
+            "version": "1.0",
+            "projection": {
+                "nodes": "not-an-array"
+            }
+        });
+        let args = SchemaValidateArgs { bundle };
+        let r = handle_schema_validate(args);
+        let result: SchemaValidationResult = serde_json::from_value(r.data.unwrap()).unwrap();
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("projection.nodes must be an array")),
+            "errors must mention the array requirement, got: {:?}",
+            result.errors
+        );
+    }
+
+    /// Each `projection.nodes[i]` must be an object with `id` and `kind`.
+    #[test]
+    fn schema_validate_projection_nodes_missing_fields() {
+        let bundle = serde_json::json!({
+            "version": "1.0",
+            "projection": {
+                "nodes": [
+                    {"id": "e1"},  // missing "kind"
+                    {"kind": "mt.component"}  // missing "id"
+                ]
+            }
+        });
+        let args = SchemaValidateArgs { bundle };
+        let r = handle_schema_validate(args);
+        let result: SchemaValidationResult = serde_json::from_value(r.data.unwrap()).unwrap();
+        assert!(!result.valid);
+        // Two errors expected: one for missing kind, one for missing id
+        let kind_err = result
+            .errors
+            .iter()
+            .any(|e| e.contains("missing field: kind"));
+        let id_err = result
+            .errors
+            .iter()
+            .any(|e| e.contains("missing field: id"));
+        assert!(
+            kind_err,
+            "must report missing kind, got: {:?}",
+            result.errors
+        );
+        assert!(id_err, "must report missing id, got: {:?}", result.errors);
+    }
+
+    /// `SchemaValidationResult` with empty errors omits the `errors` field in
+    /// JSON (per `#[serde(skip_serializing_if = "Vec::is_empty")]`).
+    #[test]
+    fn schema_validation_result_empty_errors_omitted() {
+        let result = SchemaValidationResult {
+            valid: true,
+            errors: vec![],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"errors\""),
+            "errors field must be omitted when empty, got: {json}"
+        );
     }
 }
