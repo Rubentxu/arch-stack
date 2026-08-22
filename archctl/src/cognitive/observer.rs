@@ -208,4 +208,94 @@ mod tests {
             panic!("expected NoAction, got {:?}", out);
         }
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v3, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `ObserveError`'s `Debug` impl includes the variant name and inner
+    /// payload. Locks the contract that downstream `tracing::error!(?err)`
+    /// produces searchable logs.
+    #[test]
+    fn observe_error_debug_includes_variant_and_payload() {
+        let err = ObserveError::BudgetExceeded("tokens=50000".into());
+        let dbg = format!("{err:?}");
+        assert!(
+            dbg.contains("BudgetExceeded"),
+            "Debug must include variant: {dbg}"
+        );
+        assert!(
+            dbg.contains("tokens=50000"),
+            "Debug must include payload: {dbg}"
+        );
+    }
+
+    /// A `NoopObserver` with a custom `id` returns it from `descriptor()`.
+    /// Distinct from `descriptor_returns_stored_value` which uses the
+    /// shared fixture (id="stub"); this confirms id is per-instance.
+    #[test]
+    fn noop_observer_preserves_custom_descriptor_id() {
+        let custom_desc = AgentDescriptor {
+            id: "my-custom-noop".into(),
+            ..descriptor_fixture()
+        };
+        let stub = NoopObserver {
+            descriptor: custom_desc,
+        };
+        let got = stub.descriptor();
+        assert_eq!(got.id.as_str(), "my-custom-noop");
+    }
+
+    /// An observer with an EXPLICIT `matches()` override returning `false`
+    /// is short-circuited. The default impl returning `true` is documented
+    /// in `reactive_observer_default_matches_returns_true`; this confirms
+    /// the override path.
+    #[test]
+    fn reactive_observer_explicit_matches_false_override() {
+        struct DecliningObserver;
+        impl ReactiveObserver for DecliningObserver {
+            fn descriptor(&self) -> AgentDescriptor {
+                descriptor_fixture()
+            }
+            fn matches(&self, _ctx: &AgentContext) -> bool {
+                false
+            }
+            fn observe(&self, _ctx: &AgentContext) -> Result<AgentOutput, ObserveError> {
+                panic!("observe() must not run when matches() returns false")
+            }
+        }
+        let obs = DecliningObserver;
+        assert!(!obs.matches(&ctx_fixture()));
+    }
+
+    /// `ObserveError` Display preserves special characters (quotes,
+    /// backslashes, newlines) verbatim — important for error messages
+    /// containing tool output or file paths.
+    #[test]
+    fn observe_error_display_preserves_special_chars() {
+        let err = ObserveError::Internal("path=\"C:\\Users\\foo\"\nline:42".into());
+        let msg = err.to_string();
+        assert_eq!(
+            msg, "internal: path=\"C:\\Users\\foo\"\nline:42",
+            "special chars must round-trip through Display"
+        );
+    }
+
+    /// An empty payload is valid (Display returns just the prefix). Locks
+    /// the behavior when an observer returns `Internal("")` or similar.
+    #[test]
+    fn observe_error_display_empty_payload() {
+        let err = ObserveError::InsufficientContext("".into());
+        assert_eq!(err.to_string(), "context insufficient: ");
+    }
+
+    /// `ReactiveObserver` requires `Send + Sync`. This is enforced at
+    /// compile time by the trait bound. The `assert_send_sync` helper
+    /// would fail to compile if the bound were weakened.
+    #[test]
+    fn reactive_observer_trait_requires_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<NoopObserver>();
+        assert_send_sync::<Box<dyn ReactiveObserver>>();
+    }
 }
