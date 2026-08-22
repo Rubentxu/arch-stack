@@ -797,10 +797,34 @@ se trackea en M32.
 `archctl/tests/fixtures/go_callgraph/`, `e2e/HUMAN_LOOP_TEST.md` (Fase 6, 9.2),
 `docs/adr/ADR-035-go-call-graph-extraction.md`
 
-## M32 — Apply writer performance: transaction + bulk import — **NUEVO (2026-08-06)**
+## M32 — Apply writer performance: transaction + bulk import — **CERRADO ✅**
 
-**Estado:** NUEVO — detectado durante M30 (el soporte Go expone el writer).
-Plan de ejecución aprobado y registrado en **ADR-036**.
+**Estado:** Cerrado ✅ — multi-tag lifecycle en 5+ PRs/versiones
+siguiendo el plan de [ADR-036](adr/ADR-036-apply-writer-performance.md)
+(y su amendment):
+
+| PR | Tag | Entrega |
+|---|---|---|
+| #76 (`7bdcc5f`) | `v1.2.0-m32` | D1 transacción única + D4 bench gate |
+| #78 (`7a20c55`) | `v1.3.0-m32-pr2` | D2 UNWIND bulk import (D3+D5+BREAK-1 deferred) |
+| #80 (`5fb2be1`) | `v1.3.1` | bonus M33 pre-push fix (no M32 estricto) |
+| #82 (`e309aec`) | `v1.4.0-m32-d5` | D5 class_diagram + state_machine transaction wrap |
+| #84 (`864aab7`) | `v1.4.1` | BREAKING: removed `seed_writes` JSON shape |
+| #187+`599c863` regression | `v1.46.0` (PR1) gap documentado en STATE | D2 re-ship parcial post-P1-04 T3 |
+| #188 (`235c885`) | `v1.47.0` + `v1.47.1` (remediation) | D2 UNWIND re-ship completo (call_graph + state_machine + c4_discover) + N+1 hoist class_diagram + bench regression gate; ADR-036 amendment documenta D3 deferral |
+| (#121 `6c40283`) | `v1.21.0` | M51 — M32 D3 (prepared statements + parameter binding) shipped |
+| (#123 `700d425`) | `v1.22.0` | M52 — M32 D4 doc fixes post-M51 |
+| (#125 `64a8be3`) | `v1.23.0` | M53 — M32 D5 sequence-writer audit (verdict N/A; sequence.rs es read-only per SCN-217, no aplica) |
+
+Acceptance criteria cumplidos: `call-graph --apply` en labstack/echo
+<10s (medido: 483s → <10s con D2, ~3s en el gate final), bench de
+regresión añadido (`cargo bench --bench call_graph_apply`), tests del
+writer verdes (838/838 → 849/849 → 1204/1204 a lo largo del lifecycle).
+Correcciones documentales aplicadas (Kùzu, parameter binding).
+Cycle-log rows al final de este ROADMAP referencian las 8 PRs y los
+5+ tags. Reportes de deuda archivados en
+`sddk/m32-apply-writer-performance/debt-report.md` y
+`debt-report-r1.md`.
 
 **Objetivo:** `archctl code call-graph --apply` (y por consistencia los
 writers de class-diagram/state-machine/sequence) guarden en segundos, no
