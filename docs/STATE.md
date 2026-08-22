@@ -175,84 +175,29 @@
 
 ## Deuda técnica activa
 
-**Doctor:** 30/30 scopes pass. No findings.
-
-**Closed in this session** (M37–M56):
-- `seed_writes` lying API removed (BREAK-1, v1.4.1)
-- Mermaid projector bare-Label bug fixed across 4 views (M39 + M41)
-- C4 PlantUML Structurizr-style emit bug (M50)
-- 26 stale manifest `public_symbols` removed (M46)
-- 3 stale "no parameter binding" doc claims (M52)
-- `backend_available()` helper DRY'd (M56, -60 LOC across 5 files)
-
-**Closed in this housekeeping pass** (2026-08-18, post-v1.59.0):
-- **2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped** (WIP from the
-  pre-#181 branch). Their bases (`0b75778`, `63e2200`) are reachable from `main`
-  and the work was already merged via PR #181, then reshaped by `58f5150`
-  (P1-05 RawGraphQuery supertrait), `2731800` (move helpers into
-  `ElementRepository` port), and `24e2eb8`/`3ab707c` (M32 D2 UNWIND bulk
-  import). Re-applying on a fresh branch from `main` produced conflicts in
-  12 files; every conflict was "both sides did the same change, `main` is the
-  cleaner final form". Drop is intentional and irreversible — rederivation
-  lives in those cited commits.
-
-**M32 remediation (closed in v1.47.0/v1.47.1)**:
-- class_diagram UUID mismatch fixed; port bypass corrected; cross-writer `CURRENT_VERSION` regression suite added.
-
-**Accepted debt (per proposal + cycle retrospective)**:
-- **Registry introspection v2**: registry sources are catalog-mirrors, not runtime introspection. Follow-up deferred to registry-introspection-v2 proposal.
-- **Parallel `Vec<Element>` + `ElementVersion`** (~120 LOC, M32 era): `apply.rs` processes elements in parallel; noted as debt in p1-08 retrospective.
-- **D4 throughput**: measured 96.57 ms/element vs ≤30 ms/element budget (ADR-019); accepted as small-N edge case.
-- *Removed (2026-08-18, post-v1.59.0 refresh)*: "POSIX-only symlink: stack.rs-era
-  symlink bootstrap" — `archctl/src/stack.rs` was deleted in v1.40.0 (commit
-  `c2d65c3 refactor(cli): remove deprecated stack subcommand`, M83); the debt
-  pointed to a file that no longer exists.
+**Doctor:** 34/34 scopes pass. No findings.
 
 **Pending**:
-- **store.rs** (3,540 LOC): biggest file. M63 proposes splitting (still pending).
-- **Cognitive-layer test coverage**: 14 sub-modules, minimal tests. M61 audit partially done (cognitive policy tests added), full coverage deferred.
+- **`archctl/src/store.rs`** (5,435 LOC @ v1.87.0; +54 % desde el cierre M54): módulo más grande del crate. M63 propuso splitearlo; el trabajo se mantiene diferido porque (a) el coste de refactor supera al valor en este momento y (b) los tests de apply ya pasan al suite completo sin que el tamaño impacte el perf budget de export.
+- **Cognitive-layer test coverage** (`archctl/src/cognitive/`, 14 sub-módulos): cobertura mínima. M61 hizo un audit parcial (cognitive policy tests añadidos, v1.29.0); cobertura completa sigue diferida.
+
+> **Removed by drift** (resumidos para auditoría; los detalles viven en el CHANGELOG bajo las versiones citadas — ya no aportan al lector actual): M37–M56 deuda cerrada in-session · 2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped (2026-08-18) · M32 remediation cerrada en v1.47.0/v1.47.1 · "POSIX-only symlink" debt removida (apuntaba a `stack.rs` eliminado en v1.40.0/M83).
 
 ## Plan vigente
 
-**Marathon session closed at M54** (v1.24.0). Post-session work:
-- M55 (v1.25.0): state study + 11 proposals (M56–M68) — DONE
-- M56 (v1.26.0): DRY helper — DONE
-- M59: close stale PR #32 — DONE
-- M60 (v1.27.0): resolve 2 TODO markers — DONE
-- M57 (v1.28.0): CONTRIBUTING.md — DONE
-- M58 (no tag): docs/specs/index.md — DONE
-- M61 (v1.29.0): cognitive policy tests — DONE
-- M62 (no tag): STATE.md refresh (was this cycle) — DONE
-- M69 (v1.30.0): arch-stack product roadmap convergence — DONE
-- **t0-trust-001-eventlog-reopen** (TRUST-001, v1.81.0): shipped. Latent bug closed
-  preventively (EventLog only used in tests today; `SyncDispatcher` wires it in T6).
-- **t0-trust-002-event-ids-causation** (TRUST-002, v1.82.0): shipped. EventEnvelope
-  extended with eventId (UUID v7) + correlationId/causationId + per-consumer checkpoint
-  infra. Foundation for causal journal (ADR-P11). `SyncDispatcher` wiring deferred to T6.
-  Next: TRUST-003 (AuthorityClass/ExecutionClass mapping) or TRUST-006 (T6 SyncDispatcher).
+**T0 Trust cerrado end-to-end** (v1.81.0 → v1.87.0): 8 ciclos encadenados cubren desde el reopening trivial de `EventLog` (TRUST-001) hasta la promoción `Err(TrustViolation)` del m30 bridge (TRUST-008). El horizonte T0 ya no genera nuevos tickets; el `SyncDispatcher` wires en T6 queda como ticket de backlog dentro de T3 (Live Revision Loop, ADR-P11). Historia completa y decisiones locked por ciclo en `sddk/p-38e02210a9f14317/trust-00X/` y en el CHANGELOG bajo cada `[1.8X.0]` header.
 
-Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
+**Wave 0/1/2 cerrado, Wave 3 parcial** (catálogo `docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`):
 
-**2026-08-13 plan (Wave 0/1/2/3)** — ver
-`docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`.
+- **Wave 0 (remediation)** — 7/7 DONE (v1.42.0–v1.43.0).
+- **Wave 1 (architecture scaffolding)** — 8–16 ALL DONE (v1.43.0–v1.48.0).
+- **Wave 2 (intelligence)** — 10/10 DONE (v1.49.0–v1.59.0, gated under `archctl architecture …`).
+- **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only), 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) **+ el sprint M17.1 (M21 G6 culling/LOD v1.78.0, M22 sidebar-tabs v1.79.0, M23 ADR-019 perf-ci-gate v1.80.0)** CERRADOS v1.60.0–v1.80.0. Restantes: item 30 (session token, gated por ADR-051) y item 34 (P3-05 lens recommendation, gated por ADR-056/062).
 
-Estado de la wave:
-
-1. **Wave 0 (remediation)** — **7/7 DONE** (PRs #168–#175 + #177): plugin tests,
-   plugin hardening, ADR integrity, license coherence, Ladybug doctor
-   (v1.42.0), PR CI fast gates, **native release runners (v1.43.0)**.
-2. **Wave 1 (architecture scaffolding)** — **8–16 ALL DONE** (v1.43.0–v1.45.0
-   + v1.48.0): dependency-fitness baseline (v1.43.0, p1-09), composition
-   root (v1.43.0, p1-01), repositories (v1.43.0, p1-03), RawGraphQuery
-   boundary (v1.44.0+v1.44.1, p1-04), UnitOfWork (v1.45.0, p1-05),
-   filesystem contracts, doctor/diagram migrations via CliContext, **capability
-   registry (v1.48.0, p1-08, PR #191)**.
-3. **Wave 2 (intelligence)** — **10/10 DONE** (v1.49.0–v1.59.0): snapshot
-   metadata (P2-01), diff (P2-02), explain (P2-03), coverage (P2-04),
-   policy metamodel (P2-05), fitness evaluator (P2-06), context relevance
-   (P2-07), task context (P2-08), observation/claim carriers (P2-09a),
-   intent vs reality (P2-10). All under `archctl architecture ...`.
-4. **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only) y 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) CERRADOS v1.60.0–v1.68.0; restantes: item 30 (session token, gated por ADR-051) y item 34 (lens recommendation, P3-05, gated por ADR-056/062).
+**Próximo candidato natural** (ROADMAP + STATE §Anti-roadmap):
+- **M34** (cognitive context compression + ledger tail) — primer item sin gates bloqueantes post-TRUST-008.
+- **M35** (severity scoring pipeline) — alternativa a M34.
+- **Bump lbug 0.18.3 → 0.19.1** (deferido; ver pendientes menores).
 
 ## Comandos de verificación
 
@@ -265,7 +210,7 @@ git status
 # Tests
 cd archctl
 cargo build --quiet
-cargo test --features test-fixtures --quiet   # 872/872 baseline
+cargo test --features test-fixtures --tests   # 1204/1204 (lib + integration + doctest)
 cargo clippy --quiet --all-targets --features test-fixtures -- -D warnings
 cargo fmt --check
 
@@ -273,7 +218,7 @@ cargo fmt --check
 cd /var/mnt/DiscoChino2-fast/Proyectos/agentesIA/arch-stack
 bash scripts/verify-local.sh
 
-# 30/30 doctor scopes
+# 34/34 doctor scopes
 cargo run --bin archctl -- doctor --scopes $(ls ../manifests | sed 's/.toml//' | tr '\n' ',' | sed 's/,$//') --cwd ..
 
 # Capability registry staleness
@@ -282,46 +227,15 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 ## Próxima acción del usuario
 
-**T0 Trust — progress:**
-- ✅ **TRUST-001 EventLog reopen** (cycle `t0-trust-001-eventlog-reopen`, v1.81.0): shipped. Latent bug closed preventively.
-- ✅ **TRUST-002 Event IDs + causation/correlation** (cycle `t0-trust-002-event-ids-causation`, v1.82.0): shipped. Causation infra ✅; `SyncDispatcher` wires in T6.
-- 🎯 **Próximo PR sugerido**: TRUST-006 (T6 SyncDispatcher → EventLog wiring) or TRUST-003 (AuthorityClass/ExecutionClass mapping).
+**T0 Trust — cerrado end-to-end** (v1.81.0 → v1.87.0): TRUST-001..008 todos shipped; horizonte deja de generar tickets. Próximos pasos viven en los horizontes T1–T11 del paquete `docs/arch-stack-architecture-feedback-workbench-2026-08-20/` y en M34/M35 del ROADMAP canónico.
 
-Wave 3 parcial CERRADO: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion
-engine), 28+29 (strict ArchBundle + archview read-only) y **31–33
-(workbench UX, v1.68.0)** — v1.60.0 a v1.68.0, todos taggeados y
-verificados en origin.
-
-**Workbench UX parcial (ADR-062)**: cross-view identity (NavigationTarget
-sobre IDs canónicos), action palette (copy id, zoom, explain vía
-`/api/explain`, relations), semantic zoom C4 (Context↔Container↔Component
-por re-export). Strict bundles degradan explain.
-
-Restante Wave 3 (catálogo `docs/arch-stack-proposals-2026-08-13/`):
-- **Item 30 (session token)** — gated por ADR-051 (hijack vector
-  disclosed).
-- **Item 34 (lens recommendation)** — P3-05, XL, gated por ADR-056/062
-  (≥2 consumers OR measured need).
-- **Nivel "Code" (C4→class-diagram)** — reopen trigger propio (ADR-062):
-  ≥1 consumidor con necesidad real.
-- **ELK layout + virtualización >1k nodos** (M17.1 opcionales) — solo si
-  el zoom los exige.
-
-Candidatos futuros (reopen triggers documentados en Anti-roadmap):
-- **ADR-051 loopback session security** — abre solo con hijack vector
-  disclosed.
-- **B2/B3 ADR-016** — pendientes con reopen triggers en
-  `docs/adr/ADR-016-activegraph-packs-investigacion.md`.
+Wave 3 parcial cerrado (v1.60.0 → v1.80.0): items 19, 22, 27, 28+29, 31–33 + sprint M17.1 (M21/M22/M23) — todos taggeados. Restantes: **item 30** (session token, gated por ADR-051) y **item 34** (P3-05 lens recommendation, gated por ADR-056/062). Detalle completo en `docs/arch-stack-proposals-2026-08-13/`.
 
 Pendientes menores out-of-scope:
-- Report de redacciones en strict bundles.
+- Report de redacciones en strict bundles (XDG).
 - Persistir cutoff de staleness por proyecto (XDG).
-- **Bump lbug 0.18.3 → 0.19.1**: **decisión tomada** 2026-08-22:
-  workaround en `archctl/src/migrations.rs:344-350` es la opción
-  elegida (workaround documentado en código + decisión registrada en
-  CHANGELOG). Bump diferido a ciclo de mantenimiento futuro; el
-  delta de beneficio (eliminar ~10 líneas de workaround) no compensa
-  el riesgo de regresión sobre los 1204 tests.
+- **Bump lbug 0.18.3 → 0.19.1** (decisión 2026-08-22): workaround en `archctl/src/migrations.rs:344-350` gana; bump deferido a ciclo de mantenimiento futuro. ~10 líneas economizadas no compensan el riesgo de regresión sobre los 1204 tests.
 
-Sigue válido el catálogo de items en
-`docs/arch-stack-proposals-2026-08-13/`.
+Candidatos post-T0 (reopen triggers en `docs/STATE.md` §Anti-roadmap):
+- **ADR-051** (loopback session security) — abre solo con hijack vector disclosed.
+- **B2/B3 ADR-016** (activegraph packs) — pendientes con sus propios triggers.
