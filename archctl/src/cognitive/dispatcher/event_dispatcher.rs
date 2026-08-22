@@ -232,6 +232,7 @@ mod tests {
         // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). At this site the
         // SyncDispatcher::build_context re-populates the field from
         // AdjudicationRepository::list_pending_adjudications before the agent runs.
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
         AgentContext {
             goal: "test goal".into(),
             triggering_event: None,
@@ -243,6 +244,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         }
     }
 

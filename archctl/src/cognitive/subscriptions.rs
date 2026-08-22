@@ -297,6 +297,7 @@ mod tests {
         }
 
         let obs = ConditionalObserver { should_match: true };
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
         let ctx = crate::cognitive::context::AgentContext {
             goal: "g".into(),
             triggering_event: None,
@@ -308,6 +309,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
         // Both checks pass → activate
         assert!(obs.should_activate("GoalSubmitted", &ctx));

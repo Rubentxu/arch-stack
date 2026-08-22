@@ -1256,6 +1256,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 // REQ-M25-006: pending_adjudications pre-populated by SyncDispatcher::build_context (TRUST-008).
                 // Struct literal intentionally empty at this site — the dispatcher re-populates from
                 // AdjudicationRepository::list_pending_adjudications.
+                // recent_events (M34 W2) populated by compress_for_budget before dispatch.
                 let ctx = AgentContext {
                     goal,
                     triggering_event: None,
@@ -1267,6 +1268,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     budget: Default::default(),
                     feedback_history: vec![],
                     pending_adjudications: vec![],
+                    recent_events: vec![],
                 };
                 let out = disp.dispatch(&ctx)?;
                 if json {

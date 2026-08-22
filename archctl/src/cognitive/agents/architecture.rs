@@ -167,6 +167,7 @@ mod tests {
         // archctl/src/cognitive/context.rs::with_pending_adjudications. Struct literal
         // intentionally empty at this site — agent-level contexts do not pre-fetch the
         // adjudication queue.
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
         AgentContext {
             goal: "analyze architecture".into(),
             triggering_event: None,
@@ -181,6 +182,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         }
     }
 

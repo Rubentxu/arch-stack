@@ -148,6 +148,7 @@ mod tests {
         // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). Escalation
         // contexts intentionally leave the field empty — operators reviewing escalations do
         // not need the open adjudication queue surfaced.
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
         AgentContext {
             goal: goal.into(),
             triggering_event: None,
@@ -159,6 +160,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         }
     }
 

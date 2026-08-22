@@ -162,6 +162,7 @@ mod tests {
         // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
         // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). Struct literal
         // intentionally empty at this site.
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
         AgentContext {
             goal: goal.into(),
             triggering_event: None,
@@ -176,6 +177,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         }
     }
 

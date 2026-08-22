@@ -99,6 +99,11 @@ pub struct AgentContext {
     /// `AdjudicationRepository::list_pending_adjudications`.
     #[serde(default)]
     pub pending_adjudications: Vec<crate::adjudication::AdjudicationEvent>,
+    /// Recent events from the event log surfaced to the agent for context
+    /// (M34 W2). Populated by `compress_for_budget` before agent invocation.
+    /// Default: empty.
+    #[serde(default)]
+    pub recent_events: Vec<super::event::SerializedEvent>,
 }
 
 impl AgentContext {
@@ -135,6 +140,7 @@ impl AgentContext {
             budget,
             feedback_history,
             pending_adjudications: vec![],
+            recent_events: vec![],
         }
     }
 
@@ -169,6 +175,7 @@ impl AgentContext {
             budget,
             feedback_history,
             pending_adjudications,
+            recent_events: vec![],
         }
     }
 
@@ -379,6 +386,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
@@ -459,6 +467,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
         let json = serde_json::to_string(&ctx_some).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
@@ -477,6 +486,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
         let json = serde_json::to_string(&ctx_none).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
@@ -741,6 +751,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![fb],
             pending_adjudications: vec![],
+            recent_events: vec![],
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
@@ -775,6 +786,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![pa],
+            recent_events: vec![],
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let back: AgentContext = serde_json::from_str(&json).unwrap();
