@@ -332,4 +332,176 @@ mod tests {
             "Display must include the inner error message, got: {msg}"
         );
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v3, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `AgentRegistry::new()` is equivalent to `AgentRegistry::default()`.
+    /// Both must produce an empty registry (no ids).
+    #[test]
+    fn registry_new_equiv_default() {
+        let via_new = AgentRegistry::new();
+        let via_default = AgentRegistry::default();
+        assert_eq!(via_new.ids().count(), 0, "new() must yield empty registry");
+        assert_eq!(
+            via_default.ids().count(),
+            0,
+            "default() must yield empty registry"
+        );
+    }
+
+    /// `registry.ids()` on a fresh registry is an empty iterator.
+    /// Distinct from `ids_iterates_all` which exercises the non-empty case.
+    #[test]
+    fn registry_ids_empty_on_new() {
+        let reg = AgentRegistry::new();
+        let ids: Vec<&str> = reg.ids().collect();
+        assert!(ids.is_empty(), "fresh registry must have no ids");
+    }
+
+    /// `registry.get()` returns the registered descriptor with all fields
+    /// preserved. Distinct from `register_and_get` which only checks `id`.
+    #[test]
+    fn registry_get_returns_full_descriptor() {
+        let mut reg = AgentRegistry::new();
+        let mut descriptor = descriptor_with_id("full-desc");
+        descriptor.version = "1.2.3".into();
+        descriptor.deterministic = false;
+        descriptor.idempotent = false;
+        reg.register(NoopObserver { descriptor });
+
+        let got = reg.get("full-desc").unwrap();
+        assert_eq!(got.id.as_str(), "full-desc");
+        assert_eq!(got.version.as_str(), "1.2.3");
+        assert!(!got.deterministic);
+        assert!(!got.idempotent);
+    }
+
+    /// `SyncDispatcher::dispatch` with an EMPTY registry returns
+    /// `NoAction(InsufficientConfidence)` (since `best` stays None and the
+    /// `unwrap_or_else` falls through to the "no agent produced output"
+    /// branch). Distinct from `dispatcher_dispatch_all_noaction_returns_insufficient_confidence`
+    /// which exercises the case where agents are registered but all decline.
+    #[test]
+    fn dispatcher_dispatch_empty_registry_returns_insufficient_confidence() {
+        let reg = AgentRegistry::new();
+        let disp = SyncDispatcher::new(&reg);
+        let ctx = make_ctx("any goal");
+        let out = disp.dispatch(&ctx).unwrap();
+        assert!(matches!(
+            out,
+            AgentOutput::NoAction(crate::cognitive::output::NoActionReason {
+                code: crate::cognitive::output::NoActionCode::InsufficientConfidence,
+                ..
+            })
+        ));
+    }
+
+    /// `SyncDispatcher::dispatch` returns the FIRST agent that produces a
+    /// non-NoAction output. Verifies the deterministic ordering on hit:
+    /// agent A returns NoAction, agent B returns Action → dispatch picks B.
+    struct ActionObserver {
+        descriptor: AgentDescriptor,
+        output: AgentOutput,
+    }
+    impl ReactiveObserver for ActionObserver {
+        fn descriptor(&self) -> AgentDescriptor {
+            self.descriptor.clone()
+        }
+        fn observe(
+            &self,
+            _context: &AgentContext,
+        ) -> Result<AgentOutput, crate::cognitive::observer::ObserveError> {
+            Ok(self.output.clone())
+        }
+    }
+
+    #[test]
+    fn dispatcher_picks_first_non_noaction_output() {
+        let mut reg = AgentRegistry::new();
+        reg.register(ActionObserver {
+            descriptor: descriptor_with_id("first"),
+            output: AgentOutput::NoAction(crate::cognitive::output::NoActionReason {
+                code: crate::cognitive::output::NoActionCode::OutOfScope,
+                message: "skip".into(),
+            }),
+        });
+        reg.register(ActionObserver {
+            descriptor: descriptor_with_id("second"),
+            output: AgentOutput::ProjectionSpec(crate::cognitive::output::ProjectionSpec {
+                view_kind: crate::cognitive::output::ViewKind::Sequence,
+                format: crate::cognitive::output::DiagramFormat::Mermaid,
+                focus_elements: vec![],
+                layout_hints: crate::cognitive::output::LayoutHints {
+                    direction: None,
+                    ranksep: None,
+                    nodesep: None,
+                },
+            }),
+        });
+
+        let disp = SyncDispatcher::new(&reg);
+        let out = disp.dispatch(&make_ctx("sequence diagram")).unwrap();
+        assert!(
+            matches!(out, AgentOutput::ProjectionSpec(_)),
+            "expected ProjectionSpec from second agent, got {:?}",
+            out
+        );
+    }
+
+    /// `DispatchError::ObserveFailed` propagates the inner cause via Display
+    /// (via `#[error("...: {0}")]`). The wrapped error's full message is
+    /// embedded in the outer Display. (Note: `Error::source()` returns None
+    /// because `ObserveFailed` lacks `#[source]` — the chain is purely
+    /// Display-based.) Verifies the consumer-facing message includes both
+    /// the wrapper prefix and the inner detail.
+    #[test]
+    fn dispatch_error_observe_failed_preserves_source() {
+        let inner = crate::cognitive::observer::ObserveError::ToolUnavailable("ast-grep".into());
+        let err = DispatchError::ObserveFailed(inner);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("agent observation failed"),
+            "must include wrapper prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("tool unavailable"),
+            "must include ObserveError variant message, got: {msg}"
+        );
+        assert!(
+            msg.contains("ast-grep"),
+            "must include inner cause, got: {msg}"
+        );
+    }
+
+    /// A custom observer whose `observe()` returns `Err` propagates that
+    /// error through `registry.invoke()` wrapped as `DispatchError::ObserveFailed`.
+    struct FailingObserver {
+        descriptor: AgentDescriptor,
+    }
+    impl ReactiveObserver for FailingObserver {
+        fn descriptor(&self) -> AgentDescriptor {
+            self.descriptor.clone()
+        }
+        fn observe(
+            &self,
+            _context: &AgentContext,
+        ) -> Result<AgentOutput, crate::cognitive::observer::ObserveError> {
+            Err(crate::cognitive::observer::ObserveError::Internal(
+                "kaboom".into(),
+            ))
+        }
+    }
+
+    #[test]
+    fn registry_invoke_propagates_observer_error() {
+        let mut reg = AgentRegistry::new();
+        reg.register(FailingObserver {
+            descriptor: descriptor_with_id("failing"),
+        });
+        let err = reg.invoke("failing", &make_ctx("any")).unwrap_err();
+        assert!(matches!(err, DispatchError::ObserveFailed(_)));
+        assert!(err.to_string().contains("kaboom"));
+    }
 }
