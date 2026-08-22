@@ -1601,7 +1601,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             IdeAction::Install {
                 ide,
                 stack: _,
-                install_root: _,
+                install_root,
             } => {
                 let adapters = builtin_adapters();
                 let adapter = adapters.iter().find(|a| a.id() == ide).ok_or_else(|| {
@@ -1615,7 +1615,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     )
                 })?;
                 let payload = current_stack_payload()?;
-                let report = adapter.install_stack(&payload)?;
+                let report = adapter.install_stack(&payload, install_root.as_deref())?;
                 println!(
                     "installed {} skills, {} agents, {} plugins for {}",
                     report.written.len(),
@@ -1684,7 +1684,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     agents: vec![],
                     plugins: vec![],
                 };
-                let report = adapter.install_stack(&payload)?;
+                let report = adapter.install_stack(&payload, None)?;
                 println!(
                     "re-installed {} paths for {}",
                     report.written.len(),

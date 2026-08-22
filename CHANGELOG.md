@@ -2,6 +2,67 @@
 
 _(empty — for the next cycle)_
 
+## [1.87.2] — 2026-08-22
+
+Cycle closure — `M84` (propagate `--install-root` flag into adapter calls).
+Closes a pre-existing F-1 SUGGESTION tracked in `~/.sddk-knowledge/arch-stack/_index.md`
+since 2026-08-12 (M75 era). `archctl ide install --install-root <PATH>` was
+silently accepted by the CLI parser but destructured as ignored in
+`cli.rs:1604`, so the override had no effect: files were always installed to
+`config_root()` regardless of the flag. Bug fix — patch bump.
+
+### Fixed
+
+- **`--install-root` flag for `archctl ide install` is now honored** (cycle
+  M84). The flag was destructured as `install_root: _` at `cli.rs:1604` and
+  the `IdeAdapter::install_stack` trait method (`ide/mod.rs:70`) had no
+  parameter for it. Plumbing: trait signature gains
+  `install_root: Option<&Path>`; all 4 built-in adapters (opencode,
+  zcode, claude-code, codex) honor it via
+  `install_root.map(Path::to_path_buf).unwrap_or_else(|| self.config_root())`;
+  `cli.rs:1601-1605` now binds the field and passes it through
+  (`install_root.as_deref()`).
+
+  Particularly useful for Claude Code + Codex adapters whose `config_root()`
+  hardcodes `~/.claude/` / `~/.codex/` and **does not** respect
+  `XDG_CONFIG_HOME` (per `ide/claude_code.rs:23-26` and
+  `ide/codex.rs:23-25` comments). For these adapters, `--install-root`
+  is the only way to install to a custom location.
+
+### Scope notes (NOT in this cycle)
+
+- **`IdeAction::Update` is unchanged**: the `update` subcommand
+  re-installs via `adapter.install_stack(&payload, None)` — `Update` has
+  no `--install-root` flag, so it always uses `config_root()`. If a user
+  installed via `install --install-root X` and later calls `update`, the
+  update lands at `config_root()` (the default), not at `X`. This is a
+  documented behavior gap, not a regression. Adding `--install-root` to
+  `IdeAction::Update` is a future cycle (would require the same trait
+  plumbing).
+- **`IdeAction::Remove` and `IdeAdapter::diff_stack` are unchanged**:
+  they still use `config_root()` exclusively. Plumbing `install_root`
+  through these is a future cycle (deferred to keep M84 scope tight).
+  Practical effect: if the user installs to a custom path and later runs
+  `ide doctor`, the doctor reports drift against the default
+  `config_root()` (the installed files are at the custom path).
+- **Trait signature change**: `IdeAdapter::install_stack` is a breaking
+  change for any external implementer of the trait. There are no known
+  external impls (the trait is internal to the `archctl::ide` module);
+  the 4 built-in adapters + `TestIdeAdapter` (in `ide/doctor.rs:127`)
+  are the only impls and were all updated in this commit. Semver: this
+  is acceptable per AGENTS.md because the additive parameter mirrors
+  the existing CLI surface and the trait is `pub` only for internal use.
+
+### Validation
+
+- `cargo test --features test-fixtures --tests` → **1253 pass / 0 fail /
+  12 ignored** (+8 from v1.87.1: +3 opencode + +2 claude-code + +2 codex
+  + +2 zcode − 1 deleted lib test helper pair net = +8). All 21 `ide::`
+  tests green.
+- `cargo clippy --features test-fixtures --lib --tests -- -D warnings`
+  → clean.
+- `cargo fmt --check` → clean.
+
 ## [1.87.1] — 2026-08-22
 
 Sprint housekeeping — closes the release-pipeline drift accumulated

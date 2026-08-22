@@ -5,7 +5,7 @@
 //! and skill format conversions.
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct SkillFile {
@@ -67,7 +67,18 @@ pub trait IdeAdapter: Send + Sync {
     fn name(&self) -> &'static str;
     fn detect(&self) -> Result<IdePresence>;
     fn config_root(&self) -> PathBuf;
-    fn install_stack(&self, payload: &StackPayload) -> Result<InstallReport>;
+    /// Install the stack payload into the given root.
+    ///
+    /// `install_root` overrides `self.config_root()` when `Some` —
+    /// this is the `archctl ide install --install-root <PATH>` flag,
+    /// honored by all built-in adapters. When `None`, falls back to
+    /// `config_root()`. Added in v1.87.2 (cycle M84 — `--install-root`
+    /// was destructured as ignored in the CLI before this change).
+    fn install_stack(
+        &self,
+        payload: &StackPayload,
+        install_root: Option<&Path>,
+    ) -> Result<InstallReport>;
     fn remove_stack(&self, payload_id: &str) -> Result<InstallReport>;
     fn diff_stack(&self, payload: &StackPayload) -> Result<Vec<DriftEntry>>;
     /// Format converter for skills. Default impl returns unchanged.

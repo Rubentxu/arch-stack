@@ -147,7 +147,11 @@ mod tests {
         fn config_root(&self) -> PathBuf {
             self.config_root.clone()
         }
-        fn install_stack(&self, _payload: &StackPayload) -> anyhow::Result<InstallReport> {
+        fn install_stack(
+            &self,
+            _payload: &StackPayload,
+            _install_root: Option<&std::path::Path>,
+        ) -> anyhow::Result<InstallReport> {
             // Doctor tests never call install/remove; return a default
             // empty report if reached. Keeps the impl total (no
             // unreachable!() which would explode on accidental use).
