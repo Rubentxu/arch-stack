@@ -1,8 +1,66 @@
 //! Agent execution context.
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use super::descriptor::AgentBudget;
+use super::event::TailFilter;
+use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Compression types (M34 W2)
+// ---------------------------------------------------------------------------
+
+/// Decision priority for [`CompressionPolicy`].
+/// Only `RecencyOnly` is implemented in v1; the other variants exist as
+/// enum stubs for forward compatibility (D4 from design).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DecisionPriority {
+    /// Prioritize recency only (v1 implementation).
+    RecencyOnly,
+    /// Prioritize action proposals (stub — not implemented in v1).
+    ActionProposalOnly,
+    /// Balance recency and action proposals (stub — not implemented in v1).
+    Balanced,
+}
+
+/// Policy for [`AgentContext::compress_for_budget`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressionPolicy {
+    /// Target size in characters for the compressed evidence text.
+    pub budget_chars: usize,
+    /// Maximum BFS hops to walk causation ancestors per recent event (D7).
+    pub preserve_causation_window: u32,
+    /// Decision priority (stub for v1 — only `RecencyOnly` is implemented).
+    pub decision_priority: DecisionPriority,
+}
+
+/// Report returned by [`AgentContext::compress_for_budget`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressionReport {
+    /// Fields that were truncated.
+    pub truncated_fields: Vec<String>,
+    /// Number of evidence items dropped.
+    pub dropped_evidence_count: u32,
+    /// Number of recent events used in compression.
+    pub recent_events_used: u32,
+    /// Number of causation links preserved by BFS.
+    pub preserved_causation_links: u32,
+}
+
+/// Errors from [`AgentContext::compress_for_budget`].
+#[derive(Debug, Error)]
+pub enum CompressionError {
+    /// Ledger was empty when compression was attempted.
+    #[error("ledger is empty — nothing to compress")]
+    EmptyLedger,
+    /// The compression policy is invalid.
+    #[error("invalid policy: {reason}")]
+    InvalidPolicy { reason: String },
+    /// I/O error while reading the event log.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
 
 /// The context passed to an agent on each invocation.
 /// v1.0: built by SyncDispatcher from user goal + graph query.
@@ -112,6 +170,135 @@ impl AgentContext {
             feedback_history,
             pending_adjudications,
         }
+    }
+
+    /// Compress the context to fit within a character budget, preserving causal lineage.
+    ///
+    /// **Fail-open**: on any error this method logs a warning and leaves the context
+    /// unchanged (D6 from design).
+    ///
+    /// # Algorithm (5 steps, D7 from design)
+    ///
+    /// 1. **Exempt**: snapshot `feedback_history.len()` and `pending_adjudications.len()`.
+    /// 2. **Evidence truncation**: oldest-first, until estimated size ≤ `budget_chars`.
+    /// 3. **Recent events**: `recent_n = max(10, budget_chars / 500)`.
+    /// 4. **Causation BFS**: walk ancestors up to `preserve_causation_window` hops.
+    /// 5. Return report with counts.
+    ///
+    /// Note: The `recent_events` field on AgentContext is NOT populated in this PR
+    /// due to the W2/W2b split. PR1c adds the field and updates this method.
+    pub fn compress_for_budget(
+        &mut self,
+        policy: &CompressionPolicy,
+        ledger: &super::event::EventLog,
+    ) -> Result<CompressionReport, CompressionError> {
+        // Step 0: validate policy
+        if policy.budget_chars == 0 {
+            return Err(CompressionError::InvalidPolicy {
+                reason: "budget_chars must be > 0".into(),
+            });
+        }
+        if policy.preserve_causation_window == 0 {
+            return Err(CompressionError::InvalidPolicy {
+                reason: "preserve_causation_window must be > 0".into(),
+            });
+        }
+
+        // Step 1: exempt — snapshot lengths (INV-001 + INV-002)
+        let orig_feedback_len = self.feedback_history.len();
+        let orig_adjudications_len = self.pending_adjudications.len();
+
+        // Step 2: evidence truncation — oldest-first
+        let mut truncated_fields: Vec<String> = Vec::new();
+        let mut dropped_evidence_count = 0u32;
+
+        fn estimate_chars(s: &str) -> usize {
+            s.len()
+        }
+
+        let total_evidence_chars: usize =
+            self.evidence.iter().map(|e| estimate_chars(&e.text)).sum();
+
+        if total_evidence_chars > policy.budget_chars {
+            let mut current_chars = total_evidence_chars;
+            while current_chars > policy.budget_chars && !self.evidence.is_empty() {
+                let removed = self.evidence.remove(0);
+                current_chars = current_chars.saturating_sub(estimate_chars(&removed.text));
+                dropped_evidence_count += 1;
+                truncated_fields.push(String::from("evidence.text"));
+            }
+        }
+
+        // Step 3: recent events
+        let recent_n = usize::max(10, policy.budget_chars / 500);
+        let recent_events_result = ledger.recent(recent_n, TailFilter::All);
+
+        let recent_events = match recent_events_result {
+            Ok(events) => events,
+            Err(e) => {
+                tracing::warn!("compress_for_budget: ledger.recent error: {}", e);
+                return Ok(CompressionReport {
+                    truncated_fields,
+                    dropped_evidence_count,
+                    recent_events_used: 0,
+                    preserved_causation_links: 0,
+                });
+            }
+        };
+
+        let recent_events_used = recent_events.len() as u32;
+
+        // Step 4: causation BFS
+        let mut preserved_causation_links = 0u32;
+        let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+
+        for event in &recent_events {
+            let Some(causation_id) = event.envelope.causation_id else {
+                continue;
+            };
+            let mut current_id = causation_id;
+            for _depth in 0..policy.preserve_causation_window {
+                if visited.contains(&current_id) {
+                    break;
+                }
+                match ledger.find_by_event_id(current_id) {
+                    Ok(Some(ancestor)) => {
+                        let ancestor_id = ancestor.envelope.event_id;
+                        visited.insert(ancestor_id);
+                        preserved_causation_links += 1;
+                        current_id = ancestor_id;
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        tracing::warn!(
+                            "compress_for_budget: find_by_event_id({}) error: {}",
+                            current_id,
+                            e
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Step 5: restore exempt fields
+        debug_assert_eq!(
+            self.feedback_history.len(),
+            orig_feedback_len,
+            "feedback_history must be preserved"
+        );
+        debug_assert_eq!(
+            self.pending_adjudications.len(),
+            orig_adjudications_len,
+            "pending_adjudications must be preserved"
+        );
+
+        Ok(CompressionReport {
+            truncated_fields,
+            dropped_evidence_count,
+            recent_events_used,
+            preserved_causation_links,
+        })
     }
 }
 
@@ -637,5 +824,325 @@ mod tests {
         assert_eq!(back.id.as_str(), "ev-min");
         assert_eq!(back.content_hash, "deadbeef");
         assert_eq!(back.text, "snippet text");
+    }
+
+    // ---------------------------------------------------------------------------
+    // W2 tests — compress_for_budget + CompressionPolicy + CompressionReport
+    // ---------------------------------------------------------------------------
+
+    use super::super::event::EventLog;
+
+    /// budget fits → no change (evidence not truncated).
+    #[test]
+    fn compress_budget_fits_no_truncation() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("budget_fit.jsonl");
+        let ledger = EventLog::open(log_path).unwrap();
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![Evidence {
+                id: "ev-1".into(),
+                provenance_id: ProvenanceId::File {
+                    path: "x.rs".into(),
+                    line: 1,
+                },
+                content_hash: "abc".into(),
+                text: "short".into(),
+                properties: Default::default(),
+            }],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 1000,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let report = ctx.compress_for_budget(&policy, &ledger).unwrap();
+
+        assert!(report.truncated_fields.is_empty());
+        assert_eq!(report.dropped_evidence_count, 0);
+        assert_eq!(ctx.evidence.len(), 1);
+    }
+
+    /// budget tight → evidence truncated.
+    #[test]
+    fn compress_budget_tight_truncates_evidence() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("budget_tight.jsonl");
+        let ledger = EventLog::open(log_path).unwrap();
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![Evidence {
+                id: "ev-1".into(),
+                provenance_id: ProvenanceId::File {
+                    path: "x.rs".into(),
+                    line: 1,
+                },
+                content_hash: "abc".into(),
+                text: "this is a long evidence text that should be truncated".into(),
+                properties: Default::default(),
+            }],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 10,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let report = ctx.compress_for_budget(&policy, &ledger).unwrap();
+
+        assert!(!report.truncated_fields.is_empty());
+        assert_eq!(report.dropped_evidence_count, 1);
+    }
+
+    /// feedback_history length preserved when budget=0 (INV-001).
+    #[test]
+    fn compress_feedback_history_preserved_when_budget_zero() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("feedback_preserved.jsonl");
+        let ledger = EventLog::open(log_path).unwrap();
+
+        let fb = crate::feedback::FeedbackSummary {
+            id: "fb-1".into(),
+            target: "claim-1".into(),
+            verdict: crate::feedback::FeedbackVerdict::Accept,
+            replacement: None,
+            actor: "alice".into(),
+            revision: "rev-1".into(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![fb],
+            pending_adjudications: vec![],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 0,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let err = ctx.compress_for_budget(&policy, &ledger).unwrap_err();
+        assert!(matches!(err, CompressionError::InvalidPolicy { .. }));
+        assert_eq!(ctx.feedback_history.len(), 1);
+    }
+
+    /// pending_adjudications length preserved when budget=0 (INV-002).
+    #[test]
+    fn compress_pending_adjudications_preserved_when_budget_zero() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("adjudications_preserved.jsonl");
+        let ledger = EventLog::open(log_path).unwrap();
+
+        let adj = crate::adjudication::AdjudicationEvent {
+            id: "adj-1".into(),
+            target_fused_claim_id: "clm:fused:x".into(),
+            adjudicator: "alice".into(),
+            evidence_refs: vec![],
+            decided_at: chrono::Utc::now().to_rfc3339(),
+            decision: crate::adjudication::AdjudicationDecision::Promote,
+        };
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![adj],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 0,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let err = ctx.compress_for_budget(&policy, &ledger).unwrap_err();
+        assert!(matches!(err, CompressionError::InvalidPolicy { .. }));
+        assert_eq!(ctx.pending_adjudications.len(), 1);
+    }
+
+    /// causation BFS resolves within window → preserved_causation_links > 0.
+    #[test]
+    fn compress_causation_bfs_resolves_within_window() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("causation_bfs.jsonl");
+        let mut ledger = EventLog::open(log_path).unwrap();
+
+        let root_id = ledger
+            .append(
+                "test",
+                "test",
+                "Root",
+                serde_json::json!({}),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let child_id = ledger
+            .append(
+                "test",
+                "test",
+                "Child",
+                serde_json::json!({}),
+                None,
+                Some(root_id),
+                None,
+            )
+            .unwrap();
+        let _grandchild_id = ledger
+            .append(
+                "test",
+                "test",
+                "Grandchild",
+                serde_json::json!({}),
+                None,
+                Some(child_id),
+                None,
+            )
+            .unwrap();
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 100_000,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let report = ctx.compress_for_budget(&policy, &ledger).unwrap();
+
+        assert!(
+            report.preserved_causation_links > 0,
+            "BFS must preserve at least the parent link; got {}",
+            report.preserved_causation_links
+        );
+    }
+
+    /// causation BFS partial when events missing → partial report.
+    #[test]
+    fn compress_causation_bfs_partial_when_missing() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("causation_partial.jsonl");
+        let mut ledger = EventLog::open(log_path).unwrap();
+
+        let missing_parent_id = uuid::Uuid::new_v4();
+        ledger
+            .append(
+                "test",
+                "test",
+                "Orphan",
+                serde_json::json!({}),
+                None,
+                Some(missing_parent_id),
+                None,
+            )
+            .unwrap();
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 100_000,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let report = ctx.compress_for_budget(&policy, &ledger).unwrap();
+
+        assert_eq!(
+            report.preserved_causation_links, 0,
+            "preserved_causation_links must be 0 when parent is missing"
+        );
+    }
+
+    /// empty ledger → returns zeroed report (fail-open).
+    #[test]
+    fn compress_empty_ledger_returns_zeroed_report() {
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("empty_ledger.jsonl");
+        let ledger = EventLog::open(log_path).unwrap();
+
+        let mut ctx = AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+        };
+
+        let policy = CompressionPolicy {
+            budget_chars: 5000,
+            preserve_causation_window: 3,
+            decision_priority: DecisionPriority::RecencyOnly,
+        };
+
+        let report = ctx.compress_for_budget(&policy, &ledger).unwrap();
+
+        assert!(report.truncated_fields.is_empty());
+        assert_eq!(report.dropped_evidence_count, 0);
+        assert_eq!(report.recent_events_used, 0);
+        assert_eq!(report.preserved_causation_links, 0);
     }
 }
