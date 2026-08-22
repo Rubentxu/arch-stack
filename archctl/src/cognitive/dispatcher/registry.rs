@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 
-use crate::cognitive::context::AgentContext;
+use crate::cognitive::context::{AgentContext, CompressionPolicy, DecisionPriority};
 use crate::cognitive::descriptor::AgentDescriptor;
+use crate::cognitive::event::EventLog;
 use crate::cognitive::observer::ReactiveObserver;
 use crate::cognitive::output::AgentOutput;
 
@@ -74,20 +75,61 @@ pub enum DispatchError {
 /// Synchronous dispatcher that runs a goal through all matching agents.
 pub struct SyncDispatcher<'a> {
     registry: &'a AgentRegistry,
+    /// Optional event log for context compression (M34 W4).
+    /// When `Some`, the dispatcher will compress the agent context before
+    /// fan-out if the context has a token budget. Defaults to `None`.
+    event_log: Option<EventLog>,
 }
 
 impl<'a> SyncDispatcher<'a> {
     pub fn new(registry: &'a AgentRegistry) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            event_log: None,
+        }
+    }
+
+    /// Attach an event log for context compression (M34 W4).
+    /// The compression log is read-only; it provides recent events for
+    /// causation-window traversal during budget compression.
+    pub fn with_compression_log(mut self, ledger: EventLog) -> Self {
+        self.event_log = Some(ledger);
+        self
     }
 
     /// Dispatch a goal to all matching agents, returning the first actionable output.
     /// v1.0: returns first non-NoAction output, or NoAction if all agents decline.
+    ///
+    /// If `context.budget.tokens` is `Some` and `self.event_log` is `Some`,
+    /// the context is cloned and compressed via `compress_for_budget` before
+    /// fan-out. The original `&AgentContext` is left untouched. The clone cost
+    /// is acceptable for the v1 sync path (not in a hot loop).
     pub fn dispatch(&self, context: &AgentContext) -> Result<AgentOutput, DispatchError> {
+        // M34 W4: clone + compress if budget + event_log available
+        let ctx_for_dispatch = if context.budget.tokens.is_some() {
+            let mut ctx_clone = context.clone();
+            let policy = CompressionPolicy {
+                budget_chars: context.budget.tokens.unwrap_or(0) as usize * 4,
+                preserve_causation_window: 3,
+                decision_priority: DecisionPriority::RecencyOnly,
+            };
+            if let Some(ledger) = &self.event_log
+                && let Err(e) = ctx_clone.compress_for_budget(&policy, ledger)
+            {
+                tracing::warn!(
+                    error = %e,
+                    "sync_dispatch: context compression failed, proceeding with uncompressed clone"
+                );
+            }
+            ctx_clone
+        } else {
+            context.clone()
+        };
+
         let mut best: Option<AgentOutput> = None;
 
         for id in self.registry.ids() {
-            let out = self.registry.invoke(id, context)?;
+            let out = self.registry.invoke(id, &ctx_for_dispatch)?;
             if !matches!(out, AgentOutput::NoAction(_)) {
                 best = Some(out);
                 break;
@@ -107,6 +149,7 @@ impl<'a> SyncDispatcher<'a> {
 mod tests {
     use super::*;
     use crate::cognitive::descriptor::{AgentBudget, ModelPolicy};
+    use crate::cognitive::event::{EventEnvelope, EventLog, SerializedEvent};
     use crate::cognitive::observer::NoopObserver;
 
     fn make_ctx(goal: &str) -> AgentContext {
@@ -505,5 +548,119 @@ mod tests {
         let err = reg.invoke("failing", &make_ctx("any")).unwrap_err();
         assert!(matches!(err, DispatchError::ObserveFailed(_)));
         assert!(err.to_string().contains("kaboom"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // M34 W4 — compress_for_budget wiring tests for SyncDispatcher
+    // ---------------------------------------------------------------------------
+
+    /// Helper to make an EventEnvelope for testing.
+    fn make_envelope(event_type: &str) -> EventEnvelope {
+        EventEnvelope {
+            event_id: uuid::Uuid::new_v4(),
+            schema_version: "1.0".into(),
+            timestamp: chrono::Utc::now(),
+            source: "test".into(),
+            producer: "test".into(),
+            event_type: event_type.into(),
+            payload: serde_json::json!({}),
+            seq: 1,
+            correlation_id: None,
+            causation_id: None,
+            graph_revision: None,
+        }
+    }
+
+    /// Helper to make an AgentContext with budget tokens.
+    fn make_ctx_with_budget(tokens: Option<u32>) -> AgentContext {
+        AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: Default::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens,
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        }
+    }
+
+    /// Dispatch with budget.tokens = Some(N) and event_log = Some should succeed.
+    #[test]
+    fn sync_dispatch_with_budget_compresses_context() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        for _ in 1..=5 {
+            comp_log
+                .append_serialized(&SerializedEvent::from_envelope(make_envelope(
+                    "PreExisting",
+                )))
+                .unwrap();
+        }
+        let reg = AgentRegistry::new();
+        let disp = SyncDispatcher::new(&reg).with_compression_log(comp_log);
+        let ctx = make_ctx_with_budget(Some(100));
+        let _ = disp.dispatch(&ctx);
+    }
+
+    /// Dispatch with budget.tokens = None should NOT trigger compression.
+    #[test]
+    fn sync_dispatch_without_budget_does_not_compress() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        let reg = AgentRegistry::new();
+        let disp = SyncDispatcher::new(&reg).with_compression_log(comp_log);
+        let ctx = make_ctx_with_budget(None);
+        let out = disp.dispatch(&ctx).unwrap();
+        assert!(matches!(out, AgentOutput::NoAction(_)));
+    }
+
+    /// When event_log is None, dispatch must not panic even if budget.tokens = Some.
+    #[test]
+    fn sync_dispatch_with_event_log_unavailable_skips_compression() {
+        let reg = AgentRegistry::new();
+        let disp = SyncDispatcher::new(&reg);
+        let ctx = make_ctx_with_budget(Some(100));
+        let out = disp.dispatch(&ctx).unwrap();
+        assert!(matches!(out, AgentOutput::NoAction(_)));
+    }
+
+    /// Dispatch with causation-linked events should succeed (BFS traversal ok).
+    #[test]
+    fn sync_dispatch_preserves_causation_window_within_recent_events() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        let mut prev_id = uuid::Uuid::nil();
+        for i in 1..=3 {
+            let event_id = uuid::Uuid::new_v4();
+            let env = EventEnvelope {
+                event_id,
+                schema_version: "1.0".into(),
+                timestamp: chrono::Utc::now(),
+                source: "test".into(),
+                producer: "test".into(),
+                event_type: format!("Event{}", i),
+                payload: serde_json::json!({}),
+                seq: i,
+                correlation_id: None,
+                causation_id: if i > 1 { Some(prev_id) } else { None },
+                graph_revision: None,
+            };
+            prev_id = event_id;
+            comp_log
+                .append_serialized(&SerializedEvent::from_envelope(env))
+                .unwrap();
+        }
+        let reg = AgentRegistry::new();
+        let disp = SyncDispatcher::new(&reg).with_compression_log(comp_log);
+        let ctx = make_ctx_with_budget(Some(100));
+        let out = disp.dispatch(&ctx).unwrap();
+        assert!(matches!(out, AgentOutput::NoAction(_)));
     }
 }
