@@ -2,6 +2,64 @@
 
 _(empty — for the next cycle)_
 
+## [1.87.3] — 2026-08-22
+
+Cycle closure — `cognitive-layer-coverage` continuation. Formalises the
+3 trailing commits (`922aac1`, `d22d53c`, `6157647`) that landed in
+`main` after the `v1.87.2` tag and the docs commit (`22253dc`). Tests
+only (no behavioural change in production code) plus one additive
+derive and one doc cleanup. Patch bump.
+
+### Added
+
+- **26 new tests across 3 cognitive-layer modules** (cycle
+  `cognitive-layer-coverage` continuation):
+  - `cognitive/event.rs` (988 LOC, 17 → 28 tests, ratio 1.7% → 2.8%):
+    monotonic seq invariant, `append` + `append_serialized` coexistence,
+    `EventEnvelope` round-trip with all optional fields populated,
+    `consumer_checkpoint` default-0, `validate_consumer_id` rejects
+    empty / too-long / `..` / `/` / NUL byte + accepts well-formed.
+  - `cognitive/dispatcher/registry.rs` (186 LOC, 3 → 9 tests, ratio
+    1.6% → 4.8%): `register` duplicate panic, `ids()` iterates all,
+    `MismatchObserver` short-circuits to `NoAction(OutOfScope)` without
+    invoking `observe()`, dispatcher all-decline returns
+    `InsufficientConfidence`, `DispatchError` Display for both variants.
+  - `cognitive/mcp/tools.rs` (337 LOC, 4 → 13 tests, ratio 1.2% → 3.9%):
+    `ToolResult` round-trips, `TestScope` default deserialization,
+    `RunTestsArgs` default timeout=300, `GraphQueryResult` round-trip,
+    `schema_validate` non-object / not-array / missing-fields paths,
+    empty `Vec` `skip_serializing_if` confirmed.
+
+### Changed (additive — non-breaking)
+
+- **`Deserialize` derived on `cognitive::mcp::tools::GraphQueryResult`**
+  (commit `6157647`). Was `Serialize`-only; the derive enables full
+  serde round-trips of the `graph_query` tool response. Additive.
+
+### Fixed (doc-only)
+
+- **3 stale `--lang` help strings in `cli.rs`** (D5 residual, commit
+  `22253dc`):
+  - L530 (`call_graph::Language`, 6 variants): was `(rust, typescript,
+    python, go)` → now `(rust, typescript, python, go, java, kotlin)`.
+  - L570 (`class_diagram::Language`, 3 variants): was `(rust,
+    typescript, python, go)` → now `(rust, typescript, python)`.
+  - L589 (`state_machine::Language`, 3 variants): same correction.
+  Previously the help text advertised Go for `class_diagram` and
+  `state_machine` (which lack Go support) and omitted Java+Kotlin for
+  `call_graph` (which supports both). Verified against `code/call_graph.rs:90`,
+  `code/class_diagram.rs:96`, `code/state_machine.rs:27`.
+
+### Validation
+
+- `cargo test --features test-fixtures --tests` → **1279 pass / 0 fail
+  / 12 ignored** (+26 from v1.87.2: +11 event.rs + +6 registry.rs +
+  +9 tools.rs; the in-v1.87.2 trailing cognitive cycle brings the
+  *delta from v1.87.1 to v1.87.3* to +75 lib+integration tests).
+- `cargo clippy --features test-fixtures --lib --tests -- -D warnings`
+  → clean.
+- `cargo fmt --check` → clean.
+
 ## [1.87.2] — 2026-08-22
 
 Cycle closure — `M84` (propagate `--install-root` flag into adapter calls).
