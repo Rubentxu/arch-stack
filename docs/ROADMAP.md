@@ -959,9 +959,28 @@ coherente. Ningún item es bloqueante; todos son WARN/SUGG del debt-report.
 `archctl/src/code/call_graph.rs`, `archctl/tests/code_call_graph.rs`,
 `archctl/src/cli.rs`
 
-## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **NUEVO (2026-08-06)**
+## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **CERRADO ✅**
 
-**Estado:** NUEVO — detectado durante el human-loop sandbox (M29.4).
+**Estado:** Cerrado ✅ — option (b) implementada en 2 PRs: PR #86
+(`09e69dc`, `v1.5.0`) introdujo el envelope `{manifest, projection,
+evidence, styles, empty, warning}` via `build_export_envelope`
+(`archctl/src/diagram/export.rs:263-278`); server en
+`view.rs:118-135` early-return HTTP 200 + `{empty:true, warning:"no
+project_dir …"}`. CLI: 3 tests en `diagram_export_cli.rs`
+(`export_empty_graph_json_envelope_has_empty_true`,
+`tracing_logs_do_not_pollute_stdout`,
+`non_json_mode_stdout_is_clean_text`). Server: 3 tests en `view.rs:771,
+840, 886` (`export_without_project_is_200_empty_json`,
+`export_with_selector_splits_path`,
+`export_without_selector_uses_default`). PR #88 (`a134dcc`, `v1.5.1`)
+redirige los tracing logs a stderr per M31-FU1
+(`archctl/src/telemetry.rs:27`). e2e `human_loop_sandbox.sh` Fase 9.1
+(L241-245) y `e2e/HUMAN_LOOP_TEST.md` L246 row 9.1 alineados con
+exit 0 + `empty:true`. CHANGELOG `[1.5.0]` + `[1.5.1]` +
+`STATE.md:36-37` + cycle-log row al final de este ROADMAP todos
+consistentes. Verificación independiente archivada en
+`sddk/m31-diagram-export-empty-semantics/explore-report.md` (session
+2026-08-22).
 
 **Objetivo:** Definir una única semántica para "export sin proyecto/grafo"
 y alinearla entre CLI, server del workbench, tests y documentación.
