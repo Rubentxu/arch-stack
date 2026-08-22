@@ -222,4 +222,155 @@ mod tests {
         assert!(parsed.affected_components.is_empty());
         assert_eq!(parsed.cost_ceiling, CostCeiling::default());
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v5, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `CostCeiling::allows` is the strict-greater-than gate: equal to the
+    /// limit IS allowed (per `cost_ceiling_allows_at_exact_token_limit`).
+    /// Both tokens and cost_cents at exact boundary must pass.
+    #[test]
+    fn cost_ceiling_allows_at_both_exact_limits() {
+        let ceiling = CostCeiling {
+            tokens: Some(1000),
+            time_ms: None,
+            cost_cents: Some(50),
+        };
+        // Both at exact limit — should pass (boundary contract)
+        assert!(ceiling.allows(Some(1000), Some(50)));
+    }
+
+    /// `CostCeiling::allows` when caller passes ONLY one of the two args
+    /// (the other is None). The check still applies to whichever was
+    /// passed.
+    #[test]
+    fn cost_ceiling_allows_when_only_one_arg_passed() {
+        let ceiling = CostCeiling {
+            tokens: Some(100),
+            time_ms: None,
+            cost_cents: Some(50),
+        };
+        // Caller supplies tokens=Some — over limit
+        assert!(!ceiling.allows(Some(101), None));
+        // Caller supplies cost_cents=Some — over limit
+        assert!(!ceiling.allows(None, Some(51)));
+        // Both supplied, both under
+        assert!(ceiling.allows(Some(50), Some(25)));
+    }
+
+    /// `CostCeiling::allows` boundary case: caller supplies a value
+    /// EQUAL to the limit. Allowed (the contract is `>`, not `>=`).
+    /// Mirrors `cost_ceiling_allows_at_exact_token_limit` but for cost_cents.
+    #[test]
+    fn cost_ceiling_allows_at_exact_cost_cents_limit() {
+        let ceiling = CostCeiling {
+            tokens: None,
+            time_ms: None,
+            cost_cents: Some(50),
+        };
+        assert!(ceiling.allows(None, Some(50)));
+    }
+
+    /// `CostCeiling` Debug includes field names + values. Locks the
+    /// `#[derive(Debug)]` contract.
+    #[test]
+    fn cost_ceiling_debug_includes_fields() {
+        let ceiling = CostCeiling {
+            tokens: Some(100),
+            time_ms: Some(1000),
+            cost_cents: Some(50),
+        };
+        let dbg = format!("{ceiling:?}");
+        assert!(dbg.contains("CostCeiling"), "got: {dbg}");
+        assert!(dbg.contains("tokens"), "got: {dbg}");
+        assert!(dbg.contains("100"), "got: {dbg}");
+    }
+
+    /// `CostCeiling` Copy preserves all fields. (It's `#[derive(Copy)]`.)
+    /// `Clone` is also derived and works the same way.
+    #[test]
+    fn cost_ceiling_copy_is_equal_to_original() {
+        let original = CostCeiling {
+            tokens: Some(100),
+            time_ms: Some(1000),
+            cost_cents: Some(50),
+        };
+        let copied = original; // Copy — no `.clone()` needed
+        assert_eq!(original, copied);
+    }
+
+    /// `CostCeiling` serde roundtrip preserves all 3 Option fields.
+    /// Distinct from `cost_ceiling_default_is_unrestricted` which checks
+    /// the all-None case.
+    #[test]
+    fn cost_ceiling_serde_with_all_fields_populated() {
+        let ceiling = CostCeiling {
+            tokens: Some(4096),
+            time_ms: Some(60_000),
+            cost_cents: Some(200),
+        };
+        let json = serde_json::to_string(&ceiling).unwrap();
+        let back: CostCeiling = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tokens, Some(4096));
+        assert_eq!(back.time_ms, Some(60_000));
+        assert_eq!(back.cost_cents, Some(200));
+    }
+
+    /// `PolicyContext` Debug includes the user_id and environment.
+    #[test]
+    fn policy_context_debug_includes_user_and_environment() {
+        let ctx = PolicyContext {
+            user_id: "alice".into(),
+            environment: DeploymentEnv::Production,
+            security_impact: SecurityImpact::High,
+            requesting_capabilities: vec!["deploy".into()],
+            affected_components: vec!["svc-1".into()],
+            cost_ceiling: CostCeiling::default(),
+        };
+        let dbg = format!("{ctx:?}");
+        assert!(dbg.contains("PolicyContext"), "got: {dbg}");
+        assert!(dbg.contains("alice"), "got: {dbg}");
+        assert!(dbg.contains("Production"), "got: {dbg}");
+        assert!(dbg.contains("High"), "got: {dbg}");
+    }
+
+    /// `PolicyContext` Clone preserves all fields. (It's `#[derive(Clone)]`.)
+    #[test]
+    fn policy_context_clone_is_independent() {
+        let original = PolicyContext {
+            user_id: "alice".into(),
+            environment: DeploymentEnv::Production,
+            security_impact: SecurityImpact::High,
+            requesting_capabilities: vec!["deploy".into()],
+            affected_components: vec!["svc-1".into()],
+            cost_ceiling: CostCeiling {
+                tokens: Some(100),
+                time_ms: None,
+                cost_cents: None,
+            },
+        };
+        let cloned = original.clone();
+        assert_eq!(cloned.user_id, "alice");
+        assert_eq!(cloned.environment, DeploymentEnv::Production);
+        assert_eq!(cloned.cost_ceiling.tokens, Some(100));
+    }
+
+    /// `PolicyContext` with `affected_components` populated round-trips.
+    /// Distinct from `policy_context_round_trip_with_defaults` which
+    /// omits this field.
+    #[test]
+    fn policy_context_round_trip_with_affected_components_populated() {
+        let ctx = PolicyContext {
+            user_id: "carol".into(),
+            environment: DeploymentEnv::Staging,
+            security_impact: SecurityImpact::Medium,
+            requesting_capabilities: vec!["read".into()],
+            affected_components: vec!["auth".into(), "billing".into()],
+            cost_ceiling: CostCeiling::default(),
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: PolicyContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.affected_components, vec!["auth", "billing"]);
+    }
 }
