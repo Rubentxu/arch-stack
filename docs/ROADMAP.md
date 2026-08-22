@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.80.0 ALCANZADO (2026-08-20) — M23 perf-ci-gate shipped (ADR-019 enforcement para archview, post-merge CI job `perf-cull`, +66 LOC contract tests); Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes.
-**Versión:** 2.15
-**Fecha:** 20 de agosto de 2026
-**Cambios vs 2.14:** 7 cycle log rows (`m17-workbench-redesign` v1.74.0 / `m18-c4-semantic-zoom` v1.75.0 / `m19-elk-worker-layout` v1.76.0 / `m21-g6-culling-lod` v1.78.0 / `m22-sidebar-tabs` v1.79.0 / `m23-perf-ci-gate` v1.80.0 / `t0-trust-001-eventlog-reopen` v1.81.0) + nueva sección `## Plan vivo — Architecture Feedback Workbench (paquete 2026-08-20)` que cruza T0–T11 con ADRs aceptados del repo, indexa los 80 tickets del backlog PR-sized y nombra UAT-06 (false-agent-claim) como verification gate de P02.
+**Estado:** v1.87.0 ALCANZADO (2026-08-22) — TRUST-008 m30 bridge hard fail + Adjudication bounded context shipped (closes REQ-M25-006); T0 Trust cerrado end-to-end (TRUST-001..008). Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes. Pendiente menor: report de redacciones en strict bundles + persistir cutoff de staleness por proyecto en XDG.
+**Versión:** 2.16
+**Fecha:** 22 de agosto de 2026
+**Cambios vs 2.15:** 8 cycle log rows (`t0-trust-001-eventlog-reopen` v1.81.0 / `t0-trust-002-event-ids-causation` v1.82.0 / `m25-authority-execution-classes` v1.83.0 / `trust-005-observation-fusion` v1.84.0 / `trust-006-context-bundle` v1.85.0 / `trust-007-feedback-port` v1.86.0 / `trust-008-m30-bridge-promotion` v1.87.0 / `no-stubs-mocks-placeholders-hardcoded` documentation rule) + bump de `docs/STATE.md` (Estado del trunk rows Tip/Versión/Tests/LOC/Tags) y añadidas las 7 filas v1.81.0–v1.87.0 en la tabla "Capacidades shipped" (que terminaba en v1.80.0).
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
@@ -81,7 +81,7 @@ canonical architecture fact
 
 | H | Título | Exit gate (UAT) | ADRs blueprint | ADRs repo ya aceptados | Estado real |
 |---|---|---|---|---|---|
-| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | **TRUST-001 shipped v1.81.0** (reopen safe ✅); **TRUST-002 shipped v1.82.0** (causation infra ✅); TRUST-003..006 pending |
+| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md), [ADR-063](../adr/ADR-063-trust-determinism-and-authority.md), [ADR-064](../adr/ADR-064-fusion-bounded-context.md) | **TRUST-001..008 ALL SHIPPED** (v1.81.0 → v1.87.0) — T0 Trust cerrado end-to-end: 001 reopen safe ✅ · 002 causation/correlation ✅ · 003 + 004 typology+canonical-write gate (closed in m25 v1.83.0) ✅ · 005 epistemic plumbing closed ✅ · 006 AgentContext.feedback_history ✅ · 007 FeedbackRepository::summaries_for_claims (data-plane ADR-P02) ✅ · 008 m30 bridge hard fail + Adjudication BC ✅ |
 | **T1** | Incremental Knowledge Engine | UAT-04 + equality gate | P05, P06 | — | backlog only |
 | **T2** | Structured Docs + Tantivy | UAT-08 recall | P04 | — | backlog only |
 | **T3** | Live Revision Loop | UAT-04/UAT-10 + budget | P11, P12 | [ADR-010](../adr/ADR-010-concurrencia-ladybugdb.md), [ADR-033](../adr/ADR-033-archctl-view-embedded-workbench.md) | backlog only |
