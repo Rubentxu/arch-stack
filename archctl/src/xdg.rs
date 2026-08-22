@@ -228,9 +228,7 @@ mod tests {
     /// from HOME (`$HOME/.local/share`, `$HOME/.config`, etc.).
     #[test]
     fn resolve_xdg_falls_back_to_home_defaults() {
-        let env = [("HOME".into(), "/home/u".into())]
-            .into_iter()
-            .collect();
+        let env = [("HOME".into(), "/home/u".into())].into_iter().collect();
 
         let layout = resolve_xdg_from_env(&env);
         // Use contains for cross-platform separator tolerance
@@ -266,10 +264,7 @@ mod tests {
         let layout = resolve_xdg_from_env(&env);
         // USERPROFILE value is used as base
         assert!(
-            layout
-                .data
-                .to_string_lossy()
-                .contains("Users\\u")
+            layout.data.to_string_lossy().contains("Users\\u")
                 || layout.data.to_string_lossy().contains("Users/u")
         );
     }

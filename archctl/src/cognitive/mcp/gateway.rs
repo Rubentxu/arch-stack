@@ -697,7 +697,7 @@ mod tests {
         assert!(ALLOWED_TOOLS.contains(&"run_tests_local"));
     }
 
-/// `McpGateway::default()` and `McpGateway::new()` are equivalent
+    /// `McpGateway::default()` and `McpGateway::new()` are equivalent
     /// (both produce an empty allowlist-only router).
     #[test]
     fn mcp_gateway_default_equiv_new() {
@@ -705,7 +705,8 @@ mod tests {
         let gw_new = McpGateway::new();
         // Both must allow graph_query and deny unknown tools identically
         for gw in [&gw_default, &gw_new] {
-            let allowed = gw.handle_raw(r#"{"tool":"graph_query","args":{"cypher":"RETURN 1","params":{}}}"#);
+            let allowed =
+                gw.handle_raw(r#"{"tool":"graph_query","args":{"cypher":"RETURN 1","params":{}}}"#);
             assert!(allowed.contains("graph_query"));
             let denied = gw.handle_raw(r#"{"tool":"nope","args":{}}"#);
             assert!(denied.contains("not in allowlist"));
