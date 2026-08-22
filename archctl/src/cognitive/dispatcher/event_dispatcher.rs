@@ -518,4 +518,298 @@ mod tests {
 
         assert_eq!(agent.activate_count(), 1);
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// Real ReactiveObserver that emits a non-NoAction output (Hypothesis).
+    /// NOT a mock — same pattern as CountingObserver: real observer
+    /// specialised for assertions, no external placeholder.
+    struct ProducingObserver {
+        descriptor: AgentDescriptor,
+        statement: String,
+    }
+
+    impl ProducingObserver {
+        fn new(id: &str, subscriptions: Vec<String>, statement: &str) -> Self {
+            Self {
+                descriptor: AgentDescriptor {
+                    id: id.into(),
+                    version: "0.1.0".into(),
+                    subscriptions,
+                    required_views: vec![],
+                    output_schema: "{}".into(),
+                    model_policy: ModelPolicy::Heuristic,
+                    budget: AgentBudget::default(),
+                    capabilities: vec![],
+                    deterministic: true,
+                    idempotent: true,
+                },
+                statement: statement.into(),
+            }
+        }
+    }
+
+    impl ReactiveObserver for ProducingObserver {
+        fn descriptor(&self) -> AgentDescriptor {
+            self.descriptor.clone()
+        }
+        fn matches(&self, _ctx: &AgentContext) -> bool {
+            true
+        }
+        fn observe(&self, _ctx: &AgentContext) -> Result<AgentOutput, ObserveError> {
+            Ok(AgentOutput::Hypothesis(
+                crate::cognitive::output::Hypothesis {
+                    statement: self.statement.clone(),
+                    confidence: 0.9,
+                    evidence_ids: vec![],
+                },
+            ))
+        }
+    }
+
+    /// Real observer that returns Err from observe(). Verifies the dispatcher
+    /// swallows the error and continues processing the remaining agents.
+    struct ErroringObserver {
+        descriptor: AgentDescriptor,
+    }
+
+    impl ErroringObserver {
+        fn new(id: &str, subscriptions: Vec<String>) -> Self {
+            Self {
+                descriptor: AgentDescriptor {
+                    id: id.into(),
+                    version: "0.1.0".into(),
+                    subscriptions,
+                    required_views: vec![],
+                    output_schema: "{}".into(),
+                    model_policy: ModelPolicy::Heuristic,
+                    budget: AgentBudget::default(),
+                    capabilities: vec![],
+                    deterministic: true,
+                    idempotent: true,
+                },
+            }
+        }
+    }
+
+    impl ReactiveObserver for ErroringObserver {
+        fn descriptor(&self) -> AgentDescriptor {
+            self.descriptor.clone()
+        }
+        fn matches(&self, _ctx: &AgentContext) -> bool {
+            true
+        }
+        fn observe(&self, _ctx: &AgentContext) -> Result<AgentOutput, ObserveError> {
+            Err(ObserveError::Internal("forced failure".into()))
+        }
+    }
+
+    /// `log_seq()` returns 0 on a freshly-opened log with no appends.
+    #[test]
+    fn dispatcher_log_seq_initially_zero() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_seq_zero");
+        let log = EventLog::open(tmp).unwrap();
+        let disp = EventDispatcher::new(log);
+        assert_eq!(disp.log_seq().unwrap(), 0);
+    }
+
+    /// `SerializedEvent::from_envelope` constructor sets processed=false
+    /// regardless of envelope content.
+    #[test]
+    fn serialized_event_from_envelope_defaults_to_unprocessed() {
+        let env = make_envelope("GoalSubmitted", 42);
+        let ser = SerializedEvent::from_envelope(env);
+        assert!(!ser.processed, "from_envelope must default processed=false");
+        assert_eq!(ser.envelope.event_type.as_str(), "GoalSubmitted");
+        assert_eq!(ser.envelope.seq, 42);
+    }
+
+    /// Dispatch with no registered agents returns an empty outputs vec and
+    /// still appends the event to the log + advances the seq marker.
+    /// (Note: EventLog is append-only by design — see event.rs:160-191. We
+    /// assert the last appended event is the one we dispatched, not the
+    /// total event count, since previous runs leave residual entries.)
+    #[test]
+    fn dispatcher_empty_registry_dispatches_with_no_outputs() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_empty");
+        let log = EventLog::open(tmp.clone()).unwrap();
+        let mut disp = EventDispatcher::new(log);
+
+        let env = make_envelope("GoalSubmitted", 7);
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| make_ctx());
+
+        assert!(
+            outputs.is_empty(),
+            "empty registry must yield empty outputs"
+        );
+        let log = EventLog::open(tmp).unwrap();
+        let events: Vec<_> = log.iter().unwrap().collect::<io::Result<Vec<_>>>().unwrap();
+        assert!(
+            !events.is_empty(),
+            "event must be appended even with no agents"
+        );
+        let last = events.last().unwrap();
+        assert_eq!(last.envelope.seq, 7, "last event must be seq=7");
+        assert_eq!(
+            last.envelope.event_type.as_str(),
+            "GoalSubmitted",
+            "last event must be the dispatched envelope"
+        );
+    }
+
+    /// Dispatch with one agent returning a real Hypothesis output returns
+    /// that output to the caller (not NoAction).
+    #[test]
+    fn dispatcher_returns_non_noaction_outputs() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_returns");
+        let log = EventLog::open(tmp).unwrap();
+        let mut disp = EventDispatcher::new(log);
+
+        let agent = Arc::new(ProducingObserver::new(
+            "producer",
+            vec!["GoalSubmitted".into()],
+            "the system has a coupling smell",
+        ));
+        disp.register(agent.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 1);
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| make_ctx());
+
+        assert_eq!(outputs.len(), 1);
+        match &outputs[0] {
+            AgentOutput::Hypothesis(h) => {
+                assert_eq!(h.statement, "the system has a coupling smell");
+                assert!((h.confidence - 0.9).abs() < f64::EPSILON);
+            }
+            other => panic!("expected Hypothesis, got {:?}", other),
+        }
+    }
+
+    /// Multiple events dispatched in sequence grow the log and advance the seq
+    /// marker monotonically.
+    #[test]
+    fn dispatcher_multiple_events_grow_log_monotonically() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_multi");
+        let log = EventLog::open(tmp.clone()).unwrap();
+        let mut disp = EventDispatcher::new(log);
+
+        for i in 1..=3 {
+            let env = make_envelope("GoalSubmitted", i);
+            disp.dispatch(env, &make_delta(), |_, _| make_ctx());
+        }
+
+        // Seq marker must advance to the highest seq
+        let seq = disp.log_seq().unwrap();
+        assert_eq!(seq, 3, "log_seq must advance to last dispatched seq");
+
+        // Consumer checkpoint for the dispatcher must also advance
+        let log = EventLog::open(tmp).unwrap();
+        let checkpoint = log.consumer_checkpoint("event_dispatcher").unwrap();
+        assert_eq!(
+            checkpoint, 3,
+            "consumer_checkpoint must advance to last dispatched seq"
+        );
+    }
+
+    /// A mix of matching and non-matching agents: only matching agents are
+    /// activated. The dispatcher's fan-out preserves order.
+    #[test]
+    fn dispatcher_partial_fan_out_preserves_registration_order() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_partial");
+        let log = EventLog::open(tmp).unwrap();
+        let mut disp = EventDispatcher::new(log);
+
+        // a matches, b doesn't, c matches
+        let a = Arc::new(ProducingObserver::new(
+            "a",
+            vec!["GoalSubmitted".into()],
+            "from-a",
+        ));
+        let b = Arc::new(ProducingObserver::new(
+            "b",
+            vec!["OtherEvent".into()],
+            "from-b",
+        ));
+        let c = Arc::new(ProducingObserver::new(
+            "c",
+            vec!["GoalSubmitted".into()],
+            "from-c",
+        ));
+        disp.register(a.clone() as Arc<dyn ReactiveObserver>);
+        disp.register(b.clone() as Arc<dyn ReactiveObserver>);
+        disp.register(c.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 1);
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| make_ctx());
+
+        // a + c match (b's subscription doesn't match "GoalSubmitted")
+        assert_eq!(outputs.len(), 2);
+        match &outputs[0] {
+            AgentOutput::Hypothesis(h) => assert_eq!(h.statement, "from-a"),
+            _ => panic!("expected Hypothesis from a"),
+        }
+        match &outputs[1] {
+            AgentOutput::Hypothesis(h) => assert_eq!(h.statement, "from-c"),
+            _ => panic!("expected Hypothesis from c"),
+        }
+    }
+
+    /// An agent that returns `Err(ObserveError)` does not crash the dispatcher
+    /// or block subsequent agents. The remaining matching agents still emit
+    /// their outputs.
+    #[test]
+    fn dispatcher_swallows_observer_errors_and_continues() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_error");
+        let log = EventLog::open(tmp).unwrap();
+        let mut disp = EventDispatcher::new(log);
+
+        // First agent errors, second produces a Hypothesis
+        let err_agent = Arc::new(ErroringObserver::new("err", vec!["GoalSubmitted".into()]));
+        let producer = Arc::new(ProducingObserver::new(
+            "producer",
+            vec!["GoalSubmitted".into()],
+            "still-emitted",
+        ));
+        disp.register(err_agent.clone() as Arc<dyn ReactiveObserver>);
+        disp.register(producer.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 1);
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| make_ctx());
+
+        // Only the producer's output reaches the caller — the err agent's
+        // failure is logged to stderr (eprintln) and dropped.
+        assert_eq!(outputs.len(), 1, "erroring agent's output is dropped");
+        match &outputs[0] {
+            AgentOutput::Hypothesis(h) => assert_eq!(h.statement, "still-emitted"),
+            _ => panic!("expected Hypothesis from producer"),
+        }
+    }
+
+    /// The dispatcher's `log_seq()` reflects the highest seq written to the
+    /// log, surviving across drops (i.e., the dispatcher can be reopened
+    /// with the same log path and pick up where it left off).
+    #[test]
+    fn dispatcher_log_seq_survives_reopen() {
+        let tmp = std::env::temp_dir().join("archctl_dispatch_reopen");
+        // First session: dispatch 5 events
+        {
+            let log = EventLog::open(tmp.clone()).unwrap();
+            let mut disp = EventDispatcher::new(log);
+            for i in 1..=5 {
+                let env = make_envelope("GoalSubmitted", i);
+                disp.dispatch(env, &make_delta(), |_, _| make_ctx());
+            }
+            assert_eq!(disp.log_seq().unwrap(), 5);
+        }
+        // Second session: reopen same path
+        let log = EventLog::open(tmp).unwrap();
+        let disp = EventDispatcher::new(log);
+        assert_eq!(
+            disp.log_seq().unwrap(),
+            5,
+            "log_seq must survive EventDispatcher reopen (relies on EventLog::seq)"
+        );
+    }
 }
