@@ -1153,4 +1153,453 @@ mod tests {
             ctx.evidence.len()
         );
     }
+
+    // ---------------------------------------------------------------------------
+    // cognitive-coverage-v2 — dispatcher compression paths (PR 2 of 3)
+    // ---------------------------------------------------------------------------
+
+    /// budget.tokens = Some(0) yields budget_chars = 0, which makes
+    /// `compress_for_budget` return `InvalidPolicy`. The dispatcher must
+    /// NOT propagate the error — it must log a `tracing::warn!` and proceed
+    /// with the un-compressed context. The observer still receives a
+    /// context (with `recent_events` empty because compression bailed).
+    #[test]
+    fn dispatch_zero_tokens_compression_bails_but_fan_out_continues() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Pre-populate comp_log so we can distinguish "compression ran and
+        // emptied recent_events" from "compression never ran".
+        for i in 1..=3 {
+            let env = make_envelope("PreExisting", i);
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        // budget.tokens = Some(0) → budget_chars = 0 → InvalidPolicy from
+        // compress_for_budget. Dispatcher swallows + proceeds.
+        let outputs = disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(0),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        // dispatch itself returned without panic; fan-out ran.
+        let _ = outputs;
+        let captured = inspector.take_context();
+        assert!(
+            captured.is_some(),
+            "observer must receive context even when compression failed"
+        );
+        // recent_events stays empty because compression returned early.
+        let ctx = captured.unwrap();
+        assert!(
+            ctx.recent_events.is_empty(),
+            "failed compression must not populate recent_events; got {}",
+            ctx.recent_events.len()
+        );
+    }
+
+    /// When the compression ledger is empty, compression runs successfully
+    /// and produces an empty `recent_events` (not an error). Locks the
+    /// `compress_empty_ledger_returns_zeroed_report` invariant at the
+    /// dispatcher level.
+    #[test]
+    fn dispatch_with_empty_compression_ledger_populates_empty_recent_events() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        // No pre-population — comp_log is empty.
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let captured = inspector.take_context().unwrap();
+        assert!(
+            captured.recent_events.is_empty(),
+            "empty compression ledger → empty recent_events; got {}",
+            captured.recent_events.len()
+        );
+    }
+
+    /// log_seq() is monotonic across multiple dispatch cycles, each of
+    /// which triggers compression. This locks the "checkpoint + seq"
+    /// invariant under the compression path (the W1-cherry-pick that
+    /// motivated M34 W1).
+    #[test]
+    fn dispatch_log_seq_monotonic_across_compression_cycles() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Pre-populate comp_log so compression has something to read each cycle.
+        for i in 1..=3 {
+            let env = make_envelope("PreExisting", i);
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let mut last_seq = 0u64;
+        for cycle in 1..=5 {
+            let env = make_envelope("GoalSubmitted", cycle);
+            disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+                goal: "test".into(),
+                triggering_event: None,
+                graph_view: GraphView::default(),
+                source_fragments: vec![],
+                evidence: vec![],
+                applicable_rules: vec![],
+                available_tools: vec![],
+                budget: AgentBudget {
+                    tokens: Some(100),
+                    ..Default::default()
+                },
+                feedback_history: vec![],
+                pending_adjudications: vec![],
+                recent_events: vec![],
+            });
+            let seq = disp.log_seq().unwrap();
+            assert!(
+                seq > last_seq,
+                "log_seq must be strictly monotonic across compression cycles; got {seq} after {last_seq}"
+            );
+            last_seq = seq;
+        }
+        assert_eq!(last_seq, 5, "5 dispatches → 5 events appended");
+    }
+
+    /// `with_compression_log(log, comp_log)` reads from `comp_log` for
+    /// compression but writes dispatched events to `log`. If only `comp_log`
+    /// is pre-populated, the observer sees those events in `recent_events`;
+    /// if only `log` is pre-populated, `recent_events` stays empty. Locks
+    /// the read/write partition between the two logs.
+    #[test]
+    fn dispatch_with_compression_log_reads_only_from_compression_ledger() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+
+        // Pre-populate ONLY `log` with 3 events. comp_log stays empty.
+        for i in 1..=3 {
+            let env = make_envelope("OnlyInDispatchLog", i);
+            let ser = SerializedEvent::from_envelope(env);
+            log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let captured = inspector.take_context().unwrap();
+        // Compression reads from comp_log (empty), so recent_events stays empty
+        // even though `log` had 3 events.
+        assert!(
+            captured.recent_events.is_empty(),
+            "with_compression_log must NOT read from the dispatch log; got {}",
+            captured.recent_events.len()
+        );
+    }
+
+    /// Dispatched events are written to the dispatch log, NOT to the
+    /// compression log. The compression ledger is read-only for context
+    /// (mutating it would create feedback loops in multi-dispatcher setups).
+    #[test]
+    fn dispatch_with_compression_log_does_not_write_to_compression_ledger() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let comp_log_path = tmp.path().join("comp.jsonl");
+        let comp_log = EventLog::open(comp_log_path.clone()).unwrap();
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        // Reopen comp_log independently and confirm it has zero events.
+        let comp_log_reopened = EventLog::open(comp_log_path).unwrap();
+        assert_eq!(
+            comp_log_reopened.seq().unwrap(),
+            0,
+            "compression ledger must NOT receive dispatched events"
+        );
+    }
+
+    /// Fan-out respects registration order when compression is enabled.
+    /// Observer 1, 2, 3 are registered in that order; the dispatch must
+    /// invoke them in registration order. Locks the deterministic
+    /// registration-order invariant under the compression path.
+    #[test]
+    fn dispatch_fan_out_preserves_registration_order_with_compression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        for i in 1..=3 {
+            let env = make_envelope("PreExisting", i);
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        // Use a counter shared across observers to record the order.
+        let order: Arc<std::sync::Mutex<Vec<&'static str>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        // Build 3 lightweight observers with unique ids and a single
+        // subscription pattern that matches "GoalSubmitted".
+        struct OrderRecorder {
+            id: &'static str,
+            order: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        }
+        impl ReactiveObserver for OrderRecorder {
+            fn descriptor(&self) -> AgentDescriptor {
+                AgentDescriptor {
+                    id: self.id.into(),
+                    version: "0.1.0".into(),
+                    subscriptions: vec!["GoalSubmitted".into()],
+                    required_views: vec![],
+                    output_schema: "{}".into(),
+                    model_policy: ModelPolicy::Heuristic,
+                    budget: AgentBudget::default(),
+                    capabilities: vec![],
+                    deterministic: true,
+                    idempotent: true,
+                }
+            }
+            fn matches(&self, _ctx: &AgentContext) -> bool {
+                true
+            }
+            fn observe(&self, _ctx: &AgentContext) -> Result<AgentOutput, ObserveError> {
+                self.order.lock().unwrap().push(self.id);
+                Ok(AgentOutput::NoAction(
+                    crate::cognitive::output::NoActionReason {
+                        code: crate::cognitive::output::NoActionCode::InsufficientConfidence,
+                        message: self.id.into(),
+                    },
+                ))
+            }
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        disp.register(Arc::new(OrderRecorder {
+            id: "first",
+            order: order.clone(),
+        }) as Arc<dyn ReactiveObserver>);
+        disp.register(Arc::new(OrderRecorder {
+            id: "second",
+            order: order.clone(),
+        }) as Arc<dyn ReactiveObserver>);
+        disp.register(Arc::new(OrderRecorder {
+            id: "third",
+            order: order.clone(),
+        }) as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let recorded = order.lock().unwrap().clone();
+        assert_eq!(
+            recorded,
+            vec!["first", "second", "third"],
+            "fan-out must invoke observers in registration order under compression"
+        );
+    }
+
+    /// An observer that returns Err must not break the chain for subsequent
+    /// observers. Locks the partial-fan-out invariant under compression.
+    #[test]
+    fn dispatch_erroring_observer_does_not_break_others_with_compression() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        for i in 1..=2 {
+            let env = make_envelope("PreExisting", i);
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        struct ErroringObserver;
+        impl ReactiveObserver for ErroringObserver {
+            fn descriptor(&self) -> AgentDescriptor {
+                AgentDescriptor {
+                    id: "erroring".into(),
+                    version: "0.1.0".into(),
+                    subscriptions: vec!["GoalSubmitted".into()],
+                    required_views: vec![],
+                    output_schema: "{}".into(),
+                    model_policy: ModelPolicy::Heuristic,
+                    budget: AgentBudget::default(),
+                    capabilities: vec![],
+                    deterministic: true,
+                    idempotent: true,
+                }
+            }
+            fn matches(&self, _ctx: &AgentContext) -> bool {
+                true
+            }
+            fn observe(&self, _ctx: &AgentContext) -> Result<AgentOutput, ObserveError> {
+                Err(ObserveError::Internal("forced".into()))
+            }
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(Arc::new(ErroringObserver) as Arc<dyn ReactiveObserver>);
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget {
+                tokens: Some(100),
+                ..Default::default()
+            },
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        // Despite the first observer erroring, the second still received context.
+        let captured = inspector.take_context();
+        assert!(
+            captured.is_some(),
+            "erroring observer must not prevent subsequent observers from receiving context"
+        );
+    }
+
+    /// `with_compression_log` does not enable compression unless the context
+    /// has a budget. With `tokens: None`, even with a populated compression
+    /// ledger, `recent_events` stays empty. Locks the gating invariant.
+    #[test]
+    fn dispatch_with_compression_log_but_no_budget_does_not_read_compression_ledger() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = EventLog::open(tmp.path().join("log.jsonl")).unwrap();
+        let mut comp_log = EventLog::open(tmp.path().join("comp.jsonl")).unwrap();
+        for i in 1..=5 {
+            let env = make_envelope("PreExisting", i);
+            let ser = SerializedEvent::from_envelope(env);
+            comp_log.append_serialized(&ser).unwrap();
+        }
+
+        let mut disp = EventDispatcher::with_compression_log(log, comp_log);
+        let inspector = Arc::new(InspectingAgent::new(vec!["GoalSubmitted".into()]));
+        disp.register(inspector.clone() as Arc<dyn ReactiveObserver>);
+
+        let env = make_envelope("GoalSubmitted", 10);
+        // budget.tokens = None (default) → compression is skipped entirely.
+        disp.dispatch(env, &make_delta(), |_, _| AgentContext {
+            goal: "test".into(),
+            triggering_event: None,
+            graph_view: GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(), // tokens: None
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        });
+
+        let captured = inspector.take_context().unwrap();
+        assert!(
+            captured.recent_events.is_empty(),
+            "compression is gated on ctx.budget.tokens.is_some(); got {} events",
+            captured.recent_events.len()
+        );
+    }
 }
