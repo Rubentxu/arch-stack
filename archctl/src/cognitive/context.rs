@@ -12,16 +12,16 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 /// Decision priority for [`CompressionPolicy`].
-/// Only `RecencyOnly` is implemented in v1; the other variants exist as
-/// enum stubs for forward compatibility (D4 from design).
+///
+/// `#[non_exhaustive]` so future variants can be added without breaking
+/// downstream exhaustive matches. The current implementation uses
+/// `RecencyOnly`; new strategies land with an ADR and tests that exercise
+/// the new variant's scoring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum DecisionPriority {
-    /// Prioritize recency only (v1 implementation).
+    /// Prioritize recency only (current implementation).
     RecencyOnly,
-    /// Prioritize action proposals (stub — not implemented in v1).
-    ActionProposalOnly,
-    /// Balance recency and action proposals (stub — not implemented in v1).
-    Balanced,
 }
 
 /// Policy for [`AgentContext::compress_for_budget`].
@@ -31,7 +31,7 @@ pub struct CompressionPolicy {
     pub budget_chars: usize,
     /// Maximum BFS hops to walk causation ancestors per recent event (D7).
     pub preserve_causation_window: u32,
-    /// Decision priority (stub for v1 — only `RecencyOnly` is implemented).
+    /// Decision priority for evidence selection under the budget.
     pub decision_priority: DecisionPriority,
 }
 
