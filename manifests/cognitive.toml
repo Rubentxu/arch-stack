@@ -1,0 +1,98 @@
+# scope: cognitive
+#
+# cognitive/ contains the agent runtime: context construction, event log,
+# subscription matching, escalation ladder, and dispatcher wiring.
+#
+# ADR-011: no network I/O in this module (reqwest banned).
+# ADR-005: evidence required on all graph mutations.
+
+id = "cognitive"
+version = "0.1.0"
+description = "Agent cognitive layer: context, event log, subscriptions, escalation, dispatch"
+
+# Cargo crate root for the test-count gate.
+cargo_dir = "archctl"
+
+# Files that may be edited freely within this scope.
+editable = [
+  "archctl/src/cognitive/mod.rs",
+  "archctl/src/cognitive/context.rs",
+  "archctl/src/cognitive/event.rs",
+  "archctl/src/cognitive/descriptor.rs",
+  "archctl/src/cognitive/subscriptions.rs",
+  "archctl/src/cognitive/escalation/ladder.rs",
+  "archctl/src/cognitive/observer.rs",
+  "archctl/src/cognitive/output.rs",
+  "archctl/src/cognitive/delta.rs",
+  "archctl/src/cognitive/test_support.rs",
+  "archctl/src/cognitive/agents/mod.rs",
+  "archctl/src/cognitive/agents/architecture.rs",
+  "archctl/src/cognitive/agents/projection.rs",
+  "archctl/src/cognitive/dispatcher/mod.rs",
+  "archctl/src/cognitive/dispatcher/event_dispatcher.rs",
+  "archctl/src/cognitive/dispatcher/registry.rs",
+  "archctl/src/cognitive/escalation/mod.rs",
+  "archctl/src/cognitive/audit/mod.rs",
+  "archctl/src/cognitive/audit/log.rs",
+  "archctl/src/cognitive/audit/queue.rs",
+  "archctl/src/cognitive/policy/mod.rs",
+  "archctl/src/cognitive/policy/engine.rs",
+  "archctl/src/cognitive/policy/decision.rs",
+  "archctl/src/cognitive/policy/context.rs",
+  "archctl/src/cognitive/mcp/mod.rs",
+  "archctl/src/cognitive/mcp/gateway.rs",
+  "archctl/src/cognitive/mcp/tools.rs",
+]
+
+# Public symbols that consumers depend on.
+# The cognitive module re-exports via pub use in mod.rs.
+public_symbols = [
+  "AgentContext",
+  "EventLog",
+  "SerializedEvent",
+  "EventEnvelope",
+  "GraphView",
+  "Element",
+  "Edge",
+  "SourceFragment",
+  "Evidence",
+  "ProvenanceId",
+  "AgentBudget",
+  "ToolDescriptor",
+  "AgentDescriptor",
+  "Rule",
+  "SubscriptionMatcher",
+  "EscalationLadder",
+  "AgentRegistry",
+  "SyncDispatcher",
+]
+
+# Textual invariants that prove the module implements its scope contract.
+must_hold = [
+  # Core types exist
+  "pub struct AgentContext",
+  "pub struct EventLog",
+  "pub struct SerializedEvent",
+  "pub struct EventEnvelope",
+  "pub struct GraphView",
+  "pub struct Element",
+  "pub struct Edge",
+  "pub struct SourceFragment",
+  "pub struct Evidence",
+  "pub enum ProvenanceId",
+  # recent_events field (M34 W2)
+  "pub recent_events",
+  # EventLog API
+  "pub fn append(",
+]
+
+# Banned patterns in cognitive module (ADR-011).
+must_not_contain = [
+  "use reqwest",
+]
+
+# Minimum number of `#[test]` items across the cognitive module.
+# Current coverage: context.rs (~40) + event.rs (~50) + subscriptions (~10)
+# + escalation (~15) + dispatcher (~20) + agents (~15) + observer (~5)
+# = ~155 tests.
+minimum_tests = 100

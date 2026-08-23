@@ -167,11 +167,11 @@ archctl/                          # workspace root
 │   │   ├── diagram_apply.rs      # apply pipeline (T15)
 │   │   └── …                     # un test file por bounded context
 │   └── Cargo.toml
-├── manifests/                    # 23 manifest gates (uno por módulo)
+├── manifests/                    # 34 manifest gates (uno por módulo)
 │   ├── diagram.toml              # editable + must_hold + must_not_contain
 │   ├── store.toml
 │   ├── evidence.toml
-│   └── …                         # 23 archivos, ver `ls manifests/`
+│   └── …                         # 34 archivos, ver `ls manifests/`
 ├── schemas/                      # JSON Schemas versionados
 │   ├── projection.schema.json
 │   ├── changeset.schema.json     # PR2
@@ -363,18 +363,18 @@ cd archctl && cargo test --doc
 # Manifest gate (validación de contrato de scope)
 cd archctl && cargo run --bin archctl -- doctor --scopes <id> --cwd <repo_root>
 
-# Validación mínima durante desarrollo
-cd archctl && cargo test --features test-fixtures --quiet && \
+# Validación mínima durante desarrollo (lib + integration + doctest)
+cd archctl && cargo test --features test-fixtures --tests --quiet && \
   cargo run --bin archctl -- doctor --scopes <scope> --cwd <repo_root>
 
 # Validación completa antes de PR (sin CI)
-cd archctl && cargo test --features test-fixtures --quiet && \
+cd archctl && cargo test --features test-fixtures --tests --quiet && \
   cargo clippy --quiet --features test-fixtures -- -D warnings && \
   cargo fmt --check && \
   cargo run --bin archctl -- doctor --scopes <id>,<id2> --cwd <repo_root>
 
 # Validación de CI (los mismos comandos que corren en la nube)
-cd archctl && cargo test --features test-fixtures && \
+cd archctl && cargo test --features test-fixtures --tests && \
   cargo clippy --features test-fixtures --all-targets -- -D warnings
 ```
 
@@ -460,6 +460,97 @@ cd archctl && cargo test --features test-fixtures && \
 - **Supresiones de lint**: prohibidas sin justificación documentada
   en el código (e.g. `// allow: serde renombra el campo para
   compat con bundle v1`).
+
+## No Stubs, Mocks, Placeholders, or Hardcoded Values
+
+**Regla absoluta**: ningún stub, mock, placeholder, valor hardcoded
+o trabajo a medias. Todo lo que se entrega debe ser 100% productivo.
+
+- **Sin stubs**: una función, struct, módulo, nodo de vault, ADR,
+  spec, test o comando cuyo cuerpo diga "no implementado", "TODO",
+  "placeholder", "WIP", "stub", "temporal", "pending review" es
+  rechazado. Si falta contenido, no se publica hasta tenerlo.
+- **Sin mocks injustificados**: solo se permite un mock cuando el
+  adaptador real tiene I/O externo (network, clock, subprocess) y
+  testearlo requiere entorno. Para bases de datos (lbug), filesystem
+  o cualquier otro adapter interno, usar el adapter real con
+  `tempfile::TempDir`. Ningún `MockStore` / `FakeRepo` / `StubAgent`
+  para puertos no externos.
+- **Sin placeholders en docs**: ningún nodo del vault en
+  `~/.sddk-knowledge/` con `status: stub`, `type: stub`, ni cuerpo
+  marcado como placeholder. Si una wikilink apunta a contenido que
+  no existe, o bien (a) se crea el contenido real, o bien (b) se
+  elimina la wikilink del nodo fuente. La tercera opción (stub)
+  está prohibida.
+- **Sin valores hardcoded**: paths absolutos del sistema, puertos,
+  URLs de servicios externos, secretos y credenciales deben venir
+  de configuración, env vars, o el port `Filesystem`. Lo único
+  hardcoded permitido son constantes de protocolo del propio
+  binario (e.g. `"ARCHCTL"` para el prefijo de tag, `0o600` para
+  permisos de credenciales).
+- **Sin tests deshabilitados**: ningún `#[ignore]` sin justificación
+  explícita en el código (e.g. necesita red real, depende de un
+  binario externo del usuario). Si un test no se puede ejecutar en
+  CI, abrir issue en lugar de silenciarlo.
+- **Sin código muerto "por si acaso"**: cualquier función pública
+  no usada en 2 minor versions se elimina (preaviso de 1 minor
+  con `#[deprecated]`). Las internas se eliminan de inmediato.
+- **Sin "scaffolding" para "futuro trabajo"**: si una funcionalidad
+  no se implementa en este ciclo, no se deja el esqueleto. Se
+  implementa o no se toca.
+
+### Cómo manejar contenido que falta
+
+Cuando un adaptador o comando necesita una pieza de información que
+no está disponible:
+
+1. **Pedirla al usuario** o consultar el corpus de conocimiento
+   verificado (`vault`, CHANGELOG, docs/adr/, código fuente).
+2. **Fallar con error claro**: `anyhow!("required: {missing}")` o
+   `bail!("...")` con contexto. Nunca devolver un valor tonto.
+3. **Eliminar el camino**: si no se puede implementar 100%, no se
+  implementa. Se documenta la limitación en el spec.
+
+### Auditoría
+
+Cualquier PR o commit que introduzca un stub/mock/placeholder/
+hardcoded value es **bloqueado en verify**. El ciclo verify debe
+incluir un grep explícito por patrones prohibidos:
+
+```bash
+# Stubs y placeholders
+grep -rEn "status:\s*stub|type:\s*stub|TODO|FIXME|XXX|HACK|placeholder|tbd" \
+  archctl/src/ ~/.sddk-knowledge/
+
+# Mocks para puertos no externos
+grep -rEn "struct (Mock|Fake|Stub)(Store|Repo|Agent|Adapter)" archctl/src/
+
+# Valores hardcoded (paths/URLs/secrets)
+grep -rEn 'localhost|127\.0\.0\.1|/home/|/var/' archctl/src/ | \
+  grep -v "tests\|fixtures"
+```
+
+Si el grep encuentra coincidencias, justificar cada una en el
+commit o en el artifact `apply-progress.md`. Sin justificación,
+el commit se rechaza.
+
+### Estado actual del audit (2026-08-22, cierre de la cadena P1)
+
+Los 15 ciclos P1 eliminaron todos los MockStore/MockRepo/FakeRepo
+del árbol (`archctl/src/architecture/*` y `archctl/src/diagram/export.rs`).
+Las únicas coincidencias legítimas de los grep anteriores son:
+
+- `doctor/mod.rs`: `localhost:18080/18000` como **defaults** detrás
+  de las env vars `ARCHCTL_DOCTOR_*_URL` (override por env var en
+  ciclo 4).
+- `view.rs`: `127.0.0.1` es la decisión de seguridad obligatoria
+  per ADR-011 (loopback-only, nunca público).
+- `xdg.rs` y `environment.rs`: paths `/home/user/...` son fixtures
+  de tests unitarios (no producción) — el rule permite
+  "constantes de protocolo del propio binario".
+
+Cualquier futura adición que dispare uno de los grep debe justificarse
+en el commit o reabrir el cleanup.
 
 ## Testing Principles
 
@@ -662,8 +753,16 @@ cd archctl && cargo test --features test-fixtures && \
 Cada item debe responderse con **sí** o **no**:
 
 - [ ] `cargo build --quiet` termina con código 0.
-- [ ] `cargo test --quiet` pasa todos los tests (lib + integration
-      + doctest).
+- [ ] `cargo test --features test-fixtures --tests --quiet` pasa
+      todos los tests (lib + 56 integration test files + doctest).
+      **Sin `--features test-fixtures`** la suite de integración no
+      compila (el helper `execute_raw_cypher_for_test` está bajo
+      `#[cfg(any(test, feature = "test-fixtures"))]`). **Sin
+      `--tests`** solo corre la lib suite (~859 tests) y se pierde
+      la cobertura de los tests de integración (~345 tests).
+      Histórico: cycle-2/cycle-8 work dejó el fixture `.png` mientras
+      el validador esperaba `.svg`; sobrevivió al lib run hasta el
+      commit b6b78ce (2026-08-22).
 - [ ] `cargo clippy --quiet -- -D warnings` pasa sin warnings.
 - [ ] `cargo fmt --check` pasa.
 - [ ] Si el scope aplica: `cargo run --bin archctl -- doctor
@@ -748,7 +847,7 @@ Cada item debe responderse con **sí** o **no**:
 - [`CHANGELOG.md`](CHANGELOG.md) — historial de versiones.
 - [`README.md`](README.md) — entrada principal.
 - [`Cargo.toml`](archctl/Cargo.toml) — deps y MSRV.
-- [`manifests/`](manifests/) — manifest gates (23 archivos).
+- [`manifests/`](manifests/) — manifest gates (34 archivos).
 
 ## Open Questions
 

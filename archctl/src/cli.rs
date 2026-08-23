@@ -527,7 +527,7 @@ pub enum CodeAction {
         /// Emit machine-readable JSON to stdout.
         #[arg(long)]
         json: bool,
-        /// Comma-separated languages to process (rust, typescript, python, go).
+        /// Comma-separated languages to process (rust, typescript, python, go, java, kotlin).
         /// If omitted, all MVP languages are processed.
         #[arg(long, value_enum, value_delimiter = ',')]
         lang: Vec<crate::code::call_graph::Language>,
@@ -567,8 +567,8 @@ pub enum CodeAction {
         /// Emit machine-readable JSON to stdout.
         #[arg(long)]
         json: bool,
-        /// Comma-separated languages to process (rust, typescript, python, go).
-        /// If omitted, all MVP languages are processed.
+        /// Comma-separated languages to process (rust, typescript, python).
+        /// If omitted, all supported languages are processed.
         #[arg(long, value_enum, value_delimiter = ',')]
         lang: Vec<crate::code::class_diagram::Language>,
         /// Selector: `file:<path>` or `module:<id>`, or omit for whole project.
@@ -586,7 +586,7 @@ pub enum CodeAction {
         /// Emit machine-readable JSON to stdout.
         #[arg(long)]
         json: bool,
-        /// Comma-separated languages to process (rust, typescript, python, go).
+        /// Comma-separated languages to process (rust, typescript, python).
         /// If omitted, all supported languages are processed.
         #[arg(long, value_enum, value_delimiter = ',')]
         lang: Vec<crate::code::state_machine::Language>,
@@ -1256,6 +1256,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                 // REQ-M25-006: pending_adjudications pre-populated by SyncDispatcher::build_context (TRUST-008).
                 // Struct literal intentionally empty at this site — the dispatcher re-populates from
                 // AdjudicationRepository::list_pending_adjudications.
+                // recent_events (M34 W2) populated by compress_for_budget before dispatch.
                 let ctx = AgentContext {
                     goal,
                     triggering_event: None,
@@ -1267,6 +1268,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     budget: Default::default(),
                     feedback_history: vec![],
                     pending_adjudications: vec![],
+                    recent_events: vec![],
                 };
                 let out = disp.dispatch(&ctx)?;
                 if json {
@@ -1601,7 +1603,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
             IdeAction::Install {
                 ide,
                 stack: _,
-                install_root: _,
+                install_root,
             } => {
                 let adapters = builtin_adapters();
                 let adapter = adapters.iter().find(|a| a.id() == ide).ok_or_else(|| {
@@ -1615,7 +1617,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     )
                 })?;
                 let payload = current_stack_payload()?;
-                let report = adapter.install_stack(&payload)?;
+                let report = adapter.install_stack(&payload, install_root.as_deref())?;
                 println!(
                     "installed {} skills, {} agents, {} plugins for {}",
                     report.written.len(),
@@ -1684,7 +1686,7 @@ pub fn run_inner(cli: Cli, ctx: &CliContext) -> Result<i32> {
                     agents: vec![],
                     plugins: vec![],
                 };
-                let report = adapter.install_stack(&payload)?;
+                let report = adapter.install_stack(&payload, None)?;
                 println!(
                     "re-installed {} paths for {}",
                     report.written.len(),

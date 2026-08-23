@@ -1,7 +1,9 @@
 {
   "title": "Arch Stack Architecture Feedback Workbench",
   "date": "2026-08-20",
-  "baseline": "arch-stack v1.80.0",
+  "baseline": "arch-stack v1.80.0 (paquete fechado)",
+  "current_trunk": "v1.87.0 (2026-08-22, post-TRUST-008 m30 bridge hard fail + Adjudication BC; see docs/STATE.md for live trunk)",
+  "north_star": "Reducir drásticamente el esfuerzo necesario para que un humano forme, verifique, mantenga y corrija su modelo mental de un sistema software complejo.",
   "north_star": "Reducir drásticamente el esfuerzo necesario para que un humano forme, verifique, mantenga y corrija su modelo mental de un sistema software complejo.",
   "documents": [
     "00-EXECUTIVE-SUMMARY.md",

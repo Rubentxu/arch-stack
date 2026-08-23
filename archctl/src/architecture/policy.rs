@@ -787,81 +787,63 @@ fn matches_rule_name(rule: &PolicyRule, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagram::export_types::EvidenceEntry;
     use crate::graph::{ElementRow, SemanticEdgeRow};
+    use crate::store::{ElementRepository, GraphStore, LbugStore, SemanticEdgeRepository};
     use chrono::Utc;
 
-    /// Mock DiagramRepository that returns pre-configured elements and edges.
-    struct MockRepo {
+    /// Open a real `LbugStore` in `project_dir` and seed it with the
+    /// given elements + edges. Replaces the previous MockRepo shadow
+    /// of DiagramRepository — the production Cypher filter now runs
+    /// against the production store, so tests exercise the same path
+    /// as `archctl policy check`.
+    fn seeded_store(
+        project_dir: &std::path::Path,
         elements: Vec<ElementRow>,
         edges: Vec<SemanticEdgeRow>,
-    }
-
-    impl MockRepo {
-        fn new(elements: Vec<ElementRow>, edges: Vec<SemanticEdgeRow>) -> Self {
-            Self { elements, edges }
+    ) -> LbugStore {
+        let mut store = LbugStore::open(project_dir).expect("LbugStore::open");
+        store.init().expect("LbugStore::init");
+        for e in &elements {
+            let v = crate::graph::ElementVersion {
+                id: e.current_version_id.clone(),
+                element_id: e.id.clone(),
+                name: e.current_name.clone(),
+                status: "accepted".to_string(),
+                origin: "test".to_string(),
+                confidence: e.current_confidence,
+                props: Default::default(),
+            };
+            store
+                .upsert_element_version(&v)
+                .expect("upsert_element_version");
+            store
+                .link_current_version(&e.id, &e.current_version_id)
+                .expect("link_current_version");
+            let elem = crate::graph::Element {
+                id: e.id.clone(),
+                kind_id: e.kind_id.clone(),
+                category: e.category.clone(),
+                canonical_key: e.canonical_key.clone(),
+                current_name: e.current_name.clone(),
+                current_status: e.current_status.clone(),
+                current_confidence: e.current_confidence,
+                current_version_id: e.current_version_id.clone(),
+            };
+            store.upsert_element(&elem).expect("upsert_element");
         }
-    }
-
-    impl DiagramRepository for MockRepo {
-        fn list_elements(
-            &self,
-            category: &str,
-            _scope: Option<&str>,
-            _kind: Option<&str>,
-        ) -> Result<Vec<ElementRow>, anyhow::Error> {
-            Ok(self
-                .elements
-                .iter()
-                .filter(|e| e.category == category)
-                .cloned()
-                .collect())
+        for ed in &edges {
+            store
+                .link_semantic_edge(
+                    &ed.source_id,
+                    &ed.target_id,
+                    &ed.relation_id,
+                    &ed.predicate_id,
+                    &ed.props,
+                    true,
+                )
+                .expect("link_semantic_edge");
         }
-        fn list_semantic_edges(
-            &self,
-            category: &str,
-        ) -> Result<Vec<SemanticEdgeRow>, anyhow::Error> {
-            // Mirror the real store: an edge is visible in a category when
-            // BOTH endpoints belong to that category.
-            let ids: HashSet<&str> = self
-                .elements
-                .iter()
-                .filter(|e| e.category == category)
-                .map(|e| e.id.as_str())
-                .collect();
-            Ok(self
-                .edges
-                .iter()
-                .filter(|e| {
-                    ids.contains(e.source_id.as_str()) && ids.contains(e.target_id.as_str())
-                })
-                .cloned()
-                .collect())
-        }
-        fn list_evidence_for_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> Result<Vec<EvidenceEntry>, anyhow::Error> {
-            Ok(vec![])
-        }
-        fn list_version_props(
-            &self,
-            _version_ids: &[String],
-        ) -> Result<Vec<crate::graph::VersionPropsRow>, anyhow::Error> {
-            Ok(vec![])
-        }
-        fn read_relation_by_id(
-            &self,
-            _id: &str,
-        ) -> Result<Option<crate::graph::RelationRow>, anyhow::Error> {
-            Ok(None)
-        }
-        fn list_evidence_for_relation_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> Result<Vec<EvidenceEntry>, anyhow::Error> {
-            Ok(vec![])
-        }
+        store
     }
 
     fn elem(id: &str) -> ElementRow {
@@ -890,7 +872,9 @@ mod tests {
 
     #[test]
     fn test_no_violations_on_clean_graph() {
-        let repo = MockRepo::new(
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(
+            tmp.path(),
             vec![elem("c4:container:a"), elem("c4:container:b")],
             vec![edge("c4:container:a", "c4:container:b")],
         );
@@ -908,7 +892,9 @@ mod tests {
 
     #[test]
     fn test_forbid_dependency_violation() {
-        let repo = MockRepo::new(
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(
+            tmp.path(),
             vec![elem("c4:container:a"), elem("c4:container:b")],
             vec![edge("c4:container:a", "c4:container:b")],
         );
@@ -927,7 +913,9 @@ mod tests {
 
     #[test]
     fn test_valid_waiver_suppresses_violation() {
-        let repo = MockRepo::new(
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(
+            tmp.path(),
             vec![elem("c4:container:a"), elem("c4:container:b")],
             vec![edge("c4:container:a", "c4:container:b")],
         );
@@ -954,7 +942,9 @@ mod tests {
 
     #[test]
     fn test_expired_waiver_keeps_violation() {
-        let repo = MockRepo::new(
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(
+            tmp.path(),
             vec![elem("c4:container:a"), elem("c4:container:b")],
             vec![edge("c4:container:a", "c4:container:b")],
         );
@@ -993,7 +983,9 @@ mod tests {
 
     #[test]
     fn test_max_fanout_violation() {
-        let repo = MockRepo::new(
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(
+            tmp.path(),
             vec![
                 elem("c4:container:a"),
                 elem("c4:container:b"),
@@ -1019,7 +1011,9 @@ mod tests {
 
     #[test]
     fn test_max_fanout_passes_within_limit() {
-        let repo = MockRepo::new(
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(
+            tmp.path(),
             vec![elem("c4:container:a"), elem("c4:container:b")],
             vec![edge("c4:container:a", "c4:container:b")],
         );
@@ -1035,7 +1029,8 @@ mod tests {
     #[test]
     fn test_evidence_required_violation_without_evidence() {
         // MockRepo returns no evidence for any version
-        let repo = MockRepo::new(vec![elem("c4:container:a")], vec![]);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(tmp.path(), vec![elem("c4:container:a")], vec![]);
         let policy = vec![PolicyRule::EvidenceRequired {
             selector: "c4:*".to_string(),
             severity: Severity::Error,
@@ -1049,7 +1044,8 @@ mod tests {
     fn test_confidence_min_violation() {
         let mut low = elem("c4:container:low");
         low.current_confidence = 0.4;
-        let repo = MockRepo::new(vec![low, elem("c4:container:high")], vec![]);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(tmp.path(), vec![low, elem("c4:container:high")], vec![]);
         let policy = vec![PolicyRule::ConfidenceMin {
             selector: "c4:*".to_string(),
             severity: Severity::Warning,
@@ -1063,7 +1059,8 @@ mod tests {
 
     #[test]
     fn test_confidence_min_passes_when_all_high() {
-        let repo = MockRepo::new(vec![elem("c4:container:a")], vec![]);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = seeded_store(tmp.path(), vec![elem("c4:container:a")], vec![]);
         let policy = vec![PolicyRule::ConfidenceMin {
             selector: "c4:*".to_string(),
             severity: Severity::Warning,

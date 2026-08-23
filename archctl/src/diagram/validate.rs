@@ -147,7 +147,7 @@ pub fn run_validate(bundle_dir: &Path, fs: &dyn Filesystem) -> anyhow::Result<Va
     // The 5 canonical C4 levels are the source of truth shared with export.rs.
     let required_icons: Vec<String> = crate::diagram::assets::CANONICAL_C4_ICONS
         .iter()
-        .map(|kind| format!("{kind}.png"))
+        .map(|kind| format!("{kind}.{}", crate::diagram::assets::ICON_EXTENSION))
         .collect();
     if fs.exists(&assets_dir) {
         for icon in &required_icons {

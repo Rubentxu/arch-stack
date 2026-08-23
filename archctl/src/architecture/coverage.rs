@@ -371,117 +371,106 @@ mod tests {
     use super::*;
     use crate::clock::FixedClock;
     use crate::diagram::export_types::EvidenceEntry;
-    use crate::graph::{ElementRow, SemanticEdgeRow};
-    use crate::store::DiagramRepository;
+    use crate::store::{ElementRepository, EvidenceRepository, GraphStore, LbugStore};
 
-    /// A minimal DiagramRepository stub for unit tests.
-    struct FakeRepo {
-        elements: Vec<ElementRow>,
-        element_evidence: Vec<(String, Vec<EvidenceEntry>)>,
-        relation_evidence: Vec<(String, Vec<EvidenceEntry>)>,
+    /// Builder-style seeder that persists the test fixture into a
+    /// real `LbugStore` opened in a TempDir. Mirrors the previous
+    /// FakeRepo builder ergonomics. `.build()` returns the
+    /// `LbugStore` ready to pass to functions taking `&dyn
+    /// DiagramRepository`.
+    struct SeededStore {
+        project_dir: std::path::PathBuf,
+        elements: Vec<(String, String, f64)>, // id, version_id, confidence
+        element_evidence: Vec<(String, EvidenceEntry)>,
     }
 
-    impl FakeRepo {
-        fn new() -> Self {
+    impl SeededStore {
+        fn new(project_dir: &std::path::Path) -> Self {
             Self {
+                project_dir: project_dir.to_path_buf(),
                 elements: vec![],
                 element_evidence: vec![],
-                relation_evidence: vec![],
             }
         }
         fn with_element(mut self, id: &str, version_id: &str, confidence: f64) -> Self {
-            let category = if id.starts_with("c4:") {
-                "c4".to_string()
-            } else if id.starts_with("uml") {
-                "uml".to_string()
-            } else if id.starts_with("behavior:") {
-                "behavior".to_string()
-            } else {
-                "c4".to_string()
-            };
-            self.elements.push(ElementRow {
-                id: id.to_string(),
-                kind_id: "container".to_string(),
-                category,
-                canonical_key: id.to_string(),
-                current_name: "TestElement".to_string(),
-                current_status: "active".to_string(),
-                current_confidence: confidence,
-                current_version_id: version_id.to_string(),
-            });
+            self.elements
+                .push((id.to_string(), version_id.to_string(), confidence));
             self
         }
         fn with_element_evidence(mut self, version_id: &str, evidence: EvidenceEntry) -> Self {
             self.element_evidence
-                .push((version_id.to_string(), vec![evidence]));
+                .push((version_id.to_string(), evidence));
             self
         }
-    }
-
-    impl DiagramRepository for FakeRepo {
-        fn list_elements(
-            &self,
-            category: &str,
-            _scope: Option<&str>,
-            _kind: Option<&str>,
-        ) -> anyhow::Result<Vec<ElementRow>> {
-            Ok(self
-                .elements
-                .iter()
-                .filter(|e| e.category == category)
-                .cloned()
-                .collect())
-        }
-
-        fn list_semantic_edges(&self, _category: &str) -> anyhow::Result<Vec<SemanticEdgeRow>> {
-            Ok(vec![])
-        }
-
-        fn list_evidence_for_versions(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<EvidenceEntry>> {
-            Ok(version_ids
-                .iter()
-                .flat_map(|vid| {
-                    self.element_evidence
-                        .iter()
-                        .filter(|(id, _)| id == vid)
-                        .flat_map(|(_, ev)| ev.clone())
-                        .collect::<Vec<_>>()
-                })
-                .collect())
-        }
-
-        fn list_version_props(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            Ok(vec![])
-        }
-
-        fn read_relation_by_id(
-            &self,
-            _id: &str,
-        ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
-            // FakeRepo doesn't have full relation support
-            Ok(None)
-        }
-
-        fn list_evidence_for_relation_versions(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<EvidenceEntry>> {
-            Ok(version_ids
-                .iter()
-                .filter_map(|vid| {
-                    self.relation_evidence
-                        .iter()
-                        .find(|(id, _)| id == vid)
-                        .map(|(_, ev)| ev.clone())
-                })
-                .flatten()
-                .collect())
+        fn build(self) -> LbugStore {
+            let mut store = LbugStore::open(&self.project_dir).expect("LbugStore::open");
+            store.init().expect("LbugStore::init");
+            for (id, version_id, confidence) in &self.elements {
+                let category = if id.starts_with("c4:") {
+                    "c4".to_string()
+                } else if id.starts_with("uml") {
+                    "uml".to_string()
+                } else if id.starts_with("behavior:") {
+                    "behavior".to_string()
+                } else {
+                    "c4".to_string()
+                };
+                let v = crate::graph::ElementVersion {
+                    id: version_id.clone(),
+                    element_id: id.clone(),
+                    name: "TestElement".to_string(),
+                    status: "accepted".to_string(),
+                    origin: "test".to_string(),
+                    confidence: *confidence,
+                    props: Default::default(),
+                };
+                store
+                    .upsert_element_version(&v)
+                    .expect("upsert_element_version");
+                store
+                    .link_current_version(id, version_id)
+                    .expect("link_current_version");
+                let e = crate::graph::Element {
+                    id: id.clone(),
+                    kind_id: "container".to_string(),
+                    category: category.clone(),
+                    canonical_key: id.clone(),
+                    current_name: "TestElement".to_string(),
+                    current_status: "active".to_string(),
+                    current_confidence: *confidence,
+                    current_version_id: version_id.clone(),
+                };
+                store.upsert_element(&e).expect("upsert_element");
+            }
+            for (version_id, evidence) in &self.element_evidence {
+                let mut props = serde_json::Map::new();
+                if let Some(s) = &evidence.status {
+                    props.insert("status".into(), serde_json::Value::String(s.clone()));
+                }
+                let ev = crate::graph::StructuralEvidence {
+                    id: evidence.id.clone(),
+                    kind: evidence.kind.clone(),
+                    claim: evidence.claim.clone(),
+                    file: evidence.path.clone(),
+                    line: evidence.start_line,
+                    confidence: 0.9,
+                    rule_id: evidence.rule_id.clone(),
+                    props,
+                };
+                store
+                    .put_structural_evidence(&ev)
+                    .expect("put_structural_evidence");
+                // SUPPORTED_BY: ElementVersion → Evidence
+                let cypher = format!(
+                    "MATCH (ev:ElementVersion {{id: '{}'}}), (e:Evidence {{id: '{}'}}) \
+                     CREATE (ev)-[:SUPPORTED_BY]->(e);",
+                    version_id, evidence.id
+                );
+                store
+                    .execute_raw_cypher_for_test(&cypher)
+                    .expect("link supported_by");
+            }
+            store
         }
     }
 
@@ -508,7 +497,8 @@ mod tests {
 
     #[test]
     fn coverage_empty_graph_yields_zeros_and_warning() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
 
@@ -536,12 +526,28 @@ mod tests {
 
     #[test]
     fn coverage_mixed_confidence_buckets() {
-        let repo = FakeRepo::new()
+        // The "no-version" element (id "c4:container:e", version "")
+        // exercises a defensive bucket in coverage(). Production's
+        // validate_identifier rejects empty version ids so the
+        // seeder can't reach that state through the normal write
+        // ports; we seed the four real elements via the builder and
+        // then patch the fifth in via raw Cypher with a comment
+        // explaining why.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "v:1", 0.95) // high
             .with_element("c4:container:b", "v:2", 0.80) // medium
             .with_element("c4:container:c", "v:3", 0.60) // low
             .with_element("c4:container:d", "v:4", 0.40) // unknown
-            .with_element("c4:container:e", "", 0.30); // unknown (no version)
+            .build();
+        repo.execute_raw_cypher_for_test(
+            "CREATE (:Element {id: 'c4:container:e', kind_id: 'container', \
+             category: 'c4', canonical_key: 'c4:container:e', \
+             current_name: 'TestElement', current_status: 'active', \
+             current_confidence: 0.30, current_version_id: ''});",
+        )
+        .expect("seed no-version element");
+
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
 
@@ -558,7 +564,8 @@ mod tests {
 
     #[test]
     fn coverage_all_high_accepted() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "v:1", 0.95)
             .with_element("c4:container:b", "v:2", 0.92)
             .with_element("c4:container:c", "v:3", 0.99)
@@ -583,7 +590,8 @@ mod tests {
             .with_element_evidence(
                 "v:5",
                 make_evidence("ev:5", "accepted", "2026-08-01T00:00:00Z"),
-            );
+            )
+            .build();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
 
@@ -602,7 +610,8 @@ mod tests {
 
     #[test]
     fn coverage_drafted_evidence_counted() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "v:1", 0.95)
             .with_element_evidence(
                 "v:1",
@@ -615,7 +624,8 @@ mod tests {
             .with_element_evidence(
                 "v:1",
                 make_evidence("ev:3", "accepted", "2026-08-01T00:00:00Z"),
-            );
+            )
+            .build();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
 
@@ -629,7 +639,8 @@ mod tests {
 
     #[test]
     fn coverage_schema_version_invariant() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
         assert_eq!(result.schema_version, "1.1");
@@ -637,7 +648,8 @@ mod tests {
 
     #[test]
     fn coverage_capability_invariant() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
         assert_eq!(result.capability, "architecture-coverage-mvp");
@@ -645,7 +657,8 @@ mod tests {
 
     #[test]
     fn coverage_warning_always_present() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
         let clock = FixedClock::new("2026-08-17T00:00:00Z");
         let result = coverage(&repo, &clock).unwrap();
         assert!(!result.warnings.is_empty());

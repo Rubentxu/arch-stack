@@ -162,6 +162,7 @@ mod tests {
         // REQ-T06-003: feedback_history plumbing — see AgentContext::with_feedback_history
         // REQ-M25-006: pending_adjudications wiring (TRUST-008 REQ-T08-005). Struct literal
         // intentionally empty at this site.
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
         AgentContext {
             goal: goal.into(),
             triggering_event: None,
@@ -176,6 +177,7 @@ mod tests {
             budget: AgentBudget::default(),
             feedback_history: vec![],
             pending_adjudications: vec![],
+            recent_events: vec![],
         }
     }
 
@@ -270,5 +272,229 @@ mod tests {
         assert_eq!(d.id, "projection-agent");
         assert!(matches!(d.model_policy, ModelPolicy::Heuristic));
         assert!(d.deterministic);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v3, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `ProjectionAgent::default()` is equivalent to `ProjectionAgent::new()`.
+    /// Locks the `Default` impl contract.
+    #[test]
+    fn projection_agent_default_equiv_new() {
+        let via_default = ProjectionAgent::default();
+        let via_new = ProjectionAgent::new();
+        assert_eq!(
+            via_default.descriptor().id,
+            via_new.descriptor().id,
+            "default() and new() must yield identical descriptors"
+        );
+        assert_eq!(via_default.descriptor().id, "projection-agent");
+    }
+
+    /// "container" keyword maps to `ViewKind::C4Container`. Locks the
+    /// distinguishability from "component" (which maps to C4Component).
+    #[test]
+    fn maps_to_c4_container_keyword() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx("show me the container diagram", vec![]);
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert!(matches!(spec.view_kind, ViewKind::C4Container));
+    }
+
+    /// Both "context" and "c4" keywords map to `ViewKind::C4Context`. Distinct
+    /// from `maps_to_c4_component` (component → C4Component) and
+    /// `maps_to_c4_container_keyword` (container → C4Container).
+    #[test]
+    fn maps_to_c4_context_keyword() {
+        let agent = ProjectionAgent::new();
+        for keyword in ["context", "c4"] {
+            let ctx = make_ctx(&format!("generate a {keyword} diagram"), vec![]);
+            let out = agent.observe(&ctx).unwrap();
+            let spec = match out {
+                AgentOutput::ProjectionSpec(s) => s,
+                other => panic!("expected ProjectionSpec for {keyword}, got {:?}", other),
+            };
+            assert!(
+                matches!(spec.view_kind, ViewKind::C4Context),
+                "keyword '{keyword}' must map to C4Context, got {:?}",
+                spec.view_kind
+            );
+        }
+    }
+
+    /// Both "class" and "structure" keywords map to `ViewKind::Class`.
+    #[test]
+    fn maps_to_class_view_kind() {
+        let agent = ProjectionAgent::new();
+        for keyword in ["class", "structure"] {
+            let ctx = make_ctx(&format!("render the {keyword} diagram"), vec![]);
+            let out = agent.observe(&ctx).unwrap();
+            let spec = match out {
+                AgentOutput::ProjectionSpec(s) => s,
+                other => panic!("expected ProjectionSpec for {keyword}, got {:?}", other),
+            };
+            assert!(
+                matches!(spec.view_kind, ViewKind::Class),
+                "keyword '{keyword}' must map to Class, got {:?}",
+                spec.view_kind
+            );
+        }
+    }
+
+    /// "state" keyword maps to `ViewKind::State`. Note: state is NOT in the
+    /// TRIGGER_KEYWORDS list, so `matches()` returns false — but if a goal
+    /// contains "state" alongside another trigger keyword (like "diagram"),
+    /// the keyword scan picks it up.
+    #[test]
+    fn maps_to_state_view_kind() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx("diagram the state machine", vec![]);
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert!(matches!(spec.view_kind, ViewKind::State));
+    }
+
+    /// Both "usecase" and "use-case" keywords map to `ViewKind::UseCase`.
+    #[test]
+    fn maps_to_usecase_keyword() {
+        let agent = ProjectionAgent::new();
+        for keyword in ["usecase", "use-case"] {
+            let ctx = make_ctx(&format!("render the {keyword} diagram"), vec![]);
+            let out = agent.observe(&ctx).unwrap();
+            let spec = match out {
+                AgentOutput::ProjectionSpec(s) => s,
+                other => panic!("expected ProjectionSpec for {keyword}, got {:?}", other),
+            };
+            assert!(
+                matches!(spec.view_kind, ViewKind::UseCase),
+                "keyword '{keyword}' must map to UseCase, got {:?}",
+                spec.view_kind
+            );
+        }
+    }
+
+    /// Explicit "structurizr" format keyword maps to `DiagramFormat::Structurizr`.
+    /// Distinct from `maps_to_mermaid_format` which checks Mermaid.
+    #[test]
+    fn maps_to_structurizr_format() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx("class diagram in structurizr", vec![]);
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert!(matches!(spec.format, DiagramFormat::Structurizr));
+    }
+
+    /// Explicit "plantuml" format keyword maps to `DiagramFormat::PlantUML`.
+    /// PlantUML is also the DEFAULT format when no explicit format is given.
+    #[test]
+    fn maps_to_plantuml_format() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx("sequence in plantuml", vec![]);
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert!(matches!(spec.format, DiagramFormat::PlantUML));
+    }
+
+    /// Default format (no explicit keyword) is `PlantUML`. Locks the
+    /// `unwrap_or(DiagramFormat::PlantUML)` fallback.
+    #[test]
+    fn default_format_is_plantuml() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx("sequence diagram please", vec![]);
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert!(matches!(spec.format, DiagramFormat::PlantUML));
+    }
+
+    /// Focus elements match via `canonical_key` when `name` does not overlap
+    /// with the goal. Distinct from `focus_elements_from_goal_terms` which
+    /// matches via `name`.
+    #[test]
+    fn focus_elements_matches_via_canonical_key() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx(
+            "show me the user-svc component",
+            vec![
+                el("e1", "UserService", "user-svc"),
+                el("e2", "OrderService", "order-svc"),
+            ],
+        );
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert_eq!(spec.focus_elements, vec!["e1".to_string()]);
+    }
+
+    /// Focus elements are empty when there is no overlap between goal and
+    /// element names/canonical_keys. Locks the `filter().map().collect()`
+    /// pipeline returning an empty Vec.
+    #[test]
+    fn focus_elements_empty_when_no_overlap() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx(
+            "show me the billing component",
+            vec![
+                el("e1", "UserService", "user-svc"),
+                el("e2", "OrderService", "order-svc"),
+            ],
+        );
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        assert!(
+            spec.focus_elements.is_empty(),
+            "no element matches goal, focus must be empty"
+        );
+    }
+
+    /// Focus elements are sorted alphabetically by id when multiple matches
+    /// exist. Distinct from `focus_elements_from_goal_terms` which only
+    /// checks inclusion of one specific id. Note: `dedup()` is invoked but
+    /// ids are unique per Element, so it never removes anything — the
+    /// dedup is dead code in practice (kept for forward-compat if Element
+    /// ever allows duplicate ids).
+    #[test]
+    fn focus_elements_sorted_by_id() {
+        let agent = ProjectionAgent::new();
+        let ctx = make_ctx(
+            "component view of UserService and AuthService",
+            vec![
+                el("z9", "UnrelatedThing", "no-match"), // no match
+                el("a1", "UserService", "user-svc"),    // matches "UserService"
+                el("b2", "AuthService", "auth-svc"),    // matches "AuthService"
+                el("c3", "PaymentService", "pay-svc"),  // no match
+            ],
+        );
+        let out = agent.observe(&ctx).unwrap();
+        let spec = match out {
+            AgentOutput::ProjectionSpec(s) => s,
+            other => panic!("expected ProjectionSpec, got {:?}", other),
+        };
+        // Sort puts a1 < b2. z9 and c3 are excluded.
+        assert_eq!(
+            spec.focus_elements,
+            vec!["a1".to_string(), "b2".to_string()]
+        );
     }
 }

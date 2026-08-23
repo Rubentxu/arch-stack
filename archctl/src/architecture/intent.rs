@@ -239,80 +239,52 @@ pub fn check_intent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::ElementRow;
-    use std::collections::HashMap;
+    use crate::store::{ElementRepository, GraphStore, LbugStore};
 
-    /// A mock store that returns pre-configured elements.
-    struct MockStore {
-        elements: HashMap<String, ElementRow>,
+    /// Builder-style seeder that wraps a real `LbugStore` so callers
+    /// can keep the same `new() + add_element(...)` ergonomics as the
+    /// previous MockStore fixture. The production `list_elements`
+    /// filter (Cypher `WHERE e.category = $cat`) runs against the
+    /// production store, so tests exercise the same path as
+    /// `archctl intent check`.
+    struct SeededStore {
+        store: LbugStore,
     }
 
-    impl MockStore {
-        fn new() -> Self {
-            Self {
-                elements: HashMap::new(),
-            }
+    impl SeededStore {
+        fn new(project_dir: &std::path::Path) -> Self {
+            let mut store = LbugStore::open(project_dir).expect("LbugStore::open");
+            store.init().expect("LbugStore::init");
+            Self { store }
         }
         fn add_element(&mut self, id: &str, kind_id: &str, category: &str) {
-            self.elements.insert(
-                id.to_string(),
-                ElementRow {
-                    id: id.to_string(),
-                    kind_id: kind_id.to_string(),
-                    category: category.to_string(),
-                    canonical_key: id.to_string(),
-                    current_name: "Test".to_string(),
-                    current_status: "active".to_string(),
-                    current_confidence: 1.0,
-                    current_version_id: "v1".to_string(),
-                },
-            );
-        }
-    }
-
-    impl DiagramRepository for MockStore {
-        fn list_elements(
-            &self,
-            category: &str,
-            _scope: Option<&str>,
-            _kind: Option<&str>,
-        ) -> Result<Vec<ElementRow>, anyhow::Error> {
-            Ok(self
-                .elements
-                .values()
-                .filter(|e| e.category == category)
-                .cloned()
-                .collect())
-        }
-        fn list_semantic_edges(
-            &self,
-            _category: &str,
-        ) -> Result<Vec<crate::graph::SemanticEdgeRow>, anyhow::Error> {
-            Ok(vec![])
-        }
-        fn list_evidence_for_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> Result<Vec<crate::diagram::export_types::EvidenceEntry>, anyhow::Error> {
-            Ok(vec![])
-        }
-        fn list_version_props(
-            &self,
-            _version_ids: &[String],
-        ) -> Result<Vec<crate::graph::VersionPropsRow>, anyhow::Error> {
-            Ok(vec![])
-        }
-        fn read_relation_by_id(
-            &self,
-            _id: &str,
-        ) -> Result<Option<crate::graph::RelationRow>, anyhow::Error> {
-            Ok(None)
-        }
-        fn list_evidence_for_relation_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> Result<Vec<crate::diagram::export_types::EvidenceEntry>, anyhow::Error> {
-            Ok(vec![])
+            let version_id = format!("{id}-v1");
+            let e = crate::graph::Element {
+                id: id.to_string(),
+                kind_id: kind_id.to_string(),
+                category: category.to_string(),
+                canonical_key: id.to_string(),
+                current_name: "Test".to_string(),
+                current_status: "active".to_string(),
+                current_confidence: 1.0,
+                current_version_id: version_id.clone(),
+            };
+            let v = crate::graph::ElementVersion {
+                id: version_id.clone(),
+                element_id: id.to_string(),
+                name: "Test".to_string(),
+                status: "accepted".to_string(),
+                origin: "test".to_string(),
+                confidence: 1.0,
+                props: Default::default(),
+            };
+            self.store
+                .upsert_element_version(&v)
+                .expect("upsert_element_version");
+            self.store
+                .link_current_version(id, &version_id)
+                .expect("link_current_version");
+            self.store.upsert_element(&e).expect("upsert_element");
         }
     }
 
@@ -325,7 +297,8 @@ mod tests {
     // S1: declared and present → DeclaredAndPresent
     #[test]
     fn s1_declared_present_declared_and_present() {
-        let mut store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = SeededStore::new(tmp.path());
         store.add_element("c4:container:order", "c4:container", "c4");
 
         let intent = IntentDeclaration {
@@ -339,7 +312,7 @@ mod tests {
             relations: vec![],
         };
 
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 1);
         assert_eq!(
             report.deltas.declared_and_present[0].id,
@@ -354,7 +327,8 @@ mod tests {
     // S2: declared missing → DeclaredButMissing
     #[test]
     fn s2_declared_missing_declared_but_missing() {
-        let store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = SeededStore::new(tmp.path());
 
         let intent = IntentDeclaration {
             schema_version: "1.0".to_string(),
@@ -367,7 +341,7 @@ mod tests {
             relations: vec![],
         };
 
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 0);
         assert_eq!(report.deltas.declared_but_missing.len(), 1);
         assert_eq!(
@@ -380,7 +354,8 @@ mod tests {
     // S3: observed undeclared → ObservedUndeclared (informational, not drift)
     #[test]
     fn s3_observed_undeclared_informational() {
-        let mut store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = SeededStore::new(tmp.path());
         store.add_element("c4:container:extra", "c4:container", "c4");
 
         let intent = IntentDeclaration {
@@ -390,7 +365,7 @@ mod tests {
             relations: vec![],
         };
 
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 0);
         assert_eq!(report.deltas.declared_but_missing.len(), 0);
         assert_eq!(report.deltas.observed_undeclared.len(), 1);
@@ -404,7 +379,8 @@ mod tests {
     // S4: kind mismatch → KindMismatch
     #[test]
     fn s4_kind_mismatch() {
-        let mut store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = SeededStore::new(tmp.path());
         // Graph has it as "c4:component" but intent declares "c4:container"
         store.add_element("c4:container:svc", "c4:component", "c4");
 
@@ -419,7 +395,7 @@ mod tests {
             relations: vec![],
         };
 
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 0);
         assert_eq!(report.deltas.declared_but_missing.len(), 0);
         assert_eq!(report.deltas.kind_mismatch.len(), 1);
@@ -431,7 +407,8 @@ mod tests {
     // S6: empty intent → all observed ObservedUndeclared
     #[test]
     fn s6_empty_intent_all_observed_undeclared() {
-        let mut store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = SeededStore::new(tmp.path());
         store.add_element("c4:container:a", "c4:container", "c4");
         store.add_element("c4:container:b", "c4:container", "c4");
 
@@ -442,7 +419,7 @@ mod tests {
             relations: vec![],
         };
 
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 0);
         assert_eq!(report.deltas.declared_but_missing.len(), 0);
         assert_eq!(report.deltas.observed_undeclared.len(), 2);
@@ -452,7 +429,8 @@ mod tests {
     // S7: empty graph → all DeclaredButMissing
     #[test]
     fn s7_empty_graph_all_declared_but_missing() {
-        let store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = SeededStore::new(tmp.path());
 
         let intent = IntentDeclaration {
             schema_version: "1.0".to_string(),
@@ -472,7 +450,7 @@ mod tests {
             relations: vec![],
         };
 
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 0);
         assert_eq!(report.deltas.declared_but_missing.len(), 2);
         assert_eq!(report.summary.drift, 2);
@@ -481,7 +459,8 @@ mod tests {
     // S11: determinism — two calls → byte-equal JSON
     #[test]
     fn s11_determinism() {
-        let mut store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = SeededStore::new(tmp.path());
         store.add_element("c4:container:a", "c4:container", "c4");
 
         let intent = IntentDeclaration {
@@ -495,10 +474,10 @@ mod tests {
             relations: vec![],
         };
 
-        let report1 = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report1 = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         let json1 = serde_json::to_string(&report1).unwrap();
 
-        let report2 = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report2 = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         let json2 = serde_json::to_string(&report2).unwrap();
 
         assert_eq!(json1, json2, "two runs must be byte-equal");
@@ -507,7 +486,8 @@ mod tests {
     // Relations: endpoints checked, not predicates
     #[test]
     fn s5_relation_endpoints_present() {
-        let mut store = MockStore::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = SeededStore::new(tmp.path());
         store.add_element("a", "container", "c4");
         store.add_element("b", "container", "c4");
 
@@ -535,7 +515,7 @@ mod tests {
 
         // Relations are validated by endpoint existence only in MVP.
         // No declared_but_missing for the relation itself.
-        let report = check_intent(&store, &intent, "test.toml", fixed_now()).unwrap();
+        let report = check_intent(&store.store, &intent, "test.toml", fixed_now()).unwrap();
         assert_eq!(report.deltas.declared_and_present.len(), 2);
         assert_eq!(report.deltas.declared_but_missing.len(), 0);
     }

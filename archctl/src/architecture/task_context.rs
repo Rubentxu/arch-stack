@@ -365,34 +365,39 @@ pub fn compile_task_context(
 mod tests {
     use super::*;
     use crate::diagram::export_types::EvidenceEntry;
-    use crate::graph::{ElementRow, SemanticEdgeRow};
+    use crate::store::{
+        ElementRepository, EvidenceRepository, GraphStore, LbugStore, SemanticEdgeRepository,
+    };
 
-    /// A minimal DiagramRepository stub for unit tests.
-    struct FakeRepo {
-        elements: Vec<ElementRow>,
-        edges: Vec<SemanticEdgeRow>,
-        element_evidence: Vec<(String, Vec<EvidenceEntry>)>,
+    /// Builder that accumulates test data and persists it into a real
+    /// `LbugStore` opened in a TempDir. Mirrors the previous FakeRepo
+    /// `with_*` chain ergonomics, but the production read paths now
+    /// run against the production store. Call `build()` to obtain the
+    /// LbugStore ready to pass to functions taking `&dyn
+    /// DiagramRepository`.
+    struct SeededStore {
+        project_dir: std::path::PathBuf,
+        elements: Vec<(String, String, f64, String)>, // id, name, confidence, category
+        edges: Vec<(String, String, String, String)>, // rel, pred, src, tgt
+        evidence: Vec<(String, EvidenceEntry)>,       // version_id, evidence
     }
 
-    impl FakeRepo {
-        fn new() -> Self {
+    impl SeededStore {
+        fn new(project_dir: &std::path::Path) -> Self {
             Self {
+                project_dir: project_dir.to_path_buf(),
                 elements: vec![],
                 edges: vec![],
-                element_evidence: vec![],
+                evidence: vec![],
             }
         }
         fn with_element(mut self, id: &str, name: &str, confidence: f64, category: &str) -> Self {
-            self.elements.push(ElementRow {
-                id: id.to_string(),
-                kind_id: "container".to_string(),
-                category: category.to_string(),
-                canonical_key: id.to_string(),
-                current_name: name.to_string(),
-                current_status: "active".to_string(),
-                current_confidence: confidence,
-                current_version_id: format!("{}-v1", id),
-            });
+            self.elements.push((
+                id.to_string(),
+                name.to_string(),
+                confidence,
+                category.to_string(),
+            ));
             self
         }
         fn with_edge(
@@ -402,72 +407,92 @@ mod tests {
             source_id: &str,
             target_id: &str,
         ) -> Self {
-            self.edges.push(SemanticEdgeRow {
-                relation_id: relation_id.to_string(),
-                predicate_id: predicate_id.to_string(),
-                source_id: source_id.to_string(),
-                target_id: target_id.to_string(),
-                order_key: "0".to_string(),
-                props: serde_json::Map::new(),
-            });
+            self.edges.push((
+                relation_id.to_string(),
+                predicate_id.to_string(),
+                source_id.to_string(),
+                target_id.to_string(),
+            ));
             self
         }
         fn with_evidence(mut self, version_id: &str, evidence: EvidenceEntry) -> Self {
-            self.element_evidence
-                .push((version_id.to_string(), vec![evidence]));
+            self.evidence.push((version_id.to_string(), evidence));
             self
         }
-    }
+        fn build(self) -> LbugStore {
+            let mut store = LbugStore::open(&self.project_dir).expect("LbugStore::open");
+            store.init().expect("LbugStore::init");
 
-    impl DiagramRepository for FakeRepo {
-        fn list_elements(
-            &self,
-            category: &str,
-            _scope: Option<&str>,
-            _kind: Option<&str>,
-        ) -> anyhow::Result<Vec<ElementRow>> {
-            Ok(self
-                .elements
-                .iter()
-                .filter(|e| e.category == category)
-                .cloned()
-                .collect())
-        }
-        fn list_semantic_edges(&self, _category: &str) -> anyhow::Result<Vec<SemanticEdgeRow>> {
-            Ok(self.edges.clone())
-        }
-        fn list_evidence_for_versions(
-            &self,
-            version_ids: &[String],
-        ) -> anyhow::Result<Vec<EvidenceEntry>> {
-            Ok(version_ids
-                .iter()
-                .flat_map(|vid| {
-                    self.element_evidence
-                        .iter()
-                        .filter(|(id, _)| id == vid)
-                        .flat_map(|(_, ev)| ev.clone())
-                        .collect::<Vec<_>>()
-                })
-                .collect())
-        }
-        fn list_version_props(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-            Ok(vec![])
-        }
-        fn read_relation_by_id(
-            &self,
-            _id: &str,
-        ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
-            Ok(None)
-        }
-        fn list_evidence_for_relation_versions(
-            &self,
-            _version_ids: &[String],
-        ) -> anyhow::Result<Vec<EvidenceEntry>> {
-            Ok(vec![])
+            // Insert ElementVersion + Element for each declared element.
+            for (id, name, confidence, category) in &self.elements {
+                let version_id = format!("{id}-v1");
+                let v = crate::graph::ElementVersion {
+                    id: version_id.clone(),
+                    element_id: id.clone(),
+                    name: name.clone(),
+                    status: "accepted".to_string(),
+                    origin: "test".to_string(),
+                    confidence: *confidence,
+                    props: Default::default(),
+                };
+                store
+                    .upsert_element_version(&v)
+                    .expect("upsert_element_version");
+                store
+                    .link_current_version(id, &version_id)
+                    .expect("link_current_version");
+                let e = crate::graph::Element {
+                    id: id.clone(),
+                    kind_id: "container".to_string(),
+                    category: category.clone(),
+                    canonical_key: id.clone(),
+                    current_name: name.clone(),
+                    current_status: "active".to_string(),
+                    current_confidence: *confidence,
+                    current_version_id: version_id.clone(),
+                };
+                store.upsert_element(&e).expect("upsert_element");
+            }
+
+            // Insert semantic edges.
+            for (relation_id, predicate_id, src, tgt) in &self.edges {
+                store
+                    .link_semantic_edge(
+                        src,
+                        tgt,
+                        relation_id,
+                        predicate_id,
+                        &serde_json::Map::new(),
+                        true,
+                    )
+                    .expect("link_semantic_edge");
+            }
+
+            // Insert evidence linked to the requested ElementVersion.
+            for (version_id, evidence) in &self.evidence {
+                let mut props = serde_json::Map::new();
+                if let Some(s) = &evidence.status {
+                    props.insert("status".into(), serde_json::Value::String(s.clone()));
+                }
+                let ev = crate::graph::StructuralEvidence {
+                    id: evidence.id.clone(),
+                    kind: evidence.kind.clone(),
+                    claim: evidence.claim.clone(),
+                    file: evidence.path.clone(),
+                    line: evidence.start_line,
+                    confidence: 0.9,
+                    rule_id: evidence.rule_id.clone(),
+                    props,
+                };
+                store
+                    .put_structural_evidence(&ev)
+                    .expect("put_structural_evidence");
+                store
+                    .link_supported_by(version_id, &evidence.id)
+                    .expect("link_supported_by");
+            }
+
+            store
         }
     }
 
@@ -494,9 +519,11 @@ mod tests {
 
     #[test]
     fn task_context_happy_path_with_evidence() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:orders", "OrderService", 0.9, "c4")
-            .with_evidence("c4:container:orders-v1", make_evidence("ev:1", "accepted"));
+            .with_evidence("c4:container:orders-v1", make_evidence("ev:1", "accepted"))
+            .build();
 
         let result = compile_task_context(&repo, "OrderService", 4000, 10).unwrap();
 
@@ -516,10 +543,12 @@ mod tests {
 
     #[test]
     fn task_context_budget_truncation() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
             .with_element("c4:container:b", "B", 0.8, "c4")
-            .with_element("c4:container:c", "C", 0.7, "c4");
+            .with_element("c4:container:c", "C", 0.7, "c4")
+            .build();
 
         // Tiny budget that can only fit one element
         let result = compile_task_context(&repo, "c", 50, 10).unwrap();
@@ -541,12 +570,14 @@ mod tests {
 
     #[test]
     fn task_context_relation_closure_drops_dangling() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
             .with_element("c4:container:b", "B", 0.8, "c4")
             .with_element("c4:container:c", "C", 0.7, "c4")
             .with_edge("rel-a-b", "depends_on", "c4:container:a", "c4:container:b")
-            .with_edge("rel-b-c", "calls", "c4:container:b", "c4:container:c");
+            .with_edge("rel-b-c", "calls", "c4:container:b", "c4:container:c")
+            .build();
 
         // Only fit A — B and C are dropped, so rel-a-b and rel-b-c should both be dropped
         let result = compile_task_context(&repo, "a", 100, 10).unwrap();
@@ -572,7 +603,8 @@ mod tests {
 
     #[test]
     fn task_context_empty_task_error() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
 
         let result = compile_task_context(&repo, "", 4000, 10);
         assert!(matches!(result, Err(ContextError::EmptyTask)));
@@ -587,7 +619,8 @@ mod tests {
 
     #[test]
     fn task_context_zero_budget_error() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
 
         let result = compile_task_context(&repo, "test", 0, 10);
         assert!(matches!(result, Err(ContextError::InvalidBudget)));
@@ -599,7 +632,8 @@ mod tests {
 
     #[test]
     fn task_context_empty_graph() {
-        let repo = FakeRepo::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path()).build();
 
         let result = compile_task_context(&repo, "anything", 4000, 10).unwrap();
 
@@ -614,9 +648,11 @@ mod tests {
 
     #[test]
     fn task_context_determinism() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
-            .with_element("c4:container:b", "B", 0.8, "c4");
+            .with_element("c4:container:b", "B", 0.8, "c4")
+            .build();
 
         let json1 =
             serde_json::to_string(&compile_task_context(&repo, "a", 4000, 10).unwrap()).unwrap();
@@ -632,7 +668,10 @@ mod tests {
 
     #[test]
     fn task_context_schema_version_and_capability() {
-        let repo = FakeRepo::new().with_element("c4:container:srv", "OrderService", 0.9, "c4");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
+            .with_element("c4:container:srv", "OrderService", 0.9, "c4")
+            .build();
 
         let result = compile_task_context(&repo, "Order", 4000, 10).unwrap();
 
@@ -646,11 +685,13 @@ mod tests {
 
     #[test]
     fn task_context_evidence_per_retained_element() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
             .with_element("c4:container:b", "B", 0.8, "c4")
             .with_evidence("c4:container:a-v1", make_evidence("ev:a1", "accepted"))
-            .with_evidence("c4:container:b-v1", make_evidence("ev:b1", "accepted"));
+            .with_evidence("c4:container:b-v1", make_evidence("ev:b1", "accepted"))
+            .build();
 
         // Tiny budget that only fits A
         let result = compile_task_context(&repo, "a", 100, 10).unwrap();
@@ -667,9 +708,11 @@ mod tests {
 
     #[test]
     fn task_context_budget_estimate_sanity() {
-        let repo = FakeRepo::new()
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = SeededStore::new(tmp.path())
             .with_element("c4:container:a", "A", 0.9, "c4")
-            .with_element("c4:container:b", "B", 0.8, "c4");
+            .with_element("c4:container:b", "B", 0.8, "c4")
+            .build();
 
         let result = compile_task_context(&repo, "a", 4000, 10).unwrap();
 

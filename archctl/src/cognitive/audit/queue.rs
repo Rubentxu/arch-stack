@@ -297,4 +297,133 @@ mod tests {
         assert!(resolved.resolved_at.is_some());
         assert_eq!(resolved.resolution, Some(Resolution::Approved));
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v4, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `PendingApproval::new()` initializes all resolved_* fields to None
+    /// and resolution to None. Distinct from `resolved_fields_are_set`
+    /// which checks post-resolve state.
+    #[test]
+    fn pending_approval_new_initializes_resolved_fields_to_none() {
+        let ap = PendingApproval::new("p", "g", "agent", "level", "reason");
+        assert!(ap.resolved_by.is_none());
+        assert!(ap.resolved_at.is_none());
+        assert!(ap.resolution.is_none());
+        assert!(!ap.is_resolved());
+        assert!(ap.proposal_id == "p");
+    }
+
+    /// `Resolution` enum serializes in snake_case (per
+    /// `#[serde(rename_all = "snake_case")]`). Locks the wire format.
+    #[test]
+    fn resolution_serde_snake_case() {
+        let approved = Resolution::Approved;
+        let json = serde_json::to_string(&approved).unwrap();
+        assert_eq!(json, "\"approved\"", "must use snake_case");
+
+        let rejected = Resolution::Rejected;
+        let json = serde_json::to_string(&rejected).unwrap();
+        assert_eq!(json, "\"rejected\"", "must use snake_case");
+
+        // Roundtrip
+        let back: Resolution = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, rejected);
+    }
+
+    /// `PendingApproval` round-trips through serde with all fields populated.
+    /// Distinct from existing tests which only use `new()`.
+    #[test]
+    fn pending_approval_full_serde_roundtrip() {
+        let ap = PendingApproval {
+            proposal_id: "prop-99".into(),
+            goal: "deploy prod".into(),
+            agent_id: "agent-007".into(),
+            required_level: "SecurityApproval".into(),
+            reason: "production deploy".into(),
+            queued_at: chrono::Utc::now(),
+            resolved_by: Some("alice".into()),
+            resolved_at: Some(chrono::Utc::now()),
+            resolution: Some(Resolution::Approved),
+        };
+        let json = serde_json::to_string(&ap).unwrap();
+        let back: PendingApproval = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.proposal_id, "prop-99");
+        assert_eq!(back.resolution, Some(Resolution::Approved));
+    }
+
+    /// `ApprovalQueue::default()` (via `new()`) starts empty — no
+    /// pending entries.
+    #[test]
+    fn approval_queue_default_is_empty() {
+        let queue = ApprovalQueue::default();
+        assert!(queue.is_empty());
+        assert_eq!(queue.len(), 0);
+        assert!(queue.pending().is_empty());
+    }
+
+    /// `reject()` on a non-existent proposal returns None — distinct from
+    /// `approve_none_if_not_found` which only checks approve.
+    #[test]
+    fn reject_none_if_not_found() {
+        let mut queue = ApprovalQueue::new();
+        assert!(queue.reject("nonexistent", "alice").is_none());
+    }
+
+    /// `pending()` after `clear()` returns empty. Distinct from
+    /// `is_empty_after_clear` which checks `is_empty()`.
+    #[test]
+    fn pending_list_after_clear_is_empty() {
+        let mut queue = ApprovalQueue::new();
+        queue.push(make_approval("prop-1"));
+        queue.push(make_approval("prop-2"));
+        queue.clear();
+        assert!(queue.pending().is_empty());
+        assert_eq!(queue.len(), 0);
+    }
+
+    /// Multiple approvals + rejects: `len()` reports only unresolved.
+    #[test]
+    fn queue_len_counts_only_unresolved() {
+        let mut queue = ApprovalQueue::new();
+        queue.push(make_approval("p1"));
+        queue.push(make_approval("p2"));
+        queue.push(make_approval("p3"));
+        assert_eq!(queue.len(), 3);
+
+        queue.approve("p1", "alice");
+        assert_eq!(queue.len(), 2);
+
+        queue.reject("p2", "bob");
+        assert_eq!(queue.len(), 1);
+
+        // The resolved entries are removed from the map (via approve/reject),
+        // so they're no longer counted.
+        assert!(queue.is_pending("p3"));
+        assert!(!queue.is_pending("p1"));
+    }
+
+    /// `ApprovalQueue::clone()` produces an independent copy. Note: the
+    /// `PendingApproval` entries are cloned (deep), but the queue remains
+    /// a value-type clone (no shared mutable state).
+    #[test]
+    fn approval_queue_clone_is_independent() {
+        let mut queue = ApprovalQueue::new();
+        queue.push(make_approval("prop-1"));
+        let mut cloned = queue.clone();
+
+        // Mutating the clone does not affect the original.
+        cloned.approve("prop-1", "alice").unwrap();
+        assert!(queue.is_pending("prop-1"), "original still pending");
+        assert!(!cloned.is_pending("prop-1"), "clone is resolved");
+    }
+
+    /// `QueueResult` debug-format includes variant name.
+    #[test]
+    fn queue_result_debug_includes_variant() {
+        let result = QueueResult::AlreadyQueued;
+        let dbg = format!("{result:?}");
+        assert!(dbg.contains("AlreadyQueued"), "got: {dbg}");
+    }
 }

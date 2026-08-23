@@ -1,5 +1,269 @@
 ## [Unreleased] — pending
 
+## [v1.88.0] — 2026-08-22
+
+M34 cognitive context compression. New `EventLog::recent(n, TailFilter)` /
+`find_by_event_id`. New `AgentContext::compress_for_budget`. Exempt invariants
+preserve `feedback_history` and `pending_adjudications`. Additive serde, no
+schema migration. ADR-M34 accepted. 2 new integration tests.
+
+### Added
+
+- **M34**: `cognitive/` gains `EventLog::recent` / `find_by_event_id`,
+  `AgentContext::compress_for_budget`, `CompressionPolicy`, `CompressionReport`.
+  New `manifests/cognitive.toml` gate. Spec at
+  `docs/specs/spec-M34-cognitive-context-compression.md`.
+  Pre-M34 `AgentContext` JSON backward-compatible.
+
+## [1.87.3] — 2026-08-22
+
+Cycle closure — `cognitive-layer-coverage` continuation. Formalises the
+3 trailing commits (`922aac1`, `d22d53c`, `6157647`) that landed in
+`main` after the `v1.87.2` tag and the docs commit (`22253dc`). Tests
+only (no behavioural change in production code) plus one additive
+derive and one doc cleanup. Patch bump.
+
+### Added
+
+- **26 new tests across 3 cognitive-layer modules** (cycle
+  `cognitive-layer-coverage` continuation):
+  - `cognitive/event.rs` (988 LOC, 17 → 28 tests, ratio 1.7% → 2.8%):
+    monotonic seq invariant, `append` + `append_serialized` coexistence,
+    `EventEnvelope` round-trip with all optional fields populated,
+    `consumer_checkpoint` default-0, `validate_consumer_id` rejects
+    empty / too-long / `..` / `/` / NUL byte + accepts well-formed.
+  - `cognitive/dispatcher/registry.rs` (186 LOC, 3 → 9 tests, ratio
+    1.6% → 4.8%): `register` duplicate panic, `ids()` iterates all,
+    `MismatchObserver` short-circuits to `NoAction(OutOfScope)` without
+    invoking `observe()`, dispatcher all-decline returns
+    `InsufficientConfidence`, `DispatchError` Display for both variants.
+  - `cognitive/mcp/tools.rs` (337 LOC, 4 → 13 tests, ratio 1.2% → 3.9%):
+    `ToolResult` round-trips, `TestScope` default deserialization,
+    `RunTestsArgs` default timeout=300, `GraphQueryResult` round-trip,
+    `schema_validate` non-object / not-array / missing-fields paths,
+    empty `Vec` `skip_serializing_if` confirmed.
+
+### Changed (additive — non-breaking)
+
+- **`Deserialize` derived on `cognitive::mcp::tools::GraphQueryResult`**
+  (commit `6157647`). Was `Serialize`-only; the derive enables full
+  serde round-trips of the `graph_query` tool response. Additive.
+
+### Fixed (doc-only)
+
+- **3 stale `--lang` help strings in `cli.rs`** (D5 residual, commit
+  `22253dc`):
+  - L530 (`call_graph::Language`, 6 variants): was `(rust, typescript,
+    python, go)` → now `(rust, typescript, python, go, java, kotlin)`.
+  - L570 (`class_diagram::Language`, 3 variants): was `(rust,
+    typescript, python, go)` → now `(rust, typescript, python)`.
+  - L589 (`state_machine::Language`, 3 variants): same correction.
+  Previously the help text advertised Go for `class_diagram` and
+  `state_machine` (which lack Go support) and omitted Java+Kotlin for
+  `call_graph` (which supports both). Verified against `code/call_graph.rs:90`,
+  `code/class_diagram.rs:96`, `code/state_machine.rs:27`.
+
+### Validation
+
+- `cargo test --features test-fixtures --tests` → **1279 pass / 0 fail
+  / 12 ignored** (+26 from v1.87.2: +11 event.rs + +6 registry.rs +
+  +9 tools.rs; the in-v1.87.2 trailing cognitive cycle brings the
+  *delta from v1.87.1 to v1.87.3* to +75 lib+integration tests).
+- `cargo clippy --features test-fixtures --lib --tests -- -D warnings`
+  → clean.
+- `cargo fmt --check` → clean.
+
+## [1.87.2] — 2026-08-22
+
+Cycle closure — `M84` (propagate `--install-root` flag into adapter calls).
+Closes a pre-existing F-1 SUGGESTION tracked in `~/.sddk-knowledge/arch-stack/_index.md`
+since 2026-08-12 (M75 era). `archctl ide install --install-root <PATH>` was
+silently accepted by the CLI parser but destructured as ignored in
+`cli.rs:1604`, so the override had no effect: files were always installed to
+`config_root()` regardless of the flag. Bug fix — patch bump.
+
+### Fixed
+
+- **`--install-root` flag for `archctl ide install` is now honored** (cycle
+  M84). The flag was destructured as `install_root: _` at `cli.rs:1604` and
+  the `IdeAdapter::install_stack` trait method (`ide/mod.rs:70`) had no
+  parameter for it. Plumbing: trait signature gains
+  `install_root: Option<&Path>`; all 4 built-in adapters (opencode,
+  zcode, claude-code, codex) honor it via
+  `install_root.map(Path::to_path_buf).unwrap_or_else(|| self.config_root())`;
+  `cli.rs:1601-1605` now binds the field and passes it through
+  (`install_root.as_deref()`).
+
+  Particularly useful for Claude Code + Codex adapters whose `config_root()`
+  hardcodes `~/.claude/` / `~/.codex/` and **does not** respect
+  `XDG_CONFIG_HOME` (per `ide/claude_code.rs:23-26` and
+  `ide/codex.rs:23-25` comments). For these adapters, `--install-root`
+  is the only way to install to a custom location.
+
+### Changed (additive — non-breaking)
+
+- **`PartialEq, Eq` derived on 6 cognitive-layer enums** (cycle
+  cognitive-layer-coverage, commit `2ff53d4`). The following public enums
+  in `archctl::cognitive::output` gained `PartialEq` + `Eq` derives to
+  enable direct `assert_eq!` in tests:
+  `Severity`, `ViewKind`, `DiagramFormat`, `LayoutDirection`, `PatchType`,
+  `NoActionCode`. No behavioural change — these derives are additive and
+  do not affect any existing API contract. Matches the precedent pattern
+  already in tree (`DeploymentEnv`, `SecurityImpact`, `ApprovalLevel`,
+  `ApprovalRequirement`, `AgentId`, `EventId`, `UserId`, `ProposalId`).
+
+### Scope notes (NOT in this cycle)
+
+- **`IdeAction::Update` is unchanged**: the `update` subcommand
+  re-installs via `adapter.install_stack(&payload, None)` — `Update` has
+  no `--install-root` flag, so it always uses `config_root()`. If a user
+  installed via `install --install-root X` and later calls `update`, the
+  update lands at `config_root()` (the default), not at `X`. This is a
+  documented behavior gap, not a regression. Adding `--install-root` to
+  `IdeAction::Update` is a future cycle (would require the same trait
+  plumbing).
+- **`IdeAction::Remove` and `IdeAdapter::diff_stack` are unchanged**:
+  they still use `config_root()` exclusively. Plumbing `install_root`
+  through these is a future cycle (deferred to keep M84 scope tight).
+  Practical effect: if the user installs to a custom path and later runs
+  `ide doctor`, the doctor reports drift against the default
+  `config_root()` (the installed files are at the custom path).
+- **Trait signature change**: `IdeAdapter::install_stack` is a breaking
+  change for any external implementer of the trait. There are no known
+  external impls (the trait is internal to the `archctl::ide` module);
+  the 4 built-in adapters + `TestIdeAdapter` (in `ide/doctor.rs:127`)
+  are the only impls and were all updated in this commit. Semver: this
+  is acceptable per AGENTS.md because the additive parameter mirrors
+  the existing CLI surface and the trait is `pub` only for internal use.
+
+### Validation
+
+- `cargo test --features test-fixtures --tests` → **1253 pass / 0 fail /
+  12 ignored** (+8 from v1.87.1: +3 opencode + +2 claude-code + +2 codex
+  + +2 zcode − 1 deleted lib test helper pair net = +8). All 21 `ide::`
+  tests green.
+- `cargo clippy --features test-fixtures --lib --tests -- -D warnings`
+  → clean.
+- `cargo fmt --check` → clean.
+
+## [1.87.1] — 2026-08-22
+
+Sprint housekeeping — closes the release-pipeline drift accumulated
+since `v1.82.0` (TRUST-002), archives the docs-corrections sprint of
+2026-08-22 (10 commits, 0 Rust touched), and tags the
+`no-stubs-mocks-placeholders-hardcoded` cycle that lived in
+`[Unreleased]` since 2026-08-14. Pure-docs + release-pipeline fix
+forward; no behaviour change. Verified locally: 1204/0/12 tests,
+0 clippy warnings, fmt clean, `archctl --version` reports
+`archctl 1.87.1`.
+
+### Fixed
+- **Release pipeline drift** (`archctl/Cargo.toml`): `version =
+  "1.82.0"` → `"1.87.1"`. The crate version was stuck since
+  TRUST-002 while five minor versions (`v1.83.0` / `v1.84.0` /
+  `v1.85.0` / `v1.86.0` / `v1.87.0`) shipped with corresponding
+  tags. `Cargo.lock` regenerated via `cargo update -p archctl`;
+  no transitive dependency changes (`CARGO_PKG_VERSION` propagation
+  only). Precedent: `84d2a18 fix(release): sync CHANGELOG +
+  Cargo.toml/lock + STATE.md with v1.79.0 bump`.
+
+### Cycle closure — `no-stubs-mocks-placeholders-hardcoded`
+
+Cycle `no-stubs-mocks-placeholders-hardcoded` — registers the
+"production-ready 100%, no stubs/mocks/placeholders/hardcoded" rule
+in AGENTS.md and closes a 17-commit cleanup chain across
+`archctl/src/`. Followed by `test-fixture-svg-extension` to repair
+the integration suite hidden since cycle 2.
+
+#### Added
+- **AGENTS.md "no stubs" rule** (line 463): any commit that
+  introduces a stub/mock/placeholder/hardcoded value is blocked at
+  verify. Includes audit greps (stubs/TODO/mocks-for-non-external-
+  ports/hardcoded-values) and a list of legitimate hits behind the
+  rule (doctor default URLs behind env vars, view.rs loopback per
+  ADR-011, xdg/environment test fixtures).
+
+#### Changed
+- `StubAgent` renamed to `NoopObserver` (`archctl/src/cognitive/
+  observer.rs`).
+- 1×1 PNG placeholder icons in `archctl/src/diagram/` replaced with
+  real C4 SVGs in `archctl/src/diagram/icons/`. The validator at
+  `archctl/src/diagram/validate.rs` now checks
+  `assets/{icon}.{ICON_EXTENSION}` where `ICON_EXTENSION = "svg"`.
+- `archctl doctor --scopes` default URLs externalized to env vars
+  `ARCHCTL_DOCTOR_STRUCTURIZR_URL` / `ARCHCTL_DOCTOR_PLANTUML_URL`.
+  Defaults `http://localhost:18080/` and `http://localhost:18000/`
+  preserved for local-renderer convention.
+- `MockStrategy` (5 explicit `unimplemented!()` calls) deleted;
+  replaced with two real `InjectStrategy` instances.
+- `FakeAdapter` (with `unreachable!()`) renamed to `TestIdeAdapter`.
+- `MockGraphStore` (~470 LOC, 5 port impls, ~25 `unimplemented!()`)
+  in `archctl/src/diagram/export.rs` replaced with
+  `seeded_graph_store()` helper that opens a real `LbugStore` in a
+  TempDir and seeds via production write ports.
+- 5 `FakeRepo`/`MockStore`/`MockRepo` shadows in
+  `archctl/src/architecture/{explain,relevance,coverage,
+  task_context,policy,intent}.rs` replaced with `SeededStore`
+  builders that persist into a real `LbugStore`. Two tests use raw
+  Cypher for scenarios unreachable through normal write ports
+  (empty `current_version_id` defensive guard, non-ASCII identifier
+  names that `validate_identifier` rejects); comments explain each
+  bypass.
+- `archctl/tests/diagram_validate.rs` fixture writes
+  `assets/{icon}.svg` instead of `assets/{icon}.png` to match the
+  validator (had silently failed since cycle 2 because the
+  integration suite requires `--features test-fixtures`).
+
+#### Removed
+- 5 unjustified `#[ignore]` markers (`*_ignored` tests without
+  CI-justification comments). Each removal is paired with a
+  doc-comment explaining why the test now runs in CI.
+
+#### Hardened
+- **Definition of Done + Validation Matrix** (AGENTS.md) now require
+  `cargo test --features test-fixtures --tests` instead of plain
+  `cargo test --quiet`. Without `--features test-fixtures` the
+  integration suite doesn't compile (`execute_raw_cypher_for_test`
+  is gated); without `--tests` only the lib suite (~859 tests)
+  runs and the 56 integration test files (~345 tests) are
+  silently skipped. Total suite now: **1204 tests passing, 0
+  failed**.
+
+#### Notes
+- The lbug 0.18.x implicit STRING→TIMESTAMP workaround in
+  `archctl/src/migrations.rs:344-350` is the chosen path (documented
+  in-code); the lbug bump to 0.19.x is deferred to a future
+  maintenance cycle. Decision recorded here for traceability.
+
+### Sprint housekeeping — docs-corrections 2026-08-22
+
+10 commits across two sub-blocks. No Rust touched. Pure-docs cycles
+following the M47/M58/M62 precedent.
+
+#### Morning sub-block (docs corrections)
+- `6d0aedf docs(state): refresh trunk metrics to v1.87.0`
+- `f20f411 docs(state): add shipped v1.81.0–v1.87.0 rows to Capacidades shipped`
+- `f7d53ca docs(roadmap): bump header to v1.87.0 + extend T0 status as shipped`
+- `83843f0 docs(changelog): re-order TRUST-005..008 under correct version headers`
+- `04ec107 docs(state): refresh Plan vigente + drop obsolete M55-M69 cluster + Próxima acción`
+- `7a427b9 docs(blueprint): anchor live trunk (v1.87.0) without rewriting the 2026-08-20 package`
+
+#### Afternoon sub-block (M3X cycle-body archives)
+- `d86b551 docs(roadmap): archive M34 cycle body — code landed v1.6.0 (PR #90)`
+- `2d4f58e docs(roadmap): archive M33 cycle body — code landed v1.3.1 (PR #80)`
+- `f844672 docs(roadmap): archive M32 cycle body — multi-tag lifecycle v1.2.0→v1.47.1`
+- `0337615 docs(roadmap): archive M31 cycle body — code landed v1.5.0+v1.5.1`
+
+The four cycle-body archives fixed a body-vs-cycle-log drift that had
+accumulated since 2026-08-06. Independent verification via
+`sddk-explore` confirmed each cycle (M34, M31) had been closed in code
+before any archive work was attempted; M32 / M33 closed trivially.
+`docs/STATE.md` Plan vigente section also reduced from 327 to 240
+lines (-27%) by dropping duplicated/obsolete items now living in
+CHANGELOG.
+
+## [1.87.0] — 2026-08-21
+
 Cycle `trust-008-m30-bridge-promotion` — closes REQ-M25-006 (deferred from TRUST-005; named in TRUST-007's archive-manifest). Six chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-008-m30-bridge-promotion/`.
 
 ### Added
@@ -20,6 +284,8 @@ Cycle `trust-008-m30-bridge-promotion` — closes REQ-M25-006 (deferred from TRU
 ### Deprecated
 - `should_warn_pending_adjudication` (TRUST-005 heuristic) marked `#[deprecated(since = "v1.87.0", note = "use promotion_requires_adjudication_event")]`.
 
+## [1.86.0] — 2026-08-21
+
 Cycle `trust-007-feedback-port` — closes REQ-T06-003 deferred from TRUST-006.
 Seven chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-port/`.
 
@@ -31,6 +297,8 @@ Seven chained PRs; diff tracked in `sddk/p-38e02210a9f14317/trust-007-feedback-p
 
 ### Changed
 - 7 `AgentContext` construction sites updated with `// REQ-T06-003: feedback_history plumbing` comment (findability pass; `vec![]` unchanged).
+
+## [1.85.0] — 2026-08-21
 
 Cycle `trust-006-context-bundle` — closes UAT-06 steps 16/17/19/20 (TRUST-006).
 AgentContext now carries prior feedback verdicts so re-invoked agents respect
@@ -48,7 +316,7 @@ rejections; bundle export verified to exclude rejected claims.
 ### Fixed
 - Test fixture `seed_orders_stripe_fixture` had PascalCase `source_origin` in props (`"ModelInference"`); `parse_label` expects snake_case (`"model_inference"`). Fixed in PR #299. Without this fix, `accept_evidence` on ModelInference evidence silently fell back to `UserWorkspace` and would have accepted the false claim.
 
-## [1.85.0] — pending release
+## [1.84.0] — 2026-08-21
 
 Cycle `trust-005-observation-fusion` — closes the epistemic plumbing gap (TRUST-005):
 real confidence/status threaded into Observation/FusedClaim + Feedback/Reconciliation as first-class types.

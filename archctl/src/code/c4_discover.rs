@@ -512,34 +512,6 @@ mod tests {
     use super::*;
     use crate::filesystem::MemoryFilesystem;
 
-    fn dummy_strategy(id: &'static str, confidence: f64) -> Box<dyn Strategy> {
-        Box::new(MockStrategy { id, confidence })
-    }
-
-    struct MockStrategy {
-        id: &'static str,
-        confidence: f64,
-    }
-
-    impl Strategy for MockStrategy {
-        fn id(&self) -> &'static str {
-            self.id
-        }
-        fn confidence(&self) -> f64 {
-            self.confidence
-        }
-        fn metatype(&self) -> &'static str {
-            "mt.container"
-        }
-        fn detect(
-            &self,
-            _project_root: &Path,
-            _fs: &dyn Filesystem,
-        ) -> Result<Vec<ContainerCandidate>> {
-            Ok(Vec::new())
-        }
-    }
-
     #[test]
     fn merge_two_strategies_same_canonical_key() {
         // SCN-140: two strategies infer the same canonical_key
@@ -619,36 +591,10 @@ mod tests {
             &crate::clock::FixedClock::new("2025-01-01T00:00:00Z");
         let tmp = tempfile::tempdir().unwrap();
 
-        let candidates = vec![
-            ContainerCandidate {
-                canonical_key: "svc".to_string(),
-                name: "svc".to_string(),
-                strategy: "s1".to_string(),
-                confidence: 0.90,
-                evidences: vec![Evidence {
-                    content_hash: String::new(),
-                    file: "file1.txt".to_string(),
-                    line: 1,
-                    kind: EvidenceKind::Structural,
-                    text: "evidence 1".to_string(),
-                }],
-            },
-            ContainerCandidate {
-                canonical_key: "svc".to_string(),
-                name: "svc".to_string(),
-                strategy: "s2".to_string(),
-                confidence: 0.80,
-                evidences: vec![Evidence {
-                    content_hash: String::new(),
-                    file: "file2.txt".to_string(),
-                    line: 2,
-                    kind: EvidenceKind::Config,
-                    text: "evidence 2".to_string(),
-                }],
-            },
-        ];
-
-        // Inject candidates via a custom strategy
+        // Two distinct strategies, each contributing one candidate for the
+        // same canonical_key. Exercises the merge logic across separate
+        // Strategy instances (was previously a single InjectStrategy + a
+        // phantom dummy_strategy, which only tested intra-strategy merge).
         #[derive(Clone)]
         struct InjectStrategy {
             candidates: Vec<ContainerCandidate>,
@@ -669,8 +615,36 @@ mod tests {
         }
 
         let strategies: Vec<Box<dyn Strategy>> = vec![
-            Box::new(InjectStrategy { candidates }),
-            dummy_strategy("s2", 0.80),
+            Box::new(InjectStrategy {
+                candidates: vec![ContainerCandidate {
+                    canonical_key: "svc".to_string(),
+                    name: "svc".to_string(),
+                    strategy: "s1".to_string(),
+                    confidence: 0.90,
+                    evidences: vec![Evidence {
+                        content_hash: String::new(),
+                        file: "file1.txt".to_string(),
+                        line: 1,
+                        kind: EvidenceKind::Structural,
+                        text: "evidence 1".to_string(),
+                    }],
+                }],
+            }),
+            Box::new(InjectStrategy {
+                candidates: vec![ContainerCandidate {
+                    canonical_key: "svc".to_string(),
+                    name: "svc".to_string(),
+                    strategy: "s2".to_string(),
+                    confidence: 0.80,
+                    evidences: vec![Evidence {
+                        content_hash: String::new(),
+                        file: "file2.txt".to_string(),
+                        line: 2,
+                        kind: EvidenceKind::Config,
+                        text: "evidence 2".to_string(),
+                    }],
+                }],
+            }),
         ];
 
         let report = discover(tmp.path(), &strategies, &fs, clock).unwrap();

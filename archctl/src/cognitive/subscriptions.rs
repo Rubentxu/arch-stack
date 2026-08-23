@@ -149,4 +149,183 @@ mod tests {
             None
         );
     }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v4, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `glob_match` with an empty pattern does NOT match any non-empty text
+    /// (per the contract at subscriptions.rs:21-29: pattern must be `*`,
+    /// `*.suffix`, or exact). Empty pattern → fall through to `pattern == text`,
+    /// which requires the text to also be empty.
+    #[test]
+    fn glob_match_empty_pattern_only_matches_empty_text() {
+        assert!(glob_match("", ""), "empty pattern matches empty text");
+        assert!(!glob_match("", "anything"));
+        assert!(!glob_match("", "x"));
+    }
+
+    /// `glob_match` with `*` in the MIDDLE of a pattern (e.g. `foo*bar`)
+    /// does NOT match `foobar` — the only special pattern starts with `*.`.
+    /// This locks the deliberately-restricted glob grammar.
+    #[test]
+    fn glob_match_star_in_middle_falls_through_to_exact() {
+        // "foo*bar" is NOT a recognized special pattern, so the function
+        // falls through to `pattern == text` (line 28). It treats "*" as
+        // a literal character.
+        assert!(
+            !glob_match("foo*bar", "foobar"),
+            "star in middle is not a recognized special pattern"
+        );
+        // The only special case is `*` (alone) or `*.suffix` (suffix match).
+        // Note: `*.bar` matches ANY string ending with `.bar` (suffix match,
+        // not "starts-with-*-then-anything"). So `fooqux.bar` matches too.
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("*.bar", "foobar.bar"));
+        assert!(
+            glob_match("*.bar", "fooqux.bar"),
+            "*.bar matches any text ending with .bar"
+        );
+        assert!(!glob_match("*.bar", "fooqux.baz"));
+    }
+
+    /// `SubscriptionMatcher::matches` returns true if ANY pattern in the
+    /// subscriptions list matches. Locks the `any()` short-circuit.
+    #[test]
+    fn subscription_matcher_any_pattern_matches() {
+        let subs = &[
+            "GoalSubmitted".into(),
+            "FileChanged".into(),
+            "*.created".into(),
+        ];
+        // First pattern matches
+        assert!(SubscriptionMatcher::matches(subs, "GoalSubmitted"));
+        // Second pattern matches
+        assert!(SubscriptionMatcher::matches(subs, "FileChanged"));
+        // Third pattern (suffix) matches
+        assert!(SubscriptionMatcher::matches(subs, "doc.created"));
+        // None match
+        assert!(!SubscriptionMatcher::matches(subs, "GoalCancelled"));
+    }
+
+    /// `SubscriptionFilter::subscribed_to` delegates to
+    /// `SubscriptionMatcher::matches`. Locks the extension trait's contract.
+    #[test]
+    fn subscription_filter_subscribed_to_uses_matcher() {
+        use crate::cognitive::descriptor::{AgentBudget, AgentDescriptor, ModelPolicy};
+        use crate::cognitive::observer::{NoopObserver, ReactiveObserver};
+
+        struct TestObserver;
+        impl ReactiveObserver for TestObserver {
+            fn descriptor(&self) -> AgentDescriptor {
+                AgentDescriptor {
+                    id: "test".into(),
+                    version: "0.1.0".into(),
+                    subscriptions: vec!["GoalSubmitted".into(), "*.changed".into()],
+                    required_views: vec![],
+                    output_schema: "{}".into(),
+                    model_policy: ModelPolicy::Heuristic,
+                    budget: AgentBudget::default(),
+                    capabilities: vec![],
+                    deterministic: true,
+                    idempotent: true,
+                }
+            }
+            fn observe(
+                &self,
+                _ctx: &crate::cognitive::AgentContext,
+            ) -> Result<
+                crate::cognitive::output::AgentOutput,
+                crate::cognitive::observer::ObserveError,
+            > {
+                Ok(crate::cognitive::output::AgentOutput::NoAction(
+                    crate::cognitive::output::NoActionReason {
+                        code: crate::cognitive::output::NoActionCode::OutOfScope,
+                        message: "no-op".into(),
+                    },
+                ))
+            }
+        }
+
+        let obs = TestObserver;
+        assert!(obs.subscribed_to("GoalSubmitted"));
+        assert!(obs.subscribed_to("file.changed"));
+        assert!(!obs.subscribed_to("GoalCancelled"));
+
+        // Suppress unused warning for NoopObserver (used to silence the
+        // unused-import lint when this test is the only consumer).
+        let _ = NoopObserver {
+            descriptor: obs.descriptor(),
+        };
+    }
+
+    /// `SubscriptionFilter::should_activate` combines subscription
+    /// matching AND the observer's own `matches()` check. Both must
+    /// return true for activation.
+    #[test]
+    fn subscription_filter_should_activate_combines_both_checks() {
+        use crate::cognitive::descriptor::{AgentBudget, AgentDescriptor, ModelPolicy};
+        use crate::cognitive::observer::{NoopObserver, ObserveError, ReactiveObserver};
+
+        struct ConditionalObserver {
+            should_match: bool,
+        }
+        impl ReactiveObserver for ConditionalObserver {
+            fn descriptor(&self) -> AgentDescriptor {
+                AgentDescriptor {
+                    id: "cond".into(),
+                    version: "0.1.0".into(),
+                    subscriptions: vec!["GoalSubmitted".into()],
+                    required_views: vec![],
+                    output_schema: "{}".into(),
+                    model_policy: ModelPolicy::Heuristic,
+                    budget: AgentBudget::default(),
+                    capabilities: vec![],
+                    deterministic: true,
+                    idempotent: true,
+                }
+            }
+            fn matches(&self, _ctx: &crate::cognitive::AgentContext) -> bool {
+                self.should_match
+            }
+            fn observe(
+                &self,
+                _ctx: &crate::cognitive::AgentContext,
+            ) -> Result<crate::cognitive::output::AgentOutput, ObserveError> {
+                unreachable!("should_activate must short-circuit before observe")
+            }
+        }
+
+        let obs = ConditionalObserver { should_match: true };
+        // recent_events (M34 W2) populated by compress_for_budget before dispatch.
+        let ctx = crate::cognitive::context::AgentContext {
+            goal: "g".into(),
+            triggering_event: None,
+            graph_view: crate::cognitive::context::GraphView::default(),
+            source_fragments: vec![],
+            evidence: vec![],
+            applicable_rules: vec![],
+            available_tools: vec![],
+            budget: AgentBudget::default(),
+            feedback_history: vec![],
+            pending_adjudications: vec![],
+            recent_events: vec![],
+        };
+        // Both checks pass → activate
+        assert!(obs.should_activate("GoalSubmitted", &ctx));
+
+        // Subscription fails → don't activate
+        assert!(!obs.should_activate("GoalCancelled", &ctx));
+
+        let obs_no_match = ConditionalObserver {
+            should_match: false,
+        };
+        // Subscription passes, but matches() returns false → don't activate
+        assert!(!obs_no_match.should_activate("GoalSubmitted", &ctx));
+
+        // Suppress unused import warning
+        let _ = NoopObserver {
+            descriptor: obs.descriptor(),
+        };
+    }
 }

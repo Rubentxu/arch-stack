@@ -113,3 +113,87 @@ pub fn detect_format(source: &Path) -> RenderKind {
         _ => RenderKind::Structurizr,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `RenderKind::as_str` returns the canonical lowercase id for each
+    /// variant. Locks the wire format consumed by `detect_format` and
+    /// the JSON `"format"` payload in `run`.
+    #[test]
+    fn render_kind_as_str_returns_canonical_ids() {
+        assert_eq!(RenderKind::Structurizr.as_str(), "structurizr");
+        assert_eq!(RenderKind::Plantuml.as_str(), "plantuml");
+        assert_eq!(RenderKind::Mermaid.as_str(), "mermaid");
+    }
+
+    /// `RenderKind` derives `PartialEq`, `Eq`, `Copy`, `Clone`, `Debug`.
+    /// Locks the basic trait contracts for use in match expressions.
+    #[test]
+    fn render_kind_basic_derive_traits() {
+        let a = RenderKind::Structurizr;
+        let b = a; // Copy
+        assert_eq!(a, b);
+        let cloned = a; // Copy (Clone is automatic)
+        assert_eq!(a, cloned);
+
+        // Debug includes variant name
+        let dbg = format!("{a:?}");
+        assert!(dbg.contains("Structurizr"));
+    }
+
+    /// `detect_format` maps `.puml`, `.iuml`, `.wsd` → PlantUML.
+    /// Locks the extension detection contract.
+    #[test]
+    fn detect_format_maps_plantuml_extensions() {
+        for ext in ["puml", "iuml", "wsd"] {
+            let path = PathBuf::from(format!("diagram.{ext}"));
+            assert_eq!(
+                detect_format(&path),
+                RenderKind::Plantuml,
+                "extension .{ext} must map to Plantuml"
+            );
+        }
+    }
+
+    /// `detect_format` maps `.mmd` → Mermaid.
+    #[test]
+    fn detect_format_maps_mermaid_extension() {
+        let path = PathBuf::from("diagram.mmd");
+        assert_eq!(detect_format(&path), RenderKind::Mermaid);
+    }
+
+    /// `detect_format` is case-insensitive on the extension (via
+    /// `to_ascii_lowercase`). `.PUML`, `.Puml`, `.pUmL` all → Plantuml.
+    #[test]
+    fn detect_format_is_case_insensitive_on_extension() {
+        for ext in ["PUML", "Puml", "pUmL", "IUMl", "WSd", "MMD", "MmD"] {
+            let path = PathBuf::from(format!("diagram.{ext}"));
+            let expected = match ext.to_ascii_lowercase().as_str() {
+                "puml" | "iuml" | "wsd" => RenderKind::Plantuml,
+                "mmd" => RenderKind::Mermaid,
+                _ => RenderKind::Structurizr,
+            };
+            assert_eq!(
+                detect_format(&path),
+                expected,
+                "extension .{ext} (case test) must match case-insensitively"
+            );
+        }
+    }
+
+    /// `detect_format` defaults to Structurizr for unknown extensions
+    /// (`.dsl`, no extension, `.txt`, etc.). Locks the fallthrough.
+    #[test]
+    fn detect_format_defaults_to_structurizr_for_unknown_extensions() {
+        for path_str in ["diagram.dsl", "diagram.txt", "diagram", "diagram.json"] {
+            let path = PathBuf::from(path_str);
+            assert_eq!(
+                detect_format(&path),
+                RenderKind::Structurizr,
+                "unknown extension '{path_str}' must default to Structurizr"
+            );
+        }
+    }
+}

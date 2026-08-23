@@ -1,9 +1,9 @@
 # Roadmap — OpenCode Architecture Diagrammer
 
-**Estado:** v1.80.0 ALCANZADO (2026-08-20) — M23 perf-ci-gate shipped (ADR-019 enforcement para archview, post-merge CI job `perf-cull`, +66 LOC contract tests); Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes.
-**Versión:** 2.15
-**Fecha:** 20 de agosto de 2026
-**Cambios vs 2.14:** 7 cycle log rows (`m17-workbench-redesign` v1.74.0 / `m18-c4-semantic-zoom` v1.75.0 / `m19-elk-worker-layout` v1.76.0 / `m21-g6-culling-lod` v1.78.0 / `m22-sidebar-tabs` v1.79.0 / `m23-perf-ci-gate` v1.80.0 / `t0-trust-001-eventlog-reopen` v1.81.0) + nueva sección `## Plan vivo — Architecture Feedback Workbench (paquete 2026-08-20)` que cruza T0–T11 con ADRs aceptados del repo, indexa los 80 tickets del backlog PR-sized y nombra UAT-06 (false-agent-claim) como verification gate de P02.
+**Estado:** v1.87.3 ALCANZADO (2026-08-22) — cognitive-layer-coverage v1 cierra los 2 huecos más profundos del audit M61 (`mcp/gateway.rs` 1.8% → 3.4%, `dispatcher/event_dispatcher.rs` 1.7% → 3.3%); 1279 → 1298 tests; bonus `archview/package.json` lock-step con `archctl/Cargo.toml` + 3 `--lang` help string fixes. T0 Trust cerrado end-to-end (v1.81.0 → v1.87.0). Wave 3 parcial sigue con items 30 (session token, ADR-051 gated) + 34 (P3-05 lens recommendation, ADR-056/062 gated) pendientes. Pendiente menor: report de redacciones en strict bundles + persistir cutoff de staleness por proyecto en XDG.
+**Versión:** 2.17
+**Fecha:** 22 de agosto de 2026
+**Cambios vs 2.16:** 3 cycle log rows nuevas (`sprint-housekeeping-1` v1.87.1 / `m84-ide-install-root` v1.87.2 / `cognitive-layer-coverage-v1` v1.87.3) + bump de `docs/STATE.md` (Estado del trunk rows Tip/Versión/Tests/LOC/Tags apuntando a `afbc801`/v1.87.3/1298 tests/59,046 src LOC/161 tags) y añadidas las 3 filas v1.87.1–v1.87.3 en la tabla "Capacidades shipped".
 
 > **Estado vigente del programa**: para Wave 0/1/2 cerrado y Wave 3
 > parcial (items 19/22/27/28+29/31–33 cerrados; 30 y 34 pendientes con
@@ -81,7 +81,7 @@ canonical architecture fact
 
 | H | Título | Exit gate (UAT) | ADRs blueprint | ADRs repo ya aceptados | Estado real |
 |---|---|---|---|---|---|
-| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md) | **TRUST-001 shipped v1.81.0** (reopen safe ✅); **TRUST-002 shipped v1.82.0** (causation infra ✅); TRUST-003..006 pending |
+| **T0** | Epistemic Trust | UAT-06 + reopen safe | P02, P03 | [ADR-021](../adr/ADR-021-cognitive-layer.md) §Reglas, [ADR-022](../adr/ADR-022-agent-catalog.md), [ADR-040](../adr/ADR-040-cognitive-conditional-activation.md), [ADR-063](../adr/ADR-063-trust-determinism-and-authority.md), [ADR-064](../adr/ADR-064-fusion-bounded-context.md) | **TRUST-001..008 ALL SHIPPED** (v1.81.0 → v1.87.0) — T0 Trust cerrado end-to-end: 001 reopen safe ✅ · 002 causation/correlation ✅ · 003 + 004 typology+canonical-write gate (closed in m25 v1.83.0) ✅ · 005 epistemic plumbing closed ✅ · 006 AgentContext.feedback_history ✅ · 007 FeedbackRepository::summaries_for_claims (data-plane ADR-P02) ✅ · 008 m30 bridge hard fail + Adjudication BC ✅ |
 | **T1** | Incremental Knowledge Engine | UAT-04 + equality gate | P05, P06 | — | backlog only |
 | **T2** | Structured Docs + Tantivy | UAT-08 recall | P04 | — | backlog only |
 | **T3** | Live Revision Loop | UAT-04/UAT-10 + budget | P11, P12 | [ADR-010](../adr/ADR-010-concurrencia-ladybugdb.md), [ADR-033](../adr/ADR-033-archctl-view-embedded-workbench.md) | backlog only |
@@ -797,10 +797,34 @@ se trackea en M32.
 `archctl/tests/fixtures/go_callgraph/`, `e2e/HUMAN_LOOP_TEST.md` (Fase 6, 9.2),
 `docs/adr/ADR-035-go-call-graph-extraction.md`
 
-## M32 — Apply writer performance: transaction + bulk import — **NUEVO (2026-08-06)**
+## M32 — Apply writer performance: transaction + bulk import — **CERRADO ✅**
 
-**Estado:** NUEVO — detectado durante M30 (el soporte Go expone el writer).
-Plan de ejecución aprobado y registrado en **ADR-036**.
+**Estado:** Cerrado ✅ — multi-tag lifecycle en 5+ PRs/versiones
+siguiendo el plan de [ADR-036](adr/ADR-036-apply-writer-performance.md)
+(y su amendment):
+
+| PR | Tag | Entrega |
+|---|---|---|
+| #76 (`7bdcc5f`) | `v1.2.0-m32` | D1 transacción única + D4 bench gate |
+| #78 (`7a20c55`) | `v1.3.0-m32-pr2` | D2 UNWIND bulk import (D3+D5+BREAK-1 deferred) |
+| #80 (`5fb2be1`) | `v1.3.1` | bonus M33 pre-push fix (no M32 estricto) |
+| #82 (`e309aec`) | `v1.4.0-m32-d5` | D5 class_diagram + state_machine transaction wrap |
+| #84 (`864aab7`) | `v1.4.1` | BREAKING: removed `seed_writes` JSON shape |
+| #187+`599c863` regression | `v1.46.0` (PR1) gap documentado en STATE | D2 re-ship parcial post-P1-04 T3 |
+| #188 (`235c885`) | `v1.47.0` + `v1.47.1` (remediation) | D2 UNWIND re-ship completo (call_graph + state_machine + c4_discover) + N+1 hoist class_diagram + bench regression gate; ADR-036 amendment documenta D3 deferral |
+| (#121 `6c40283`) | `v1.21.0` | M51 — M32 D3 (prepared statements + parameter binding) shipped |
+| (#123 `700d425`) | `v1.22.0` | M52 — M32 D4 doc fixes post-M51 |
+| (#125 `64a8be3`) | `v1.23.0` | M53 — M32 D5 sequence-writer audit (verdict N/A; sequence.rs es read-only per SCN-217, no aplica) |
+
+Acceptance criteria cumplidos: `call-graph --apply` en labstack/echo
+<10s (medido: 483s → <10s con D2, ~3s en el gate final), bench de
+regresión añadido (`cargo bench --bench call_graph_apply`), tests del
+writer verdes (838/838 → 849/849 → 1204/1204 a lo largo del lifecycle).
+Correcciones documentales aplicadas (Kùzu, parameter binding).
+Cycle-log rows al final de este ROADMAP referencian las 8 PRs y los
+5+ tags. Reportes de deuda archivados en
+`sddk/m32-apply-writer-performance/debt-report.md` y
+`debt-report-r1.md`.
 
 **Objetivo:** `archctl code call-graph --apply` (y por consistencia los
 writers de class-diagram/state-machine/sequence) guarden en segundos, no
@@ -848,9 +872,17 @@ minutos.
 `archctl/src/store.rs` (L384-391 `query`, L420 comentario erróneo),
 lbug 0.18.3 `src/connection.rs`, M30 amendment (este documento)
 
-## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **NUEVO (2026-08-06)**
+## M33 — Pre-push hook: bootstrap assets-stack en worktree fresco — **CERRADO ✅**
 
-**Estado:** NUEVO — detectado durante M30 (primer push tras el repair).
+**Estado:** Cerrado ✅ — code landed **v1.3.1** (PR #80, commit tip
+`5fb2be1`, merge 2026-08-07). El commit `44d7261 docs(roadmap): M33
+archived v1.3.1` ya había intentado archivar este cuerpo pero solo
+añadió la fila al cycle-log; este commit cierra el drift restante en
+el cuerpo del ciclo. `scripts/verify-local.sh` cheap tier ahora ejecuta
+`scripts/embed-stack.sh` si `archctl/assets-stack/` no existe
+(idempotente); pre-push pasa en worktree fresco sin `--no-verify` per
+acceptance criteria. Cycle-log row al final de este ROADMAP referencia
+el tag y los 6 PRs.
 
 **Objetivo:** el pre-push hook (ADR-025, `.githooks/pre-push`) pueda pasar
 en worktrees frescos sin intervención manual.
@@ -877,9 +909,22 @@ en worktrees frescos sin intervención manual.
 **Referencias:** `.githooks/pre-push`, `scripts/verify-local.sh`,
 `scripts/embed-stack.sh`, ADR-025, ADR-033
 
-## M34 — Call-graph strategy consolidation + test hygiene — **NUEVO (2026-08-06)**
+## M34 — Call-graph strategy consolidation + test hygiene — **CERRADO ✅**
 
-**Estado:** NUEVO — generado por debt-verify de M30 (PASS_WITH_WARNINGS).
+**Estado:** Cerrado ✅ — code landed **v1.6.0** (PR #90, commit tip
+`027527b`, merge 2026-08-07). 5 de 6 items del debt-report M30 cerrados:
+D2 (`928446c`, −244 LOC en `call_graph.rs`), D3 (`d1eaf20`, fixture Go
+unificado), W3 (ADR-037 decidió mantener `InvalidLanguage` con
+`#[allow(dead_code)]`), W4 (`d1eaf20`, test real sobre TempDir), D4
+(`Language::confidence()` centralizado, call_graph.rs:99-111), D6
+(comentario duplicado removido per ADR-037:76-79). D5 (3 help strings
+en `cli.rs`) se cerró inicialmente en `702190f` pero fue revertido por
+`050a9ae` (capability phase 3) — **residual menor**, las strings siguen
+duplicadas en `cli.rs:530, 570, 589` y omiten Java+Kotlin. ADR-037
+aceptado documenta el rechazo explícito del strategy-pattern refactor
+propuesto en este cuerpo. Verificación independiente archivada en
+`sddk/m34-call-graph-strategy-consolidation/explore-report.md` (2026-08-22)
+y cycle-log row al final de este ROADMAP.
 
 **Objetivo:** consolidar la deuda detectada en M30 en un ciclo de limpieza
 coherente. Ningún item es bloqueante; todos son WARN/SUGG del debt-report.
@@ -914,9 +959,28 @@ coherente. Ningún item es bloqueante; todos son WARN/SUGG del debt-report.
 `archctl/src/code/call_graph.rs`, `archctl/tests/code_call_graph.rs`,
 `archctl/src/cli.rs`
 
-## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **NUEVO (2026-08-06)**
+## M31 — Semántica unificada de `diagram export` sin proyecto/grafo — **CERRADO ✅**
 
-**Estado:** NUEVO — detectado durante el human-loop sandbox (M29.4).
+**Estado:** Cerrado ✅ — option (b) implementada en 2 PRs: PR #86
+(`09e69dc`, `v1.5.0`) introdujo el envelope `{manifest, projection,
+evidence, styles, empty, warning}` via `build_export_envelope`
+(`archctl/src/diagram/export.rs:263-278`); server en
+`view.rs:118-135` early-return HTTP 200 + `{empty:true, warning:"no
+project_dir …"}`. CLI: 3 tests en `diagram_export_cli.rs`
+(`export_empty_graph_json_envelope_has_empty_true`,
+`tracing_logs_do_not_pollute_stdout`,
+`non_json_mode_stdout_is_clean_text`). Server: 3 tests en `view.rs:771,
+840, 886` (`export_without_project_is_200_empty_json`,
+`export_with_selector_splits_path`,
+`export_without_selector_uses_default`). PR #88 (`a134dcc`, `v1.5.1`)
+redirige los tracing logs a stderr per M31-FU1
+(`archctl/src/telemetry.rs:27`). e2e `human_loop_sandbox.sh` Fase 9.1
+(L241-245) y `e2e/HUMAN_LOOP_TEST.md` L246 row 9.1 alineados con
+exit 0 + `empty:true`. CHANGELOG `[1.5.0]` + `[1.5.1]` +
+`STATE.md:36-37` + cycle-log row al final de este ROADMAP todos
+consistentes. Verificación independiente archivada en
+`sddk/m31-diagram-export-empty-semantics/explore-report.md` (session
+2026-08-22).
 
 **Objetivo:** Definir una única semántica para "export sin proyecto/grafo"
 y alinearla entre CLI, server del workbench, tests y documentación.
@@ -1835,6 +1899,11 @@ Razones:
 - **Decisiones locked**: `AdjudicationEvent.id` is content-addressable via `blake3(target + adjudicator + decided_at)`; HITL preserved (no auto-decide); v9 graph writes `evidence_origin` for every FusedClaim; pre-v9 graphs are permissive (empty `evidence_origin` skips bridge consult); `evidence_refs` column type is STRING (JSON-encoded) — deviation from spec §3.4.2 STRING[] accepted.
 - **Próximo candidato**: M34 (cognitive context compression, ledger tail) or M35 (severity scoring pipeline).
 
+## Cycle cerrado — `m34-cognitive-context-compression`
+
+- **Fecha**: 2026-08-22 | **Cycle**: `p-38e02210a9f14317/m34-cognitive-context-compression`
+- **Output**: ADR-M34 accepted. `EventLog::recent(n, TailFilter)` + `find_by_event_id`. `AgentContext::compress_for_budget`. Exempt invariants preserve `feedback_history` / `pending_adjudications`. 2 new integration tests. v1.88.0.
+
 ## Cycle cerrado — `m25-authority-execution-classes`
 
 - **Fecha**: 2026-08-20
@@ -1858,3 +1927,20 @@ Razones:
 - **Known deferred items**: REQ-M25-005 #17 programmatic API caller_id (`accept_evidence` lacks `caller_id` parameter); Path B direct-Cypher bypass for `link_semantic_edge`; 9 `#[ignore]`d UAT-06 skeletons; `thread_local CURRENT_INVOCATION_PATH` implicit cross-module coupling (justified by ADR-063 §Decisión §4).
 - **Próximo candidato**: M26 (FusedClaim persistence, TRUST-005) or M30 (Adjudication event store, REQ-M25-006).
 - **Próxima fase**: `sddk-archive` (per orchestrator release-before-archive sequence, ADR-0011).
+
+## Cycle cerrado — `no-stubs-mocks-placeholders-hardcoded`
+
+- **Fecha**: 2026-08-22
+- **Branch**: `main` (linear, 17 commits directos + 3 follow-ups)
+- **Trigger**: regla explícita del usuario "no se permitir codigo stub, mock, y placeholder ni harcoded, todo el codigo realizado debe ser productivo 100%". Registrada en AGENTS.md.
+- **Path**: meta-ciclo (no es domain work; es auditoría + remediación del code base existente).
+- **Output**:
+  - **AGENTS.md regla** (commit `907ccd8`, line 463): bloquea stubs/mocks/placeholders/hardcoded en verify. Incluye grep commands para auditar.
+  - **15 ciclos P1 de remediación** (commits `c8c47cb`…`b5ec458`): cada `Mock*`/`Fake*`/`*Adapter` shadow en `archctl/src/{cognitive,ide,code,doctor,diagram,observation_claim,architecture/*}` reemplazado por fixture real (LbugStore-backed o TraitImpl legítimo).
+  - **Audit closure** (commit `b6cbb62`): los 3 hits legítimos restantes (doctor defaults detrás de env vars, view.rs loopback per ADR-011, xdg/environment test fixtures) documentados.
+  - **Test fixture repair** (commit `b6b78ce`): `archctl/tests/diagram_validate.rs:95` escribía `.png` mientras el validador esperaba `.svg` (regresión silenciosa desde cycle 2). 2 tests fixed; integration suite ahora 100% green.
+  - **DoD + Validation Matrix** (commit `748850f`): exige `cargo test --features test-fixtures --tests` (antes solo lib suite). Suite completa = 1204 tests, 0 failed.
+  - **CHANGELOG entry** (commit `676234e`): ciclo registrado en `[Unreleased]` para trazabilidad.
+  - **Decisión lbug** (commit `676234e` + STATE.md): bump 0.18.3 → 0.19.1 diferido; workaround documentado es la opción elegida.
+- **Tests**: 1204/1204 green (859 lib + 345 integration + doctest). `cargo clippy -- -D warnings` 0. `cargo fmt --check` 0. `archctl doctor --scopes architecture,diagram,code,cognitive,ide,store,evaluation,evidence,feedback` 0 findings.
+- **Próximo candidato**: M34 (cognitive context compression, ledger tail) o M35 (severity scoring pipeline), los dos post-TRUST-008 según ROADMAP:1836.

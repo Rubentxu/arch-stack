@@ -709,6 +709,7 @@ fn uat_06_step_16_reinvoke_agent() {
         budget: archctl::cognitive::descriptor::AgentBudget::default(),
         feedback_history: summaries,
         pending_adjudications: vec![],
+        recent_events: vec![],
     };
 
     // Re-invoke agent with feedback_history populated.

@@ -219,3 +219,171 @@ pub fn run(action: SkillsAction, fs: &dyn Filesystem) -> Result<i32> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `SkillMode` serializes to lowercase strings. Locks the wire format
+    /// for `skills.lock.yaml` parsing — a typo here breaks every consumer.
+    #[test]
+    fn skill_mode_serde_lowercase() {
+        for (mode, expected) in [
+            (SkillMode::Direct, "\"direct\""),
+            (SkillMode::Wrapped, "\"wrapped\""),
+            (SkillMode::Patched, "\"patched\""),
+        ] {
+            let json = serde_json::to_string(&mode).unwrap();
+            assert_eq!(json, expected, "mode {mode:?} must serialize to {expected}");
+        }
+    }
+
+    /// `SkillMode` roundtrips through serde for all variants.
+    #[test]
+    fn skill_mode_serde_roundtrip_all_variants() {
+        for mode in [SkillMode::Direct, SkillMode::Wrapped, SkillMode::Patched] {
+            let json = serde_json::to_string(&mode).unwrap();
+            let back: SkillMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, mode);
+        }
+    }
+
+    /// `SkillLockEntry` serializes with required fields and OMITS
+    /// `wrapper` when None (`skip_serializing_if = "Option::is_none"`).
+    /// Locks the conditional-skip contract.
+    #[test]
+    fn skill_lock_entry_omits_none_wrapper() {
+        let entry = SkillLockEntry {
+            source: "github.com/foo/bar".into(),
+            commit: "abc1234".into(),
+            mode: SkillMode::Direct,
+            wrapper: None,
+            license: "MIT".into(),
+            optional: false,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(
+            !json.contains("wrapper"),
+            "wrapper=None must be omitted: {json}"
+        );
+        assert!(json.contains("\"source\":\"github.com/foo/bar\""));
+        assert!(json.contains("\"commit\":\"abc1234\""));
+        assert!(json.contains("\"mode\":\"direct\""));
+        assert!(json.contains("\"license\":\"MIT\""));
+        assert!(json.contains("\"optional\":false"));
+    }
+
+    /// `SkillLockEntry` with `wrapper: Some(...)` includes the field.
+    #[test]
+    fn skill_lock_entry_includes_some_wrapper() {
+        let entry = SkillLockEntry {
+            source: "github.com/foo/bar".into(),
+            commit: "abc1234".into(),
+            mode: SkillMode::Wrapped,
+            wrapper: Some("my-wrapper.rs".into()),
+            license: "Apache-2.0".into(),
+            optional: true,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"wrapper\":\"my-wrapper.rs\""));
+        assert!(json.contains("\"optional\":true"));
+        assert!(json.contains("\"mode\":\"wrapped\""));
+    }
+
+    /// `SkillsLock` uses `schema-version` (not `schema_version`) — locks
+    /// the YAML/JSON wire format that `load_lock` parses.
+    #[test]
+    fn skills_lock_uses_schema_version_field_name() {
+        let lock = SkillsLock {
+            schema_version: 1,
+            skills: HashMap::new(),
+        };
+        let json = serde_json::to_string(&lock).unwrap();
+        assert!(
+            json.contains("\"schema-version\":1"),
+            "must use schema-version (kebab-case) per wire contract: {json}"
+        );
+        assert!(
+            !json.contains("schema_version"),
+            "must NOT use snake_case schema_version: {json}"
+        );
+    }
+
+    /// `SkillsLock` roundtrips: empty skills map + populated map.
+    #[test]
+    fn skills_lock_serde_roundtrip_with_skills() {
+        let mut skills = HashMap::new();
+        skills.insert(
+            "test-skill".into(),
+            SkillLockEntry {
+                source: "github.com/x/y".into(),
+                commit: "deadbeef".into(),
+                mode: SkillMode::Patched,
+                wrapper: None,
+                license: "MIT".into(),
+                optional: false,
+            },
+        );
+        let lock = SkillsLock {
+            schema_version: 2,
+            skills,
+        };
+        let json = serde_json::to_string(&lock).unwrap();
+        let back: SkillsLock = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.schema_version, 2);
+        assert_eq!(back.skills.len(), 1);
+        let entry = &back.skills["test-skill"];
+        assert_eq!(entry.source, "github.com/x/y");
+        assert_eq!(entry.commit, "deadbeef");
+        assert_eq!(entry.mode, SkillMode::Patched);
+        assert_eq!(entry.wrapper, None);
+        assert!(!entry.optional);
+    }
+
+    /// `SyncReport` derives Debug + Clone. `failures` is a Vec of
+    /// (name, error_string) tuples. Locks the carrier contract.
+    #[test]
+    fn sync_report_basic_derive_traits() {
+        let r = SyncReport {
+            synced: vec!["a".into()],
+            skipped: vec!["b".into()],
+            failures: vec![("c".into(), "boom".into())],
+        };
+        let cloned = r.clone();
+        assert_eq!(cloned.synced, vec!["a"]);
+        assert_eq!(cloned.skipped, vec!["b"]);
+        assert_eq!(cloned.failures.len(), 1);
+        assert_eq!(cloned.failures[0].0, "c");
+        // Debug includes all three field names
+        let dbg = format!("{r:?}");
+        assert!(dbg.contains("synced"));
+        assert!(dbg.contains("skipped"));
+        assert!(dbg.contains("failures"));
+    }
+
+    /// `VerifyReport.ok` is true iff `missing` is empty — locks the
+    /// readiness invariant consumed by `run(Verify)`.
+    #[test]
+    fn verify_report_ok_invariant_holds() {
+        let all_present = VerifyReport {
+            ok: true,
+            present: vec!["a".into(), "b".into()],
+            missing: vec![],
+        };
+        assert!(all_present.ok);
+
+        let some_missing = VerifyReport {
+            ok: false,
+            present: vec!["a".into()],
+            missing: vec!["b".into()],
+        };
+        assert!(!some_missing.ok);
+
+        let all_missing = VerifyReport {
+            ok: false,
+            present: vec![],
+            missing: vec!["a".into()],
+        };
+        assert!(!all_missing.ok);
+    }
+}

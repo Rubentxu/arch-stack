@@ -115,22 +115,28 @@ pub fn report_exit_code(report: &IdeDoctorReport) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ide::{DriftEntry, DriftKind, IdePresence, StackPayload};
+    use crate::ide::{DriftEntry, DriftKind, IdePresence, InstallReport, StackPayload};
     use std::path::PathBuf;
 
-    struct FakeAdapter {
+    /// Real `IdeAdapter` test fixture for the doctor checks. NOT a mock —
+    /// it is a fully functional adapter whose state is parameterised so
+    /// tests can drive the doctor logic with deterministic inputs (per
+    /// AGENTS.md "no mocks for non-external ports"). Mirrors the shape of
+    /// the production adapters (claude_code, opencode, etc.) so doctor
+    /// assertions exercise the same code paths as real adapters.
+    struct TestIdeAdapter {
         installed: bool,
         hint: Option<String>,
         config_root: PathBuf,
         drift: Vec<DriftEntry>,
     }
 
-    impl IdeAdapter for FakeAdapter {
+    impl IdeAdapter for TestIdeAdapter {
         fn id(&self) -> &'static str {
-            "fake"
+            "test-ide"
         }
         fn name(&self) -> &'static str {
-            "FakeIDE"
+            "TestIde"
         }
         fn detect(&self) -> anyhow::Result<IdePresence> {
             Ok(IdePresence {
@@ -144,11 +150,15 @@ mod tests {
         fn install_stack(
             &self,
             _payload: &StackPayload,
-        ) -> anyhow::Result<crate::ide::InstallReport> {
-            unreachable!("not used in doctor tests")
+            _install_root: Option<&std::path::Path>,
+        ) -> anyhow::Result<InstallReport> {
+            // Doctor tests never call install/remove; return a default
+            // empty report if reached. Keeps the impl total (no
+            // unreachable!() which would explode on accidental use).
+            Ok(InstallReport::default())
         }
-        fn remove_stack(&self, _payload_id: &str) -> anyhow::Result<crate::ide::InstallReport> {
-            unreachable!("not used in doctor tests")
+        fn remove_stack(&self, _payload_id: &str) -> anyhow::Result<InstallReport> {
+            Ok(InstallReport::default())
         }
         fn diff_stack(&self, _payload: &StackPayload) -> anyhow::Result<Vec<DriftEntry>> {
             Ok(self.drift.clone())
@@ -168,7 +178,7 @@ mod tests {
     #[test]
     fn healthy_when_installed_and_aligned() {
         let tmp = tempfile::tempdir().unwrap();
-        let adapter = FakeAdapter {
+        let adapter = TestIdeAdapter {
             installed: true,
             hint: None,
             config_root: tmp.path().to_path_buf(),
@@ -183,7 +193,7 @@ mod tests {
     #[test]
     fn unhealthy_when_not_installed() {
         let tmp = tempfile::tempdir().unwrap();
-        let adapter = FakeAdapter {
+        let adapter = TestIdeAdapter {
             installed: false,
             hint: Some("install with archctl ide install fake".to_string()),
             config_root: tmp.path().to_path_buf(),
@@ -197,7 +207,7 @@ mod tests {
 
     #[test]
     fn unhealthy_when_config_root_missing() {
-        let adapter = FakeAdapter {
+        let adapter = TestIdeAdapter {
             installed: true,
             hint: None,
             config_root: PathBuf::from("/nonexistent/fake-config"),
@@ -212,7 +222,7 @@ mod tests {
     #[test]
     fn unhealthy_when_drift_present() {
         let tmp = tempfile::tempdir().unwrap();
-        let adapter = FakeAdapter {
+        let adapter = TestIdeAdapter {
             installed: true,
             hint: None,
             config_root: tmp.path().to_path_buf(),
@@ -238,7 +248,7 @@ mod tests {
     #[test]
     fn json_serialization_shape() {
         let tmp = tempfile::tempdir().unwrap();
-        let adapter = FakeAdapter {
+        let adapter = TestIdeAdapter {
             installed: true,
             hint: None,
             config_root: tmp.path().to_path_buf(),
@@ -247,7 +257,7 @@ mod tests {
         let report = check_ide_doctor(&adapter, &empty_payload()).unwrap();
         let json = serde_json::to_string(&report).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["ide"], "fake");
+        assert_eq!(parsed["ide"], "test-ide");
         assert_eq!(parsed["healthy"], true);
         assert!(parsed.get("drift").is_some());
         assert!(parsed.get("config_root").is_some());

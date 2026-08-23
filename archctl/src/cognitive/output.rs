@@ -165,7 +165,7 @@ pub struct FindingCandidate {
     pub recommended_views: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Severity {
     Info,
     Warning,
@@ -187,7 +187,7 @@ pub struct ProjectionSpec {
     pub layout_hints: LayoutHints,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewKind {
     #[serde(rename = "c4-context")]
     C4Context,
@@ -201,7 +201,7 @@ pub enum ViewKind {
     UseCase,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiagramFormat {
     PlantUML,
     Mermaid,
@@ -215,7 +215,7 @@ pub struct LayoutHints {
     pub nodesep: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LayoutDirection {
     TopDown,
     LeftRight,
@@ -312,7 +312,7 @@ pub struct DocumentationPatch {
     pub body: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PatchType {
     Add,
     Replace,
@@ -332,7 +332,7 @@ pub struct NoActionReason {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NoActionCode {
     InsufficientConfidence,
     NoRelevantData,
@@ -514,5 +514,535 @@ mod tests {
         // old fields not serialized
         assert!(!json.contains("approval_required"));
         assert!(!json.contains("expected_evidence_old"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage, 2026-08-22)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn newtype_ids_serde_round_trip() {
+        // ProposalId
+        let p = ProposalId("prop-007".into());
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ProposalId = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
+
+        // EventId
+        let e = EventId("evt-007".into());
+        let json = serde_json::to_string(&e).unwrap();
+        let back: EventId = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, e);
+
+        // AgentId
+        let a = AgentId("agent-007".into());
+        let json = serde_json::to_string(&a).unwrap();
+        let back: AgentId = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, a);
+
+        // UserId
+        let u = UserId("user-007".into());
+        let json = serde_json::to_string(&u).unwrap();
+        let back: UserId = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, u);
+    }
+
+    #[test]
+    fn approval_level_all_variants_serde() {
+        for level in [
+            ApprovalLevel::SelfApproval,
+            ApprovalLevel::PeerApproval,
+            ApprovalLevel::TechLeadApproval,
+            ApprovalLevel::SecurityApproval,
+            ApprovalLevel::MultiPartyApproval {
+                required: 3,
+                total: 5,
+            },
+        ] {
+            let json = serde_json::to_string(&level).unwrap();
+            let back: ApprovalLevel = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, level, "round-trip failed for {:?}", level);
+        }
+
+        // MultiPartyApproval struct shape
+        let mpa = ApprovalLevel::MultiPartyApproval {
+            required: 2,
+            total: 3,
+        };
+        let json = serde_json::to_string(&mpa).unwrap();
+        assert!(json.contains("\"required\":2"));
+        assert!(json.contains("\"total\":3"));
+    }
+
+    #[test]
+    fn approval_requirement_default_is_auto() {
+        let ap: ApprovalRequirement = Default::default();
+        assert_eq!(ap, ApprovalRequirement::Auto);
+    }
+
+    #[test]
+    fn approval_requirement_forbidden_serde() {
+        let ap = ApprovalRequirement::Forbidden;
+        let json = serde_json::to_string(&ap).unwrap();
+        assert!(json.contains("Forbidden"));
+        let back: ApprovalRequirement = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ApprovalRequirement::Forbidden);
+    }
+
+    #[test]
+    fn approval_requirement_notify_with_users_serde() {
+        let ap = ApprovalRequirement::Notify(vec![UserId("alice".into()), UserId("bob".into())]);
+        let json = serde_json::to_string(&ap).unwrap();
+        assert!(json.contains("Notify"));
+        assert!(json.contains("alice"));
+        let back: ApprovalRequirement = serde_json::from_str(&json).unwrap();
+        match back {
+            ApprovalRequirement::Notify(users) => {
+                assert_eq!(users.len(), 2);
+                assert_eq!(users[0], UserId("alice".into()));
+            }
+            other => panic!("expected Notify, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn agent_output_no_action_serde() {
+        let out = AgentOutput::NoAction(NoActionReason {
+            code: NoActionCode::RateLimited,
+            message: "backoff 30s".into(),
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"NoAction""#));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::NoAction(reason) = back {
+            assert!(matches!(reason.code, NoActionCode::RateLimited));
+            assert_eq!(reason.message, "backoff 30s");
+        } else {
+            panic!("expected NoAction");
+        }
+    }
+
+    #[test]
+    fn agent_output_hypothesis_serde() {
+        let out = AgentOutput::Hypothesis(Hypothesis {
+            statement: "Service X likely has memory leak".into(),
+            confidence: 0.72,
+            evidence_ids: vec!["ev:001".into(), "ev:002".into()],
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"Hypothesis""#));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::Hypothesis(h) = back {
+            assert_eq!(h.confidence, 0.72);
+            assert_eq!(h.evidence_ids.len(), 2);
+        } else {
+            panic!("expected Hypothesis");
+        }
+    }
+
+    #[test]
+    fn agent_output_query_plan_serde() {
+        let out = AgentOutput::QueryPlan(QueryPlan {
+            cypher_steps: vec![
+                "MATCH (n:Element) RETURN n LIMIT 100".into(),
+                "MATCH (n)-[r:DEPENDS_ON]->(m) RETURN r".into(),
+            ],
+            estimated_rows: Some(250),
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"QueryPlan""#));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::QueryPlan(qp) = back {
+            assert_eq!(qp.cypher_steps.len(), 2);
+            assert_eq!(qp.estimated_rows, Some(250));
+        } else {
+            panic!("expected QueryPlan");
+        }
+    }
+
+    #[test]
+    fn agent_output_projection_spec_serde() {
+        let out = AgentOutput::ProjectionSpec(ProjectionSpec {
+            view_kind: ViewKind::C4Component,
+            format: DiagramFormat::Structurizr,
+            focus_elements: vec!["auth-svc".into()],
+            layout_hints: LayoutHints {
+                direction: Some(LayoutDirection::LeftRight),
+                ranksep: Some(1.5),
+                nodesep: Some(0.5),
+            },
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"ProjectionSpec""#));
+        assert!(json.contains("c4-component"));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::ProjectionSpec(ps) = back {
+            assert!(matches!(ps.view_kind, ViewKind::C4Component));
+            assert!(matches!(ps.format, DiagramFormat::Structurizr));
+            assert_eq!(ps.layout_hints.ranksep, Some(1.5));
+        } else {
+            panic!("expected ProjectionSpec");
+        }
+    }
+
+    #[test]
+    fn agent_output_action_plan_serde() {
+        let out = AgentOutput::ActionPlan(ActionPlan {
+            steps: vec![Step {
+                command: "cargo fmt".into(),
+                args: vec!["--check".into()],
+                reason: "verify formatting".into(),
+            }],
+            rollback: Some(vec![Step {
+                command: "git".into(),
+                args: vec!["checkout".into(), "--".into(), ".".into()],
+                reason: "revert any formatting changes".into(),
+            }]),
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"ActionPlan""#));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::ActionPlan(plan) = back {
+            assert_eq!(plan.steps.len(), 1);
+            assert!(plan.rollback.is_some());
+            assert_eq!(plan.rollback.as_ref().unwrap().len(), 1);
+        } else {
+            panic!("expected ActionPlan");
+        }
+    }
+
+    #[test]
+    fn agent_output_documentation_patch_serde() {
+        let out = AgentOutput::DocumentationPatch(DocumentationPatch {
+            file: "docs/README.md".into(),
+            patch_type: PatchType::Replace,
+            body: "## Section\nnew content".into(),
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"DocumentationPatch""#));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::DocumentationPatch(dp) = back {
+            assert_eq!(dp.file, "docs/README.md");
+            assert!(matches!(dp.patch_type, PatchType::Replace));
+        } else {
+            panic!("expected DocumentationPatch");
+        }
+    }
+
+    #[test]
+    fn agent_output_context_request_serde() {
+        let out = AgentOutput::ContextRequest(ContextRequest {
+            request_id: "ctx-req-001".into(),
+            missing: vec!["source:src/auth.rs".into()],
+            reasoning: "Need to inspect auth module".into(),
+        });
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""kind":"ContextRequest""#));
+        let back: AgentOutput = serde_json::from_str(&json).unwrap();
+        if let AgentOutput::ContextRequest(cr) = back {
+            assert_eq!(cr.request_id, "ctx-req-001");
+            assert_eq!(cr.missing.len(), 1);
+        } else {
+            panic!("expected ContextRequest");
+        }
+    }
+
+    #[test]
+    fn severity_all_variants_serde() {
+        for sev in [
+            Severity::Info,
+            Severity::Warning,
+            Severity::Error,
+            Severity::Critical,
+        ] {
+            let json = serde_json::to_string(&sev).unwrap();
+            let back: Severity = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, sev, "round-trip failed for {:?}", sev);
+        }
+    }
+
+    #[test]
+    fn view_kind_all_variants_serde() {
+        // Existing test only covers C4Container; cover the rest
+        for vk in [
+            ViewKind::C4Context,
+            ViewKind::C4Container,
+            ViewKind::C4Component,
+            ViewKind::Class,
+            ViewKind::Sequence,
+            ViewKind::State,
+            ViewKind::UseCase,
+        ] {
+            let json = serde_json::to_string(&vk).unwrap();
+            let back: ViewKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, vk, "round-trip failed for {:?}", vk);
+        }
+        // Verify the C4-family renames are stable
+        assert!(
+            serde_json::to_string(&ViewKind::C4Context)
+                .unwrap()
+                .contains("c4-context")
+        );
+        assert!(
+            serde_json::to_string(&ViewKind::C4Container)
+                .unwrap()
+                .contains("c4-container")
+        );
+        assert!(
+            serde_json::to_string(&ViewKind::C4Component)
+                .unwrap()
+                .contains("c4-component")
+        );
+    }
+
+    #[test]
+    fn diagram_format_all_variants_serde() {
+        for df in [
+            DiagramFormat::PlantUML,
+            DiagramFormat::Mermaid,
+            DiagramFormat::Structurizr,
+        ] {
+            let json = serde_json::to_string(&df).unwrap();
+            let back: DiagramFormat = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, df, "round-trip failed for {:?}", df);
+        }
+    }
+
+    #[test]
+    fn layout_direction_serde() {
+        for d in [LayoutDirection::TopDown, LayoutDirection::LeftRight] {
+            let json = serde_json::to_string(&d).unwrap();
+            let back: LayoutDirection = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, d);
+        }
+    }
+
+    #[test]
+    fn layout_hints_all_none_serde() {
+        let lh = LayoutHints {
+            direction: None,
+            ranksep: None,
+            nodesep: None,
+        };
+        let json = serde_json::to_string(&lh).unwrap();
+        let back: LayoutHints = serde_json::from_str(&json).unwrap();
+        assert!(back.direction.is_none());
+        assert!(back.ranksep.is_none());
+        assert!(back.nodesep.is_none());
+    }
+
+    #[test]
+    fn no_action_code_all_variants_serde() {
+        for code in [
+            NoActionCode::InsufficientConfidence,
+            NoActionCode::NoRelevantData,
+            NoActionCode::OutOfScope,
+            NoActionCode::RateLimited,
+        ] {
+            let json = serde_json::to_string(&code).unwrap();
+            let back: NoActionCode = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, code, "round-trip failed for {:?}", code);
+        }
+    }
+
+    #[test]
+    fn patch_type_all_variants_serde() {
+        for pt in [PatchType::Add, PatchType::Replace, PatchType::Remove] {
+            let json = serde_json::to_string(&pt).unwrap();
+            let back: PatchType = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, pt, "round-trip failed for {:?}", pt);
+        }
+    }
+
+    #[test]
+    fn outcome_predicate_serde_with_all_fields() {
+        let op = OutcomePredicate {
+            event_type: "coupling_score > 0.8".into(),
+            agent_id: Some(AgentId("coupling-detector".into())),
+            threshold: Some(0.8),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("coupling_score > 0.8"));
+        assert!(json.contains("coupling-detector"));
+        let back: OutcomePredicate = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, op);
+    }
+
+    #[test]
+    fn rollback_strategy_serde_minimal() {
+        // undo_command=None, undo_args empty — defaults contract at output.rs:128-132
+        let rs = RollbackStrategy {
+            description: "manual revert".into(),
+            undo_command: None,
+            undo_args: vec![],
+        };
+        let json = serde_json::to_string(&rs).unwrap();
+        let back: RollbackStrategy = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.description, "manual revert");
+        assert!(back.undo_command.is_none());
+        assert!(back.undo_args.is_empty());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Coverage additions (cycle cognitive-layer-coverage v5, 2026-08-22)
+    // ---------------------------------------------------------------------------
+
+    /// `Step` round-trips through serde with all fields populated.
+    #[test]
+    fn step_serde_with_args_and_reason() {
+        let step = Step {
+            command: "cargo".into(),
+            args: vec!["test".into(), "--lib".into()],
+            reason: "verify unit tests pass".into(),
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        let back: Step = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.command, "cargo");
+        assert_eq!(back.args, vec!["test", "--lib"]);
+        assert_eq!(back.reason, "verify unit tests pass");
+    }
+
+    /// `ActionPlan` with `rollback: None` round-trips. Distinct from
+    /// `agent_output_action_plan_serde` which exercises rollback Some.
+    #[test]
+    fn action_plan_serde_with_rollback_none() {
+        let plan = ActionPlan {
+            steps: vec![Step {
+                command: "ls".into(),
+                args: vec!["-la".into()],
+                reason: "list directory".into(),
+            }],
+            rollback: None,
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        assert!(json.contains(r#""rollback":null"#), "got: {json}");
+        let back: ActionPlan = serde_json::from_str(&json).unwrap();
+        assert!(back.rollback.is_none());
+        assert_eq!(back.steps.len(), 1);
+    }
+
+    /// `CostEstimate` with all 4 fields populated round-trips. Distinct
+    /// from `cost_estimate_default` which checks the empty case.
+    #[test]
+    fn cost_estimate_serde_with_populated_values() {
+        let ce = CostEstimate {
+            tokens: Some(8192),
+            time_ms: Some(2000),
+            cost_cents: Some(50),
+            side_effects: vec!["network".into(), "log".into()],
+        };
+        let json = serde_json::to_string(&ce).unwrap();
+        let back: CostEstimate = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tokens, Some(8192));
+        assert_eq!(back.time_ms, Some(2000));
+        assert_eq!(back.cost_cents, Some(50));
+        assert_eq!(back.side_effects, vec!["network", "log"]);
+    }
+
+    /// `Hypothesis` full roundtrip (statement, confidence, evidence_ids).
+    /// Distinct from `agent_output_hypothesis_serde` which only checks
+    /// the AgentOutput::Hypothesis variant and 2 fields.
+    #[test]
+    fn hypothesis_full_serde_roundtrip() {
+        let h = Hypothesis {
+            statement: "Hypothesis statement".into(),
+            confidence: 0.92,
+            evidence_ids: vec!["ev-001".into(), "ev-002".into(), "ev-003".into()],
+        };
+        let json = serde_json::to_string(&h).unwrap();
+        let back: Hypothesis = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.statement, "Hypothesis statement");
+        assert_eq!(back.confidence, 0.92);
+        assert_eq!(back.evidence_ids.len(), 3);
+    }
+
+    /// `FindingCandidate` full roundtrip with all 6 fields. Distinct
+    /// from `agent_output_serde` which only checks the AgentOutput
+    /// variant tag and one field.
+    #[test]
+    fn finding_candidate_full_serde_roundtrip() {
+        let fc = FindingCandidate {
+            severity: Severity::Critical,
+            title: "Critical coupling".into(),
+            body: "Components A and B have mutual dependency".into(),
+            confidence: 0.95,
+            evidence_ids: vec!["ev-100".into()],
+            recommended_views: vec!["c4-component".into(), "c4-container".into()],
+        };
+        let json = serde_json::to_string(&fc).unwrap();
+        let back: FindingCandidate = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.severity, Severity::Critical);
+        assert_eq!(back.title, "Critical coupling");
+        assert_eq!(back.confidence, 0.95);
+        assert_eq!(back.recommended_views.len(), 2);
+    }
+
+    /// `NoActionReason` round-trips through serde with both fields.
+    #[test]
+    fn no_action_reason_serde_roundtrip() {
+        let nar = NoActionReason {
+            code: NoActionCode::NoRelevantData,
+            message: "graph query returned no rows".into(),
+        };
+        let json = serde_json::to_string(&nar).unwrap();
+        let back: NoActionReason = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.code, NoActionCode::NoRelevantData);
+        assert_eq!(back.message, "graph query returned no rows");
+    }
+
+    /// `OutcomePredicate` with `agent_id: None` and `threshold: None`
+    /// round-trips. Distinct from `outcome_predicate_serde_with_all_fields`
+    /// which uses Some for both. Locks the `#[serde(default)]` contract
+    /// on both Option fields.
+    #[test]
+    fn outcome_predicate_serde_with_none_fields() {
+        let op = OutcomePredicate {
+            event_type: "raw".into(),
+            agent_id: None,
+            threshold: None,
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        // Option fields serialize as `null` (not omitted — no skip_serializing_if)
+        assert!(
+            json.contains(r#""agent_id":null"#),
+            "agent_id None must serialize as null, got: {json}"
+        );
+        assert!(
+            json.contains(r#""threshold":null"#),
+            "threshold None must serialize as null, got: {json}"
+        );
+        let back: OutcomePredicate = serde_json::from_str(&json).unwrap();
+        assert!(back.agent_id.is_none());
+        assert!(back.threshold.is_none());
+    }
+
+    /// `ActionProposal` Debug includes goal and command for tracing.
+    /// Locks the `#[derive(Debug)]` contract.
+    #[test]
+    fn action_proposal_debug_includes_goal_and_command() {
+        let ap = ActionProposal {
+            id: Some(ProposalId("prop-007".into())),
+            cause: None,
+            triggering_agent: None,
+            goal: "deploy prod".into(),
+            command: "deploy".into(),
+            args: vec![],
+            capabilities: vec![],
+            approval: ApprovalRequirement::Auto,
+            expected_evidence: vec![],
+            rollback: None,
+            cost_estimate: CostEstimate::default(),
+            confidence: Some(0.85),
+            ttl_ms: None,
+            security_impact: None,
+            deployment_env: None,
+            policy_rule_matched: None,
+            approval_required: false,
+            expected_evidence_old: String::new(),
+        };
+        let dbg = format!("{ap:?}");
+        assert!(dbg.contains("ActionProposal"), "got: {dbg}");
+        assert!(dbg.contains("deploy prod"), "got: {dbg}");
+        assert!(dbg.contains("deploy"), "got: {dbg}");
     }
 }

@@ -404,6 +404,7 @@ fn row_to_claim(row: &crate::row::Row) -> Option<Claim> {
 mod tests {
     use super::*;
     use crate::diagram::export_types::EvidenceEntry;
+    use crate::store::GraphStore;
 
     fn make_evidence(id: &str, status: Option<&str>) -> EvidenceEntry {
         EvidenceEntry {
@@ -511,50 +512,12 @@ mod tests {
     /// S6 — unknown version returns empty arrays (no panic).
     #[test]
     fn empty_version_empty_arrays() {
-        // Use a MockRepo that returns empty
-        struct MockRepo;
-        impl crate::store::DiagramRepository for MockRepo {
-            fn list_elements(
-                &self,
-                _category: &str,
-                _scope: Option<&str>,
-                _kind: Option<&str>,
-            ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
-                Ok(vec![])
-            }
-            fn list_semantic_edges(
-                &self,
-                _category: &str,
-            ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
-                Ok(vec![])
-            }
-            fn list_evidence_for_versions(
-                &self,
-                _version_ids: &[String],
-            ) -> anyhow::Result<Vec<EvidenceEntry>> {
-                Ok(vec![])
-            }
-            fn list_version_props(
-                &self,
-                _version_ids: &[String],
-            ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-                Ok(vec![])
-            }
-            fn read_relation_by_id(
-                &self,
-                _id: &str,
-            ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
-                Ok(None)
-            }
-            fn list_evidence_for_relation_versions(
-                &self,
-                _version_ids: &[String],
-            ) -> anyhow::Result<Vec<EvidenceEntry>> {
-                Ok(vec![])
-            }
-        }
-        let repo = MockRepo;
-        let result = observations_and_claims_for_version(&repo, "v:empty").unwrap();
+        // Real LbugStore with no data seeded: exercises the same empty
+        // path as `archctl` against a freshly created project.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = crate::store::LbugStore::open(tmp.path()).unwrap();
+        store.init().unwrap();
+        let result = observations_and_claims_for_version(&store, "v:empty").unwrap();
         assert_eq!(result.0.len(), 0);
         assert_eq!(result.1.len(), 0);
     }
@@ -562,49 +525,13 @@ mod tests {
     /// S7 — invalid version_id format is rejected.
     #[test]
     fn invalid_id_error() {
-        struct MockRepo;
-        impl crate::store::DiagramRepository for MockRepo {
-            fn list_elements(
-                &self,
-                _category: &str,
-                _scope: Option<&str>,
-                _kind: Option<&str>,
-            ) -> anyhow::Result<Vec<crate::graph::ElementRow>> {
-                Ok(vec![])
-            }
-            fn list_semantic_edges(
-                &self,
-                _category: &str,
-            ) -> anyhow::Result<Vec<crate::graph::SemanticEdgeRow>> {
-                Ok(vec![])
-            }
-            fn list_evidence_for_versions(
-                &self,
-                _version_ids: &[String],
-            ) -> anyhow::Result<Vec<EvidenceEntry>> {
-                Ok(vec![])
-            }
-            fn list_version_props(
-                &self,
-                _version_ids: &[String],
-            ) -> anyhow::Result<Vec<crate::graph::VersionPropsRow>> {
-                Ok(vec![])
-            }
-            fn read_relation_by_id(
-                &self,
-                _id: &str,
-            ) -> anyhow::Result<Option<crate::graph::RelationRow>> {
-                Ok(None)
-            }
-            fn list_evidence_for_relation_versions(
-                &self,
-                _version_ids: &[String],
-            ) -> anyhow::Result<Vec<EvidenceEntry>> {
-                Ok(vec![])
-            }
-        }
-        let repo = MockRepo;
-        let result = observations_and_claims_for_version(&repo, "bad;id");
+        // The function validates the id before touching the store,
+        // so an empty store suffices. The `;` in `bad;id` is not an
+        // allowed identifier character (validate_identifier rejects).
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut store = crate::store::LbugStore::open(tmp.path()).unwrap();
+        store.init().unwrap();
+        let result = observations_and_claims_for_version(&store, "bad;id");
         assert!(matches!(result, Err(ObservationError::InvalidVersionId(_))));
     }
 

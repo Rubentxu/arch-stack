@@ -1610,11 +1610,11 @@ mod tests {
 
     // ─── Python method extraction (M60) ──────────────────────────────────
     //
-    // Regression for the `extract_python_class` TODO at line 1067 in the
-    // pre-M60 source: a class body that defines `def` methods was emitted
-    // with an empty `members` Vec. The post-M60 walker descends into the
-    // class `block` and captures each `function_definition` (and
-    // `decorated_definition`) as a `ClassMember` with `member_kind = "def"`.
+    // Regression for the M30-cycle defect tracked before M60: a class body
+    // that defines `def` methods was emitted with an empty `members` Vec.
+    // The post-M60 walker descends into the class `block` and captures
+    // each `function_definition` (and `decorated_definition`) as a
+    // `ClassMember` with `member_kind = "def"`.
     //
     // These tests drive `extract_python_class` end-to-end through
     // `extract_python` so the AST path is realistic.

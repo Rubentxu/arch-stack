@@ -2,25 +2,28 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-20, post-release v1.82.0 (TRUST-002
-> shipped: event IDs + causation/correlation + per-consumer checkpoint infra;
-> v1.81.0 was TRUST-001 EventLog reopen fix).
+> Última actualización: 2026-08-22, post-ciclo `cognitive-layer-coverage`
+> (v1.87.3) — +19 tests in `mcp/gateway.rs` + `dispatcher/event_dispatcher.rs`
+> (1279 → 1298 tests verde, 8/8 doctor scopes OK). Próxima iteración:
+> cognitive-layer-coverage fase 2 (siguientes módulos < 3% ratio).
+> Latest shipped: v1.87.3 — cognitive cycle formalisation + archview
+> package.json lock-step bump + 3 `--lang` help string fixes.
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `70c8fbf` (PRs #274–280 squash — M23 perf-ci-gate) |
-| Versión | `v1.80.0` (latest tag, M23 perf-ci-gate) |
-| Tests | baseline `872 @ v1.48.0`; último full-suite `1074 @ fusion-engine-followups` (v1.60.0); archview `239 @ m23-perf-ci-gate`; re-cuenta en cada verify; clippy clean |
-| Working tree | clean (`main`); tags v1.65.0–v1.80.0 verificados en origin |
+| Tip | `afbc801` (test(cognitive): cover dispatcher/event_dispatcher — Real observer surface + log/seq invariants) |
+| Versión | `v1.87.3` (latest tag, cognitive-layer-coverage v1 + sprint housekeeping) |
+| Tests | full-suite `1298 @ v1.87.3` (lib 953 + integration 345); doctest green; 12 `#[ignore]` restantes todos justificados; clippy clean |
+| Working tree | clean (`main`); tags v1.65.0–v1.87.3 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | 52,576 (`wc -l` sobre `archctl/src/**/*.rs` @ v1.67.0; incluye unit tests inline) |
-| LOC tests | 15,613 (`archctl/tests/**/*.rs`, integration) |
+| LOC src | 59,046 (`find archctl/src -name "*.rs" \| xargs wc -l` @ v1.87.3; incluye unit tests inline) |
+| LOC tests | 17,502 (`archctl/tests/**/*.rs`, integration, 56 ficheros) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 152 (v0.1.0 → v1.82.0; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate + T0 TRUST-001..008 + cognitive-layer-coverage v1 — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
+| Tags | 161 (v0.1.0 → v1.87.3; gap `v1.46.0` never tagged — see v1.47.0 nota) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -116,6 +119,16 @@
 | `v1.78.0` | m21-g6-culling-lod | G6 viewport culling + zoom LOD (PR #266, M21): reduce overdraw en bundles 1000+ nodos. Dos capas: (1) Zoom LOD always-on — labels ocultos a zoom<0.5, edges a zoom<0.25 via `setElementVisibility` post-render; (2) Viewport culling opt-in — `CullingService` DI seam con `isInViewport` predicate, debounce 100ms en `wheel`/`drag-canvas:end`. `optimize-viewport-transform` behavior appended a G6 config (free FPS win para los 8 views). M18 orthogonality guard: C4View solo activa culling cuando `levelFilter === null` (sin pill activo). `c4-stress-1k.json` asset commiteado (1221 nodos / 3920 edges, hub con 500 incoming). 225/225 archview tests pass (+29: 26 CullingService unit + 3 C4View culling integration). Perf gate `bench/perf-cull.mjs` manual pre-PR; TTFP y FPS validados. Nota: `enableCulling` = false por defecto en CallGraph/Impact (gate-gated post-perf-gate). |
 | `v1.79.0` | m22-sidebar-tabs | Sidebar tabs (evidence vs relations) con ARIA tablist (PR #1, M22): nuevo primitive `<TabBar>/<TabPanel>` en `components/primitives/Tabs.tsx` — automatic activation, ArrowRight/Left/Home/End keyboard nav, Space/Enter, badge, disabled. Sidebar.tsx integra el primitive con `activeTab` signal reset per node; Evidence panel conserva `<SourceDrawer>`. +14 tests (6 unit + 4 integration + 2 M20 compat + 2 sidebar-actions compat). 239/239 archview tests pass. Cierra el sprint M17.1 (último item: "Sidebar con tabs"). |
 | `v1.80.0` | m23-perf-ci-gate | ADR-019 enforcement para archview (PRs #274–280, M23): post-merge CI job `perf-cull` en `ci.yml` — compara TTFP y FPS vs previous main con threshold 10%; new `scripts/bench-compare-archview.sh` (mirrors `bench-compare.sh` precedent); refactored `archview/bench/perf-cull.mjs` con JSON output + bug fixes (L47 hardcoded path → `__dirname`, L172 undefined timestamps → `window.__perfTimestamps[]`); +66 LOC contract tests en `scripts/test-ci-gates.sh` §11; ADR-019 §enforcement actualizado con implementation status per repo; archview/AGENTS.md "Perf budget enforcement (M23)" section added. Debt: lighthouse score gate (ADR-019 L65) y 10k+100k datasets out of scope. |
+| `v1.81.0` | t0-trust-001-eventlog-reopen | **TRUST-001**: `EventLog::open` no longer truncates existing journal (cycle `t0-trust-001-eventlog-reopen`): `File::create` reemplazado por `OpenOptions::new().create(true).append(true)` per los precedents in-tree `cognitive/audit/log.rs:151-154` y `store.rs:961-967`. Adds 4 regression tests covering reopen-with-content, append-after-reopen, first-open-non-existent-path. Invariant: "Abrir journal existente nunca trunca" (spec-40:10). Preventive fix — `EventLog` solo consumido por tests hoy; `SyncDispatcher` lo cableará en T6 (REQ-P11). |
+| `v1.82.0` | t0-trust-002-event-ids-causation | **TRUST-002**: `EventEnvelope` gains `eventId` (UUID v7 per RFC 9562), `correlationId`, `causationId`, `processed` (cycle `t0-trust-002-event-ids-causation`). Per-consumer checkpoint infra (`<log>.checkpoint.<id>.seq`). `EventLog::append` (7-arg) auto-assigns `eventId` and `timestamp`; `EventLog::consumer_checkpoint(id)` / `set_consumer_checkpoint(id, seq)` added; `append_serialized` preserves old API. Schema `event-envelope.schema.json` bumped 1.0 → 1.1 (legacy JSONL deserializes with `Uuid::nil()` + warning). 6 new regression tests + 17 total in `cognitive::event::tests`. Foundation for ADR-P11 causal journal; `SyncDispatcher` wiring deferred to T6. |
+| `v1.83.0` | m25-authority-execution-classes | **Closes the first live breach of ADR-P02** (TRUST + Determinism + Authority typology + canonical-write gate). Three chained PRs (#287 docs +159, #288 code +738, #289 verify +407); diff `cbce2d3..d8c4a6a`. New `archctl/src/trust.rs` (`ExecutionClass`, `AuthorityClass`, `TrustClassification`, `classify()`, `canonical_write_allowed()`, `canonical_promotion_allowed()`, `TrustViolation`). ADR-063 accepted — hardens ADR-021 escalera into type-enforced invariant. New `archctl/tests/uat_06_false_agent_claim.rs` (2 active + 9 `#[ignore]` skeletons pending TRUST-005 + spec-35); UAT-06 critical gate `false_canonical_promotions == 0` green. `SourceOrigin` gains `ModelInference` variant (always `Suggested`; cannot transit to `Accepted` via `accept_evidence`). spec-30 bumped to v1.1. |
+| `v1.84.0` | trust-005-observation-fusion | **TRUST-005**: epistemic plumbing gap closed. 5 chained PRs (#283 + apply + verify). New bounded contexts `archctl/src/feedback.rs` (`Feedback`, `FeedbackVerdict { Accept, Reject, Uncertain, Supersede, Correct }`, `FeedbackError`) and `archctl/src/reconciliation.rs` (`Reconciliation`, `PlaneEvidence`, pure `compute()`). New `archctl/src/fusion_bridge.rs` — trust-gated `recompute_status()` seam consumed by both `fuse_observations_with` and `FeedbackRepository::put_feedback`. `Observation` gains `evidence_origin`, `confidence`, `status: ObservationStatus`, `written_via_backfill`. v7 migration adds `(:Observation).status STRING`, `(:FusedClaim).pending_adjudication_event BOOLEAN`, `(:Feedback)` / `(:Reconciliation)` tables + typed edges. UAT-06 steps 7/9/13/14/15 un-ignored. `ModelInference × Suggested × Accept` lands as `"drafted"` via `trust::canonical_promotion_allowed`. ADR-064 accepted. |
+| `v1.85.0` | trust-006-context-bundle | **TRUST-006**: UAT-06 steps 16/17/19/20 un-ignored (cycle `p-38e02210a9f14317/trust-006-context-bundle`). 2 chained PRs (#299 bundle verification, #300 AgentContext). New `FeedbackSummary` carrier (read-only view of `Feedback` excluding pipeline-internal fields). `AgentContext.feedback_history: Vec<FeedbackSummary>` additive with `#[serde(default)]`. New `cognitive::test_support` module (`test-fixtures` feature) — `FeedbackAwareMockAgent` + `MockOutcome` for deterministic tests. Bundle projection helpers `seed_bundle_fixture`, `assert_no_canonical_fact_in_bundle`, `assert_has_canonical_fact_in_bundle`. Fixture fix: `seed_orders_stripe_fixture` ahora stores `SourceOrigin::ModelInference.as_str()` (snake_case) — antes caía a `UserWorkspace` y enmascaraba el trust-first invariant. +442/-26 across 14 files; 843/843 tests; UAT-06 11/11 active. REQ-T06-003 deferred a TRUST-007. |
+| `v1.86.0` | trust-007-feedback-port | **TRUST-007**: closes REQ-T06-003 deferred from TRUST-006 (cycle `p-38e02210a9f14317/trust-007-feedback-port`). 7 chained PRs (#303-#309). New `FeedbackRepository::summaries_for_claims(&[&str]) -> Result<Vec<FeedbackSummary>>` port method (no default impl, sealed-in-practice). `LbugStore` impl con single Cypher `MATCH (f:Feedback)-[:VERDICTS_ON]->(c:FusedClaim) WHERE c.id IN $claim_ids RETURN …` + deterministic ordering `(c.id ASC, f.revision ASC, f.timestamp ASC, f.id ASC)`; empty-input short-circuits. New `AgentContext::with_feedback_history` constructor. 8-site doc pass with `// REQ-T06-003: feedback_history plumbing` comment. SCN-T07-002b fix: validation loop dropped `let _ = …` → `?` propagation. `archctl/tests/feedback_summaries_port.rs` (4 tests: empty, ordering, exclusion, invalid-id). +431/-9 across 12 files; 846/846 tests. Trust-first invariant (ADR-P02) data-plane enforced. |
+| `v1.87.0` | trust-008-m30-bridge-promotion | **TRUST-008**: **m30 bridge is now a hard fail** + Adjudication bounded context (closes REQ-M25-006, deferred from TRUST-005, named in TRUST-007 archive-manifest:79). 6 chained PRs (#312-#317) + verify-fixes (#318 squash `bfdd172`). New `archctl/src/adjudication.rs` BC: `AdjudicationEvent` (8 fields), `AdjudicationDecision` (Promote/Reject/Defer), `AdjudicationRepository` trait (3 methods) + `LbugStore` impl. `archctl/migrations/v8_adjudication_event_store.cypher` + `v9_fused_claim_evidence_origin.cypher` add `(:FusedClaim).evidence_origin STRING` column. `archctl adjudication { list --pending \| decide --claim --verdict --adjudicator --evidence-refs \| show --claim }` CLI. `AgentContext.pending_adjudications: Vec<AdjudicationEvent>`. New `promotion_requires_adjudication_event(trust, verdict) -> Result<(), TrustViolation>` predicate (fusion_bridge.rs:108) returns `Err(TrustViolation::ModelInferenceWithoutAdjudicationEvent)` for `ModelInference × Suggested + Accept`; `should_warn_pending_adjudication` marked `#[deprecated(since = "v1.87.0")]`. `put_evidence` reads `ev.source_origin.as_str()` (was hardcoded `'evidence_entry_derivation'`, regression carried from TRUST-007 verify). `manifests/adjudication.toml` (new, 44 LOC). 12 `trust::tests` (+2) + 7 `adjudication_events_port.rs` (+2) + 3 `migrations_v8.rs` (rewritten hook-direct). 1201/1201 tests pre-commit + 1204/1204 post no-stubs chain. +1500/-40 across 38 files. |
+| `v1.87.1` | sprint-housekeeping-1 | **Sprint housekeeping v1.87.1**: 3 chained PRs. (1) `cli help` para `--lang` en `call_graph` corregido de "one of: rust, ts, py, go, java" a "one of: rust, ts, py, go, java, kotlin" (el código ya tenía 6 variants desde M36 v1.8.0; el help quedó stale). (2) Idem para `class_diagram` + `state_machine` (3 variants, antes decían 6). (3) Pre-push hook migration a `sddk verify` gate (eliminada per ADR-025; redundante con los gates SDDK + tax O(N) por push). 1210/1210 tests. |
+| `v1.87.2` | m84-ide-install-root | **M84**: `install_stack` en `IdeAdapter` trait acepta `install_root: Option<&Path>` opcional (4 adapters: OpenCode/ZCode/Claude Code/Codex). Cierra gate donde `archctl ide install <ide>` aceptaba `--install-root` pero el trait no lo propagaba — argumento silenciosamente ignorado. **Cambio de API pública additive** (trait signature change, semver patch); M77a precedent (v1.37.2). CHANGELOG `[1.87.2]` §Changed documenta el additive derive (3 `OutputKind` + `Severity` + `ProposalStatus` + `ApprovalDecision` + `CurrencyUnit` enums) justificado por tests downstream + CHANGELOG `[1.87.2]` §Validation documenta `--lang` help audit + 5e environment hardening. 1245/1245 tests pre-derive + 1245/1245 post. |
+| `v1.87.3` | cognitive-layer-coverage-v1 | **Cognitive-layer coverage v1**: 4 chained commits cierran los 2 huecos más profundos del audit M61 (cognitive policy tests) sobre `archctl/src/cognitive/`. (1) `cognitive/mcp/tools.rs` +5 tests — `ToolResult` roundtrip, schema validation paths, default deserialization (completado pre-v1.87.3). (2) `cognitive/mcp/gateway.rs` +11 tests — `McpError` Display contract (5 variants), `McpGateway::default` ≡ `McpGateway::new`, `PolicyGate::default` ≡ `PolicyGate::new`, `PolicyGate::queue()` accessor observa Queue outcomes, `handle_governed` en los 4 paths (Allow/Queue/Deny/ParseError/ToolNotAllowed/MissingProposal). (3) `cognitive/dispatcher/event_dispatcher.rs` +8 tests — `log_seq()` initial 0, `SerializedEvent::from_envelope` `processed=false` default, dispatch con registry vacía, dispatch con Hypothesis output (vs NoAction), seq monotonic + consumer_checkpoint, partial fan-out preserva registration order, erroring observer no rompe el resto, seq sobrevive EventDispatcher reopen. **Cycle summary**: 1279 → 1298 tests; ratios más profundos `gateway.rs` 1.8% → 3.4%, `event_dispatcher.rs` 1.7% → 3.3%. Bonus: 3 `--lang` help string fixes (call_graph 5→6 langs, class_diagram/state_machine 6→3) + `archview/package.json` 1.87.1 → 1.87.3 (lock-step convention established). Sin ADR, sin migration, sin port changes. |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -166,84 +179,30 @@
 
 ## Deuda técnica activa
 
-**Doctor:** 30/30 scopes pass. No findings.
-
-**Closed in this session** (M37–M56):
-- `seed_writes` lying API removed (BREAK-1, v1.4.1)
-- Mermaid projector bare-Label bug fixed across 4 views (M39 + M41)
-- C4 PlantUML Structurizr-style emit bug (M50)
-- 26 stale manifest `public_symbols` removed (M46)
-- 3 stale "no parameter binding" doc claims (M52)
-- `backend_available()` helper DRY'd (M56, -60 LOC across 5 files)
-
-**Closed in this housekeeping pass** (2026-08-18, post-v1.59.0):
-- **2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped** (WIP from the
-  pre-#181 branch). Their bases (`0b75778`, `63e2200`) are reachable from `main`
-  and the work was already merged via PR #181, then reshaped by `58f5150`
-  (P1-05 RawGraphQuery supertrait), `2731800` (move helpers into
-  `ElementRepository` port), and `24e2eb8`/`3ab707c` (M32 D2 UNWIND bulk
-  import). Re-applying on a fresh branch from `main` produced conflicts in
-  12 files; every conflict was "both sides did the same change, `main` is the
-  cleaner final form". Drop is intentional and irreversible — rederivation
-  lives in those cited commits.
-
-**M32 remediation (closed in v1.47.0/v1.47.1)**:
-- class_diagram UUID mismatch fixed; port bypass corrected; cross-writer `CURRENT_VERSION` regression suite added.
-
-**Accepted debt (per proposal + cycle retrospective)**:
-- **Registry introspection v2**: registry sources are catalog-mirrors, not runtime introspection. Follow-up deferred to registry-introspection-v2 proposal.
-- **Parallel `Vec<Element>` + `ElementVersion`** (~120 LOC, M32 era): `apply.rs` processes elements in parallel; noted as debt in p1-08 retrospective.
-- **D4 throughput**: measured 96.57 ms/element vs ≤30 ms/element budget (ADR-019); accepted as small-N edge case.
-- *Removed (2026-08-18, post-v1.59.0 refresh)*: "POSIX-only symlink: stack.rs-era
-  symlink bootstrap" — `archctl/src/stack.rs` was deleted in v1.40.0 (commit
-  `c2d65c3 refactor(cli): remove deprecated stack subcommand`, M83); the debt
-  pointed to a file that no longer exists.
+**Doctor:** 34/34 scopes pass. No findings.
 
 **Pending**:
-- **store.rs** (3,540 LOC): biggest file. M63 proposes splitting (still pending).
-- **Cognitive-layer test coverage**: 14 sub-modules, minimal tests. M61 audit partially done (cognitive policy tests added), full coverage deferred.
+- **`archctl/src/store.rs`** (5,435 LOC @ v1.87.3; +54 % desde el cierre M54): módulo más grande del crate. M63 propuso splitearlo; el trabajo se mantiene diferido porque (a) el coste de refactor supera al valor en este momento y (b) los tests de apply ya pasan al suite completo sin que el tamaño impacte el perf budget de export.
+- **Cognitive-layer test coverage** (`archctl/src/cognitive/`, 14 sub-módulos): v1.87.3 cerró `mcp/gateway.rs` (1.8% → 3.4%) + `dispatcher/event_dispatcher.rs` (1.7% → 3.3%). Próximos candidatos con ratio < 3% mapeados pero sin trigger formalizado — siguiente fase cognitive-coverage-v2.
+
+> **Removed by drift** (resumidos para auditoría; los detalles viven en el CHANGELOG bajo las versiones citadas — ya no aportan al lector actual): M37–M56 deuda cerrada in-session · 2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped (2026-08-18) · M32 remediation cerrada en v1.47.0/v1.47.1 · "POSIX-only symlink" debt removida (apuntaba a `stack.rs` eliminado en v1.40.0/M83).
 
 ## Plan vigente
 
-**Marathon session closed at M54** (v1.24.0). Post-session work:
-- M55 (v1.25.0): state study + 11 proposals (M56–M68) — DONE
-- M56 (v1.26.0): DRY helper — DONE
-- M59: close stale PR #32 — DONE
-- M60 (v1.27.0): resolve 2 TODO markers — DONE
-- M57 (v1.28.0): CONTRIBUTING.md — DONE
-- M58 (no tag): docs/specs/index.md — DONE
-- M61 (v1.29.0): cognitive policy tests — DONE
-- M62 (no tag): STATE.md refresh (was this cycle) — DONE
-- M69 (v1.30.0): arch-stack product roadmap convergence — DONE
-- **t0-trust-001-eventlog-reopen** (TRUST-001, v1.81.0): shipped. Latent bug closed
-  preventively (EventLog only used in tests today; `SyncDispatcher` wires it in T6).
-- **t0-trust-002-event-ids-causation** (TRUST-002, v1.82.0): shipped. EventEnvelope
-  extended with eventId (UUID v7) + correlationId/causationId + per-consumer checkpoint
-  infra. Foundation for causal journal (ADR-P11). `SyncDispatcher` wiring deferred to T6.
-  Next: TRUST-003 (AuthorityClass/ExecutionClass mapping) or TRUST-006 (T6 SyncDispatcher).
+**T0 Trust cerrado end-to-end** (v1.81.0 → v1.87.0): 8 ciclos encadenados cubren desde el reopening trivial de `EventLog` (TRUST-001) hasta la promoción `Err(TrustViolation)` del m30 bridge (TRUST-008). El horizonte T0 ya no genera nuevos tickets; el `SyncDispatcher` wires en T6 queda como ticket de backlog dentro de T3 (Live Revision Loop, ADR-P11). Historia completa y decisiones locked por ciclo en `sddk/p-38e02210a9f14317/trust-00X/` y en el CHANGELOG bajo cada `[1.8X.0]` header.
 
-Trio tidy-up (M56 ✅, M59 ✅, M62 ✅) y la saga M55–M69 están cerradas.
+**Wave 0/1/2 cerrado, Wave 3 parcial** (catálogo `docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`):
 
-**2026-08-13 plan (Wave 0/1/2/3)** — ver
-`docs/arch-stack-proposals-2026-08-13/09-IMPLEMENTATION-PR-PLAN.md`.
+- **Wave 0 (remediation)** — 7/7 DONE (v1.42.0–v1.43.0).
+- **Wave 1 (architecture scaffolding)** — 8–16 ALL DONE (v1.43.0–v1.48.0).
+- **Wave 2 (intelligence)** — 10/10 DONE (v1.49.0–v1.59.0, gated under `archctl architecture …`).
+- **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only), 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) **+ el sprint M17.1 (M21 G6 culling/LOD v1.78.0, M22 sidebar-tabs v1.79.0, M23 ADR-019 perf-ci-gate v1.80.0)** CERRADOS v1.60.0–v1.80.0. Restantes: item 30 (session token, gated por ADR-051) y item 34 (P3-05 lens recommendation, gated por ADR-056/062).
 
-Estado de la wave:
-
-1. **Wave 0 (remediation)** — **7/7 DONE** (PRs #168–#175 + #177): plugin tests,
-   plugin hardening, ADR integrity, license coherence, Ladybug doctor
-   (v1.42.0), PR CI fast gates, **native release runners (v1.43.0)**.
-2. **Wave 1 (architecture scaffolding)** — **8–16 ALL DONE** (v1.43.0–v1.45.0
-   + v1.48.0): dependency-fitness baseline (v1.43.0, p1-09), composition
-   root (v1.43.0, p1-01), repositories (v1.43.0, p1-03), RawGraphQuery
-   boundary (v1.44.0+v1.44.1, p1-04), UnitOfWork (v1.45.0, p1-05),
-   filesystem contracts, doctor/diagram migrations via CliContext, **capability
-   registry (v1.48.0, p1-08, PR #191)**.
-3. **Wave 2 (intelligence)** — **10/10 DONE** (v1.49.0–v1.59.0): snapshot
-   metadata (P2-01), diff (P2-02), explain (P2-03), coverage (P2-04),
-   policy metamodel (P2-05), fitness evaluator (P2-06), context relevance
-   (P2-07), task context (P2-08), observation/claim carriers (P2-09a),
-   intent vs reality (P2-10). All under `archctl architecture ...`.
-4. **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only) y 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) CERRADOS v1.60.0–v1.68.0; restantes: item 30 (session token, gated por ADR-051) y item 34 (lens recommendation, P3-05, gated por ADR-056/062).
+**Próximo candidato natural** (ROADMAP + STATE §Anti-roadmap):
+- **cognitive-layer-coverage-v2** — siguiente fase del audit M61; módulos con ratio < 3% restantes identificados en el cierre de v1.87.3.
+- **M34** (cognitive context compression + ledger tail) — primer item estratégico sin gates bloqueantes post-TRUST-008.
+- **M35** (severity scoring pipeline) — alternativa a M34.
+- **Bump lbug 0.18.3 → 0.19.1** (deferido; ver pendientes menores).
 
 ## Comandos de verificación
 
@@ -256,7 +215,7 @@ git status
 # Tests
 cd archctl
 cargo build --quiet
-cargo test --features test-fixtures --quiet   # 872/872 baseline
+cargo test --features test-fixtures --tests   # 1298/1298 (lib 953 + integration 345 + doctest)
 cargo clippy --quiet --all-targets --features test-fixtures -- -D warnings
 cargo fmt --check
 
@@ -264,7 +223,7 @@ cargo fmt --check
 cd /var/mnt/DiscoChino2-fast/Proyectos/agentesIA/arch-stack
 bash scripts/verify-local.sh
 
-# 30/30 doctor scopes
+# 34/34 doctor scopes
 cargo run --bin archctl -- doctor --scopes $(ls ../manifests | sed 's/.toml//' | tr '\n' ',' | sed 's/,$//') --cwd ..
 
 # Capability registry staleness
@@ -273,41 +232,15 @@ cargo run --quiet --bin archctl -- capabilities --check
 
 ## Próxima acción del usuario
 
-**T0 Trust — progress:**
-- ✅ **TRUST-001 EventLog reopen** (cycle `t0-trust-001-eventlog-reopen`, v1.81.0): shipped. Latent bug closed preventively.
-- ✅ **TRUST-002 Event IDs + causation/correlation** (cycle `t0-trust-002-event-ids-causation`, v1.82.0): shipped. Causation infra ✅; `SyncDispatcher` wires in T6.
-- 🎯 **Próximo PR sugerido**: TRUST-006 (T6 SyncDispatcher → EventLog wiring) or TRUST-003 (AuthorityClass/ExecutionClass mapping).
+**T0 Trust — cerrado end-to-end** (v1.81.0 → v1.87.0): TRUST-001..008 todos shipped; horizonte deja de generar tickets. Próximos pasos viven en los horizontes T1–T11 del paquete `docs/arch-stack-architecture-feedback-workbench-2026-08-20/` y en M34/M35 del ROADMAP canónico.
 
-Wave 3 parcial CERRADO: Items 19 (P2-09b), 22 (ide doctor), 27 (fusion
-engine), 28+29 (strict ArchBundle + archview read-only) y **31–33
-(workbench UX, v1.68.0)** — v1.60.0 a v1.68.0, todos taggeados y
-verificados en origin.
-
-**Workbench UX parcial (ADR-062)**: cross-view identity (NavigationTarget
-sobre IDs canónicos), action palette (copy id, zoom, explain vía
-`/api/explain`, relations), semantic zoom C4 (Context↔Container↔Component
-por re-export). Strict bundles degradan explain.
-
-Restante Wave 3 (catálogo `docs/arch-stack-proposals-2026-08-13/`):
-- **Item 30 (session token)** — gated por ADR-051 (hijack vector
-  disclosed).
-- **Item 34 (lens recommendation)** — P3-05, XL, gated por ADR-056/062
-  (≥2 consumers OR measured need).
-- **Nivel "Code" (C4→class-diagram)** — reopen trigger propio (ADR-062):
-  ≥1 consumidor con necesidad real.
-- **ELK layout + virtualización >1k nodos** (M17.1 opcionales) — solo si
-  el zoom los exige.
-
-Candidatos futuros (reopen triggers documentados en Anti-roadmap):
-- **ADR-051 loopback session security** — abre solo con hijack vector
-  disclosed.
-- **B2/B3 ADR-016** — pendientes con reopen triggers en
-  `docs/adr/ADR-016-activegraph-packs-investigacion.md`.
+Wave 3 parcial cerrado (v1.60.0 → v1.80.0): items 19, 22, 27, 28+29, 31–33 + sprint M17.1 (M21/M22/M23) — todos taggeados. Restantes: **item 30** (session token, gated por ADR-051) y **item 34** (P3-05 lens recommendation, gated por ADR-056/062). Detalle completo en `docs/arch-stack-proposals-2026-08-13/`.
 
 Pendientes menores out-of-scope:
-- Report de redacciones en strict bundles.
+- Report de redacciones en strict bundles (XDG).
 - Persistir cutoff de staleness por proyecto (XDG).
-- Bump lbug (implicit cast STRING→TIMESTAMP o workaround documentado).
+- **Bump lbug 0.18.3 → 0.19.1** (decisión 2026-08-22): workaround en `archctl/src/migrations.rs:344-350` gana; bump deferido a ciclo de mantenimiento futuro. ~10 líneas economizadas no compensan el riesgo de regresión sobre los 1298 tests.
 
-Sigue válido el catálogo de items en
-`docs/arch-stack-proposals-2026-08-13/`.
+Candidatos post-T0 (reopen triggers en `docs/STATE.md` §Anti-roadmap):
+- **ADR-051** (loopback session security) — abre solo con hijack vector disclosed.
+- **B2/B3 ADR-016** (activegraph packs) — pendientes con sus propios triggers.
