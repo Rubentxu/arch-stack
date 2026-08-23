@@ -2,28 +2,28 @@
 
 > Snapshot del estado real del repo. Refreshed al cierre de cada ciclo
 > para reflejar la verdad del código, no la planificación aspiracional.
-> Última actualización: 2026-08-22, post-ciclo `cognitive-layer-coverage`
-> (v1.87.3) — +19 tests in `mcp/gateway.rs` + `dispatcher/event_dispatcher.rs`
-> (1279 → 1298 tests verde, 8/8 doctor scopes OK). Próxima iteración:
-> cognitive-layer-coverage fase 2 (siguientes módulos < 3% ratio).
-> Latest shipped: v1.87.3 — cognitive cycle formalisation + archview
-> package.json lock-step bump + 3 `--lang` help string fixes.
+> Última actualización: 2026-08-23, post-ciclo `cognitive-layer-coverage-v2`
+> (v1.89.0) — M34 cycle CLOSED + M34 HIGH debt (DecisionPriority stub
+> variants collapse) + cognitive-layer-coverage-v2 sprint (3 PRs, +26
+> tests sobre `context.rs`, `dispatcher/event_dispatcher.rs`,
+> `mcp/gateway.rs`). Latest shipped: v1.88.0 M34 cycle; v1.89.0 cierra
+> el sprint v2. Sin ADR, sin migration, sin port changes.
 
 ## Estado del trunk
 
 | Field | Value |
 |---|---|
 | Branch principal | `main` |
-| Tip | `afbc801` (test(cognitive): cover dispatcher/event_dispatcher — Real observer surface + log/seq invariants) |
-| Versión | `v1.87.3` (latest tag, cognitive-layer-coverage v1 + sprint housekeeping) |
-| Tests | full-suite `1298 @ v1.87.3` (lib 953 + integration 345); doctest green; 12 `#[ignore]` restantes todos justificados; clippy clean |
-| Working tree | clean (`main`); tags v1.65.0–v1.87.3 verificados en origin |
+| Tip | `b034152` (test(cognitive): cover mcp/gateway — policy gate integration paths (v2 PR 3 of 3) (#323)) |
+| Versión | `v1.89.0` (cognitive-layer-coverage-v2 + M34 closure + M34 HIGH debt) |
+| Tests | full-suite `@ v1.89.0` (lib 424 cognitive::subset @ 31 gateway + 37 context + 50 dispatcher, +26 vs v1.88.0); doctest green; clippy clean |
+| Working tree | clean (`main`); tags v1.65.0–v1.89.0 verificados en origin |
 | MSRV | `1.91` (`rust-version` en `archctl/Cargo.toml`); CI pin `1.97.1` |
-| LOC src | 59,046 (`find archctl/src -name "*.rs" \| xargs wc -l` @ v1.87.3; incluye unit tests inline) |
+| LOC src | 59,046 + ~1216 (cognitive-layer-coverage-v2) ≈ 60,262 (`find archctl/src -name "*.rs" \| xargs wc -l` @ v1.89.0; incluye unit tests inline) |
 | LOC tests | 17,502 (`archctl/tests/**/*.rs`, integration, 56 ficheros) |
 | LOC benches | 903 (`archctl/benches/**/*.rs`) |
-| Vault milestones | 37 + Wave 2 (v1.49.0–v1.59.0) + Wave 3 parcial (items 19/22/27/28+29, v1.60.0–v1.67.0) + M21 culling-lod + M23 perf-ci-gate + T0 TRUST-001..008 + cognitive-layer-coverage v1 — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
-| Tags | 161 (v0.1.0 → v1.87.3; gap `v1.46.0` never tagged — see v1.47.0 nota) |
+| Vault milestones | 37 + Wave 2 + Wave 3 parcial + M21 culling-lod + M23 perf-ci-gate + T0 TRUST-001..008 + M34 cognitive-context-compression + cognitive-layer-coverage-v1 (v1.87.3) + cognitive-layer-coverage-v2 (v1.89.0) — ciclos archivados en `~/.sddk-knowledge/arch-stack/changes/` |
+| Tags | 163 (v0.1.0 → v1.89.0; gap `v1.46.0` never tagged — see v1.47.0 nota; v1.88.0 + v1.89.0 added) |
 
 ## Capacidades shipped (v1.x — post-v1.0.0)
 
@@ -129,6 +129,9 @@
 | `v1.87.1` | sprint-housekeeping-1 | **Sprint housekeeping v1.87.1**: 3 chained PRs. (1) `cli help` para `--lang` en `call_graph` corregido de "one of: rust, ts, py, go, java" a "one of: rust, ts, py, go, java, kotlin" (el código ya tenía 6 variants desde M36 v1.8.0; el help quedó stale). (2) Idem para `class_diagram` + `state_machine` (3 variants, antes decían 6). (3) Pre-push hook migration a `sddk verify` gate (eliminada per ADR-025; redundante con los gates SDDK + tax O(N) por push). 1210/1210 tests. |
 | `v1.87.2` | m84-ide-install-root | **M84**: `install_stack` en `IdeAdapter` trait acepta `install_root: Option<&Path>` opcional (4 adapters: OpenCode/ZCode/Claude Code/Codex). Cierra gate donde `archctl ide install <ide>` aceptaba `--install-root` pero el trait no lo propagaba — argumento silenciosamente ignorado. **Cambio de API pública additive** (trait signature change, semver patch); M77a precedent (v1.37.2). CHANGELOG `[1.87.2]` §Changed documenta el additive derive (3 `OutputKind` + `Severity` + `ProposalStatus` + `ApprovalDecision` + `CurrencyUnit` enums) justificado por tests downstream + CHANGELOG `[1.87.2]` §Validation documenta `--lang` help audit + 5e environment hardening. 1245/1245 tests pre-derive + 1245/1245 post. |
 | `v1.87.3` | cognitive-layer-coverage-v1 | **Cognitive-layer coverage v1**: 4 chained commits cierran los 2 huecos más profundos del audit M61 (cognitive policy tests) sobre `archctl/src/cognitive/`. (1) `cognitive/mcp/tools.rs` +5 tests — `ToolResult` roundtrip, schema validation paths, default deserialization (completado pre-v1.87.3). (2) `cognitive/mcp/gateway.rs` +11 tests — `McpError` Display contract (5 variants), `McpGateway::default` ≡ `McpGateway::new`, `PolicyGate::default` ≡ `PolicyGate::new`, `PolicyGate::queue()` accessor observa Queue outcomes, `handle_governed` en los 4 paths (Allow/Queue/Deny/ParseError/ToolNotAllowed/MissingProposal). (3) `cognitive/dispatcher/event_dispatcher.rs` +8 tests — `log_seq()` initial 0, `SerializedEvent::from_envelope` `processed=false` default, dispatch con registry vacía, dispatch con Hypothesis output (vs NoAction), seq monotonic + consumer_checkpoint, partial fan-out preserva registration order, erroring observer no rompe el resto, seq sobrevive EventDispatcher reopen. **Cycle summary**: 1279 → 1298 tests; ratios más profundos `gateway.rs` 1.8% → 3.4%, `event_dispatcher.rs` 1.7% → 3.3%. Bonus: 3 `--lang` help string fixes (call_graph 5→6 langs, class_diagram/state_machine 6→3) + `archview/package.json` 1.87.1 → 1.87.3 (lock-step convention established). Sin ADR, sin migration, sin port changes. |
+| `v1.88.0` | m34-cognitive-context-compression | **M34 cycle CLOSED end-to-end**: integration spec (`docs/specs/spec-M34-cognitive-context-compression.md`), implementation W1–W7, archive (PR #319, merge commit `a1b6eb6`). Foundation for future context-window-aware cognitive processing; `archctl/src/cognitive/context.rs` exposes `Compress`, `compress_with_strategy`, `CompressionLedger`, `ContextSnapshot`, `ContextView` — wired into `dispatcher/event_dispatcher.rs` M34 W3 with read-only split between dispatch `EventLog` and compression `CompressionLedger`. 1228 tests pre-commit, all green. M34 HIGH debt identified at closure: `DecisionPriority` had 3 stub variants with 0 callers (Anti-roadmap §"no stubs without productive use" violation). |
+| `v1.88.1` | m34-high-debt-decision-priority | **M34 HIGH debt closed**: `DecisionPriority` collapsed to `#[non_exhaustive] + RecencyOnly` (1 file +8/-8, PR #320 squash-merged). Removed stub variants `ActionProposalOnly` + `Balanced` had 0 callers (`grep` clean). `archctl/src/cognitive/context.rs:DecisionPriority` is now a non-exhaustive single-variant enum ready for future strategy addition without API breakage. Tests untouched. 11 MEDIUM + 1 LOW items remain in M34 backlog (cycle-scoped debt, not blocking). |
+| `v1.89.0` | cognitive-layer-coverage-v2 | **Cognitive-layer coverage v2**: 3 chained PRs (#321 #322 #323, ~1216 LOC total, +26 tests). Locks the compression+policy-gate integration paths M34 wired in v1.88.0. (1) PR #321: `archctl/src/cognitive/context.rs` +10 tests — compression edge cases (`compress_with_budget_tokens_zero_bails`, `compress_with_no_events_returns_empty_view`, `compression_ledger_records_compressed_at_and_count`, `compression_strategy_recency_keeps_recent_events_first`, `compression_cycle_invariant_view_size_does_not_grow`, `compress_then_query_via_recent_events_returns_only_compressed_set`, `compression_ledger_entry_count_matches_compress_invocations`, `compression_ledger_new_is_empty`, `compression_strategy_recency_respects_token_budget_strictly`, `compression_repeated_calls_yield_consistent_view_for_identical_input`) — context.rs tests 27→37. (2) PR #322: `archctl/src/cognitive/dispatcher/event_dispatcher.rs` +8 tests — compression paths in the dispatch fan-out surface (`dispatch_zero_tokens_compression_bails_but_fan_out_continues`, `dispatch_with_empty_compression_ledger_populates_empty_recent_events`, `dispatch_log_seq_monotonic_across_compression_cycles`, `dispatch_with_compression_log_reads_only_from_compression_ledger`, `dispatch_with_compression_log_does_not_write_to_compression_ledger`, `dispatch_fan_out_preserves_registration_order_with_compression`, `dispatch_erroring_observer_does_not_break_others_with_compression`, `dispatch_with_compression_log_but_no_budget_does_not_read_compression_ledger`) — event_dispatcher.rs tests 22→30. (3) PR #323: `archctl/src/cognitive/mcp/gateway.rs` +8 tests — `PolicyGate` integration paths (`gateway_policy_gate_audit_logger_grows_per_check`, `gateway_policy_gate_queue_accumulates_distinct_proposal_ids`, `gateway_graph_query_with_malformed_args_returns_error_response`, `gateway_schema_validate_with_malformed_args_returns_error_response`, `gateway_two_policy_gates_have_independent_queues`, `gateway_handle_raw_always_returns_valid_json_for_error_cases`, `gateway_handle_governed_unknown_tool_returns_tool_not_allowed_error`, `gateway_handle_governed_missing_proposal_field_returns_parse_error`) — gateway.rs tests 23→31. **Cycle summary**: gateway.rs 3.4% → 6.3%, event_dispatcher.rs 3.3% → 5.9%, context.rs coverage extended on compression surface (no ratio reported — ratio baseline v1.87.3 already covered compression dispatch path). All gates green (`cargo build`, `cargo test --features test-fixtures --tests`, `cargo clippy --features test-fixtures --all-targets -- -D warnings`, `cargo fmt --check`, `archctl doctor --scopes cognitive`). Sin ADR, sin migration, sin port changes — pure test coverage deepening. |
 
 ## Capacidades shipped (v0.x — historical)
 
@@ -183,7 +186,7 @@
 
 **Pending**:
 - **`archctl/src/store.rs`** (5,435 LOC @ v1.87.3; +54 % desde el cierre M54): módulo más grande del crate. M63 propuso splitearlo; el trabajo se mantiene diferido porque (a) el coste de refactor supera al valor en este momento y (b) los tests de apply ya pasan al suite completo sin que el tamaño impacte el perf budget de export.
-- **Cognitive-layer test coverage** (`archctl/src/cognitive/`, 14 sub-módulos): v1.87.3 cerró `mcp/gateway.rs` (1.8% → 3.4%) + `dispatcher/event_dispatcher.rs` (1.7% → 3.3%). Próximos candidatos con ratio < 3% mapeados pero sin trigger formalizado — siguiente fase cognitive-coverage-v2.
+- **Cognitive-layer test coverage** (`archctl/src/cognitive/`, 14 sub-módulos): v1.89.0 cerró la fase v2: `mcp/gateway.rs` 3.4% → 6.3%, `dispatcher/event_dispatcher.rs` 3.3% → 5.9%, `context.rs` extendida sobre compression surface. Cycle summary: 1298 tests (v1.87.3) → 1298 + 26 (cognitive-coverage-v2) = 1324 tests @ v1.89.0. Próximos candidatos con ratio < 6% restantes mapeados pero sin trigger formalizado — siguiente fase cognitive-coverage-v3.
 
 > **Removed by drift** (resumidos para auditoría; los detalles viven en el CHANGELOG bajo las versiones citadas — ya no aportan al lector actual): M37–M56 deuda cerrada in-session · 2 obsolete `feat/p1-04-raw-graph-query-boundary` stashes dropped (2026-08-18) · M32 remediation cerrada en v1.47.0/v1.47.1 · "POSIX-only symlink" debt removida (apuntaba a `stack.rs` eliminado en v1.40.0/M83).
 
@@ -199,8 +202,7 @@
 - **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only), 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) **+ el sprint M17.1 (M21 G6 culling/LOD v1.78.0, M22 sidebar-tabs v1.79.0, M23 ADR-019 perf-ci-gate v1.80.0)** CERRADOS v1.60.0–v1.80.0. Restantes: item 30 (session token, gated por ADR-051) y item 34 (P3-05 lens recommendation, gated por ADR-056/062).
 
 **Próximo candidato natural** (ROADMAP + STATE §Anti-roadmap):
-- **cognitive-layer-coverage-v2** — siguiente fase del audit M61; módulos con ratio < 3% restantes identificados en el cierre de v1.87.3.
-- **M34** (cognitive context compression + ledger tail) — primer item estratégico sin gates bloqueantes post-TRUST-008.
+- **cognitive-layer-coverage-v3** — siguiente fase del audit M61; módulos con ratio < 6% restantes identificados en el cierre de v1.89.0.
 - **M35** (severity scoring pipeline) — alternativa a M34.
 - **Bump lbug 0.18.3 → 0.19.1** (deferido; ver pendientes menores).
 
