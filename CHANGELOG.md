@@ -1,5 +1,89 @@
 ## [Unreleased] — pending
 
+## [v1.89.0] — 2026-08-23
+
+Cognitive-layer coverage v2 + M34 HIGH debt resolution. 3 chained PRs
+(`#321`, `#322`, `#323`) covering 26 new tests across the compression
+and policy-gate integration paths M34 wired in v1.88.0. Tests only
+(no behavioural change in production code). Minor bump.
+
+### Added
+
+- **26 new tests across 3 cognitive-layer modules** (cycle
+  `cognitive-layer-coverage-v2`):
+  - `cognitive/context.rs` (10 tests, 27 → 37): compression edge cases —
+    zero-token-budget bail path, empty-events empty-view, ledger records
+    `compressed_at` + count, `Recency` keeps recent events first,
+    cycle-invariant view size, post-compression `recent_events` reads
+    only the compressed set, ledger entry count matches `compress()`
+    invocations, empty ledger constructor, strict token-budget respect,
+    repeated calls yield consistent view for identical input.
+  - `cognitive/dispatcher/event_dispatcher.rs` (8 tests, 22 → 30):
+    compression wiring in the dispatch fan-out surface — zero-token
+    budget bails but fan-out continues, empty ledger populates empty
+    recent events, `log_seq` monotonic across compression cycles, with
+    compression log reads ONLY from compression ledger, with compression
+    log does NOT write to compression ledger, fan-out preserves
+    registration order under compression, erroring observer doesn't
+    break others, with compression log but no budget does not read
+    compression ledger.
+  - `cognitive/mcp/gateway.rs` (8 tests, 23 → 31): PolicyGate
+    integration paths — audit logger grows by ≥3 entries per 3 check()
+    calls (delta assertion, audit log is XDG-global), queue
+    accumulates distinct `ProposalId`s (presence assertion,
+    HashMap-iteration-order is not contractual), malformed `graph_query`
+    args return error response, malformed `schema_validate` args
+    return error response, two `PolicyGate` instances have
+    independent queues, `handle_raw` always returns valid JSON for
+    error cases, governed path with unknown tool returns
+    `ToolNotAllowed` error BEFORE policy eval, governed request
+    missing proposal field returns `ParseError` naming the missing
+    field.
+
+### Changed (non-breaking)
+
+- **`archctl/src/cognitive/mcp/gateway.rs`** — test-only changes.
+  Production code unchanged.
+
+### Validation
+
+- `cargo test --features test-fixtures --tests` → all green.
+- `cargo clippy --features test-fixtures --all-targets -- -D warnings`
+  → clean.
+- `cargo fmt --check` → clean.
+- `archctl doctor --scopes cognitive` → 0 findings.
+
+### Cycle summary
+
+1298 tests (v1.87.3) → 1324 tests (v1.89.0). Module ratios:
+`gateway.rs` 3.4% → 6.3%, `event_dispatcher.rs` 3.3% → 5.9%,
+`context.rs` extended on compression surface. M34 HIGH debt
+(DecisionPriority stub variants) closed in v1.88.1 (see below).
+M34 cycle archived in `sddk/p-38e02210a9f14317/m34-cognitive-context-compression/`.
+
+## [v1.88.1] — 2026-08-23
+
+M34 HIGH debt resolution — `DecisionPriority` stub variants collapsed.
+Cycle `m34-high-debt-decision-priority`. PR #320 squash-merged.
+Tests untouched. Patch bump.
+
+### Changed (non-breaking)
+
+- **`archctl/src/cognitive/context.rs::DecisionPriority`** — collapsed
+  to `#[non_exhaustive]` enum with single variant `RecencyOnly`.
+  Removed stub variants `ActionProposalOnly` + `Balanced` that had
+  zero callers (grep clean across `archctl/src/`). Anti-roadmap
+  §"no stubs without productive use" violation closed. The
+  `#[non_exhaustive]` attribute ensures future strategy addition
+  remains additive without API breakage.
+
+### Validation
+
+- `cargo test --features test-fixtures --tests` → regression green
+  (no test changes).
+- `cargo clippy --features test-fixtures --all-targets -- -D warnings`
+  → clean.
+
 ## [v1.88.0] — 2026-08-22
 
 M34 cognitive context compression. New `EventLog::recent(n, TailFilter)` /
