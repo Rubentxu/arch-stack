@@ -12,6 +12,7 @@ use crate::cognitive::observer::{ObserveError, ReactiveObserver};
 use crate::cognitive::output::{
     AgentOutput, FindingCandidate, NoActionCode, NoActionReason, Severity,
 };
+use crate::cognitive::scoring::{RuleKind, SeverityContext};
 
 /// Naming connascence confidence threshold.
 const CONNASCENCE_THRESHOLD: f64 = 0.55;
@@ -85,8 +86,8 @@ impl ArchitectureAgent {
                     vec!["c4-container".into()]
                 };
 
-                findings.push(FindingCandidate {
-                    severity: Severity::Warning,
+                let mut finding = FindingCandidate {
+                    severity: Severity::Warning, // safety floor upstream (INV-M35-004)
                     title: format!(
                         "Naming connascence: {} and {} share prefix '{}'",
                         e1.name, e2.name, prefix
@@ -98,9 +99,19 @@ impl ArchitectureAgent {
                         e1.name, e2.name, prefix
                     ),
                     confidence,
-                    evidence_ids,
+                    evidence_ids: evidence_ids.clone(),
                     recommended_views,
-                });
+                };
+                let ctx = SeverityContext {
+                    confidence,
+                    evidence_count: evidence_ids.len(),
+                    rule_kind: RuleKind::Naming,
+                    severity_hint: None,
+                    age_ms: None,
+                };
+                finding.severity = crate::cognitive::scoring::severity_for(&finding, &ctx);
+
+                findings.push(finding);
             }
         }
 
