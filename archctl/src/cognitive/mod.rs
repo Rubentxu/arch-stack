@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod observer;
 pub mod output;
 pub mod policy;
+pub mod scoring; // M35: severity scoring pipeline
 pub mod subscriptions; // M18 PR2: subscription matching
 #[cfg(any(test, feature = "test-fixtures"))]
 pub mod test_support; // TRUST-006: mock agents for integration tests
@@ -30,4 +31,5 @@ pub use mcp::*;
 pub use observer::*;
 pub use output::*;
 pub use policy::*;
+pub use scoring::*;
 pub use subscriptions::*;
