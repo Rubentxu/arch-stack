@@ -24,7 +24,6 @@ fn severity_for_zero_evidence_overrides_high_confidence() {
         evidence_count: 0,
         rule_kind: RuleKind::Naming,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(
@@ -50,7 +49,6 @@ fn severity_for_destructive_rule_kind_forces_critical() {
         evidence_count: 5,
         rule_kind: RuleKind::Destructive,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(
@@ -76,7 +74,6 @@ fn severity_for_nan_confidence_emits_warn_and_returns_info() {
         evidence_count: 1,
         rule_kind: RuleKind::Naming,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(
@@ -144,7 +141,6 @@ fn severity_for_mid_confidence_returns_error() {
         evidence_count: 2,
         rule_kind: RuleKind::Naming,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(

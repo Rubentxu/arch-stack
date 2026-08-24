@@ -28,8 +28,7 @@
 //!
 //! # Non-consumer of time / I/O
 //!
-//! `age_ms` is received but ignored in v1 (reserved for future calibration).
-//! `let _ = ctx.age_ms;` documents this intent.
+//! `severity_for` is pure and time-agnostic; no `age_ms` field is needed.
 
 use crate::cognitive::output::{FindingCandidate, Severity};
 use serde::{Deserialize, Serialize};
@@ -114,10 +113,6 @@ pub struct SeverityContext {
     /// Optional caller-provided override (e.g., from MCP gateway policy).
     /// `EscalateToCritical` forces `Critical`.
     pub severity_hint: Option<SeverityHint>,
-    /// Optional age of the finding in milliseconds. **Ignored in v1** —
-    /// reserved for future calibration. Tests MUST NOT assert behaviour on
-    /// this field.
-    pub age_ms: Option<u64>,
 }
 
 impl Default for SeverityContext {
@@ -127,7 +122,6 @@ impl Default for SeverityContext {
             evidence_count: 0,
             rule_kind: RuleKind::Default,
             severity_hint: None,
-            age_ms: None,
         }
     }
 }
@@ -239,7 +233,6 @@ mod tests {
             evidence_count,
             rule_kind,
             severity_hint: hint,
-            age_ms: None,
         }
     }
 
@@ -285,7 +278,6 @@ mod tests {
             evidence_count: 1,
             rule_kind: RuleKind::Naming,
             severity_hint: None,
-            age_ms: None,
         };
 
         let result = severity_for(&finding, &ctx);
@@ -497,7 +489,6 @@ mod tests {
                 evidence_count: 1,
                 rule_kind: RuleKind::Naming,
                 severity_hint: None,
-                age_ms: None,
             };
             let result = severity_for(&finding, &ctx);
             assert_eq!(result, Severity::Info, "NaN should fall back to Info");
@@ -660,7 +651,6 @@ mod tests {
                     evidence_count: ctx.evidence_count,
                     rule_kind: ctx.rule_kind,
                     severity_hint: ctx.severity_hint,
-                    age_ms: ctx.age_ms,
                 };
                 thread::spawn(move || {
                     let results: Vec<Severity> =
@@ -685,38 +675,6 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // SCR-006: age_ms is ignored
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn severity_for_ignores_age_ms() {
-        let finding = make_finding(Severity::Info, 0.85);
-
-        let ctx_with_age = SeverityContext {
-            confidence: 0.85,
-            evidence_count: 3,
-            rule_kind: RuleKind::Naming,
-            severity_hint: None,
-            age_ms: Some(86_400_000),
-        };
-        let ctx_without_age = SeverityContext {
-            confidence: 0.85,
-            evidence_count: 3,
-            rule_kind: RuleKind::Naming,
-            severity_hint: None,
-            age_ms: None,
-        };
-
-        let result_with = severity_for(&finding, &ctx_with_age);
-        let result_without = severity_for(&finding, &ctx_without_age);
-        assert_eq!(
-            result_with, result_without,
-            "age_ms must not affect severity"
-        );
-        assert_eq!(result_with, Severity::Error);
-    }
-
-    // -------------------------------------------------------------------------
     // SeverityContext::default() shape
     // -------------------------------------------------------------------------
 
@@ -727,7 +685,6 @@ mod tests {
         assert_eq!(ctx.evidence_count, 0);
         assert_eq!(ctx.rule_kind, RuleKind::Default);
         assert!(ctx.severity_hint.is_none());
-        assert!(ctx.age_ms.is_none());
     }
 
     // -------------------------------------------------------------------------

@@ -107,7 +107,6 @@ impl ArchitectureAgent {
                     evidence_count: evidence_ids.len(),
                     rule_kind: RuleKind::Naming,
                     severity_hint: None,
-                    age_ms: None,
                 };
                 finding.severity = crate::cognitive::scoring::severity_for(&finding, &ctx);
 
