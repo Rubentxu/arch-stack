@@ -40,15 +40,13 @@ use serde::{Deserialize, Serialize};
 pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severity {
     // 1. validate confidence (NaN/<0/>1 → warn + Info)
     if ctx.confidence.is_nan() {
-        tracing::warn!("severity_for: confidence is NaN, falling back to Info");
-        return Severity::Info;
+        return fallback_to_info("confidence is NaN");
     }
     if ctx.confidence < 0.0 || ctx.confidence > 1.0 {
-        tracing::warn!(
-            confidence = %ctx.confidence,
-            "severity_for: confidence out of canonical [0.0, 1.0] domain, falling back to Info"
-        );
-        return Severity::Info;
+        return fallback_to_info(&format!(
+            "confidence out of canonical [0.0, 1.0] domain (got {:.2})",
+            ctx.confidence
+        ));
     }
 
     // 2. validate rule_kind (unknown variant via #[non_exhaustive] → warn + Info)
@@ -61,10 +59,7 @@ pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severi
         RuleKind::Modeling => RuleKind::Modeling,
         RuleKind::Destructive => RuleKind::Destructive,
         RuleKind::Default => RuleKind::Default,
-        _ => {
-            tracing::warn!("severity_for: unknown RuleKind variant, falling back to Info");
-            return Severity::Info;
-        }
+        _ => return fallback_to_info("unknown RuleKind variant"),
     };
 
     // 3. validate severity_hint (unknown variant via #[non_exhaustive] → warn + Info)
@@ -73,10 +68,7 @@ pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severi
         None => None,
         Some(SeverityHint::EscalateToCritical) => Some(SeverityHint::EscalateToCritical),
         Some(SeverityHint::FloorAtInfo) => Some(SeverityHint::FloorAtInfo),
-        Some(_) => {
-            tracing::warn!("severity_for: unknown SeverityHint variant, falling back to Info");
-            return Severity::Info;
-        }
+        Some(_) => return fallback_to_info("unknown SeverityHint variant"),
     };
 
     // 4. apply overrides in order:
@@ -177,6 +169,15 @@ pub enum SeverityHint {
 }
 
 // Private helpers (not exported, not in `public_symbols`):
+
+/// Emits a warn event and returns `Severity::Info` for non-canonical inputs.
+///
+/// Collapses the 4 structurally-identical warn+Info arms in `severity_for`
+/// into a single helper, preserving each warn message's semantic content.
+fn fallback_to_info(reason: &str) -> Severity {
+    tracing::warn!("severity_for: {reason}, falling back to Info");
+    Severity::Info
+}
 
 /// Numeric rank for `Severity` (Info=0, Warning=1, Error=2, Critical=3).
 /// Used to compute the safety floor (INV-M35-004) without `derive(Ord)`.
@@ -611,6 +612,30 @@ mod tests {
                 result
             );
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // REQ-M351-005 / FIND-000011: zero evidence + FloorAtInfo precedence convergence
+    // -------------------------------------------------------------------------
+
+    /// Both orderings (zero-evidence override first vs FloorAtInfo after bin)
+    /// converge to `Severity::Info` for `{evidence_count:0, hint:Some(FloorAtInfo)}`.
+    /// Regression lock: prevents silent reordering that could break convergence.
+    #[test]
+    fn severity_for_zero_evidence_and_floor_at_info_converge_to_info() {
+        let finding = make_finding(Severity::Warning, 0.95);
+        let ctx = make_ctx(
+            0.95,
+            0,                           // evidence_count = 0
+            RuleKind::Naming,
+            Some(SeverityHint::FloorAtInfo),
+        );
+        let result = severity_for(&finding, &ctx);
+        assert_eq!(
+            result,
+            Severity::Info,
+            "zero evidence + FloorAtInfo must converge to Info regardless of evaluation order"
+        );
     }
 
     // -------------------------------------------------------------------------
