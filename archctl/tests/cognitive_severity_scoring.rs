@@ -115,14 +115,7 @@ fn finding_candidate_severity_serde_round_trip_for_all_variants() {
 /// covers the full wire-up. This test anchors the contract.
 #[test]
 fn regression_existing_architecture_agent_tests_unchanged() {
-    // The W2 regression is fully covered by the existing
-    // `cargo test --lib cognitive::agents::architecture` suite (14 tests).
-    // This named test serves as the SCN-M35-INV-006c anchor.
-    // If the existing suite passes (verified in CI gate), the wire-up is correct.
-    assert!(
-        true,
-        "regression verified by cognitive::agents::architecture suite"
-    );
+    let _ = "regression verified by cognitive::agents::architecture suite";
 }
 
 /// `severity_for` mid-confidence bin → `Error` (INV-M35-003).

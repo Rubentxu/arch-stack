@@ -54,8 +54,6 @@ pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severi
     #[allow(unreachable_patterns)]
     let rule_kind = match ctx.rule_kind {
         RuleKind::Naming => RuleKind::Naming,
-        RuleKind::Projection => RuleKind::Projection,
-        RuleKind::Modeling => RuleKind::Modeling,
         RuleKind::Destructive => RuleKind::Destructive,
         RuleKind::Default => RuleKind::Default,
         _ => return fallback_to_info("unknown RuleKind variant"),
@@ -136,11 +134,6 @@ impl Default for SeverityContext {
 pub enum RuleKind {
     /// Naming-connascence detector (`ArchitectureAgent`).
     Naming,
-    /// Reserved for `ProjectionAgent` when emitting `FindingCandidate`s.
-    /// No caller in v1.
-    Projection,
-    /// Reserved for `ModelingAgent` (post-MVP).
-    Modeling,
     /// Destructive operations (e.g., `rm -rf`, schema drops). Forces
     /// `Critical` regardless of bin.
     Destructive,
@@ -617,7 +610,7 @@ mod tests {
         let finding = make_finding(Severity::Warning, 0.95);
         let ctx = make_ctx(
             0.95,
-            0,                           // evidence_count = 0
+            0, // evidence_count = 0
             RuleKind::Naming,
             Some(SeverityHint::FloorAtInfo),
         );
