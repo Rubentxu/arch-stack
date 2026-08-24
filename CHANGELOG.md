@@ -1,4 +1,7 @@
-## [Unreleased] — pending
+## [v1.90.0] — 2026-08-24
+
+M35 cognitive severity scoring pipeline (cycle
+`p-38e02210a9f14317/m35-severity-scoring-pipeline`, A-full). PR #325.
 
 ### Added
 

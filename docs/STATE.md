@@ -202,9 +202,11 @@
 - **Wave 3 (platform)** — parcial: items 19 (P2-09b), 22 (ide doctor), 27 (fusion engine), 28+29 (strict ArchBundle + archview read-only), 31–33 (workbench UX: NavigationTarget, action palette, semantic zoom C4) **+ el sprint M17.1 (M21 G6 culling/LOD v1.78.0, M22 sidebar-tabs v1.79.0, M23 ADR-019 perf-ci-gate v1.80.0)** CERRADOS v1.60.0–v1.80.0. Restantes: item 30 (session token, gated por ADR-051) y item 34 (P3-05 lens recommendation, gated por ADR-056/062).
 
 **Próximo candidato natural** (ROADMAP + STATE §Anti-roadmap):
+- **M35.1** (debt cleanup de `cognitive/scoring.rs`) — 4 findings P2 + test de precedencia del cierre M35 (v1.90.0); backlog detallado en `sddk/m35-severity-scoring-pipeline/archive-manifest.md`.
 - **cognitive-layer-coverage-v3** — siguiente fase del audit M61; módulos con ratio < 6% restantes identificados en el cierre de v1.89.0.
-- **M35** (severity scoring pipeline) — alternativa a M34.
 - **Bump lbug 0.18.3 → 0.19.1** (deferido; ver pendientes menores).
+
+> **M35 cerrado** (v1.90.0, 2026-08-24): `severity_for()` función pura en `archctl/src/cognitive/scoring.rs` cableada en `ArchitectureAgent`; bins discretos ≥0.9/≥0.7/≥0.4 con overrides; verify PASS 23/23 REQs; debt PASS_WITH_WARNINGS. Detalle del ciclo en ROADMAP §`m35-severity-scoring-pipeline`. Nota: la etiqueta M35 colisiona con el milestone histórico del vault (`M35-java-call-graph`, v1.7.0).
 
 ## Comandos de verificación
 
