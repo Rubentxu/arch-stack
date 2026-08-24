@@ -1897,7 +1897,7 @@ Razones:
 - **Loc**: ~+1500/-40 across 38 files (< 400 PR per WU).
 - **DQS**: passed (no critical/major debt findings at `sddk-verify`).
 - **Decisiones locked**: `AdjudicationEvent.id` is content-addressable via `blake3(target + adjudicator + decided_at)`; HITL preserved (no auto-decide); v9 graph writes `evidence_origin` for every FusedClaim; pre-v9 graphs are permissive (empty `evidence_origin` skips bridge consult); `evidence_refs` column type is STRING (JSON-encoded) — deviation from spec §3.4.2 STRING[] accepted.
-- **Desarrollo activo**: [M35 severity scoring pipeline](https://github.com/arch-stack/archctl/tree/feat/m35-severity-scoring-pipeline) (`p-38e02210a9f14317/m35-severity-scoring-pipeline`).
+- **Desarrollo activo**: ninguna (M35 cerrado en v1.90.0; ver entrada de ciclo más abajo).
 
 ## Cycle cerrado — `m34-cognitive-context-compression`
 
@@ -1943,4 +1943,24 @@ Razones:
   - **CHANGELOG entry** (commit `676234e`): ciclo registrado en `[Unreleased]` para trazabilidad.
   - **Decisión lbug** (commit `676234e` + STATE.md): bump 0.18.3 → 0.19.1 diferido; workaround documentado es la opción elegida.
 - **Tests**: 1204/1204 green (859 lib + 345 integration + doctest). `cargo clippy -- -D warnings` 0. `cargo fmt --check` 0. `archctl doctor --scopes architecture,diagram,code,cognitive,ide,store,evaluation,evidence,feedback` 0 findings.
-- **Desarrollo activo**: [M35 severity scoring pipeline](https://github.com/arch-stack/archctl/tree/feat/m35-severity-scoring-pipeline) (`p-38e02210a9f14317/m35-severity-scoring-pipeline`).
+- **Desarrollo activo**: ninguna (M35 cerrado en v1.90.0; ver entrada de ciclo más abajo).
+
+## Cycle cerrado — `m35-severity-scoring-pipeline` (v1.90.0)
+
+- **Fecha**: 2026-08-24
+- **Cycle id**: `p-38e02210a9f14317/m35-severity-scoring-pipeline`
+- **Branch**: `feat/m35-severity-scoring-pipeline` (PR #325, `--merge --delete-branch`)
+- **Tag**: `v1.90.0` (annotated, peels `9be13b3`, pushed + verified remote)
+- **Path**: A-full (explore → propose → spec‖design → tasks → apply → verify → debt-verify → release → archive), modo auto completo
+- **Output**:
+  - **`archctl::cognitive::scoring`** (W1, commit `77581e9`): función pura `pub fn severity_for(&FindingCandidate, &SeverityContext) -> Severity`. Bins discretos ≥0.9→Critical / ≥0.7→Error / ≥0.4→Warning / <0.4→Info (ADR-049: sin score continuo expuesto). Overrides: `RuleKind::Destructive`→Critical, zero-evidence→Info, hints `EscalateToCritical`/`FloorAtInfo`. Orden interno validate→overrides→bin→safety floor; NaN-first check; inputs no canónicos → `tracing::warn!` + `Severity::Info` (contrato D4/D6 de M34). Tipos `#[non_exhaustive]`.
+  - **Wire-up ArchitectureAgent** (W2, commit `4ef633d`): reemplaza el literal `Severity::Warning` por `severity_for(...)`; el campo `FindingCandidate.severity: Severity` no cambia de tipo (back-compat wire).
+  - **Docs** (W3, commit `08d8d84`): `docs/specs/spec-M35-severity-scoring-pipeline.md` + CHANGELOG + ROADMAP.
+  - **Manifest gate**: `manifests/cognitive.toml` += `severity_for`, `SeverityContext`, `RuleKind`, `SeverityHint` (public_symbols + must_hold).
+- **Tests**: 1541 passed / 0 failed (+44: 12 unit scoring + 6 integration + regresión agente). Clippy `-D warnings` 0. fmt clean. `doctor --scopes cognitive` 0 findings.
+- **Loc**: ~+1009/-6 en 8 ficheros (3 commits).
+- **Veredictos**: verify PASS (23/23 REQs, 45/45 SCN) · debt PASS_WITH_WARNINGS (11 findings: 0 crit/high, 4 MEDIUM P2 + 7 LOW P3, todos backlog M35.1).
+- **Decisiones locked**: D1 enum cognitivo de 4 niveles preservado · D2 bins discretos · D3 módulo único `scoring.rs` · D4 sin CLI v1 · D5 DecisionPriority NO reabierto · DM-2 orden validate→overrides→bin→floor · DM-7 helper `severity_rank()` en vez de `derive(Ord)` · DM-8 re-export glob.
+- **Nota numeración**: la etiqueta "M35" colisiona con el milestone histórico del vault `M35-java-call-graph` (RELEASED v1.7.0); los nodos nuevos usan id inequívoco `m35-cognitive-severity-scoring`.
+- **Backlog M35.1** (en `archive-manifest.md`): FIND-000001 extraer helper `fallback_to_info` (~12 LOC dedup) · FIND-000005 drop campo especulativo `age_ms` · FIND-000006 variants `RuleKind` sin caller (documentar o remover) · FIND-000007 fix honestidad LOC en apply-progress · FIND-000011 test de precedencia `{evidence_count:0, FloorAtInfo}`.
+- **Próximo candidato**: M35.1 (debt cleanup) o cognitive-layer-coverage-v3.
