@@ -1,5 +1,12 @@
 ## [Unreleased] — pending
 
+### Added
+
+- **cognitive-severity-scoring function (M35)** — `pub fn severity_for(&FindingCandidate,
+  &SeverityContext) -> Severity` in `archctl/src/cognitive/scoring.rs`; consumed by
+  `ArchitectureAgent::detect_naming_connascence`. Closes M34 verify-report W1
+  follow-up partially (D4 warn+fallback contract extended to scoring inputs).
+
 ## [v1.89.0] — 2026-08-23
 
 Cognitive-layer coverage v2 + M34 HIGH debt resolution. 3 chained PRs

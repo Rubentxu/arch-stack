@@ -1897,7 +1897,7 @@ Razones:
 - **Loc**: ~+1500/-40 across 38 files (< 400 PR per WU).
 - **DQS**: passed (no critical/major debt findings at `sddk-verify`).
 - **Decisiones locked**: `AdjudicationEvent.id` is content-addressable via `blake3(target + adjudicator + decided_at)`; HITL preserved (no auto-decide); v9 graph writes `evidence_origin` for every FusedClaim; pre-v9 graphs are permissive (empty `evidence_origin` skips bridge consult); `evidence_refs` column type is STRING (JSON-encoded) — deviation from spec §3.4.2 STRING[] accepted.
-- **Próximo candidato**: M34 (cognitive context compression, ledger tail) or M35 (severity scoring pipeline).
+- **Desarrollo activo**: [M35 severity scoring pipeline](https://github.com/arch-stack/archctl/tree/feat/m35-severity-scoring-pipeline) (`p-38e02210a9f14317/m35-severity-scoring-pipeline`).
 
 ## Cycle cerrado — `m34-cognitive-context-compression`
 
@@ -1943,4 +1943,4 @@ Razones:
   - **CHANGELOG entry** (commit `676234e`): ciclo registrado en `[Unreleased]` para trazabilidad.
   - **Decisión lbug** (commit `676234e` + STATE.md): bump 0.18.3 → 0.19.1 diferido; workaround documentado es la opción elegida.
 - **Tests**: 1204/1204 green (859 lib + 345 integration + doctest). `cargo clippy -- -D warnings` 0. `cargo fmt --check` 0. `archctl doctor --scopes architecture,diagram,code,cognitive,ide,store,evaluation,evidence,feedback` 0 findings.
-- **Próximo candidato**: M34 (cognitive context compression, ledger tail) o M35 (severity scoring pipeline), los dos post-TRUST-008 según ROADMAP:1836.
+- **Desarrollo activo**: [M35 severity scoring pipeline](https://github.com/arch-stack/archctl/tree/feat/m35-severity-scoring-pipeline) (`p-38e02210a9f14317/m35-severity-scoring-pipeline`).
