@@ -42,6 +42,8 @@ editable = [
   "archctl/src/cognitive/mcp/mod.rs",
   "archctl/src/cognitive/mcp/gateway.rs",
   "archctl/src/cognitive/mcp/tools.rs",
+  # M35: severity scoring
+  "archctl/src/cognitive/scoring.rs",
 ]
 
 # Public symbols that consumers depend on.
@@ -65,6 +67,11 @@ public_symbols = [
   "EscalationLadder",
   "AgentRegistry",
   "SyncDispatcher",
+  # M35: severity scoring
+  "severity_for",
+  "SeverityContext",
+  "RuleKind",
+  "SeverityHint",
 ]
 
 # Textual invariants that prove the module implements its scope contract.
@@ -84,6 +91,11 @@ must_hold = [
   "pub recent_events",
   # EventLog API
   "pub fn append(",
+  # M35: severity scoring
+  "pub fn severity_for(",
+  "pub struct SeverityContext",
+  "pub enum RuleKind",
+  "pub enum SeverityHint",
 ]
 
 # Banned patterns in cognitive module (ADR-011).
