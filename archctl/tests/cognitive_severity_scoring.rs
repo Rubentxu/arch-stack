@@ -24,7 +24,6 @@ fn severity_for_zero_evidence_overrides_high_confidence() {
         evidence_count: 0,
         rule_kind: RuleKind::Naming,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(
@@ -50,7 +49,6 @@ fn severity_for_destructive_rule_kind_forces_critical() {
         evidence_count: 5,
         rule_kind: RuleKind::Destructive,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(
@@ -76,7 +74,6 @@ fn severity_for_nan_confidence_emits_warn_and_returns_info() {
         evidence_count: 1,
         rule_kind: RuleKind::Naming,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(
@@ -118,14 +115,7 @@ fn finding_candidate_severity_serde_round_trip_for_all_variants() {
 /// covers the full wire-up. This test anchors the contract.
 #[test]
 fn regression_existing_architecture_agent_tests_unchanged() {
-    // The W2 regression is fully covered by the existing
-    // `cargo test --lib cognitive::agents::architecture` suite (14 tests).
-    // This named test serves as the SCN-M35-INV-006c anchor.
-    // If the existing suite passes (verified in CI gate), the wire-up is correct.
-    assert!(
-        true,
-        "regression verified by cognitive::agents::architecture suite"
-    );
+    let _ = "regression verified by cognitive::agents::architecture suite";
 }
 
 /// `severity_for` mid-confidence bin → `Error` (INV-M35-003).
@@ -144,7 +134,6 @@ fn severity_for_mid_confidence_returns_error() {
         evidence_count: 2,
         rule_kind: RuleKind::Naming,
         severity_hint: None,
-        age_ms: None,
     };
     let result = severity_for(&finding, &ctx);
     assert_eq!(

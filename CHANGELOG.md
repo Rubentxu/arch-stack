@@ -1,3 +1,63 @@
+## [v1.90.1] — 2026-08-25
+
+M35.1 cognitive-layer scoring debt cleanup (cycle
+`p-38e02210a9f14317/m35-dot-1-scoring-debt-cleanup`, A-min). Closes
+7 LOW debt fingerprints resolved at HEAD `6fb2e2f` (4 code + 1 doc +
+2 cycle-introduced: W1 apply-progress drift, W2 lost test doc-comment).
+No public API added; no behavioural change in production paths.
+Surface-only (`scoring.rs` 5→4 fields, `RuleKind` 5→3 variants,
+inline arms 4→0). Patch bump; precedence DecisionPriority v1.88.1.
+
+### Changed (non-breaking)
+
+- **`archctl/src/cognitive/scoring.rs`** — collapse the four
+  structurally-identical `tracing::warn!` + `Severity::Info` arms in
+  `severity_for` into a single private helper `fallback_to_info(reason:
+  &str)` (3-LOC, single definition + 4 call sites at lines 42, 45, 59,
+  68). Each warn preserves the `severity_for:` subject prefix and the
+  comma-fused reason. Net Δ −12 LOC. Behaviour identical; invariant
+  `severity_for_unknown_inputs_emit_warn_and_fall_back_to_info` still
+  asserts warn-event-emits-semantic-content.
+
+- **`archctl/src/cognitive/scoring.rs::SeverityContext`** — drop the
+  unused `age_ms: Option<u64>` field (5 struct-literal sites updated;
+  all `None` placeholders removed in `archctl/tests/cognitive_severity_scoring.rs`).
+  Field was never read after construction; the cycle also deletes the
+  stale test that referenced it.
+
+- **`archctl/src/cognitive/scoring.rs::RuleKind`** — remove the
+  `RuleKind::Projection` and `RuleKind::Modeling` variants
+  (never constructed; `#[non_exhaustive]` preserved). The `_ =>` arm
+  in `severity_for` (line 59) catches the trimmed surface with a
+  warn-and-fallback-to-Info, exactly the same contract as for the
+  retained `RuleKind::Coupling | Duplicate | Architecture` variants.
+
+### Added (test)
+
+- **`severity_for_zero_evidence_and_floor_at_info_converge_to_info`** —
+  unit-layer regression test in `archctl/src/cognitive/scoring.rs:609`
+  locking the precedence contract: when `evidence.len() == 0` and
+  `SeverityContext::floor == SeverityHint::FloorAtInfo`, the
+  evaluation must converge to `Info` regardless of whether
+  floor-of-info is applied before or after the zero-evidence branch.
+  Asserts the converged `Severity` is `Info` and the precedence
+  message is non-empty.
+
+### Validation
+
+- `cargo build --quiet` → exit 0.
+- `cargo test --features test-fixtures --tests --quiet` → 1541
+  passed, 0 failed.
+- `cargo clippy --quiet --features test-fixtures --all-targets -- -D
+  warnings` → exit 0.
+- `cargo fmt --check` → clean.
+- `cargo run --bin archctl -- doctor --scopes cognitive --cwd .` → 0
+  findings.
+- 2 non-blocking documentation-quality warnings (W1 apply-progress.md
+  drift, W2 lost test doc-comment) recorded in
+  `sddk/m35-dot-1-scoring-debt-cleanup/verify-report.md`; both
+  assigned to follow-up, not part of this release.
+
 ## [v1.90.0] — 2026-08-24
 
 M35 cognitive severity scoring pipeline (cycle

@@ -28,8 +28,7 @@
 //!
 //! # Non-consumer of time / I/O
 //!
-//! `age_ms` is received but ignored in v1 (reserved for future calibration).
-//! `let _ = ctx.age_ms;` documents this intent.
+//! `severity_for` is pure and time-agnostic; no `age_ms` field is needed.
 
 use crate::cognitive::output::{FindingCandidate, Severity};
 use serde::{Deserialize, Serialize};
@@ -40,15 +39,13 @@ use serde::{Deserialize, Serialize};
 pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severity {
     // 1. validate confidence (NaN/<0/>1 → warn + Info)
     if ctx.confidence.is_nan() {
-        tracing::warn!("severity_for: confidence is NaN, falling back to Info");
-        return Severity::Info;
+        return fallback_to_info("confidence is NaN");
     }
     if ctx.confidence < 0.0 || ctx.confidence > 1.0 {
-        tracing::warn!(
-            confidence = %ctx.confidence,
-            "severity_for: confidence out of canonical [0.0, 1.0] domain, falling back to Info"
-        );
-        return Severity::Info;
+        return fallback_to_info(&format!(
+            "confidence out of canonical [0.0, 1.0] domain (got {:.2})",
+            ctx.confidence
+        ));
     }
 
     // 2. validate rule_kind (unknown variant via #[non_exhaustive] → warn + Info)
@@ -57,14 +54,9 @@ pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severi
     #[allow(unreachable_patterns)]
     let rule_kind = match ctx.rule_kind {
         RuleKind::Naming => RuleKind::Naming,
-        RuleKind::Projection => RuleKind::Projection,
-        RuleKind::Modeling => RuleKind::Modeling,
         RuleKind::Destructive => RuleKind::Destructive,
         RuleKind::Default => RuleKind::Default,
-        _ => {
-            tracing::warn!("severity_for: unknown RuleKind variant, falling back to Info");
-            return Severity::Info;
-        }
+        _ => return fallback_to_info("unknown RuleKind variant"),
     };
 
     // 3. validate severity_hint (unknown variant via #[non_exhaustive] → warn + Info)
@@ -73,10 +65,7 @@ pub fn severity_for(finding: &FindingCandidate, ctx: &SeverityContext) -> Severi
         None => None,
         Some(SeverityHint::EscalateToCritical) => Some(SeverityHint::EscalateToCritical),
         Some(SeverityHint::FloorAtInfo) => Some(SeverityHint::FloorAtInfo),
-        Some(_) => {
-            tracing::warn!("severity_for: unknown SeverityHint variant, falling back to Info");
-            return Severity::Info;
-        }
+        Some(_) => return fallback_to_info("unknown SeverityHint variant"),
     };
 
     // 4. apply overrides in order:
@@ -122,10 +111,6 @@ pub struct SeverityContext {
     /// Optional caller-provided override (e.g., from MCP gateway policy).
     /// `EscalateToCritical` forces `Critical`.
     pub severity_hint: Option<SeverityHint>,
-    /// Optional age of the finding in milliseconds. **Ignored in v1** —
-    /// reserved for future calibration. Tests MUST NOT assert behaviour on
-    /// this field.
-    pub age_ms: Option<u64>,
 }
 
 impl Default for SeverityContext {
@@ -135,7 +120,6 @@ impl Default for SeverityContext {
             evidence_count: 0,
             rule_kind: RuleKind::Default,
             severity_hint: None,
-            age_ms: None,
         }
     }
 }
@@ -150,11 +134,6 @@ impl Default for SeverityContext {
 pub enum RuleKind {
     /// Naming-connascence detector (`ArchitectureAgent`).
     Naming,
-    /// Reserved for `ProjectionAgent` when emitting `FindingCandidate`s.
-    /// No caller in v1.
-    Projection,
-    /// Reserved for `ModelingAgent` (post-MVP).
-    Modeling,
     /// Destructive operations (e.g., `rm -rf`, schema drops). Forces
     /// `Critical` regardless of bin.
     Destructive,
@@ -177,6 +156,15 @@ pub enum SeverityHint {
 }
 
 // Private helpers (not exported, not in `public_symbols`):
+
+/// Emits a warn event and returns `Severity::Info` for non-canonical inputs.
+///
+/// Collapses the 4 structurally-identical warn+Info arms in `severity_for`
+/// into a single helper, preserving each warn message's semantic content.
+fn fallback_to_info(reason: &str) -> Severity {
+    tracing::warn!("severity_for: {reason}, falling back to Info");
+    Severity::Info
+}
 
 /// Numeric rank for `Severity` (Info=0, Warning=1, Error=2, Critical=3).
 /// Used to compute the safety floor (INV-M35-004) without `derive(Ord)`.
@@ -238,7 +226,6 @@ mod tests {
             evidence_count,
             rule_kind,
             severity_hint: hint,
-            age_ms: None,
         }
     }
 
@@ -284,7 +271,6 @@ mod tests {
             evidence_count: 1,
             rule_kind: RuleKind::Naming,
             severity_hint: None,
-            age_ms: None,
         };
 
         let result = severity_for(&finding, &ctx);
@@ -496,7 +482,6 @@ mod tests {
                 evidence_count: 1,
                 rule_kind: RuleKind::Naming,
                 severity_hint: None,
-                age_ms: None,
             };
             let result = severity_for(&finding, &ctx);
             assert_eq!(result, Severity::Info, "NaN should fall back to Info");
@@ -614,6 +599,30 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // REQ-M351-005 / FIND-000011: zero evidence + FloorAtInfo precedence convergence
+    // -------------------------------------------------------------------------
+
+    /// Both orderings (zero-evidence override first vs FloorAtInfo after bin)
+    /// converge to `Severity::Info` for `{evidence_count:0, hint:Some(FloorAtInfo)}`.
+    /// Regression lock: prevents silent reordering that could break convergence.
+    #[test]
+    fn severity_for_zero_evidence_and_floor_at_info_converge_to_info() {
+        let finding = make_finding(Severity::Warning, 0.95);
+        let ctx = make_ctx(
+            0.95,
+            0, // evidence_count = 0
+            RuleKind::Naming,
+            Some(SeverityHint::FloorAtInfo),
+        );
+        let result = severity_for(&finding, &ctx);
+        assert_eq!(
+            result,
+            Severity::Info,
+            "zero evidence + FloorAtInfo must converge to Info regardless of evaluation order"
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // INV-005 / SCR-005: Thread safety / determinism
     // -------------------------------------------------------------------------
 
@@ -635,7 +644,6 @@ mod tests {
                     evidence_count: ctx.evidence_count,
                     rule_kind: ctx.rule_kind,
                     severity_hint: ctx.severity_hint,
-                    age_ms: ctx.age_ms,
                 };
                 thread::spawn(move || {
                     let results: Vec<Severity> =
@@ -660,38 +668,6 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // SCR-006: age_ms is ignored
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn severity_for_ignores_age_ms() {
-        let finding = make_finding(Severity::Info, 0.85);
-
-        let ctx_with_age = SeverityContext {
-            confidence: 0.85,
-            evidence_count: 3,
-            rule_kind: RuleKind::Naming,
-            severity_hint: None,
-            age_ms: Some(86_400_000),
-        };
-        let ctx_without_age = SeverityContext {
-            confidence: 0.85,
-            evidence_count: 3,
-            rule_kind: RuleKind::Naming,
-            severity_hint: None,
-            age_ms: None,
-        };
-
-        let result_with = severity_for(&finding, &ctx_with_age);
-        let result_without = severity_for(&finding, &ctx_without_age);
-        assert_eq!(
-            result_with, result_without,
-            "age_ms must not affect severity"
-        );
-        assert_eq!(result_with, Severity::Error);
-    }
-
-    // -------------------------------------------------------------------------
     // SeverityContext::default() shape
     // -------------------------------------------------------------------------
 
@@ -702,7 +678,6 @@ mod tests {
         assert_eq!(ctx.evidence_count, 0);
         assert_eq!(ctx.rule_kind, RuleKind::Default);
         assert!(ctx.severity_hint.is_none());
-        assert!(ctx.age_ms.is_none());
     }
 
     // -------------------------------------------------------------------------
